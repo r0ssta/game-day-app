@@ -535,7 +535,7 @@ export function useGameDayApp() {
         return finalized
       })
 
-      setAppMode('summary')
+      setAppMode('recap')
     },
     [matchId, halfLengthMinutes, setRunning, getActiveFormation],
   )

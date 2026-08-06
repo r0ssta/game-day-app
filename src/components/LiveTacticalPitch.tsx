@@ -39,7 +39,7 @@ type LiveTacticalPitchProps = {
   onSubIn: (benchId: string, tacticalPosition: string) => void
   onSubOut: (fieldId: string) => void
   onReassignPosition: (updates: PositionReassignUpdate[]) => void
-  onSetImpact: (id: string, impact: Impact) => void
+  onSetImpact?: (id: string, impact: Impact) => void
 }
 
 function ImpactToggleGroup({
@@ -110,7 +110,7 @@ function LivePitchPlayerBadge({
   onDragOver: (e: DragEvent) => void
   onDragLeave: (e: DragEvent) => void
   onDrop: (e: DragEvent) => void
-  onSetImpact: (impact: Impact) => void
+  onSetImpact?: (impact: Impact) => void
 }) {
   const liveSeconds = player ? getLiveSecondsPlayed(player, clockSeconds) : 0
   const positionLabel = player ? displayMatchPosition(player.matchPosition) : slotLabel
@@ -152,7 +152,9 @@ function LivePitchPlayerBadge({
           <span className="font-mono text-[9px] font-bold tabular-nums text-neon-foreground/90">
             {formatPlayingTimeClock(liveSeconds)}
           </span>
-          <ImpactToggleGroup impact={player.impact} onSetImpact={onSetImpact} compact />
+          {onSetImpact && (
+            <ImpactToggleGroup impact={player.impact} onSetImpact={onSetImpact} compact />
+          )}
         </div>
       ) : (
         <div
@@ -183,7 +185,7 @@ function BenchPlayerRow({
   player: MatchPlayer
   clockSeconds: number
   onDragStart: (e: DragEvent) => void
-  onSetImpact: (impact: Impact) => void
+  onSetImpact?: (impact: Impact) => void
 }) {
   const liveSeconds = getLiveSecondsPlayed(player, clockSeconds)
 
@@ -196,7 +198,7 @@ function BenchPlayerRow({
       <div
         className={cn(
           'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-          IMPACT_RING[player.impact],
+          onSetImpact ? IMPACT_RING[player.impact] : 'border-border',
           'bg-secondary text-foreground',
         )}
       >
@@ -210,7 +212,7 @@ function BenchPlayerRow({
           </span>
         </div>
       </div>
-      <ImpactToggleGroup impact={player.impact} onSetImpact={onSetImpact} />
+      {onSetImpact && <ImpactToggleGroup impact={player.impact} onSetImpact={onSetImpact} />}
     </li>
   )
 }
@@ -512,9 +514,13 @@ export function LiveTacticalPitch({
                 onDragOver={(e) => handleSlotDragOver(e, slot.id)}
                 onDragLeave={(e) => handleSlotDragLeave(e, slot.id)}
                 onDrop={(e) => handleSlotDrop(e, slot)}
-                onSetImpact={(impact) => {
-                  if (displayPlayer) onSetImpact(displayPlayer.id, impact)
-                }}
+                onSetImpact={
+                  onSetImpact
+                    ? (impact) => {
+                        if (displayPlayer) onSetImpact(displayPlayer.id, impact)
+                      }
+                    : undefined
+                }
               />
             </div>
           )
@@ -547,7 +553,9 @@ export function LiveTacticalPitch({
                 player={player}
                 clockSeconds={clockSeconds}
                 onDragStart={(e) => handleDragStart(e, player.id, 'bench')}
-                onSetImpact={(impact) => onSetImpact(player.id, impact)}
+                onSetImpact={
+                  onSetImpact ? (impact) => onSetImpact(player.id, impact) : undefined
+                }
               />
             ))}
           </ul>

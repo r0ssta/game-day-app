@@ -1,6 +1,6 @@
 export type Impact = 'neutral' | 'positive' | 'negative'
 
-export type AppMode = 'setup' | 'match' | 'halftime' | 'summary'
+export type AppMode = 'setup' | 'match' | 'halftime' | 'recap'
 
 export type ActionType = 'GOAL' | 'ASSIST'
 

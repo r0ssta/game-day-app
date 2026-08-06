@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   CheckCircle2,
-  Goal,
-  Minus,
-  Plus,
   UserPlus,
   Users,
   X,
-  Zap,
 } from 'lucide-react'
 import { LiveTacticalPitch, type PositionReassignUpdate } from '@/components/LiveTacticalPitch'
+import { PostGameRecap } from '@/components/PostGameRecap'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
 import type { FormationRole } from '@/lib/formations'
@@ -25,15 +22,12 @@ import {
   applySubOut,
   applySubstitution,
   formatPlayingTimeBadge,
-  getLiveSecondsPlayed,
   stampAllOnField,
 } from '@/lib/play-time'
 import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS, tickCountdownClock, type QaSpeedMultiplier } from '@/lib/match-clock'
-import { ADD_NEW_OPTION, nameShort } from '@/lib/named-entities'
-import { buildMatchSummaryText } from '@/lib/match-summary'
+import { ADD_NEW_OPTION } from '@/lib/named-entities'
 import {
   syncMatchClock,
-  syncMatchEvent,
   syncMatchEvents,
   syncMatchRecord,
   syncMatchStat,
@@ -43,8 +37,6 @@ import {
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
 import type {
-  ActionType,
-  Impact,
   MatchPeriod,
   MatchPlayer,
   RosterPlayer,
@@ -53,18 +45,6 @@ import type {
 
 
 const HALF_LENGTH_OPTIONS = [25, 30, 35, 40, 45]
-
-function GuestBadge() {
-  return (
-    <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-      Guest
-    </span>
-  )
-}
-
-function formatJersey(number: number | null) {
-  return number !== null ? String(number) : '—'
-}
 
 function nextJerseyNumber(roster: RosterPlayer[]) {
   const used = new Set(roster.map((p) => p.number).filter((n): n is number => n !== null))
@@ -196,51 +176,6 @@ function formatClock(totalSeconds: number) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-type ScoreStepperProps = {
-  label: string
-  value: number
-  onChange: (delta: number) => void
-  align: 'left' | 'right'
-}
-
-function ScoreStepper({ label, value, onChange, align }: ScoreStepperProps) {
-  const buttons = (
-    <div className="flex flex-col gap-1.5">
-      <button
-        type="button"
-        aria-label={`Add goal for ${label}`}
-        onClick={() => onChange(1)}
-        className="flex size-11 items-center justify-center rounded-md bg-secondary text-foreground transition-transform active:scale-90 active:bg-neon active:text-neon-foreground"
-      >
-        <Plus className="size-6" strokeWidth={3} />
-      </button>
-      <button
-        type="button"
-        aria-label={`Remove goal for ${label}`}
-        onClick={() => onChange(-1)}
-        className="flex size-11 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-transform active:scale-90 active:bg-danger active:text-danger-foreground"
-      >
-        <Minus className="size-6" strokeWidth={3} />
-      </button>
-    </div>
-  )
-
-  return (
-    <div className="flex items-center gap-3">
-      {align === 'left' && buttons}
-      <div className="text-center">
-        <div className="font-display text-6xl font-bold leading-none tabular-nums text-foreground">
-          {value}
-        </div>
-        <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          {label}
-        </div>
-      </div>
-      {align === 'right' && buttons}
-    </div>
-  )
-}
-
 type MatchHeaderProps = {
   teamName: string
   coachName: string
@@ -252,8 +187,6 @@ type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
-  onHomeScore: (delta: number) => void
-  onAwayScore: (delta: number) => void
 }
 
 function MatchHeader({
@@ -267,13 +200,9 @@ function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
-  onHomeScore,
-  onAwayScore,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
-  const homeShort = nameShort(teamName, 'HOM')
   const awayName = opponent.trim() || 'Opponent'
-  const awayShort = nameShort(opponent, 'OPP')
   const halfReference = formatClock(halfDurationSeconds(halfLengthMinutes))
   const coachLine = coachName.trim() ? `Coach: ${coachName.trim()}` : null
   const halfEnded = periodClockStarted && isHalfExpired(seconds)
@@ -295,8 +224,8 @@ function MatchHeader({
         </div>
 
         <p className="mt-1 text-center text-xs font-semibold text-muted-foreground">
-          Team: {homeLabel}
-          {coachLine ? ` | ${coachLine}` : ''}
+          {homeLabel} {homeScore} – {awayScore} {awayName}
+          {coachLine ? ` · ${coachLine}` : ''}
         </p>
 
         <div className="mt-2 flex flex-col items-center gap-1">
@@ -330,12 +259,6 @@ function MatchHeader({
                 ? 'Clock stopped · confirm below'
                 : `Countdown · ${halfReference} half`}
           </span>
-        </div>
-
-        <div className="mt-3 flex items-center justify-center gap-5">
-          <ScoreStepper label={homeShort} value={homeScore} onChange={onHomeScore} align="left" />
-          <span className="font-display text-3xl font-bold text-muted-foreground">-</span>
-          <ScoreStepper label={awayShort} value={awayScore} onChange={onAwayScore} align="right" />
         </div>
       </div>
     </header>
@@ -1007,244 +930,6 @@ function PlayerEditModal({
   )
 }
 
-/* ------------------------------------------------------------------ */
-/* ActionButtons                                                       */
-/* ------------------------------------------------------------------ */
-
-type ActionButtonsProps = {
-  onAction: (type: ActionType) => void
-}
-
-function ActionButtons({ onAction }: ActionButtonsProps) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <button
-        type="button"
-        onClick={() => onAction('GOAL')}
-        className="flex items-center justify-center gap-2 rounded-xl bg-neon py-8 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95"
-      >
-        <Goal className="size-8" strokeWidth={2.5} />
-        <span className="font-display text-2xl font-bold uppercase tracking-wide">Log Goal</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => onAction('ASSIST')}
-        className="flex items-center justify-center gap-2 rounded-xl bg-athletic py-8 text-athletic-foreground transition-transform active:scale-[0.98] active:brightness-95"
-      >
-        <Zap className="size-8" strokeWidth={2.5} />
-        <span className="font-display text-2xl font-bold uppercase tracking-wide">Log Assist</span>
-      </button>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* PlayerSelectModal                                                   */
-/* ------------------------------------------------------------------ */
-
-const MODAL_TITLES: Record<ActionType, string> = {
-  GOAL: 'Who scored?',
-  ASSIST: 'Who assisted?',
-}
-
-const MODAL_ACCENTS: Record<ActionType, string> = {
-  GOAL: 'text-neon',
-  ASSIST: 'text-athletic',
-}
-
-function PlayerSelectModal({
-  action,
-  players,
-  onSelect,
-  onClose,
-}: {
-  action: ActionType | null
-  players: MatchPlayer[]
-  onSelect: (player: MatchPlayer) => void
-  onClose: () => void
-}) {
-  useEffect(() => {
-    if (!action) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [action, onClose])
-
-  if (!action) return null
-
-  const onFieldPlayers = players.filter((p) => p.attending && p.isOnField)
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={MODAL_TITLES[action]}
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-background/70 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="mx-auto flex max-h-[85vh] w-full max-w-md flex-col rounded-t-2xl border-t border-border bg-popover shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 pb-3 pt-4">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-              Log {action.toLowerCase()}
-            </div>
-            <h2 className={cn('font-display text-2xl font-bold uppercase', MODAL_ACCENTS[action])}>
-              {MODAL_TITLES[action]}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex size-11 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-90"
-          >
-            <X className="size-6" strokeWidth={3} />
-          </button>
-        </div>
-
-        <ul className="grid grid-cols-1 gap-2 overflow-y-auto px-4 pb-8">
-          {onFieldPlayers.map((player) => (
-            <li key={player.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(player)}
-                className="flex w-full items-center gap-3 rounded-xl bg-card px-3 py-3 text-left transition-transform active:scale-[0.98] active:bg-secondary"
-              >
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-full border-2 border-border font-display text-2xl font-bold tabular-nums text-foreground">
-                  {formatJersey(player.number)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="block truncate text-lg font-bold leading-tight text-card-foreground">
-                      {player.name}
-                    </span>
-                    {player.isGuest && <GuestBadge />}
-                  </span>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {player.matchPosition}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* MatchSummary                                                        */
-/* ------------------------------------------------------------------ */
-
-type MatchSummaryProps = {
-  title?: string
-  teamName: string
-  coachName: string
-  opponent: string
-  location: string
-  tournamentGame: boolean
-  homeScore: number
-  awayScore: number
-  seconds: number
-  period: MatchPeriod
-  halfLengthMinutes: number
-  players: MatchPlayer[]
-  onCopySummary: () => void
-}
-
-function MatchSummary({
-  title = 'Match Summary',
-  teamName,
-  coachName,
-  opponent,
-  location,
-  tournamentGame,
-  homeScore,
-  awayScore,
-  seconds,
-  period,
-  halfLengthMinutes,
-  players,
-  onCopySummary,
-}: MatchSummaryProps) {
-  const attending = players.filter((p) => p.attending)
-
-  return (
-    <section className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-display text-lg font-bold uppercase tracking-wide text-foreground">
-          {title}
-        </h2>
-        <button
-          type="button"
-          onClick={onCopySummary}
-          className="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-foreground active:scale-95"
-        >
-          Copy Export
-        </button>
-      </div>
-      <dl className="space-y-1 text-sm">
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">Team</dt>
-          <dd className="font-semibold text-foreground">{teamName}</dd>
-        </div>
-        {coachName.trim() && (
-          <div className="flex justify-between gap-4">
-            <dt className="text-muted-foreground">Coach</dt>
-            <dd className="font-semibold text-foreground">{coachName}</dd>
-          </div>
-        )}
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">Opponent</dt>
-          <dd className="font-semibold text-foreground">{opponent.trim() || '—'}</dd>
-        </div>
-        {location.trim() && (
-          <div className="flex justify-between gap-4">
-            <dt className="text-muted-foreground">Location</dt>
-            <dd className="font-semibold text-foreground">{location}</dd>
-          </div>
-        )}
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">Score</dt>
-          <dd className="font-semibold text-foreground">
-            {homeScore} – {awayScore}
-          </dd>
-        </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">Clock</dt>
-          <dd className="font-semibold text-foreground">
-            {formatClock(seconds)} · {periodLabel(period)} · {halfLengthMinutes}m halves
-          </dd>
-        </div>
-        {tournamentGame && (
-          <div className="flex justify-between gap-4">
-            <dt className="text-muted-foreground">Tournament</dt>
-            <dd className="font-semibold text-neon">Yes</dd>
-          </div>
-        )}
-      </dl>
-      {attending.length > 0 && (
-        <ul className="mt-3 space-y-1 border-t border-border pt-3 text-xs">
-          {attending.map((p) => (
-            <li key={p.id} className="flex justify-between gap-2 text-muted-foreground">
-              <span>
-                #{p.number ?? '—'} {p.name} ({p.matchPosition})
-              </span>
-              <span className="font-bold tabular-nums text-athletic">
-                {formatPlayingTimeBadge(getLiveSecondsPlayed(p, seconds))}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
 function PeriodStartButton({
   label,
   onStart,
@@ -1354,78 +1039,6 @@ function QaSpeedPanel({
   )
 }
 
-type PostGameSummaryScreenProps = {
-  teamName: string
-  coachName: string
-  opponent: string
-  location: string
-  tournamentGame: boolean
-  homeScore: number
-  awayScore: number
-  seconds: number
-  period: MatchPeriod
-  halfLengthMinutes: number
-  players: MatchPlayer[]
-  onCopySummary: () => void
-  onDone: () => void
-}
-
-function PostGameSummaryScreen({
-  teamName,
-  coachName,
-  opponent,
-  location,
-  tournamentGame,
-  homeScore,
-  awayScore,
-  seconds,
-  period,
-  halfLengthMinutes,
-  players,
-  onCopySummary,
-  onDone,
-}: PostGameSummaryScreenProps) {
-  return (
-    <main className="min-h-dvh bg-background pb-10">
-      <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
-        <header className="text-center">
-          <h1 className="font-display text-4xl font-black uppercase tracking-wide text-foreground">
-            Final Whistle
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {teamName.trim() || 'Home'} {homeScore} – {awayScore}{' '}
-            {opponent.trim() || 'Opponent'}
-          </p>
-        </header>
-
-        <MatchSummary
-          title="Post-Game Summary"
-          teamName={teamName}
-          coachName={coachName}
-          opponent={opponent}
-          location={location}
-          tournamentGame={tournamentGame}
-          homeScore={homeScore}
-          awayScore={awayScore}
-          seconds={seconds}
-          period={period}
-          halfLengthMinutes={halfLengthMinutes}
-          players={players}
-          onCopySummary={onCopySummary}
-        />
-
-        <button
-          type="button"
-          onClick={onDone}
-          className="w-full rounded-xl bg-neon py-5 font-display text-2xl font-bold uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98]"
-        >
-          Done — New Match
-        </button>
-      </div>
-    </main>
-  )
-}
-
 /* ------------------------------------------------------------------ */
 /* App                                                                 */
 /* ------------------------------------------------------------------ */
@@ -1442,9 +1055,7 @@ export default function App() {
     players,
     setPlayers,
     homeScore,
-    setHomeScore,
     awayScore,
-    setAwayScore,
     seconds,
     setSeconds,
     period,
@@ -1460,8 +1071,6 @@ export default function App() {
     matchTeamName,
     matchCoachName,
     matchOpponent,
-    matchLocation,
-    matchTournamentGame,
     halfLengthMinutes,
     setHalfLengthMinutes,
     opponent,
@@ -1499,7 +1108,6 @@ export default function App() {
 
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
-  const [pendingAction, setPendingAction] = useState<ActionType | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
@@ -1583,7 +1191,6 @@ export default function App() {
         firstHalfFormation: matchFormations.first,
       })
 
-      setPendingAction(null)
       setQaSpeedMultiplier(1)
       setQaPanelExpanded(false)
       setToast('Match started')
@@ -1621,43 +1228,22 @@ export default function App() {
       }
     }
     await endMatch()
-    setPendingAction(null)
     setQaSpeedMultiplier(1)
     setQaPanelExpanded(false)
     setToast(null)
   }, [matchId, players, endMatch])
 
-  const handleCopySummary = useCallback(() => {
-    const text = buildMatchSummaryText({
-      teamName: matchTeamName,
-      coachName: matchCoachName,
-      opponent: matchOpponent,
-      location: matchLocation,
-      tournamentGame: matchTournamentGame,
-      homeScore,
-      awayScore,
-      seconds,
-      period,
-      halfLengthMinutes,
-      players,
-      clockSeconds: seconds,
-    })
-    void navigator.clipboard.writeText(text).then(() => {
-      setToast('Summary copied to clipboard')
-    })
-  }, [
-    matchTeamName,
-    matchCoachName,
-    matchOpponent,
-    matchLocation,
-    matchTournamentGame,
-    homeScore,
-    awayScore,
-    seconds,
-    period,
-    halfLengthMinutes,
-    players,
-  ])
+  const handleEndGame = useCallback(async () => {
+    setRunning(false)
+    await finishGame(seconds)
+    if (matchId) {
+      syncMatchRecord(matchId, {
+        period_clock_started: false,
+        clock_seconds: seconds,
+      })
+    }
+    setToast('Match complete — review your players')
+  }, [seconds, matchId, finishGame, setRunning])
 
   const handleStartFirstHalf = useCallback(() => {
     setPlayers((prev) => {
@@ -1687,19 +1273,6 @@ export default function App() {
     }
     setToast('Halftime — set your 2nd half lineup')
   }, [seconds, matchId, enterHalftime, setRunning])
-
-  const handleEndGame = useCallback(async () => {
-    setRunning(false)
-    await finishGame(seconds)
-    if (matchId) {
-      syncMatchRecord(matchId, {
-        period_clock_started: false,
-        clock_seconds: seconds,
-      })
-    }
-    setPendingAction(null)
-    setToast('Match complete')
-  }, [seconds, matchId, finishGame, setRunning])
 
   const handleBeginSecondHalf = useCallback(async () => {
     if (!canBeginSecondHalf) return
@@ -1764,18 +1337,6 @@ export default function App() {
     [addPlayer],
   )
 
-  const setImpact = useCallback(
-    (id: string, impact: Impact) => {
-      setPlayers((prev) => {
-        const next = prev.map((p) => (p.id === id ? { ...p, impact } : p))
-        const updated = next.find((p) => p.id === id)
-        if (matchId && updated) syncMatchStat(matchId, updated)
-        return next
-      })
-    },
-    [matchId, setPlayers],
-  )
-
   const handleLiveReassignPosition = useCallback(
     (updates: PositionReassignUpdate[]) => {
       if (!matchId || updates.length === 0) return
@@ -1790,14 +1351,16 @@ export default function App() {
         for (const update of updates) {
           const updated = next.find((p) => p.id === update.playerId)
           if (updated) syncMatchStat(matchId, updated)
-          syncMatchEvent({
-            matchId,
-            playerId: update.playerId,
-            eventType: 'position_change',
-            timestamp: eventTimestamp,
-            eventNotes: update.position,
-            formation: activeFormation,
-          })
+          syncMatchEvents([
+            {
+              matchId,
+              playerId: update.playerId,
+              eventType: 'position_change',
+              timestamp: eventTimestamp,
+              eventNotes: update.position,
+              formation: activeFormation,
+            },
+          ])
         }
 
         return next
@@ -1913,63 +1476,6 @@ export default function App() {
     [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
   )
 
-  const handleSelect = useCallback(
-    (player: MatchPlayer) => {
-      if (pendingAction === 'GOAL') {
-        setHomeScore((s) => {
-          const next = s + 1
-          if (matchId) syncMatchRecord(matchId, { home_score: next })
-          return next
-        })
-        setPlayers((prev) => {
-          const next = prev.map((p) =>
-            p.id === player.id ? { ...p, impact: 'positive' as const } : p,
-          )
-          const updated = next.find((p) => p.id === player.id)
-          if (matchId && updated) syncMatchStat(matchId, updated)
-          return next
-        })
-      }
-
-      if (matchId) {
-        syncMatchEvent({
-          matchId,
-          playerId: player.id,
-          eventType: pendingAction === 'GOAL' ? 'goal' : 'assist',
-          timestamp: elapsedInHalf(seconds, halfLengthMinutes),
-          formation: activeFormation,
-        })
-      }
-
-      const verb = pendingAction === 'GOAL' ? 'Goal' : 'Assist'
-      setToast(`${verb} logged · ${player.number !== null ? `#${player.number} ` : ''}${player.name}`)
-      setPendingAction(null)
-    },
-    [pendingAction, matchId, seconds, halfLengthMinutes, activeFormation, setHomeScore, setPlayers],
-  )
-
-  const handleHomeScore = useCallback(
-    (delta: number) => {
-      setHomeScore((s) => {
-        const next = Math.max(0, s + delta)
-        if (matchId) syncMatchRecord(matchId, { home_score: next })
-        return next
-      })
-    },
-    [matchId, setHomeScore],
-  )
-
-  const handleAwayScore = useCallback(
-    (delta: number) => {
-      setAwayScore((s) => {
-        const next = Math.max(0, s + delta)
-        if (matchId) syncMatchRecord(matchId, { away_score: next })
-        return next
-      })
-    },
-    [matchId, setAwayScore],
-  )
-
   if (loading) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background px-4">
@@ -2076,23 +1582,19 @@ export default function App() {
     )
   }
 
-  if (appMode === 'summary') {
+  if (appMode === 'recap' && matchId) {
     return (
       <>
-        <PostGameSummaryScreen
+        <PostGameRecap
+          matchId={matchId}
           teamName={matchTeamName}
-          coachName={matchCoachName}
           opponent={matchOpponent}
-          location={matchLocation}
-          tournamentGame={matchTournamentGame}
           homeScore={homeScore}
           awayScore={awayScore}
-          seconds={seconds}
-          period={period}
           halfLengthMinutes={halfLengthMinutes}
           players={players}
-          onCopySummary={handleCopySummary}
-          onDone={() => returnToSetup()}
+          onFinalize={() => returnToSetup()}
+          onToast={setToast}
         />
         {toast && (
           <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
@@ -2126,8 +1628,6 @@ export default function App() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
-        onHomeScore={handleHomeScore}
-        onAwayScore={handleAwayScore}
       />
 
       <div className="mx-auto max-w-md space-y-6 px-4 pt-5">
@@ -2155,27 +1655,9 @@ export default function App() {
           onSubIn={handleLiveSubIn}
           onSubOut={handleLiveSubOut}
           onReassignPosition={handleLiveReassignPosition}
-          onSetImpact={setImpact}
         />
 
-        <ActionButtons onAction={(type) => setPendingAction(type)} />
-
-        <MatchSummary
-          teamName={matchTeamName}
-          coachName={matchCoachName}
-          opponent={matchOpponent}
-          location={matchLocation}
-          tournamentGame={matchTournamentGame}
-          homeScore={homeScore}
-          awayScore={awayScore}
-          seconds={seconds}
-          period={period}
-          halfLengthMinutes={halfLengthMinutes}
-          players={players}
-          onCopySummary={handleCopySummary}
-        />
-
-        <div className="pt-4">
+        <div className="pt-2">
           <button
             type="button"
             onClick={() => void handleResetMatch()}
@@ -2185,13 +1667,6 @@ export default function App() {
           </button>
         </div>
       </div>
-
-      <PlayerSelectModal
-        action={pendingAction}
-        players={players}
-        onSelect={handleSelect}
-        onClose={() => setPendingAction(null)}
-      />
 
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">

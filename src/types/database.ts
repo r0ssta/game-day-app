@@ -68,6 +68,16 @@ export type DbMatchStat = {
   created_at: string
 }
 
+export type DbMatchReview = {
+  id: string
+  match_id: string
+  player_id: string
+  impact_score: number
+  review_notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -77,6 +87,7 @@ export type Database = {
       matches: { Row: DbMatch; Insert: Partial<DbMatch> & Pick<DbMatch, 'team_id'>; Update: Partial<DbMatch> }
       match_events: { Row: DbMatchEvent; Insert: Omit<DbMatchEvent, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchEvent> }
       match_stats: { Row: DbMatchStat; Insert: Omit<DbMatchStat, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStat> }
+      match_reviews: { Row: DbMatchReview; Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbMatchReview> }
     }
   }
 }

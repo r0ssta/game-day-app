@@ -1,7 +1,7 @@
 import { matchDateTimeIso } from '@/lib/match-schedule'
 import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
-import type { DbCoach, DbMatch, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
+import type { DbCoach, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
 
 export type MatchEventInput = {
@@ -390,6 +390,59 @@ export async function completeMatch(matchId: string) {
     .update({ status: 'completed' })
     .eq('id', matchId)
   if (error) throw error
+}
+
+export async function fetchMatchEvents(matchId: string): Promise<DbMatchEvent[]> {
+  const { data, error } = await supabase
+    .from('match_events')
+    .select('*')
+    .eq('match_id', matchId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[]> {
+  const { data, error } = await supabase
+    .from('match_reviews')
+    .select('*')
+    .eq('match_id', matchId)
+  if (error) throw error
+  return data ?? []
+}
+
+export type PostGameReviewInput = {
+  playerId: string
+  impact: Impact
+  notes: string
+}
+
+export async function savePostGameReview(matchId: string, reviews: PostGameReviewInput[]) {
+  if (reviews.length === 0) return
+
+  const now = new Date().toISOString()
+  const reviewRows = reviews.map((review) => ({
+    match_id: matchId,
+    player_id: review.playerId,
+    impact_score: impactToScore(review.impact),
+    review_notes: review.notes.trim() || null,
+    updated_at: now,
+  }))
+
+  const { error: reviewError } = await supabase
+    .from('match_reviews')
+    .upsert(reviewRows, { onConflict: 'match_id,player_id' })
+  if (reviewError) throw reviewError
+
+  await Promise.all(
+    reviews.map((review) =>
+      supabase
+        .from('match_stats')
+        .update({ impact_score: impactToScore(review.impact) })
+        .eq('match_id', matchId)
+        .eq('player_id', review.playerId),
+    ),
+  )
 }
 
 /** Fire-and-forget background sync helpers */
