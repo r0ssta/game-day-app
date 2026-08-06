@@ -1,0 +1,2206 @@
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import {
+  CheckCircle2,
+  Goal,
+  Minus,
+  Plus,
+  UserPlus,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react'
+import { LiveTacticalPitch, type PositionReassignUpdate } from '@/components/LiveTacticalPitch'
+import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
+import { useGameDayApp } from '@/hooks/useGameDayApp'
+import type { FormationRole } from '@/lib/formations'
+import {
+  getAttendingIds,
+  getFirstHalfStarterIds,
+  isHalftimeLineupValid,
+  isSetupLineupValid,
+  MAX_FIELD_PLAYERS,
+} from '@/lib/lineup'
+import {
+  applySubIn,
+  applySubOut,
+  applySubstitution,
+  formatPlayingTimeBadge,
+  getLiveSecondsPlayed,
+  stampAllOnField,
+} from '@/lib/play-time'
+import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS, tickCountdownClock, type QaSpeedMultiplier } from '@/lib/match-clock'
+import { ADD_NEW_OPTION, nameShort } from '@/lib/named-entities'
+import { buildMatchSummaryText } from '@/lib/match-summary'
+import {
+  syncMatchClock,
+  syncMatchEvent,
+  syncMatchEvents,
+  syncMatchRecord,
+  syncMatchStat,
+  syncMatchStats,
+  upsertMatchStats,
+  formatSupabaseError,
+} from '@/lib/supabase-api'
+import { cn } from '@/lib/utils'
+import type {
+  ActionType,
+  Impact,
+  MatchPeriod,
+  MatchPlayer,
+  RosterPlayer,
+  SetupLineup,
+} from '@/types/match'
+
+
+const HALF_LENGTH_OPTIONS = [25, 30, 35, 40, 45]
+
+function GuestBadge() {
+  return (
+    <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+      Guest
+    </span>
+  )
+}
+
+function formatJersey(number: number | null) {
+  return number !== null ? String(number) : '—'
+}
+
+function nextJerseyNumber(roster: RosterPlayer[]) {
+  const used = new Set(roster.map((p) => p.number).filter((n): n is number => n !== null))
+  for (let n = 1; n <= 99; n++) {
+    if (!used.has(n)) return n
+  }
+  return roster.length + 1
+}
+
+function periodLabel(period: MatchPeriod) {
+  return period === '1st' ? '1st Half' : '2nd Half'
+}
+
+type NamedEntity = { id: string; name: string }
+
+type EntitySelectProps = {
+  id: string
+  label: string
+  valueId: string | null
+  options: NamedEntity[]
+  addNewLabel: string
+  placeholder: string
+  onChange: (id: string) => void
+  onAddNew: (name: string) => Promise<string | void>
+}
+
+function EntitySelect({
+  id,
+  label,
+  valueId,
+  options,
+  addNewLabel,
+  placeholder,
+  onChange,
+  onAddNew,
+}: EntitySelectProps) {
+  const [isAdding, setIsAdding] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const selectValue = isAdding ? ADD_NEW_OPTION : valueId ?? ''
+
+  const commitDraft = async () => {
+    const trimmed = draft.trim()
+    if (!trimmed) {
+      setIsAdding(false)
+      return
+    }
+    setSaving(true)
+    try {
+      const newId = await onAddNew(trimmed)
+      if (newId) onChange(newId)
+      setDraft('')
+      setIsAdding(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+      >
+        {label}
+      </label>
+      <select
+        id={id}
+        value={selectValue}
+        disabled={saving}
+        onChange={(e) => {
+          if (e.target.value === ADD_NEW_OPTION) {
+            setIsAdding(true)
+            setDraft('')
+            return
+          }
+          setIsAdding(false)
+          onChange(e.target.value)
+        }}
+        className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30 disabled:opacity-60"
+      >
+        {options.length === 0 && !valueId ? (
+          <option value="" disabled>
+            Select or add…
+          </option>
+        ) : !valueId && !isAdding ? (
+          <option value="" disabled>
+            Select a team…
+          </option>
+        ) : null}
+        {options.map((entity) => (
+          <option key={entity.id} value={entity.id}>
+            {entity.name}
+          </option>
+        ))}
+        <option value={ADD_NEW_OPTION}>{addNewLabel}</option>
+      </select>
+      {isAdding && (
+        <input
+          type="text"
+          autoFocus
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void commitDraft()
+            if (e.key === 'Escape') {
+              setDraft('')
+              setIsAdding(false)
+            }
+          }}
+          onBlur={() => void commitDraft()}
+          placeholder={placeholder}
+          className="mt-2 w-full rounded-xl border border-neon/50 bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+        />
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* MatchHeader                                                         */
+/* ------------------------------------------------------------------ */
+
+function formatClock(totalSeconds: number) {
+  const m = Math.floor(totalSeconds / 60)
+  const s = totalSeconds % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+type ScoreStepperProps = {
+  label: string
+  value: number
+  onChange: (delta: number) => void
+  align: 'left' | 'right'
+}
+
+function ScoreStepper({ label, value, onChange, align }: ScoreStepperProps) {
+  const buttons = (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        aria-label={`Add goal for ${label}`}
+        onClick={() => onChange(1)}
+        className="flex size-11 items-center justify-center rounded-md bg-secondary text-foreground transition-transform active:scale-90 active:bg-neon active:text-neon-foreground"
+      >
+        <Plus className="size-6" strokeWidth={3} />
+      </button>
+      <button
+        type="button"
+        aria-label={`Remove goal for ${label}`}
+        onClick={() => onChange(-1)}
+        className="flex size-11 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-transform active:scale-90 active:bg-danger active:text-danger-foreground"
+      >
+        <Minus className="size-6" strokeWidth={3} />
+      </button>
+    </div>
+  )
+
+  return (
+    <div className="flex items-center gap-3">
+      {align === 'left' && buttons}
+      <div className="text-center">
+        <div className="font-display text-6xl font-bold leading-none tabular-nums text-foreground">
+          {value}
+        </div>
+        <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+          {label}
+        </div>
+      </div>
+      {align === 'right' && buttons}
+    </div>
+  )
+}
+
+type MatchHeaderProps = {
+  teamName: string
+  coachName: string
+  opponent: string
+  homeScore: number
+  awayScore: number
+  seconds: number
+  period: MatchPeriod
+  halfLengthMinutes: number
+  running: boolean
+  periodClockStarted: boolean
+  onHomeScore: (delta: number) => void
+  onAwayScore: (delta: number) => void
+}
+
+function MatchHeader({
+  teamName,
+  coachName,
+  opponent,
+  homeScore,
+  awayScore,
+  seconds,
+  period,
+  halfLengthMinutes,
+  running,
+  periodClockStarted,
+  onHomeScore,
+  onAwayScore,
+}: MatchHeaderProps) {
+  const homeLabel = teamName.trim() || 'Home'
+  const homeShort = nameShort(teamName, 'HOM')
+  const awayName = opponent.trim() || 'Opponent'
+  const awayShort = nameShort(opponent, 'OPP')
+  const halfReference = formatClock(halfDurationSeconds(halfLengthMinutes))
+  const coachLine = coachName.trim() ? `Coach: ${coachName.trim()}` : null
+  const halfEnded = periodClockStarted && isHalfExpired(seconds)
+  const waitingToStart = !periodClockStarted
+
+  return (
+    <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="mx-auto max-w-md px-4 pb-4 pt-3">
+        <div className="flex items-center justify-center gap-2 text-center text-sm font-semibold">
+          <span className="text-foreground">{homeLabel}</span>
+          <span className="rounded bg-neon px-1.5 py-0.5 text-[10px] font-bold text-neon-foreground">
+            H
+          </span>
+          <span className="text-muted-foreground">vs.</span>
+          <span className="text-foreground">{awayName}</span>
+          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+            A
+          </span>
+        </div>
+
+        <p className="mt-1 text-center text-xs font-semibold text-muted-foreground">
+          Team: {homeLabel}
+          {coachLine ? ` | ${coachLine}` : ''}
+        </p>
+
+        <div className="mt-2 flex flex-col items-center gap-1">
+          <div className="flex items-center justify-center gap-2">
+            {running && (
+              <span className="flex size-2 items-center justify-center">
+                <span className="size-2 animate-pulse rounded-full bg-neon" />
+              </span>
+            )}
+            {halfEnded && (
+              <span className="rounded bg-orange-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white animate-pulse">
+                Half Ended
+              </span>
+            )}
+            <span
+              className={cn(
+                'font-display text-4xl font-bold tabular-nums tracking-wider',
+                halfEnded ? 'text-orange-500' : waitingToStart ? 'text-muted-foreground' : 'text-neon',
+              )}
+            >
+              {formatClock(seconds)}
+            </span>
+            <span className="rounded bg-secondary px-2 py-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              {periodLabel(period)}
+            </span>
+          </div>
+          <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            {waitingToStart
+              ? `Ready · ${halfReference} countdown`
+              : halfEnded
+                ? 'Clock stopped · confirm below'
+                : `Countdown · ${halfReference} half`}
+          </span>
+        </div>
+
+        <div className="mt-3 flex items-center justify-center gap-5">
+          <ScoreStepper label={homeShort} value={homeScore} onChange={onHomeScore} align="left" />
+          <span className="font-display text-3xl font-bold text-muted-foreground">-</span>
+          <ScoreStepper label={awayShort} value={awayScore} onChange={onAwayScore} align="right" />
+        </div>
+      </div>
+    </header>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* SetupScreen                                                         */
+/* ------------------------------------------------------------------ */
+
+type PlayerEditDraft = {
+  id: string
+  name: string
+  number: string
+  isGuest: boolean
+}
+
+type AddPlayerToRosterProps = {
+  selectedTeamId: string | null
+  suggestedJersey: number
+  onAdd: (input: { name: string; jersey: number | null; isGuest: boolean }) => Promise<void>
+}
+
+function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayerToRosterProps) {
+  const [expanded, setExpanded] = useState(false)
+  const [name, setName] = useState('')
+  const [number, setNumber] = useState('')
+  const [isGuest, setIsGuest] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const teamSelected = Boolean(selectedTeamId)
+  const canSubmit = teamSelected && name.trim().length > 0 && !saving
+
+  const resetForm = () => {
+    setName('')
+    setIsGuest(false)
+    setNumber('')
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit || !selectedTeamId) return
+
+    const trimmed = name.trim()
+    const jerseyRaw = number.trim()
+    let jersey: number | null = null
+    if (jerseyRaw !== '') {
+      const parsed = Number(jerseyRaw)
+      if (Number.isNaN(parsed)) return
+      jersey = parsed
+    }
+
+    setSaving(true)
+    try {
+      await onAdd({ name: trimmed, jersey, isGuest })
+      resetForm()
+      setExpanded(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        disabled={!teamSelected}
+        onClick={() => setExpanded(true)}
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-athletic/50 bg-athletic/5 py-3.5 text-sm font-bold uppercase tracking-wide text-athletic transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <UserPlus className="size-4" strokeWidth={2.5} />
+        + Add Guest/New Player
+      </button>
+    )
+  }
+
+  return (
+    <section
+      aria-label="Add player to roster"
+      className="mt-3 rounded-xl border border-athletic/40 bg-card p-4"
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-display text-sm font-bold uppercase tracking-wide text-foreground">
+          <UserPlus className="size-4 text-athletic" />
+          New Player
+        </h3>
+        <button
+          type="button"
+          onClick={() => {
+            resetForm()
+            setExpanded(false)
+          }}
+          aria-label="Close add player form"
+          className="flex size-8 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-90"
+        >
+          <X className="size-4" strokeWidth={2.5} />
+        </button>
+      </div>
+
+      {!teamSelected && (
+        <p className="mb-3 text-sm text-muted-foreground">Select a team above to add players.</p>
+      )}
+
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
+          <div>
+            <label
+              htmlFor="new-player-name"
+              className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Name
+            </label>
+            <input
+              id="new-player-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Player name"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="new-player-jersey"
+              className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Jersey Number
+            </label>
+            <input
+              id="new-player-jersey"
+              type="number"
+              min={0}
+              max={99}
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              placeholder={suggestedJersey ? `Optional · e.g. ${suggestedJersey}` : 'Optional'}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold tabular-nums text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
+            <label htmlFor="new-player-guest" className="text-sm font-bold text-foreground">
+              Is Guest Player?
+            </label>
+            <button
+              id="new-player-guest"
+              type="button"
+              role="switch"
+              aria-checked={isGuest}
+              onClick={() => setIsGuest((v) => !v)}
+              className={cn(
+                'relative h-7 w-12 rounded-full transition-colors',
+                isGuest ? 'bg-athletic' : 'bg-secondary',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 size-6 rounded-full bg-white shadow transition-transform',
+                  isGuest ? 'left-5' : 'left-0.5',
+                )}
+              />
+            </button>
+          </div>
+
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="w-full rounded-lg bg-athletic py-3 text-sm font-bold uppercase tracking-wide text-athletic-foreground active:scale-[0.98] disabled:opacity-40"
+          >
+            {saving ? 'Adding…' : 'Add Player'}
+          </button>
+        </form>
+    </section>
+  )
+}
+
+type SetupScreenProps = {
+  teams: NamedEntity[]
+  selectedTeamId: string | null
+  onTeamChange: (id: string) => void
+  onAddTeam: (name: string) => Promise<string | void>
+  coaches: NamedEntity[]
+  selectedCoachId: string | null
+  onCoachChange: (id: string) => void
+  onAddCoach: (name: string) => Promise<void>
+  rosterLoading: boolean
+  suggestedJersey: number
+  onAddPlayer: (input: { name: string; jersey: number | null; isGuest: boolean }) => Promise<void>
+  opponent: string
+  onOpponentChange: (value: string) => void
+  matchDate: string
+  onMatchDateChange: (value: string) => void
+  matchTime: string
+  onMatchTimeChange: (value: string) => void
+  location: string
+  onLocationChange: (value: string) => void
+  tournamentGame: boolean
+  onTournamentGameChange: (value: boolean) => void
+  halfLengthMinutes: number
+  onHalfLengthChange: (value: number) => void
+  masterRoster: RosterPlayer[]
+  setupLineup: SetupLineup
+  firstHalfFormation: string
+  onSetFirstHalfFormation: (formationId: string) => void
+  onSetAttending: (id: string, attending: boolean) => void
+  onSetStartFirstHalf: (id: string, starts: boolean) => void
+  onSetMatchPosition: (id: string, position: string) => void
+  onEditPlayer: (id: string) => void
+  onStartMatch: () => void
+  canStartMatch: boolean
+  attendingCount: number
+}
+
+function SetupScreen({
+  teams,
+  selectedTeamId,
+  onTeamChange,
+  onAddTeam,
+  coaches,
+  selectedCoachId,
+  onCoachChange,
+  onAddCoach,
+  rosterLoading,
+  suggestedJersey,
+  onAddPlayer,
+  opponent,
+  onOpponentChange,
+  matchDate,
+  onMatchDateChange,
+  matchTime,
+  onMatchTimeChange,
+  location,
+  onLocationChange,
+  tournamentGame,
+  onTournamentGameChange,
+  halfLengthMinutes,
+  onHalfLengthChange,
+  masterRoster,
+  setupLineup,
+  firstHalfFormation,
+  onSetFirstHalfFormation,
+  onSetAttending,
+  onSetStartFirstHalf,
+  onSetMatchPosition,
+  onEditPlayer,
+  onStartMatch,
+  canStartMatch,
+  attendingCount,
+}: SetupScreenProps) {
+  return (
+    <main className="min-h-dvh bg-background pb-10">
+      <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
+        <header>
+          <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
+            Game Day Setup
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Configure match details and your 9v9 lineups before kickoff.
+          </p>
+        </header>
+
+        <section className="space-y-4">
+          <EntitySelect
+            id="team-name"
+            label="Team Name"
+            valueId={selectedTeamId}
+            options={teams}
+            addNewLabel="+ Add New Team"
+            placeholder="e.g. FC Richmond"
+            onChange={onTeamChange}
+            onAddNew={onAddTeam}
+          />
+
+          <EntitySelect
+            id="coach-name"
+            label="Coach Name"
+            valueId={selectedCoachId}
+            options={coaches}
+            addNewLabel="+ Add New Coach"
+            placeholder="e.g. Coach Smith"
+            onChange={onCoachChange}
+            onAddNew={onAddCoach}
+          />
+
+          <div>
+            <label
+              htmlFor="opponent"
+              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Opponent Name
+            </label>
+            <input
+              id="opponent"
+              type="text"
+              value={opponent}
+              onChange={(e) => onOpponentChange(e.target.value)}
+              placeholder="e.g. Beach FC"
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label
+                htmlFor="match-date"
+                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                Game Date
+              </label>
+              <input
+                id="match-date"
+                type="date"
+                value={matchDate}
+                onChange={(e) => onMatchDateChange(e.target.value)}
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="match-time"
+                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                Game Time
+              </label>
+              <input
+                id="match-time"
+                type="time"
+                value={matchTime}
+                onChange={(e) => onMatchTimeChange(e.target.value)}
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold tabular-nums text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="location"
+              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Location
+            </label>
+            <input
+              id="location"
+              type="text"
+              value={location}
+              onChange={(e) => onLocationChange(e.target.value)}
+              placeholder="e.g. Bryan Park Field 3"
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
+            <span className="text-sm font-bold text-foreground">Tournament Game</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={tournamentGame}
+              onClick={() => onTournamentGameChange(!tournamentGame)}
+              className={cn(
+                'relative h-8 w-14 rounded-full transition-colors',
+                tournamentGame ? 'bg-neon' : 'bg-secondary',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                  tournamentGame ? 'left-7' : 'left-1',
+                )}
+              />
+            </button>
+          </div>
+
+          <div>
+            <label
+              htmlFor="half-length"
+              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Half Length (minutes)
+            </label>
+            <select
+              id="half-length"
+              value={halfLengthMinutes}
+              onChange={(e) => onHalfLengthChange(Number(e.target.value))}
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            >
+              {HALF_LENGTH_OPTIONS.map((mins) => (
+                <option key={mins} value={mins}>
+                  {mins} minutes
+                </option>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        <section aria-label="Lineup builder">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-display text-xl font-bold uppercase tracking-wide text-foreground">
+              <Users className="size-5 text-athletic" />
+              9v9 Lineup Builder
+            </h2>
+            <span className="rounded bg-secondary px-2 py-0.5 text-xs font-bold text-muted-foreground">
+              {attendingCount} attending
+            </span>
+          </div>
+
+          {!selectedTeamId ? (
+            <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+              Select a team to load its roster and build your lineup.
+            </p>
+          ) : rosterLoading ? (
+            <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+              Loading roster…
+            </p>
+          ) : masterRoster.length === 0 ? (
+            <>
+              <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+                No players on this team yet. Add a player below to get started.
+              </p>
+              <AddPlayerToRoster
+                selectedTeamId={selectedTeamId}
+                suggestedJersey={suggestedJersey}
+                onAdd={onAddPlayer}
+              />
+            </>
+          ) : (
+            <>
+              <TacticalPitchLineup
+                key={selectedTeamId ?? 'no-team'}
+                title="1st Half Lineup"
+                formationId={firstHalfFormation}
+                onFormationChange={onSetFirstHalfFormation}
+                players={masterRoster.map((player) => ({
+                  id: player.id,
+                  name: player.name,
+                  number: player.number,
+                  isGuest: player.isGuest,
+                  meta: `Roster: ${player.position}`,
+                }))}
+                attending={setupLineup.attending}
+                starters={setupLineup.startFirstHalf}
+                maxFieldPlayers={MAX_FIELD_PLAYERS}
+                onAssignStarter={(playerId, _role: FormationRole, tacticalPosition) => {
+                  onSetStartFirstHalf(playerId, true)
+                  onSetMatchPosition(playerId, tacticalPosition)
+                }}
+                onRemoveStarter={(playerId) => onSetStartFirstHalf(playerId, false)}
+                onSetAttending={onSetAttending}
+                onEditPlayer={onEditPlayer}
+              />
+
+              <AddPlayerToRoster
+                selectedTeamId={selectedTeamId}
+                suggestedJersey={suggestedJersey}
+                onAdd={onAddPlayer}
+              />
+            </>
+          )}
+        </section>
+
+        <button
+          type="button"
+          onClick={onStartMatch}
+          disabled={!canStartMatch}
+          className="flex w-full items-center justify-center gap-3 rounded-xl bg-neon py-8 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <span className="font-display text-4xl font-bold uppercase tracking-wide">Start Match</span>
+        </button>
+      </div>
+    </main>
+  )
+}
+
+type HalftimeSetupScreenProps = {
+  teamName: string
+  opponent: string
+  seconds: number
+  halfLengthMinutes: number
+  players: MatchPlayer[]
+  secondHalfFormation: string
+  onSetSecondHalfFormation: (formationId: string) => void
+  secondHalfStarters: Record<string, boolean>
+  onAssignSecondHalfStarter: (playerId: string, role: FormationRole, tacticalPosition: string) => void
+  onRemoveSecondHalfStarter: (playerId: string) => void
+  onBeginSecondHalf: () => void
+  canBeginSecondHalf: boolean
+}
+
+function HalftimeSetupScreen({
+  teamName,
+  opponent,
+  seconds,
+  halfLengthMinutes,
+  players,
+  secondHalfFormation,
+  onSetSecondHalfFormation,
+  secondHalfStarters,
+  onAssignSecondHalfStarter,
+  onRemoveSecondHalfStarter,
+  onBeginSecondHalf,
+  canBeginSecondHalf,
+}: HalftimeSetupScreenProps) {
+  const attendingPlayers = players.filter((p) => p.attending)
+
+  return (
+    <main className="min-h-dvh bg-background pb-10">
+      <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
+        <header>
+          <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
+            Halftime Setup
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {teamName.trim() || 'Home'} vs {opponent.trim() || 'Opponent'} · 1st half ended at{' '}
+            {formatClock(seconds)} / {formatClock(halfLengthMinutes * 60)}
+          </p>
+        </header>
+
+        <TacticalPitchLineup
+          title="2nd Half Lineup"
+          formationId={secondHalfFormation}
+          onFormationChange={onSetSecondHalfFormation}
+          players={attendingPlayers.map((player) => ({
+            id: player.id,
+            name: player.name,
+            number: player.number,
+            isGuest: player.isGuest,
+            badge: player.isFirstHalfStarter ? 'Started 1st Half' : undefined,
+            meta: `${player.matchPosition} · ${formatPlayingTimeBadge(player.totalSecondsPlayed)}`,
+          }))}
+          attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
+          starters={secondHalfStarters}
+          maxFieldPlayers={MAX_FIELD_PLAYERS}
+          hydrateFromStarters
+          onAssignStarter={onAssignSecondHalfStarter}
+          onRemoveStarter={onRemoveSecondHalfStarter}
+        />
+
+        <button
+          type="button"
+          onClick={onBeginSecondHalf}
+          disabled={!canBeginSecondHalf}
+          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-neon py-8 text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <span className="font-display text-4xl font-black uppercase tracking-wide">
+            Start 2nd Half
+          </span>
+        </button>
+      </div>
+    </main>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* PlayerEditModal                                                     */
+/* ------------------------------------------------------------------ */
+
+function PlayerEditModal({
+  draft,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  draft: PlayerEditDraft | null
+  onChange: (draft: PlayerEditDraft) => void
+  onSave: () => void
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (!draft) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [draft, onClose])
+
+  if (!draft) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Edit Player"
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-background/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto w-full max-w-md rounded-t-2xl border-t border-border bg-popover px-5 pb-8 pt-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-display text-2xl font-bold uppercase text-foreground">Edit Player</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex size-11 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-90"
+          >
+            <X className="size-6" strokeWidth={3} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label
+              htmlFor="player-name"
+              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Name
+            </label>
+            <input
+              id="player-name"
+              type="text"
+              value={draft.name}
+              onChange={(e) => onChange({ ...draft, name: e.target.value })}
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="player-number"
+              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Jersey Number
+            </label>
+            <input
+              id="player-number"
+              type="number"
+              min={0}
+              max={99}
+              value={draft.number}
+              onChange={(e) => onChange({ ...draft, number: e.target.value })}
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold tabular-nums text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
+            <label htmlFor="edit-player-guest" className="text-sm font-bold text-foreground">
+              Is Guest Player?
+            </label>
+            <button
+              id="edit-player-guest"
+              type="button"
+              role="switch"
+              aria-checked={draft.isGuest}
+              onClick={() => onChange({ ...draft, isGuest: !draft.isGuest })}
+              className={cn(
+                'relative h-8 w-14 rounded-full transition-colors',
+                draft.isGuest ? 'bg-athletic' : 'bg-secondary',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                  draft.isGuest ? 'left-7' : 'left-1',
+                )}
+              />
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!draft.name.trim()}
+          className="mt-6 w-full rounded-xl bg-athletic py-4 font-display text-xl font-bold uppercase tracking-wide text-athletic-foreground active:scale-[0.98] disabled:opacity-40"
+        >
+          Save Player
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* ActionButtons                                                       */
+/* ------------------------------------------------------------------ */
+
+type ActionButtonsProps = {
+  onAction: (type: ActionType) => void
+}
+
+function ActionButtons({ onAction }: ActionButtonsProps) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <button
+        type="button"
+        onClick={() => onAction('GOAL')}
+        className="flex items-center justify-center gap-2 rounded-xl bg-neon py-8 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95"
+      >
+        <Goal className="size-8" strokeWidth={2.5} />
+        <span className="font-display text-2xl font-bold uppercase tracking-wide">Log Goal</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => onAction('ASSIST')}
+        className="flex items-center justify-center gap-2 rounded-xl bg-athletic py-8 text-athletic-foreground transition-transform active:scale-[0.98] active:brightness-95"
+      >
+        <Zap className="size-8" strokeWidth={2.5} />
+        <span className="font-display text-2xl font-bold uppercase tracking-wide">Log Assist</span>
+      </button>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* PlayerSelectModal                                                   */
+/* ------------------------------------------------------------------ */
+
+const MODAL_TITLES: Record<ActionType, string> = {
+  GOAL: 'Who scored?',
+  ASSIST: 'Who assisted?',
+}
+
+const MODAL_ACCENTS: Record<ActionType, string> = {
+  GOAL: 'text-neon',
+  ASSIST: 'text-athletic',
+}
+
+function PlayerSelectModal({
+  action,
+  players,
+  onSelect,
+  onClose,
+}: {
+  action: ActionType | null
+  players: MatchPlayer[]
+  onSelect: (player: MatchPlayer) => void
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (!action) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [action, onClose])
+
+  if (!action) return null
+
+  const onFieldPlayers = players.filter((p) => p.attending && p.isOnField)
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={MODAL_TITLES[action]}
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-background/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto flex max-h-[85vh] w-full max-w-md flex-col rounded-t-2xl border-t border-border bg-popover shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pb-3 pt-4">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+              Log {action.toLowerCase()}
+            </div>
+            <h2 className={cn('font-display text-2xl font-bold uppercase', MODAL_ACCENTS[action])}>
+              {MODAL_TITLES[action]}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex size-11 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-90"
+          >
+            <X className="size-6" strokeWidth={3} />
+          </button>
+        </div>
+
+        <ul className="grid grid-cols-1 gap-2 overflow-y-auto px-4 pb-8">
+          {onFieldPlayers.map((player) => (
+            <li key={player.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(player)}
+                className="flex w-full items-center gap-3 rounded-xl bg-card px-3 py-3 text-left transition-transform active:scale-[0.98] active:bg-secondary"
+              >
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-full border-2 border-border font-display text-2xl font-bold tabular-nums text-foreground">
+                  {formatJersey(player.number)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="block truncate text-lg font-bold leading-tight text-card-foreground">
+                      {player.name}
+                    </span>
+                    {player.isGuest && <GuestBadge />}
+                  </span>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {player.matchPosition}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* MatchSummary                                                        */
+/* ------------------------------------------------------------------ */
+
+type MatchSummaryProps = {
+  title?: string
+  teamName: string
+  coachName: string
+  opponent: string
+  location: string
+  tournamentGame: boolean
+  homeScore: number
+  awayScore: number
+  seconds: number
+  period: MatchPeriod
+  halfLengthMinutes: number
+  players: MatchPlayer[]
+  onCopySummary: () => void
+}
+
+function MatchSummary({
+  title = 'Match Summary',
+  teamName,
+  coachName,
+  opponent,
+  location,
+  tournamentGame,
+  homeScore,
+  awayScore,
+  seconds,
+  period,
+  halfLengthMinutes,
+  players,
+  onCopySummary,
+}: MatchSummaryProps) {
+  const attending = players.filter((p) => p.attending)
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-display text-lg font-bold uppercase tracking-wide text-foreground">
+          {title}
+        </h2>
+        <button
+          type="button"
+          onClick={onCopySummary}
+          className="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-foreground active:scale-95"
+        >
+          Copy Export
+        </button>
+      </div>
+      <dl className="space-y-1 text-sm">
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">Team</dt>
+          <dd className="font-semibold text-foreground">{teamName}</dd>
+        </div>
+        {coachName.trim() && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Coach</dt>
+            <dd className="font-semibold text-foreground">{coachName}</dd>
+          </div>
+        )}
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">Opponent</dt>
+          <dd className="font-semibold text-foreground">{opponent.trim() || '—'}</dd>
+        </div>
+        {location.trim() && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Location</dt>
+            <dd className="font-semibold text-foreground">{location}</dd>
+          </div>
+        )}
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">Score</dt>
+          <dd className="font-semibold text-foreground">
+            {homeScore} – {awayScore}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">Clock</dt>
+          <dd className="font-semibold text-foreground">
+            {formatClock(seconds)} · {periodLabel(period)} · {halfLengthMinutes}m halves
+          </dd>
+        </div>
+        {tournamentGame && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Tournament</dt>
+            <dd className="font-semibold text-neon">Yes</dd>
+          </div>
+        )}
+      </dl>
+      {attending.length > 0 && (
+        <ul className="mt-3 space-y-1 border-t border-border pt-3 text-xs">
+          {attending.map((p) => (
+            <li key={p.id} className="flex justify-between gap-2 text-muted-foreground">
+              <span>
+                #{p.number ?? '—'} {p.name} ({p.matchPosition})
+              </span>
+              <span className="font-bold tabular-nums text-athletic">
+                {formatPlayingTimeBadge(getLiveSecondsPlayed(p, seconds))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function PeriodStartButton({
+  label,
+  onStart,
+}: {
+  label: string
+  onStart: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onStart}
+      className="w-full rounded-2xl bg-neon py-8 font-display text-4xl font-black uppercase tracking-wide text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95"
+    >
+      {label}
+    </button>
+  )
+}
+
+function EndPeriodButton({
+  period,
+  onEndFirstHalf,
+  onEndGame,
+}: {
+  period: MatchPeriod
+  onEndFirstHalf: () => void
+  onEndGame: () => void
+}) {
+  const isFirstHalf = period === '1st'
+
+  return (
+    <button
+      type="button"
+      onClick={isFirstHalf ? onEndFirstHalf : onEndGame}
+      className="w-full rounded-2xl bg-orange-600 py-7 font-display text-3xl font-black uppercase tracking-wider text-white shadow-xl shadow-orange-600/40 transition-transform active:scale-[0.98] active:brightness-95"
+    >
+      {isFirstHalf ? 'End 1st Half' : 'End of Game'}
+    </button>
+  )
+}
+
+function QaSpeedPanel({
+  speed,
+  onSpeedChange,
+  expanded,
+  onToggleExpanded,
+}: {
+  speed: QaSpeedMultiplier
+  onSpeedChange: (speed: QaSpeedMultiplier) => void
+  expanded: boolean
+  onToggleExpanded: () => void
+}) {
+  return (
+    <div className="fixed bottom-20 left-3 z-40">
+      {expanded ? (
+        <div className="rounded-lg border border-border/60 bg-card/95 p-2.5 shadow-lg backdrop-blur-sm">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              QA Test Speed
+            </span>
+            <button
+              type="button"
+              aria-label="Collapse QA panel"
+              onClick={onToggleExpanded}
+              className="flex size-6 items-center justify-center rounded-md bg-secondary text-muted-foreground active:scale-90"
+            >
+              <X className="size-3.5" strokeWidth={2.5} />
+            </button>
+          </div>
+          <div className="flex gap-1">
+            {QA_SPEED_MULTIPLIERS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => onSpeedChange(option)}
+                className={cn(
+                  'min-w-[2.75rem] rounded-md px-2 py-1.5 text-xs font-bold tabular-nums transition-colors active:scale-95',
+                  speed === option
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-secondary text-muted-foreground',
+                )}
+              >
+                {option === 1 ? '1x' : `${option}x`}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+            {speed === 1
+              ? 'Normal match speed'
+              : `${speed} match seconds per real second`}
+          </p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          className={cn(
+            'rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-sm transition-colors active:scale-95',
+            speed > 1
+              ? 'border-orange-500/50 bg-orange-600/20 text-orange-400'
+              : 'border-border/60 bg-card/80 text-muted-foreground',
+          )}
+        >
+          QA{speed > 1 ? ` · ${speed}x` : ''}
+        </button>
+      )}
+    </div>
+  )
+}
+
+type PostGameSummaryScreenProps = {
+  teamName: string
+  coachName: string
+  opponent: string
+  location: string
+  tournamentGame: boolean
+  homeScore: number
+  awayScore: number
+  seconds: number
+  period: MatchPeriod
+  halfLengthMinutes: number
+  players: MatchPlayer[]
+  onCopySummary: () => void
+  onDone: () => void
+}
+
+function PostGameSummaryScreen({
+  teamName,
+  coachName,
+  opponent,
+  location,
+  tournamentGame,
+  homeScore,
+  awayScore,
+  seconds,
+  period,
+  halfLengthMinutes,
+  players,
+  onCopySummary,
+  onDone,
+}: PostGameSummaryScreenProps) {
+  return (
+    <main className="min-h-dvh bg-background pb-10">
+      <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
+        <header className="text-center">
+          <h1 className="font-display text-4xl font-black uppercase tracking-wide text-foreground">
+            Final Whistle
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {teamName.trim() || 'Home'} {homeScore} – {awayScore}{' '}
+            {opponent.trim() || 'Opponent'}
+          </p>
+        </header>
+
+        <MatchSummary
+          title="Post-Game Summary"
+          teamName={teamName}
+          coachName={coachName}
+          opponent={opponent}
+          location={location}
+          tournamentGame={tournamentGame}
+          homeScore={homeScore}
+          awayScore={awayScore}
+          seconds={seconds}
+          period={period}
+          halfLengthMinutes={halfLengthMinutes}
+          players={players}
+          onCopySummary={onCopySummary}
+        />
+
+        <button
+          type="button"
+          onClick={onDone}
+          className="w-full rounded-xl bg-neon py-5 font-display text-2xl font-bold uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98]"
+        >
+          Done — New Match
+        </button>
+      </div>
+    </main>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* App                                                                 */
+/* ------------------------------------------------------------------ */
+
+export default function App() {
+  const {
+    loading,
+    loadError,
+    teams,
+    coaches,
+    masterRoster,
+    appMode,
+    matchId,
+    players,
+    setPlayers,
+    homeScore,
+    setHomeScore,
+    awayScore,
+    setAwayScore,
+    seconds,
+    setSeconds,
+    period,
+    running,
+    setRunning,
+    periodClockStarted,
+    setPeriodClockStarted,
+    rosterLoading,
+    selectedTeamId,
+    selectTeam,
+    selectedCoachId,
+    setSelectedCoachId,
+    matchTeamName,
+    matchCoachName,
+    matchOpponent,
+    matchLocation,
+    matchTournamentGame,
+    halfLengthMinutes,
+    setHalfLengthMinutes,
+    opponent,
+    setOpponent,
+    location,
+    setLocation,
+    tournamentGame,
+    setTournamentGame,
+    matchDate,
+    setMatchDate,
+    matchTime,
+    setMatchTime,
+    setupLineup,
+    matchPositions,
+    matchFormations,
+    setFirstHalfFormation,
+    setSecondHalfFormation,
+    setActiveFormation,
+    halftimeSecondHalf,
+    setHalftimeStarter,
+    enterHalftime,
+    beginSecondHalf,
+    finishGame,
+    returnToSetup,
+    createTeam,
+    createCoach,
+    addPlayer,
+    updatePlayer,
+    beginMatch,
+    endMatch,
+    setPlayerAttending,
+    setStartFirstHalf,
+    setSetupMatchPosition,
+  } = useGameDayApp()
+
+  const suggestedJersey = nextJerseyNumber(masterRoster)
+
+  const [pendingAction, setPendingAction] = useState<ActionType | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
+  const [startingMatch, setStartingMatch] = useState(false)
+  const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
+  const [qaPanelExpanded, setQaPanelExpanded] = useState(false)
+
+  const clockSyncRef = useRef({ homeScore, awayScore, seconds, period, periodClockStarted })
+
+  useEffect(() => {
+    clockSyncRef.current = { homeScore, awayScore, seconds, period, periodClockStarted }
+  }, [homeScore, awayScore, seconds, period, periodClockStarted])
+
+  const attendingCount = getAttendingIds(setupLineup).length
+  const canStartMatch = isSetupLineupValid(setupLineup) && Boolean(selectedTeamId)
+  const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf)
+  const activeFormation = period === '1st' ? matchFormations.first : matchFormations.second
+
+  useEffect(() => {
+    if (appMode !== 'match' || !running || !matchId) return
+    const id = setInterval(() => {
+      setSeconds((s) => {
+        const next = tickCountdownClock(s, qaSpeedMultiplier)
+        if (next <= 0) {
+          setRunning(false)
+          return 0
+        }
+        return next
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [appMode, running, matchId, qaSpeedMultiplier, setSeconds, setRunning])
+
+  useEffect(() => {
+    if (appMode !== 'match' || !matchId) return
+    const id = setInterval(() => {
+      const clock = clockSyncRef.current
+      syncMatchClock(matchId, {
+        homeScore: clock.homeScore,
+        awayScore: clock.awayScore,
+        seconds: clock.seconds,
+        period: clock.period,
+        periodClockStarted: clock.periodClockStarted,
+      })
+    }, 5000)
+    return () => clearInterval(id)
+  }, [appMode, matchId])
+
+  useEffect(() => {
+    if (!toast) return
+    const id = setTimeout(() => setToast(null), 2200)
+    return () => clearTimeout(id)
+  }, [toast])
+
+  const handleStartMatch = useCallback(async () => {
+    if (!canStartMatch || !selectedTeamId || startingMatch) return
+
+    const team = teams.find((t) => t.id === selectedTeamId)
+    const coach = selectedCoachId ? coaches.find((c) => c.id === selectedCoachId) : null
+    if (!team) return
+
+    setStartingMatch(true)
+    try {
+      const attendingPlayers = masterRoster.filter(
+        (p) => setupLineup.attending[p.id] !== false,
+      )
+
+      await beginMatch({
+        teamId: selectedTeamId,
+        coachId: selectedCoachId,
+        teamName: team.name,
+        coachName: coach?.name ?? '',
+        opponent,
+        location,
+        tournamentGame,
+        halfLength: halfLengthMinutes,
+        matchDate,
+        matchTime,
+        attendingPlayers,
+        firstHalfStarterIds: getFirstHalfStarterIds(setupLineup),
+        matchPositions,
+        firstHalfFormation: matchFormations.first,
+      })
+
+      setPendingAction(null)
+      setQaSpeedMultiplier(1)
+      setQaPanelExpanded(false)
+      setToast('Match started')
+    } catch (err) {
+      setToast(formatSupabaseError(err))
+    } finally {
+      setStartingMatch(false)
+    }
+  }, [
+    canStartMatch,
+    selectedTeamId,
+    selectedCoachId,
+    startingMatch,
+    teams,
+    coaches,
+    setupLineup,
+    masterRoster,
+    opponent,
+    location,
+    tournamentGame,
+    halfLengthMinutes,
+    matchDate,
+    matchTime,
+    matchPositions,
+    matchFormations,
+    beginMatch,
+  ])
+
+  const handleResetMatch = useCallback(async () => {
+    if (matchId) {
+      try {
+        await upsertMatchStats(matchId, players)
+      } catch (err) {
+        console.error('[reset] failed to flush match stats', err)
+      }
+    }
+    await endMatch()
+    setPendingAction(null)
+    setQaSpeedMultiplier(1)
+    setQaPanelExpanded(false)
+    setToast(null)
+  }, [matchId, players, endMatch])
+
+  const handleCopySummary = useCallback(() => {
+    const text = buildMatchSummaryText({
+      teamName: matchTeamName,
+      coachName: matchCoachName,
+      opponent: matchOpponent,
+      location: matchLocation,
+      tournamentGame: matchTournamentGame,
+      homeScore,
+      awayScore,
+      seconds,
+      period,
+      halfLengthMinutes,
+      players,
+      clockSeconds: seconds,
+    })
+    void navigator.clipboard.writeText(text).then(() => {
+      setToast('Summary copied to clipboard')
+    })
+  }, [
+    matchTeamName,
+    matchCoachName,
+    matchOpponent,
+    matchLocation,
+    matchTournamentGame,
+    homeScore,
+    awayScore,
+    seconds,
+    period,
+    halfLengthMinutes,
+    players,
+  ])
+
+  const handleStartFirstHalf = useCallback(() => {
+    setPlayers((prev) => {
+      const stamped = stampAllOnField(prev, seconds)
+      if (matchId) syncMatchStats(matchId, stamped)
+      return stamped
+    })
+    setPeriodClockStarted(true)
+    setRunning(true)
+    if (matchId) {
+      syncMatchRecord(matchId, {
+        period_clock_started: true,
+        clock_seconds: seconds,
+      })
+    }
+    setToast(`1st half underway · ${formatClock(seconds)}`)
+  }, [seconds, matchId, setPlayers, setPeriodClockStarted, setRunning])
+
+  const handleEnterHalftime = useCallback(async () => {
+    setRunning(false)
+    await enterHalftime(seconds)
+    if (matchId) {
+      syncMatchRecord(matchId, {
+        period_clock_started: false,
+        clock_seconds: seconds,
+      })
+    }
+    setToast('Halftime — set your 2nd half lineup')
+  }, [seconds, matchId, enterHalftime, setRunning])
+
+  const handleEndGame = useCallback(async () => {
+    setRunning(false)
+    await finishGame(seconds)
+    if (matchId) {
+      syncMatchRecord(matchId, {
+        period_clock_started: false,
+        clock_seconds: seconds,
+      })
+    }
+    setPendingAction(null)
+    setToast('Match complete')
+  }, [seconds, matchId, finishGame, setRunning])
+
+  const handleBeginSecondHalf = useCallback(async () => {
+    if (!canBeginSecondHalf) return
+    const newClock = halfDurationSeconds(halfLengthMinutes)
+    await beginSecondHalf()
+    if (matchId) {
+      syncMatchRecord(matchId, {
+        period: '2nd',
+        clock_seconds: newClock,
+        period_clock_started: true,
+      })
+    }
+    setToast(`2nd half underway · ${formatClock(newClock)}`)
+  }, [canBeginSecondHalf, halfLengthMinutes, matchId, beginSecondHalf])
+
+  const openEditPlayer = useCallback(
+    (id: string) => {
+      const player = masterRoster.find((p) => p.id === id)
+      if (!player) return
+      setEditDraft({
+        id: player.id,
+        name: player.name,
+        number: player.number !== null ? String(player.number) : '',
+        isGuest: player.isGuest,
+      })
+    },
+    [masterRoster],
+  )
+
+  const savePlayerDraft = useCallback(async () => {
+    if (!editDraft) return
+    const name = editDraft.name.trim()
+    if (!name) return
+
+    const jerseyRaw = editDraft.number.trim()
+    let jersey: number | null = null
+    if (jerseyRaw !== '') {
+      const parsed = Number(jerseyRaw)
+      if (Number.isNaN(parsed)) return
+      jersey = parsed
+    }
+
+    try {
+      await updatePlayer(editDraft.id, { name, jersey, isGuest: editDraft.isGuest })
+      setEditDraft(null)
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Failed to save player')
+    }
+  }, [editDraft, updatePlayer])
+
+  const handleAddPlayer = useCallback(
+    async (input: { name: string; jersey: number | null; isGuest: boolean }) => {
+      try {
+        await addPlayer(input)
+        const jerseyLabel = input.jersey !== null ? `#${input.jersey} ` : ''
+        setToast(`Added ${jerseyLabel}${input.name}`)
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : 'Failed to add player')
+        throw err
+      }
+    },
+    [addPlayer],
+  )
+
+  const setImpact = useCallback(
+    (id: string, impact: Impact) => {
+      setPlayers((prev) => {
+        const next = prev.map((p) => (p.id === id ? { ...p, impact } : p))
+        const updated = next.find((p) => p.id === id)
+        if (matchId && updated) syncMatchStat(matchId, updated)
+        return next
+      })
+    },
+    [matchId, setPlayers],
+  )
+
+  const handleLiveReassignPosition = useCallback(
+    (updates: PositionReassignUpdate[]) => {
+      if (!matchId || updates.length === 0) return
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+
+      setPlayers((prev) => {
+        const next = prev.map((player) => {
+          const update = updates.find((u) => u.playerId === player.id)
+          return update ? { ...player, matchPosition: update.position } : player
+        })
+
+        for (const update of updates) {
+          const updated = next.find((p) => p.id === update.playerId)
+          if (updated) syncMatchStat(matchId, updated)
+          syncMatchEvent({
+            matchId,
+            playerId: update.playerId,
+            eventType: 'position_change',
+            timestamp: eventTimestamp,
+            eventNotes: update.position,
+            formation: activeFormation,
+          })
+        }
+
+        return next
+      })
+
+      const labels = updates.map((u) => u.position).join(' · ')
+      setToast(`Position · ${labels}`)
+    },
+    [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
+  )
+
+  const handleLiveSubIn = useCallback(
+    (benchId: string, tacticalPosition: string) => {
+      if (!matchId) return
+      const onFieldCount = players.filter((p) => p.attending && p.isOnField).length
+      if (onFieldCount >= MAX_FIELD_PLAYERS) return
+
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+
+      setPlayers((prev) => {
+        const next = applySubIn(prev, benchId, seconds).map((p) =>
+          p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
+        )
+        const benchPlayer = next.find((p) => p.id === benchId)
+        if (benchPlayer) {
+          syncMatchStat(matchId, benchPlayer)
+          syncMatchEvents([
+            {
+              matchId,
+              playerId: benchPlayer.id,
+              eventType: 'sub_in',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+            },
+          ])
+          setToast(
+            `Sub in · ${benchPlayer.number !== null ? `#${benchPlayer.number} ` : ''}${benchPlayer.name}`,
+          )
+        }
+        return next
+      })
+    },
+    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
+  )
+
+  const handleLiveSubOut = useCallback(
+    (fieldId: string) => {
+      if (!matchId) return
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+
+      setPlayers((prev) => {
+        const next = applySubOut(prev, fieldId, seconds)
+        const fieldPlayer = next.find((p) => p.id === fieldId)
+        if (fieldPlayer) {
+          syncMatchStat(matchId, fieldPlayer)
+          syncMatchEvents([
+            {
+              matchId,
+              playerId: fieldPlayer.id,
+              eventType: 'sub_out',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+            },
+          ])
+          setToast(
+            `Sub out · ${fieldPlayer.number !== null ? `#${fieldPlayer.number} ` : ''}${fieldPlayer.name}`,
+          )
+        }
+        return next
+      })
+    },
+    [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
+  )
+
+  const handleLiveSwap = useCallback(
+    (benchId: string, fieldId: string, tacticalPosition: string) => {
+      if (!matchId) return
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+
+      setPlayers((prev) => {
+        const next = applySubstitution(prev, benchId, fieldId, seconds).map((p) =>
+          p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
+        )
+        const benchPlayer = next.find((p) => p.id === benchId)
+        const fieldPlayer = next.find((p) => p.id === fieldId)
+
+        if (benchPlayer && fieldPlayer) {
+          syncMatchStat(matchId, benchPlayer)
+          syncMatchStat(matchId, fieldPlayer)
+          syncMatchEvents([
+            {
+              matchId,
+              playerId: fieldPlayer.id,
+              eventType: 'sub_out',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+            },
+            {
+              matchId,
+              playerId: benchPlayer.id,
+              eventType: 'sub_in',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+            },
+          ])
+          setToast(
+            `Sub · ${benchPlayer.number !== null ? `#${benchPlayer.number} ` : ''}${benchPlayer.name} for ${fieldPlayer.number !== null ? `#${fieldPlayer.number} ` : ''}${fieldPlayer.name}`,
+          )
+        }
+        return next
+      })
+    },
+    [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
+  )
+
+  const handleSelect = useCallback(
+    (player: MatchPlayer) => {
+      if (pendingAction === 'GOAL') {
+        setHomeScore((s) => {
+          const next = s + 1
+          if (matchId) syncMatchRecord(matchId, { home_score: next })
+          return next
+        })
+        setPlayers((prev) => {
+          const next = prev.map((p) =>
+            p.id === player.id ? { ...p, impact: 'positive' as const } : p,
+          )
+          const updated = next.find((p) => p.id === player.id)
+          if (matchId && updated) syncMatchStat(matchId, updated)
+          return next
+        })
+      }
+
+      if (matchId) {
+        syncMatchEvent({
+          matchId,
+          playerId: player.id,
+          eventType: pendingAction === 'GOAL' ? 'goal' : 'assist',
+          timestamp: elapsedInHalf(seconds, halfLengthMinutes),
+          formation: activeFormation,
+        })
+      }
+
+      const verb = pendingAction === 'GOAL' ? 'Goal' : 'Assist'
+      setToast(`${verb} logged · ${player.number !== null ? `#${player.number} ` : ''}${player.name}`)
+      setPendingAction(null)
+    },
+    [pendingAction, matchId, seconds, halfLengthMinutes, activeFormation, setHomeScore, setPlayers],
+  )
+
+  const handleHomeScore = useCallback(
+    (delta: number) => {
+      setHomeScore((s) => {
+        const next = Math.max(0, s + delta)
+        if (matchId) syncMatchRecord(matchId, { home_score: next })
+        return next
+      })
+    },
+    [matchId, setHomeScore],
+  )
+
+  const handleAwayScore = useCallback(
+    (delta: number) => {
+      setAwayScore((s) => {
+        const next = Math.max(0, s + delta)
+        if (matchId) syncMatchRecord(matchId, { away_score: next })
+        return next
+      })
+    },
+    [matchId, setAwayScore],
+  )
+
+  if (loading) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background px-4">
+        <p className="text-sm font-semibold text-muted-foreground">Loading from Supabase…</p>
+      </main>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background px-4">
+        <div className="max-w-md rounded-xl border border-danger/40 bg-card p-6 text-center">
+          <p className="font-bold text-danger">Failed to connect</p>
+          <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (appMode === 'setup') {
+    return (
+      <>
+        <SetupScreen
+          teams={teams}
+          selectedTeamId={selectedTeamId}
+          onTeamChange={selectTeam}
+          onAddTeam={async (name) => createTeam(name)}
+          coaches={coaches}
+          selectedCoachId={selectedCoachId}
+          onCoachChange={setSelectedCoachId}
+          onAddCoach={async (name) => {
+            await createCoach(name)
+          }}
+          rosterLoading={rosterLoading}
+          suggestedJersey={suggestedJersey}
+          onAddPlayer={handleAddPlayer}
+          opponent={opponent}
+          onOpponentChange={setOpponent}
+          matchDate={matchDate}
+          onMatchDateChange={setMatchDate}
+          matchTime={matchTime}
+          onMatchTimeChange={setMatchTime}
+          location={location}
+          onLocationChange={setLocation}
+          tournamentGame={tournamentGame}
+          onTournamentGameChange={setTournamentGame}
+          halfLengthMinutes={halfLengthMinutes}
+          onHalfLengthChange={setHalfLengthMinutes}
+          masterRoster={masterRoster}
+          setupLineup={setupLineup}
+          firstHalfFormation={matchFormations.first}
+          onSetFirstHalfFormation={setFirstHalfFormation}
+          onSetAttending={setPlayerAttending}
+          onSetStartFirstHalf={setStartFirstHalf}
+          onSetMatchPosition={setSetupMatchPosition}
+          onEditPlayer={openEditPlayer}
+          onStartMatch={() => void handleStartMatch()}
+          canStartMatch={canStartMatch && !startingMatch}
+          attendingCount={attendingCount}
+        />
+        <PlayerEditModal
+          draft={editDraft}
+          onChange={setEditDraft}
+          onSave={() => void savePlayerDraft()}
+          onClose={() => setEditDraft(null)}
+        />
+      </>
+    )
+  }
+
+  if (appMode === 'halftime') {
+    return (
+      <>
+        <HalftimeSetupScreen
+          teamName={matchTeamName}
+          opponent={matchOpponent}
+          seconds={seconds}
+          halfLengthMinutes={halfLengthMinutes}
+          players={players}
+          secondHalfFormation={matchFormations.second}
+          onSetSecondHalfFormation={setSecondHalfFormation}
+          secondHalfStarters={halftimeSecondHalf}
+          onAssignSecondHalfStarter={(playerId, _role, tacticalPosition) => {
+            setHalftimeStarter(playerId, true)
+            setPlayers((prev) =>
+              prev.map((p) =>
+                p.id === playerId ? { ...p, matchPosition: tacticalPosition } : p,
+              ),
+            )
+          }}
+          onRemoveSecondHalfStarter={(playerId) => setHalftimeStarter(playerId, false)}
+          onBeginSecondHalf={() => void handleBeginSecondHalf()}
+          canBeginSecondHalf={canBeginSecondHalf}
+        />
+        {toast && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
+              <CheckCircle2 className="size-5" strokeWidth={2.5} />
+              {toast}
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  if (appMode === 'summary') {
+    return (
+      <>
+        <PostGameSummaryScreen
+          teamName={matchTeamName}
+          coachName={matchCoachName}
+          opponent={matchOpponent}
+          location={matchLocation}
+          tournamentGame={matchTournamentGame}
+          homeScore={homeScore}
+          awayScore={awayScore}
+          seconds={seconds}
+          period={period}
+          halfLengthMinutes={halfLengthMinutes}
+          players={players}
+          onCopySummary={handleCopySummary}
+          onDone={() => returnToSetup()}
+        />
+        {toast && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
+              <CheckCircle2 className="size-5" strokeWidth={2.5} />
+              {toast}
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  return (
+    <main className="min-h-dvh bg-background pb-10">
+      <QaSpeedPanel
+        speed={qaSpeedMultiplier}
+        onSpeedChange={setQaSpeedMultiplier}
+        expanded={qaPanelExpanded}
+        onToggleExpanded={() => setQaPanelExpanded((v) => !v)}
+      />
+
+      <MatchHeader
+        teamName={matchTeamName}
+        coachName={matchCoachName}
+        opponent={matchOpponent}
+        homeScore={homeScore}
+        awayScore={awayScore}
+        seconds={seconds}
+        period={period}
+        halfLengthMinutes={halfLengthMinutes}
+        running={running}
+        periodClockStarted={periodClockStarted}
+        onHomeScore={handleHomeScore}
+        onAwayScore={handleAwayScore}
+      />
+
+      <div className="mx-auto max-w-md space-y-6 px-4 pt-5">
+        {!periodClockStarted && period === '1st' && (
+          <PeriodStartButton label="Start 1st Half" onStart={handleStartFirstHalf} />
+        )}
+
+        {periodClockStarted && (
+          <EndPeriodButton
+            period={period}
+            onEndFirstHalf={() => void handleEnterHalftime()}
+            onEndGame={() => void handleEndGame()}
+          />
+        )}
+
+        <LiveTacticalPitch
+          key={period}
+          periodKey={period}
+          formationId={activeFormation}
+          onFormationChange={setActiveFormation}
+          players={players}
+          clockSeconds={seconds}
+          maxFieldPlayers={MAX_FIELD_PLAYERS}
+          onSwap={handleLiveSwap}
+          onSubIn={handleLiveSubIn}
+          onSubOut={handleLiveSubOut}
+          onReassignPosition={handleLiveReassignPosition}
+          onSetImpact={setImpact}
+        />
+
+        <ActionButtons onAction={(type) => setPendingAction(type)} />
+
+        <MatchSummary
+          teamName={matchTeamName}
+          coachName={matchCoachName}
+          opponent={matchOpponent}
+          location={matchLocation}
+          tournamentGame={matchTournamentGame}
+          homeScore={homeScore}
+          awayScore={awayScore}
+          seconds={seconds}
+          period={period}
+          halfLengthMinutes={halfLengthMinutes}
+          players={players}
+          onCopySummary={handleCopySummary}
+        />
+
+        <div className="pt-4">
+          <button
+            type="button"
+            onClick={() => void handleResetMatch()}
+            className="w-full py-3 text-sm font-bold uppercase tracking-widest text-danger transition-opacity active:opacity-70"
+          >
+            Reset Match
+          </button>
+        </div>
+      </div>
+
+      <PlayerSelectModal
+        action={pendingAction}
+        players={players}
+        onSelect={handleSelect}
+        onClose={() => setPendingAction(null)}
+      />
+
+      {toast && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+          <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
+            <CheckCircle2 className="size-5" strokeWidth={2.5} />
+            {toast}
+          </div>
+        </div>
+      )}
+    </main>
+  )
+}

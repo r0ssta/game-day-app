@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+  --font-sans: system-ui, -apple-system, sans-serif;
+
+  --color-background: oklch(0.14 0.02 260);
+  --color-foreground: oklch(0.96 0 0);
+  --color-card: oklch(0.18 0.02 260);
+  --color-card-foreground: oklch(0.96 0 0);
+  --color-popover: oklch(0.2 0.02 260);
+  --color-secondary: oklch(0.24 0.02 260);
+  --color-muted-foreground: oklch(0.58 0.02 260);
+  --color-border: oklch(0.28 0.02 260);
+
+  --color-neon: oklch(0.84 0.24 130);
+  --color-neon-foreground: oklch(0.16 0.05 130);
+
+  --color-athletic: oklch(0.52 0.14 250);
+  --color-athletic-foreground: oklch(0.98 0 0);
+
+  --color-danger: oklch(0.58 0.22 25);
+  --color-danger-foreground: oklch(0.98 0 0);
+
+  --color-field: oklch(0.19 0.04 145);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+}
