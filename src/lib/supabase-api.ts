@@ -742,9 +742,12 @@ export async function savePostGameReview(
 
   const primaryImpactByPlayer = new Map<string, Impact>()
   for (const review of reviews) {
-    if (!primaryImpactByPlayer.has(review.playerId)) {
-      primaryImpactByPlayer.set(review.playerId, review.impact)
-    }
+    if (normalizeRecapPosition(review.position) !== 'Overall') continue
+    primaryImpactByPlayer.set(review.playerId, review.impact)
+  }
+  for (const review of reviews) {
+    if (primaryImpactByPlayer.has(review.playerId)) continue
+    primaryImpactByPlayer.set(review.playerId, review.impact)
   }
 
   await Promise.all(

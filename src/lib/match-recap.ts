@@ -33,6 +33,7 @@ export type PlayerRecapReview = {
   positions: string[]
   goals: number
   assists: number
+  overallReview: PositionRecapReview
   positionReviews: PositionRecapReview[]
 }
 
@@ -42,6 +43,16 @@ export type SavedPositionReview = {
 }
 
 const LEGACY_REVIEW_POSITION = 'Overall'
+
+export const OVERALL_REVIEW_POSITION = 'Overall'
+
+export function playerOverallReviewKey(playerId: string): string {
+  return playerPositionReviewKey(playerId, OVERALL_REVIEW_POSITION)
+}
+
+export function isOverallReviewPosition(position: string): boolean {
+  return normalizeRecapPosition(position) === OVERALL_REVIEW_POSITION
+}
 
 export function playerPositionReviewKey(playerId: string, position: string): string {
   return `${playerId}::${normalizeRecapPosition(position)}`
@@ -215,13 +226,10 @@ export function buildPositionReviews(
   playerId: string,
   positions: string[],
   savedReviews: Map<string, SavedPositionReview>,
-  legacyReview: SavedPositionReview | undefined,
   fallbackImpact: Impact,
 ): PositionRecapReview[] {
-  return positions.map((position, index) => {
-    const saved =
-      savedReviews.get(playerPositionReviewKey(playerId, position)) ??
-      (legacyReview && (positions.length === 1 || index === 0) ? legacyReview : undefined)
+  return positions.map((position) => {
+    const saved = savedReviews.get(playerPositionReviewKey(playerId, position))
 
     return {
       position: normalizeRecapPosition(position),
@@ -235,7 +243,6 @@ export function buildRecapRows(
   players: MatchPlayer[],
   eventStats: Map<string, PlayerRecapStats>,
   savedReviews: Map<string, SavedPositionReview>,
-  legacyReviews: Map<string, SavedPositionReview>,
 ): PlayerRecapReview[] {
   const participatingIds = new Set<string>()
   for (const player of players) {
@@ -252,11 +259,11 @@ export function buildRecapRows(
 
       const stats = eventStats.get(playerId)
       const positions = resolvePlayerPositions(stats, player)
+      const overallSaved = savedReviews.get(playerOverallReviewKey(playerId))
       const positionReviews = buildPositionReviews(
         playerId,
         positions,
         savedReviews,
-        legacyReviews.get(playerId),
         player.impact,
       )
 
@@ -268,6 +275,11 @@ export function buildRecapRows(
         positions,
         goals: stats?.goals ?? 0,
         assists: stats?.assists ?? 0,
+        overallReview: {
+          position: OVERALL_REVIEW_POSITION,
+          impact: overallSaved?.impact ?? player.impact,
+          notes: overallSaved?.notes ?? '',
+        },
         positionReviews,
       }
     })
@@ -299,14 +311,18 @@ export function buildRecapSummaryText(input: {
       : ['PLAYER STATS', '------------']),
     ...input.rows.flatMap((row) => {
       const positions = row.positions.length > 0 ? row.positions.join(', ') : '—'
-      const ratingLines = row.positionReviews.map((review) => {
-        const notes = review.notes.trim() ? ` · Notes: ${review.notes.trim()}` : ''
-        const label =
-          row.positionReviews.length > 1
-            ? `${row.name} - ${review.position}`
-            : `${row.name} (${review.position})`
-        return `  ${label}: ${formatImpactSymbol(review.impact)}${notes}`
-      })
+      const overallNotes = row.overallReview.notes.trim()
+        ? ` · Notes: ${row.overallReview.notes.trim()}`
+        : ''
+      const ratingLines = [
+        `  Overall: ${formatImpactSymbol(row.overallReview.impact)}${overallNotes}`,
+        ...(row.positionReviews.length > 1
+          ? row.positionReviews.map((review) => {
+              const notes = review.notes.trim() ? ` · Notes: ${review.notes.trim()}` : ''
+              return `  ${review.position}: ${formatImpactSymbol(review.impact)}${notes}`
+            })
+          : []),
+      ]
 
       return [
         `${row.number !== null ? `#${row.number}` : '—'} ${row.name}`,
@@ -326,12 +342,8 @@ export function indexSavedReviews(
     impact_score: number
     review_notes: string | null
   }>,
-): {
-  savedReviews: Map<string, SavedPositionReview>
-  legacyReviews: Map<string, SavedPositionReview>
-} {
+): Map<string, SavedPositionReview> {
   const savedReviews = new Map<string, SavedPositionReview>()
-  const legacyReviews = new Map<string, SavedPositionReview>()
 
   for (const review of existingReviews) {
     const payload: SavedPositionReview = {
@@ -340,15 +352,15 @@ export function indexSavedReviews(
     }
     const position = review.position?.trim() || LEGACY_REVIEW_POSITION
 
-    if (position === LEGACY_REVIEW_POSITION) {
-      legacyReviews.set(review.player_id, payload)
+    if (isOverallReviewPosition(position)) {
+      savedReviews.set(playerOverallReviewKey(review.player_id), payload)
       continue
     }
 
     savedReviews.set(playerPositionReviewKey(review.player_id, position), payload)
   }
 
-  return { savedReviews, legacyReviews }
+  return savedReviews
 }
 
 export async function loadHistoricalRecapRows(
@@ -365,9 +377,9 @@ export async function loadHistoricalRecapRows(
   const players = rebuildMatchPlayers(roster, stats)
   const playersById = new Map(players.map((player) => [player.id, player]))
   const eventStats = aggregatePlayerRecaps(events, halfLengthMinutes * 60, playersById)
-  const { savedReviews, legacyReviews } = indexSavedReviews(existingReviews)
+  const savedReviews = indexSavedReviews(existingReviews)
 
-  return buildRecapRows(players, eventStats, savedReviews, legacyReviews)
+  return buildRecapRows(players, eventStats, savedReviews)
 }
 
 export function dominantImpact(counts: {

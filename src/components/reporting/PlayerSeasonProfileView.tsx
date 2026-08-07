@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import {
   formatPlayerSeasonHeader,
+  formatPositionBreakdownDetail,
   formatPositionBreakdownLine,
   type PlayerSeasonStats,
 } from '@/lib/season-reporting'
@@ -112,8 +113,11 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
 
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Performance Ratings
+            Overall Performance
           </h2>
+          <p className="mt-2 text-sm font-semibold text-foreground">
+            Season average: {formatImpactLabel(stats.averageOverallRating)}
+          </p>
           <div className="mt-3 flex flex-wrap gap-3">
             {(['positive', 'neutral', 'negative'] as const).map((impact) => (
               <div
@@ -134,16 +138,23 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
 
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Ratings by Position
+            Performance by Role
           </h2>
           {stats.positionBreakdown.length > 0 ? (
-            <ul className="mt-3 space-y-2 text-sm font-semibold text-foreground">
+            <ul className="mt-3 space-y-2 text-sm text-foreground">
               {stats.positionBreakdown.map((entry) => (
-                <li key={entry.position}>{formatPositionBreakdownLine(entry)}</li>
+                <li key={entry.position}>
+                  <p className="font-semibold">{formatPositionBreakdownLine(entry)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatPositionBreakdownDetail(entry)}
+                  </p>
+                </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm italic text-muted-foreground">No position ratings yet</p>
+            <p className="mt-2 text-sm italic text-muted-foreground">
+              No multi-position role ratings yet
+            </p>
           )}
         </section>
 
@@ -218,6 +229,14 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
                     · A {log.assists}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
+                    <span
+                      className={cn(
+                        'rounded px-1.5 py-0.5 text-[10px] font-bold',
+                        IMPACT_BADGE[log.overallRating.impact],
+                      )}
+                    >
+                      Overall: {formatImpactLabel(log.overallRating.impact)}
+                    </span>
                     {log.positionRatings.map((rating) => (
                       <span
                         key={`${log.matchId}-${rating.position}`}

@@ -17,5 +17,8 @@ alter table public.match_reviews
   drop constraint if exists match_reviews_match_id_player_id_key;
 
 alter table public.match_reviews
+  drop constraint if exists match_reviews_match_player_position_key;
+
+alter table public.match_reviews
   add constraint match_reviews_match_player_position_key
   unique (match_id, player_id, position);

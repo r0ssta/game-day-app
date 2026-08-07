@@ -42,8 +42,8 @@ function PlayerRow({
         <span className="block truncate text-sm font-bold text-foreground">{name}</span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
           {stats.matchesPlayed} matches · {formatRecapMinutes(stats.totalMinutes)} total ·{' '}
-          {stats.goals} G · +{stats.ratingCounts.positive} / ={stats.ratingCounts.neutral} / −
-          {stats.ratingCounts.negative}
+          {stats.goals} G · Overall +{stats.ratingCounts.positive} / ={stats.ratingCounts.neutral}{' '}
+          / −{stats.ratingCounts.negative}
         </span>
       </span>
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" />

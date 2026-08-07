@@ -7,6 +7,8 @@ import {
   buildRecapSummaryText,
   formatRecapMinutes,
   indexSavedReviews,
+  OVERALL_REVIEW_POSITION,
+  playerOverallReviewKey,
   playerPositionReviewKey,
   type PlayerRecapStats,
   type SavedPositionReview,
@@ -139,11 +141,15 @@ export function PostGameRecap({
           halfLengthMinutes * 60,
           new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
         )
-        const { savedReviews, legacyReviews } = indexSavedReviews(existingReviews)
-        const recapRows = buildRecapRows(players, recapStats, savedReviews, legacyReviews)
+        const savedReviews = indexSavedReviews(existingReviews)
+        const recapRows = buildRecapRows(players, recapStats, savedReviews)
 
         const initialReviews: Record<string, SavedPositionReview> = {}
         for (const row of recapRows) {
+          initialReviews[playerOverallReviewKey(row.playerId)] = {
+            impact: row.overallReview.impact,
+            notes: row.overallReview.notes,
+          }
           for (const review of row.positionReviews) {
             initialReviews[playerPositionReviewKey(row.playerId, review.position)] = {
               impact: review.impact,
@@ -169,22 +175,31 @@ export function PostGameRecap({
   }, [matchId, halfLengthMinutes, players])
 
   const recapRows = useMemo(
-    () =>
-      buildRecapRows(
-        players,
-        eventStats,
-        new Map(Object.entries(reviews)),
-        new Map(),
-      ),
+    () => buildRecapRows(players, eventStats, new Map(Object.entries(reviews))),
     [players, eventStats, reviews],
   )
+
+  const getSavedReview = (
+    playerId: string,
+    position: string,
+    fallback: SavedPositionReview,
+  ): SavedPositionReview => {
+    const key =
+      position === OVERALL_REVIEW_POSITION
+        ? playerOverallReviewKey(playerId)
+        : playerPositionReviewKey(playerId, position)
+    return reviews[key] ?? fallback
+  }
 
   const updateReview = (
     playerId: string,
     position: string,
     patch: Partial<SavedPositionReview>,
   ) => {
-    const key = playerPositionReviewKey(playerId, position)
+    const key =
+      position === OVERALL_REVIEW_POSITION
+        ? playerOverallReviewKey(playerId)
+        : playerPositionReviewKey(playerId, position)
     setReviews((prev) => ({
       ...prev,
       [key]: {
@@ -196,15 +211,37 @@ export function PostGameRecap({
 
   const reviewPayload = useMemo(
     () =>
-      recapRows.flatMap((row) =>
-        row.positionReviews.map((review) => ({
-          playerId: row.playerId,
-          position: review.position,
-          impact: reviews[playerPositionReviewKey(row.playerId, review.position)]?.impact ?? review.impact,
-          notes:
-            reviews[playerPositionReviewKey(row.playerId, review.position)]?.notes ?? review.notes,
-        })),
-      ),
+      recapRows.flatMap((row) => {
+        const overall = getSavedReview(row.playerId, OVERALL_REVIEW_POSITION, {
+          impact: row.overallReview.impact,
+          notes: row.overallReview.notes,
+        })
+        const entries = [
+          {
+            playerId: row.playerId,
+            position: OVERALL_REVIEW_POSITION,
+            impact: overall.impact,
+            notes: overall.notes,
+          },
+        ]
+
+        if (row.positionReviews.length > 1) {
+          for (const review of row.positionReviews) {
+            const saved = getSavedReview(row.playerId, review.position, {
+              impact: review.impact,
+              notes: review.notes,
+            })
+            entries.push({
+              playerId: row.playerId,
+              position: review.position,
+              impact: saved.impact,
+              notes: saved.notes,
+            })
+          }
+        }
+
+        return entries
+      }),
     [recapRows, reviews],
   )
 
@@ -244,6 +281,25 @@ export function PostGameRecap({
     }
   }
 
+  const buildSummaryRows = () =>
+    recapRows.map((row) => ({
+      ...row,
+      overallReview: {
+        ...row.overallReview,
+        ...getSavedReview(row.playerId, OVERALL_REVIEW_POSITION, {
+          impact: row.overallReview.impact,
+          notes: row.overallReview.notes,
+        }),
+      },
+      positionReviews: row.positionReviews.map((review) => ({
+        ...review,
+        ...getSavedReview(row.playerId, review.position, {
+          impact: review.impact,
+          notes: review.notes,
+        }),
+      })),
+    }))
+
   const handleFinalize = async () => {
     setSaving(true)
     try {
@@ -258,18 +314,7 @@ export function PostGameRecap({
         awayScore,
         coachName,
         coachSummary,
-        rows: recapRows.map((row) => ({
-          ...row,
-          positionReviews: row.positionReviews.map((review) => ({
-            ...review,
-            impact:
-              reviews[playerPositionReviewKey(row.playerId, review.position)]?.impact ??
-              review.impact,
-            notes:
-              reviews[playerPositionReviewKey(row.playerId, review.position)]?.notes ??
-              review.notes,
-          })),
-        })),
+        rows: buildSummaryRows(),
       })
 
       await navigator.clipboard.writeText(summary)
@@ -281,18 +326,6 @@ export function PostGameRecap({
       setSaving(false)
     }
   }
-
-  const buildSummaryRows = () =>
-    recapRows.map((row) => ({
-      ...row,
-      positionReviews: row.positionReviews.map((review) => ({
-        ...review,
-        impact:
-          reviews[playerPositionReviewKey(row.playerId, review.position)]?.impact ?? review.impact,
-        notes:
-          reviews[playerPositionReviewKey(row.playerId, review.position)]?.notes ?? review.notes,
-      })),
-    }))
 
   const handleEmail = () => {
     const summary = buildRecapSummaryText({
@@ -407,10 +440,11 @@ export function PostGameRecap({
         <section className="overflow-hidden rounded-xl border border-border bg-card">
           <div className="border-b border-border bg-secondary/40 px-4 py-3">
             <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
-              Player Review by Position
+              Player Review
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Rate each role separately when a player changed positions during the match.
+              Rate overall match performance for every player. Add position breakdowns when a player
+              changed roles during the match.
             </p>
           </div>
 
@@ -418,68 +452,18 @@ export function PostGameRecap({
             {recapRows.map((row) => {
               const positionsLabel = row.positions.length > 0 ? row.positions.join(', ') : '—'
               const multiPosition = row.positionReviews.length > 1
-
-              if (!multiPosition) {
-                const review = row.positionReviews[0]
-                if (!review) return null
-                const reviewKey = playerPositionReviewKey(row.playerId, review.position)
-                const saved = reviews[reviewKey] ?? review
-
-                return (
-                  <li key={row.playerId} className="space-y-3 px-3 py-4">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={cn(
-                          'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-                          IMPACT_RING[saved.impact],
-                        )}
-                      >
-                        {formatJersey(row.number)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="text-base font-bold text-foreground">{row.name}</span>
-                          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
-                            {review.position}
-                          </span>
-                          <span className="font-mono text-sm font-bold tabular-nums text-blue-400">
-                            {formatRecapMinutes(row.totalSeconds)}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
-                          Goals {row.goals} · Assists {row.assists}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 pl-[3.25rem]">
-                      <ImpactToggleGroup
-                        impact={saved.impact}
-                        onSetImpact={(impact) =>
-                          updateReview(row.playerId, review.position, { impact })
-                        }
-                      />
-                      <input
-                        type="text"
-                        value={saved.notes}
-                        onChange={(e) =>
-                          updateReview(row.playerId, review.position, { notes: e.target.value })
-                        }
-                        placeholder="Notes / comments"
-                        className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-                      />
-                    </div>
-                  </li>
-                )
-              }
+              const overall = getSavedReview(row.playerId, OVERALL_REVIEW_POSITION, {
+                impact: row.overallReview.impact,
+                notes: row.overallReview.notes,
+              })
 
               return (
-                <li key={row.playerId} className="space-y-3 px-3 py-4">
-                  <div className="flex items-start gap-3 border-b border-border/60 pb-3">
+                <li key={row.playerId} className="space-y-4 px-3 py-4">
+                  <div className="flex items-start gap-3">
                     <div
                       className={cn(
                         'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-                        IMPACT_RING[row.positionReviews[0]?.impact ?? 'neutral'],
+                        IMPACT_RING[overall.impact],
                       )}
                     >
                       {formatJersey(row.number)}
@@ -492,7 +476,7 @@ export function PostGameRecap({
                         </span>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Played: {positionsLabel}
+                        {multiPosition ? `Played: ${positionsLabel}` : `Position: ${positionsLabel}`}
                       </p>
                       <p className="text-xs font-semibold text-muted-foreground">
                         Goals {row.goals} · Assists {row.assists}
@@ -500,39 +484,75 @@ export function PostGameRecap({
                     </div>
                   </div>
 
-                  <div className="space-y-4 pl-[3.25rem]">
-                    {row.positionReviews.map((review) => {
-                      const reviewKey = playerPositionReviewKey(row.playerId, review.position)
-                      const saved = reviews[reviewKey] ?? review
+                  <div className="space-y-2 pl-[3.25rem]">
+                    <div className="space-y-2 rounded-lg border border-border bg-secondary/30 p-3">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                        Overall Performance
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <ImpactToggleGroup
+                          impact={overall.impact}
+                          onSetImpact={(impact) =>
+                            updateReview(row.playerId, OVERALL_REVIEW_POSITION, { impact })
+                          }
+                        />
+                        <input
+                          type="text"
+                          value={overall.notes}
+                          onChange={(e) =>
+                            updateReview(row.playerId, OVERALL_REVIEW_POSITION, {
+                              notes: e.target.value,
+                            })
+                          }
+                          placeholder="Overall notes / comments"
+                          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                        />
+                      </div>
+                    </div>
 
-                      return (
-                        <div
-                          key={reviewKey}
-                          className="space-y-2 rounded-lg border border-neon/20 bg-neon/5 p-3"
-                        >
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span className="text-sm font-bold text-foreground">
-                              {row.name} - {review.position}
-                            </span>
-                            <ImpactToggleGroup
-                              impact={saved.impact}
-                              onSetImpact={(impact) =>
-                                updateReview(row.playerId, review.position, { impact })
-                              }
-                            />
-                          </div>
-                          <input
-                            type="text"
-                            value={saved.notes}
-                            onChange={(e) =>
-                              updateReview(row.playerId, review.position, { notes: e.target.value })
-                            }
-                            placeholder={`Notes for ${review.position}`}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-                          />
-                        </div>
-                      )
-                    })}
+                    {multiPosition ? (
+                      <div className="space-y-3">
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                          Position Breakdowns
+                        </p>
+                        {row.positionReviews.map((review) => {
+                          const saved = getSavedReview(row.playerId, review.position, {
+                            impact: review.impact,
+                            notes: review.notes,
+                          })
+
+                          return (
+                            <div
+                              key={playerPositionReviewKey(row.playerId, review.position)}
+                              className="space-y-2 rounded-lg border border-neon/20 bg-neon/5 p-3"
+                            >
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-sm font-bold text-foreground">
+                                  {review.position}
+                                </span>
+                                <ImpactToggleGroup
+                                  impact={saved.impact}
+                                  onSetImpact={(impact) =>
+                                    updateReview(row.playerId, review.position, { impact })
+                                  }
+                                />
+                              </div>
+                              <input
+                                type="text"
+                                value={saved.notes}
+                                onChange={(e) =>
+                                  updateReview(row.playerId, review.position, {
+                                    notes: e.target.value,
+                                  })
+                                }
+                                placeholder={`Notes for ${review.position}`}
+                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 </li>
               )

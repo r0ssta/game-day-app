@@ -88,8 +88,11 @@ export function formationRoleToLivePosition(role: 'GK' | 'DEF' | 'MID' | 'FWD'):
 
 /** Short label for post-game recap rows and per-position rating storage. */
 export function normalizeRecapPosition(value: string): string {
-  const normalized = value.trim().toUpperCase()
-  if (!normalized) return '—'
+  const trimmed = value.trim()
+  if (!trimmed) return '—'
+  if (trimmed.toLowerCase() === 'overall') return 'Overall'
+
+  const normalized = trimmed.toUpperCase()
 
   const tacticalCodes = [
     'GK',

@@ -7,6 +7,8 @@ import {
   dominantImpact,
   formatAverageRatingLabel,
   formatRecapMinutes,
+  isOverallReviewPosition,
+  OVERALL_REVIEW_POSITION,
   resolvePlayerPositions,
 } from '@/lib/match-recap'
 import {
@@ -34,6 +36,7 @@ export type PlayerPositionRatingStats = {
   matchCount: number
   ratingCounts: { positive: number; neutral: number; negative: number }
   averageRating: Impact
+  positivePercent: number
 }
 
 export type PlayerMatchLog = {
@@ -44,6 +47,7 @@ export type PlayerMatchLog = {
   minutes: number
   goals: number
   assists: number
+  overallRating: { impact: Impact; notes: string }
   positionRatings: Array<{ position: string; impact: Impact; notes: string }>
   positions: string[]
 }
@@ -59,6 +63,7 @@ export type PlayerSeasonStats = {
   primaryPositionPlayed: string
   secondaryPositionPlayed: string
   ratingCounts: { positive: number; neutral: number; negative: number }
+  averageOverallRating: Impact
   positionBreakdown: PlayerPositionRatingStats[]
   feedbackHistory: Array<{
     matchId: string
@@ -138,6 +143,7 @@ export function emptyPlayerSeasonStats(playerId: string): PlayerSeasonStats {
     primaryPositionPlayed: '—',
     secondaryPositionPlayed: '—',
     ratingCounts: { positive: 0, neutral: 0, negative: 0 },
+    averageOverallRating: 'neutral',
     positionBreakdown: [],
     feedbackHistory: [],
     matchLogs: [],
@@ -155,6 +161,15 @@ function topPositions(counts: Map<string, number>): [string, string] {
   return [sorted[0]?.[0] ?? '—', sorted[1]?.[0] ?? '—']
 }
 
+function positiveRatingPercent(counts: {
+  positive: number
+  neutral: number
+  negative: number
+}): number {
+  const total = counts.positive + counts.neutral + counts.negative
+  return total > 0 ? Math.round((counts.positive / total) * 100) : 0
+}
+
 function ensurePositionBreakdown(
   map: Map<string, PlayerPositionRatingStats>,
   position: string,
@@ -167,6 +182,7 @@ function ensurePositionBreakdown(
     matchCount: 0,
     ratingCounts: { positive: 0, neutral: 0, negative: 0 },
     averageRating: 'neutral',
+    positivePercent: 0,
   }
   map.set(position, created)
   return created
@@ -241,21 +257,20 @@ export async function loadSeasonReport(
               : [displayMatchPosition(stat.match_position)]
 
         const savedReviews = reviewsByPlayerPosition.get(stat.player_id) ?? []
-        const positionRatings =
-          savedReviews.length > 0
-            ? savedReviews
-            : [
-                {
-                  position: positions[0] ?? 'Overall',
-                  impact: scoreToImpact(stat.impact_score),
-                  notes: '',
-                },
-              ]
+        const overallReview =
+          savedReviews.find((review) => isOverallReviewPosition(review.position)) ??
+          (savedReviews.length === 1 ? savedReviews[0] : null) ?? {
+            position: OVERALL_REVIEW_POSITION,
+            impact: scoreToImpact(stat.impact_score),
+            notes: '',
+          }
+        const roleReviews = savedReviews.filter((review) => !isOverallReviewPosition(review.position))
 
         entry.matchesPlayed += 1
         entry.totalMinutes += minutes
         entry.goals += goals
         entry.assists += assists
+        entry.ratingCounts[overallReview.impact] += 1
 
         const posMap = positionCounts.get(stat.player_id)!
         for (const position of positions) {
@@ -265,9 +280,7 @@ export async function loadSeasonReport(
         const breakdownMap = positionBreakdownMaps.get(stat.player_id)!
         const ratedMatches = ratedMatchesByPosition.get(stat.player_id)!
 
-        for (const rating of positionRatings) {
-          entry.ratingCounts[rating.impact] += 1
-
+        for (const rating of roleReviews) {
           const breakdown = ensurePositionBreakdown(breakdownMap, rating.position)
           breakdown.ratingCounts[rating.impact] += 1
 
@@ -290,6 +303,17 @@ export async function loadSeasonReport(
           }
         }
 
+        if (overallReview.notes.trim()) {
+          entry.feedbackHistory.push({
+            matchId: match.id,
+            opponent: match.opponent.trim() || 'Opponent',
+            dateLabel,
+            position: OVERALL_REVIEW_POSITION,
+            impact: overallReview.impact,
+            notes: overallReview.notes.trim(),
+          })
+        }
+
         entry.matchLogs.push({
           matchId: match.id,
           opponent: match.opponent.trim() || 'Opponent',
@@ -298,7 +322,11 @@ export async function loadSeasonReport(
           minutes,
           goals,
           assists,
-          positionRatings,
+          overallRating: {
+            impact: overallReview.impact,
+            notes: overallReview.notes,
+          },
+          positionRatings: roleReviews,
           positions,
         })
       }
@@ -318,10 +346,12 @@ export async function loadSeasonReport(
       .map(([name]) => name)
 
     const breakdownMap = positionBreakdownMaps.get(entry.playerId) ?? new Map()
+    entry.averageOverallRating = dominantImpact(entry.ratingCounts)
     entry.positionBreakdown = [...breakdownMap.values()]
       .map((item) => ({
         ...item,
         averageRating: dominantImpact(item.ratingCounts),
+        positivePercent: positiveRatingPercent(item.ratingCounts),
       }))
       .sort((a, b) => b.matchCount - a.matchCount || a.position.localeCompare(b.position))
   }
@@ -345,6 +375,10 @@ export function formatPlayerSeasonHeader(player: RosterPlayer, stats: PlayerSeas
 }
 
 export function formatPositionBreakdownLine(stats: PlayerPositionRatingStats): string {
+  return `Performance as ${stats.position}: ${stats.positivePercent}% positive ratings`
+}
+
+export function formatPositionBreakdownDetail(stats: PlayerPositionRatingStats): string {
   const matchLabel = stats.matchCount === 1 ? 'match' : 'matches'
-  return `${stats.matchCount} ${matchLabel} as ${stats.position} (Avg Rating: ${formatAverageRatingLabel(stats.averageRating)})`
+  return `${stats.matchCount} ${matchLabel} · ${stats.positivePercent}% positive (Avg: ${formatAverageRatingLabel(stats.averageRating)})`
 }

@@ -201,7 +201,7 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
               <ul className="divide-y divide-border">
                 {rows.map((row) => {
                   const positionsLabel = row.positions.length > 0 ? row.positions.join(', ') : '—'
-                  const primaryImpact = row.positionReviews[0]?.impact ?? 'neutral'
+                  const multiPosition = row.positionReviews.length > 1
 
                   return (
                     <li key={row.playerId} className="space-y-2 px-3 py-4">
@@ -209,7 +209,7 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
                         <div
                           className={cn(
                             'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-                            IMPACT_RING[primaryImpact],
+                            IMPACT_RING[row.overallReview.impact],
                           )}
                         >
                           {formatJersey(row.number)}
@@ -226,39 +226,75 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
                             Goals {row.goals} · Assists {row.assists}
                           </p>
                           <div className="mt-2 space-y-2">
-                            {row.positionReviews.map((review) => (
-                              <div
-                                key={`${row.playerId}-${review.position}`}
-                                className="rounded-lg bg-secondary/50 px-3 py-2"
-                              >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-xs font-bold text-foreground">
-                                    {row.positionReviews.length > 1
-                                      ? `${row.name} (${review.position})`
-                                      : 'Rating'}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                                      review.impact === 'positive'
-                                        ? 'bg-neon/15 text-neon'
-                                        : review.impact === 'negative'
-                                          ? 'bg-danger/15 text-danger'
-                                          : 'bg-secondary text-muted-foreground',
-                                    )}
-                                  >
-                                    {formatImpactLabel(review.impact)}
-                                  </span>
-                                </div>
-                                {review.notes.trim() ? (
-                                  <p className="mt-1 text-xs text-foreground">{review.notes.trim()}</p>
-                                ) : (
-                                  <p className="mt-1 text-xs italic text-muted-foreground">
-                                    No coach notes
-                                  </p>
-                                )}
+                            <div className="rounded-lg bg-secondary/50 px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-bold text-foreground">
+                                  Overall Performance
+                                </span>
+                                <span
+                                  className={cn(
+                                    'rounded px-1.5 py-0.5 text-[10px] font-bold',
+                                    row.overallReview.impact === 'positive'
+                                      ? 'bg-neon/15 text-neon'
+                                      : row.overallReview.impact === 'negative'
+                                        ? 'bg-danger/15 text-danger'
+                                        : 'bg-secondary text-muted-foreground',
+                                  )}
+                                >
+                                  {formatImpactLabel(row.overallReview.impact)}
+                                </span>
                               </div>
-                            ))}
+                              {row.overallReview.notes.trim() ? (
+                                <p className="mt-1 text-xs text-foreground">
+                                  {row.overallReview.notes.trim()}
+                                </p>
+                              ) : (
+                                <p className="mt-1 text-xs italic text-muted-foreground">
+                                  No overall notes
+                                </p>
+                              )}
+                            </div>
+
+                            {multiPosition ? (
+                              <div className="space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                  Position Breakdowns
+                                </p>
+                                {row.positionReviews.map((review) => (
+                                  <div
+                                    key={`${row.playerId}-${review.position}`}
+                                    className="rounded-lg border border-neon/20 bg-neon/5 px-3 py-2"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-xs font-bold text-foreground">
+                                        {review.position}
+                                      </span>
+                                      <span
+                                        className={cn(
+                                          'rounded px-1.5 py-0.5 text-[10px] font-bold',
+                                          review.impact === 'positive'
+                                            ? 'bg-neon/15 text-neon'
+                                            : review.impact === 'negative'
+                                              ? 'bg-danger/15 text-danger'
+                                              : 'bg-secondary text-muted-foreground',
+                                        )}
+                                      >
+                                        {formatImpactLabel(review.impact)}
+                                      </span>
+                                    </div>
+                                    {review.notes.trim() ? (
+                                      <p className="mt-1 text-xs text-foreground">
+                                        {review.notes.trim()}
+                                      </p>
+                                    ) : (
+                                      <p className="mt-1 text-xs italic text-muted-foreground">
+                                        No notes for {review.position}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
