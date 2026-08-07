@@ -135,7 +135,7 @@ function PitchSlotBadge({
             {player.shortName ?? player.name}
           </span>
           {player.minutesLabel ? (
-            <span className="mt-0.5 font-mono text-[8px] font-bold tabular-nums leading-none text-white/90">
+            <span className="mt-0.5 font-mono text-[8px] font-black tabular-nums leading-none text-slate-900">
               {player.minutesLabel}
             </span>
           ) : null}
@@ -188,7 +188,7 @@ function PoolPlayerChip({
           <span className="flex flex-wrap items-center gap-1">
             <span className="truncate text-sm font-bold text-foreground">{player.name}</span>
             {player.minutesLabel ? (
-              <span className="font-mono text-xs font-bold tabular-nums text-blue-400">
+              <span className="font-mono text-xs font-black tabular-nums text-slate-700">
                 {player.minutesLabel}
               </span>
             ) : null}

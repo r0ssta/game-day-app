@@ -107,6 +107,7 @@ export function PostGameRecap({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [eventStats, setEventStats] = useState<Map<string, PlayerRecapStats>>(new Map())
   const [reviews, setReviews] = useState<Record<string, SavedPositionReview>>({})
+  const [touchedPositionReviews, setTouchedPositionReviews] = useState<Set<string>>(() => new Set())
   const [coachSummary, setCoachSummary] = useState('')
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const saveDraftRef = useRef<() => Promise<void>>(async () => {})
@@ -145,20 +146,25 @@ export function PostGameRecap({
         const recapRows = buildRecapRows(players, recapStats, savedReviews)
 
         const initialReviews: Record<string, SavedPositionReview> = {}
+        const initialTouchedPositions = new Set<string>()
         for (const row of recapRows) {
           initialReviews[playerOverallReviewKey(row.playerId)] = {
             impact: row.overallReview.impact,
             notes: row.overallReview.notes,
           }
           for (const review of row.positionReviews) {
-            initialReviews[playerPositionReviewKey(row.playerId, review.position)] = {
+            const key = playerPositionReviewKey(row.playerId, review.position)
+            if (!savedReviews.has(key)) continue
+            initialReviews[key] = {
               impact: review.impact,
               notes: review.notes,
             }
+            initialTouchedPositions.add(key)
           }
         }
 
         setReviews(initialReviews)
+        setTouchedPositionReviews(initialTouchedPositions)
         setEventStats(recapStats)
       } catch (err) {
         if (!cancelled) {
@@ -195,11 +201,22 @@ export function PostGameRecap({
     playerId: string,
     position: string,
     patch: Partial<SavedPositionReview>,
+    options?: { markPositionTouched?: boolean },
   ) => {
     const key =
       position === OVERALL_REVIEW_POSITION
         ? playerOverallReviewKey(playerId)
         : playerPositionReviewKey(playerId, position)
+
+    if (position !== OVERALL_REVIEW_POSITION && options?.markPositionTouched) {
+      setTouchedPositionReviews((prev) => {
+        if (prev.has(key)) return prev
+        const next = new Set(prev)
+        next.add(key)
+        return next
+      })
+    }
+
     setReviews((prev) => ({
       ...prev,
       [key]: {
@@ -227,6 +244,9 @@ export function PostGameRecap({
 
         if (row.positionReviews.length > 1) {
           for (const review of row.positionReviews) {
+            const key = playerPositionReviewKey(row.playerId, review.position)
+            if (!touchedPositionReviews.has(key)) continue
+
             const saved = getSavedReview(row.playerId, review.position, {
               impact: review.impact,
               notes: review.notes,
@@ -242,7 +262,7 @@ export function PostGameRecap({
 
         return entries
       }),
-    [recapRows, reviews],
+    [recapRows, reviews, touchedPositionReviews],
   )
 
   const saveDraft = useCallback(async () => {
@@ -291,13 +311,17 @@ export function PostGameRecap({
           notes: row.overallReview.notes,
         }),
       },
-      positionReviews: row.positionReviews.map((review) => ({
-        ...review,
-        ...getSavedReview(row.playerId, review.position, {
-          impact: review.impact,
-          notes: review.notes,
-        }),
-      })),
+      positionReviews: row.positionReviews
+        .filter((review) =>
+          touchedPositionReviews.has(playerPositionReviewKey(row.playerId, review.position)),
+        )
+        .map((review) => ({
+          ...review,
+          ...getSavedReview(row.playerId, review.position, {
+            impact: review.impact,
+            notes: review.notes,
+          }),
+        })),
     }))
 
   const handleFinalize = async () => {
@@ -443,8 +467,8 @@ export function PostGameRecap({
               Player Review
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Rate overall match performance for every player. Add position breakdowns when a player
-              changed roles during the match.
+              Rate overall match performance for every player. Position breakdowns are optional and
+              only saved when you interact with a role rating.
             </p>
           </div>
 
@@ -513,18 +537,28 @@ export function PostGameRecap({
                     {multiPosition ? (
                       <div className="space-y-3">
                         <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                          Position Breakdowns
+                          Position Breakdowns{' '}
+                          <span className="font-semibold normal-case tracking-normal text-muted-foreground/80">
+                            (optional)
+                          </span>
                         </p>
                         {row.positionReviews.map((review) => {
+                          const reviewKey = playerPositionReviewKey(row.playerId, review.position)
                           const saved = getSavedReview(row.playerId, review.position, {
                             impact: review.impact,
                             notes: review.notes,
                           })
+                          const isTouched = touchedPositionReviews.has(reviewKey)
 
                           return (
                             <div
-                              key={playerPositionReviewKey(row.playerId, review.position)}
-                              className="space-y-2 rounded-lg border border-neon/20 bg-neon/5 p-3"
+                              key={reviewKey}
+                              className={cn(
+                                'space-y-2 rounded-lg border p-3',
+                                isTouched
+                                  ? 'border-neon/20 bg-neon/5'
+                                  : 'border-border bg-secondary/20',
+                              )}
                             >
                               <div className="flex flex-wrap items-center gap-3">
                                 <span className="text-sm font-bold text-foreground">
@@ -533,7 +567,9 @@ export function PostGameRecap({
                                 <ImpactToggleGroup
                                   impact={saved.impact}
                                   onSetImpact={(impact) =>
-                                    updateReview(row.playerId, review.position, { impact })
+                                    updateReview(row.playerId, review.position, { impact }, {
+                                      markPositionTouched: true,
+                                    })
                                   }
                                 />
                               </div>
@@ -541,11 +577,14 @@ export function PostGameRecap({
                                 type="text"
                                 value={saved.notes}
                                 onChange={(e) =>
-                                  updateReview(row.playerId, review.position, {
-                                    notes: e.target.value,
-                                  })
+                                  updateReview(
+                                    row.playerId,
+                                    review.position,
+                                    { notes: e.target.value },
+                                    { markPositionTouched: true },
+                                  )
                                 }
-                                placeholder={`Notes for ${review.position}`}
+                                placeholder={`Optional notes for ${review.position}`}
                                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
                               />
                             </div>
