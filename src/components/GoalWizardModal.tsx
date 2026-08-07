@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Goal, X } from 'lucide-react'
+import { buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
 import { cn } from '@/lib/utils'
 import type { MatchPlayer } from '@/types/match'
 
@@ -33,6 +34,11 @@ export function GoalWizardModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
+  const sidelineNameMap = useMemo(
+    () => buildSidelineNameMap(players.filter((p) => p.attending)),
+    [players],
+  )
+
   if (!open) return null
 
   const onFieldPlayers = players.filter((p) => p.attending && p.isOnField)
@@ -63,7 +69,7 @@ export function GoalWizardModal({
             {step === 'assist' && scorer && (
               <p className="mt-1 text-sm font-semibold text-muted-foreground">
                 Scorer: {scorer.number !== null ? `#${scorer.number} ` : ''}
-                {scorer.name}
+                {getSidelineName(scorer, sidelineNameMap)}
               </p>
             )}
           </div>
@@ -107,7 +113,7 @@ export function GoalWizardModal({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xl font-bold leading-tight text-foreground">
-                    {player.name}
+                    {getSidelineName(player, sidelineNameMap)}
                   </span>
                   <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {player.matchPosition}

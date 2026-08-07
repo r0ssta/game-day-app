@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils'
 export type PitchLineupPlayer = {
   id: string
   name: string
+  /** Sideline-style label for pitch slots; defaults to `name`. */
+  shortName?: string
   number: number | null
   isGuest: boolean
   badge?: string
@@ -127,7 +129,7 @@ function PitchSlotBadge({
             {formatJersey(player.number)}
           </span>
           <span className="max-w-[52px] truncate text-[9px] font-bold leading-tight">
-            {player.name.split(' ')[0]}
+            {player.shortName ?? player.name}
           </span>
         </div>
       ) : (

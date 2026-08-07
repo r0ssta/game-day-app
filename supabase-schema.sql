@@ -9,6 +9,7 @@ create table if not exists public.teams (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   format text not null default '9v9' check (format in ('7v7', '9v9', '11v11')),
+  primary_coach_name text not null default '',
   created_at timestamptz not null default now()
 );
 
@@ -21,11 +22,11 @@ create table if not exists public.coaches (
 create table if not exists public.players (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams (id) on delete cascade,
-  name text not null,
+  first_name text not null,
+  last_name text not null default '',
   jersey integer,
   active_status boolean not null default true,
   is_guest boolean not null default false,
-  contact_info text,
   -- Roster position used by the lineup builder (GK, CB, CM, etc.)
   position text not null default 'SUB',
   primary_position text not null default 'Midfielder',
@@ -38,6 +39,7 @@ create table if not exists public.matches (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams (id) on delete restrict,
   coach_id uuid references public.coaches (id) on delete set null,
+  coach_name text,
   opponent text not null default '',
   date timestamptz not null default now(),
   match_date date,
@@ -45,6 +47,7 @@ create table if not exists public.matches (
   half_length integer not null default 30 check (half_length > 0),
   -- Live match fields (required for in-game UI + resume)
   location text not null default '',
+  location_type text not null default 'home' check (location_type in ('home', 'away')),
   tournament_game boolean not null default false,
   home_score integer not null default 0 check (home_score >= 0),
   away_score integer not null default 0 check (away_score >= 0),

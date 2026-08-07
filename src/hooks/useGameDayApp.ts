@@ -16,6 +16,8 @@ import {
   defaultMatchTime,
   normalizeMatchTimeForInput,
 } from '@/lib/match-schedule'
+import type { LocationType } from '@/lib/match-location'
+import { resolveMatchLocationType } from '@/lib/match-location'
 import { elapsedInHalf, initialHalfClock } from '@/lib/match-clock'
 import {
   DEFAULT_FORMATION_ID,
@@ -44,9 +46,12 @@ import {
   insertTeam,
   insertMatchEvent,
   rebuildMatchPlayers,
+  resolveCoachIdForName,
+  resolveMatchCoachName,
   syncMatchStats,
   updateLineupPreset,
   updateTeamFormat as updateTeamFormatApi,
+  updateTeamPrimaryCoachName as updateTeamPrimaryCoachNameApi,
   upsertPlayer,
   setPlayerActiveStatus,
 } from '@/lib/supabase-api'
@@ -99,16 +104,16 @@ export function useGameDayApp() {
   const [setupPitchKey, setSetupPitchKey] = useState(0)
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
-  const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null)
+  const [setupCoachName, setSetupCoachName] = useState('')
   const [matchTeamName, setMatchTeamName] = useState('')
   const [matchCoachName, setMatchCoachName] = useState('')
   const [matchOpponent, setMatchOpponent] = useState('')
-  const [matchLocation, setMatchLocation] = useState('')
+  const [matchLocationType, setMatchLocationType] = useState<LocationType>('home')
   const [matchTournamentGame, setMatchTournamentGame] = useState(false)
   const [halfLengthMinutes, setHalfLengthMinutes] = useState(DEFAULT_HALF_LENGTH)
 
   const [opponent, setOpponent] = useState('')
-  const [location, setLocation] = useState('')
+  const [locationType, setLocationType] = useState<LocationType>('home')
   const [tournamentGame, setTournamentGame] = useState(false)
   const [matchDate, setMatchDate] = useState(defaultMatchDate)
   const [matchTime, setMatchTime] = useState(defaultMatchTime)
@@ -121,6 +126,10 @@ export function useGameDayApp() {
 
   const periodRef = useRef(period)
   const matchFormationsRef = useRef(matchFormations)
+  const setupCoachPrefillRef = useRef<{ appMode: AppMode; teamId: string | null }>({
+    appMode: 'home',
+    teamId: null,
+  })
 
   useEffect(() => {
     periodRef.current = period
@@ -217,10 +226,12 @@ export function useGameDayApp() {
           setPeriodClockStarted(match.period_clock_started)
           setHalfLengthMinutes(match.half_length)
           setMatchTeamName(team.name)
-          setMatchCoachName(coach?.name ?? '')
+          setMatchCoachName(resolveMatchCoachName(match, coach))
+          setSetupCoachName(resolveMatchCoachName(match, coach))
           setMatchOpponent(match.opponent)
-          setMatchLocation(match.location)
+          setMatchLocationType(resolveMatchLocationType(match))
           setMatchTournamentGame(match.tournament_game)
+          setLocationType(resolveMatchLocationType(match))
           setMatchDate(match.match_date ?? defaultMatchDate())
           setMatchTime(normalizeMatchTimeForInput(match.match_time))
           setFirstHalfStarterIds(
@@ -258,6 +269,20 @@ export function useGameDayApp() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const prev = setupCoachPrefillRef.current
+    const enteredSetup =
+      appMode === 'match_setup' &&
+      (prev.appMode !== 'match_setup' || prev.teamId !== selectedTeamId)
+
+    setupCoachPrefillRef.current = { appMode, teamId: selectedTeamId }
+
+    if (!enteredSetup || !selectedTeamId) return
+
+    const team = teams.find((entry) => entry.id === selectedTeamId)
+    setSetupCoachName(team?.primary_coach_name?.trim() ?? '')
+  }, [appMode, selectedTeamId, teams])
 
   useEffect(() => {
     if (appMode !== 'match_setup' || !selectedTeamId) return
@@ -406,14 +431,28 @@ export function useGameDayApp() {
   const createCoach = useCallback(async (name: string) => {
     const coach = await insertCoach(name)
     setCoaches((prev) => [...prev, coach].sort((a, b) => a.name.localeCompare(b.name)))
-    setSelectedCoachId(coach.id)
     return coach
   }, [])
+
+  const activeTeamPrimaryCoachName = useMemo(() => {
+    const team = teams.find((entry) => entry.id === selectedTeamId)
+    return team?.primary_coach_name?.trim() ?? ''
+  }, [teams, selectedTeamId])
 
   const activeTeamFormat = useMemo(() => {
     const team = teams.find((t) => t.id === selectedTeamId)
     return normalizeTeamFormat(team?.format)
   }, [teams, selectedTeamId])
+
+  const updateTeamPrimaryCoach = useCallback(
+    async (primaryCoachName: string) => {
+      if (!selectedTeamId) throw new Error('Select a team first')
+      const updated = await updateTeamPrimaryCoachNameApi(selectedTeamId, primaryCoachName)
+      setTeams((prev) => prev.map((team) => (team.id === updated.id ? updated : team)))
+      return updated
+    },
+    [selectedTeamId],
+  )
 
   const updateTeamFormat = useCallback(
     async (format: TeamFormat) => {
@@ -448,25 +487,25 @@ export function useGameDayApp() {
 
   const addPlayer = useCallback(
     async (input: {
-      name: string
+      firstName: string
+      lastName: string
       jersey: number | null
       isGuest: boolean
       position?: string
       primaryPosition?: string
       secondaryPosition?: string
-      contactInfo?: string
     }) => {
       if (!selectedTeamId) throw new Error('Select a team before adding players')
 
       const created = await upsertPlayer({
         teamId: selectedTeamId,
-        name: input.name,
+        firstName: input.firstName,
+        lastName: input.lastName,
         jersey: input.jersey,
         isGuest: input.isGuest,
         position: input.position,
         primaryPosition: input.primaryPosition,
         secondaryPosition: input.secondaryPosition,
-        contactInfo: input.contactInfo,
       })
       const rosterPlayer = dbPlayerToRoster(created)
       setMasterRoster((prev) =>
@@ -492,12 +531,12 @@ export function useGameDayApp() {
     async (
       id: string,
       updates: {
-        name: string
+        firstName: string
+        lastName: string
         jersey: number | null
         isGuest: boolean
         primaryPosition?: string
         secondaryPosition?: string
-        contactInfo?: string
       },
     ) => {
       const existing = masterRoster.find((p) => p.id === id) ?? teamRoster.find((p) => p.id === id)
@@ -506,12 +545,12 @@ export function useGameDayApp() {
       const updated = await upsertPlayer({
         id,
         teamId: existing.teamId,
-        name: updates.name,
+        firstName: updates.firstName,
+        lastName: updates.lastName,
         jersey: updates.jersey,
         isGuest: updates.isGuest,
         primaryPosition: updates.primaryPosition ?? existing.primaryPosition,
         secondaryPosition: updates.secondaryPosition ?? existing.secondaryPosition,
-        contactInfo: updates.contactInfo,
       })
       const rosterPlayer = dbPlayerToRoster(updated)
       setMasterRoster((prev) =>
@@ -559,11 +598,10 @@ export function useGameDayApp() {
   const beginMatch = useCallback(
     async (input: {
       teamId: string
-      coachId: string | null
       teamName: string
       coachName: string
       opponent: string
-      location: string
+      locationType: LocationType
       tournamentGame: boolean
       halfLength: number
       matchDate: string
@@ -581,11 +619,13 @@ export function useGameDayApp() {
       let createdMatchId: string | null = null
 
       try {
+        const coachId = await resolveCoachIdForName(input.coachName)
         const match = await createMatchRecord({
           teamId: input.teamId,
-          coachId: input.coachId,
+          coachId,
+          coachName: input.coachName,
           opponent: input.opponent,
-          location: input.location,
+          locationType: input.locationType,
           tournamentGame: input.tournamentGame,
           halfLength: input.halfLength,
           matchDate: input.matchDate,
@@ -620,7 +660,7 @@ export function useGameDayApp() {
         setMatchTeamName(input.teamName)
         setMatchCoachName(input.coachName)
         setMatchOpponent(input.opponent)
-        setMatchLocation(input.location)
+        setMatchLocationType(input.locationType)
         setMatchTournamentGame(input.tournamentGame)
         setHalfLengthMinutes(input.halfLength)
 
@@ -804,9 +844,11 @@ export function useGameDayApp() {
     setSetupPitchKey((k) => k + 1)
     setMatchTeamName('')
     setMatchCoachName('')
+    setSetupCoachName('')
     setMatchOpponent('')
-    setMatchLocation('')
+    setMatchLocationType('home')
     setMatchTournamentGame(false)
+    setLocationType('home')
     setMatchFormations({
       first: getDefaultFormationId(activeTeamFormat),
       second: getDefaultFormationId(activeTeamFormat),
@@ -879,19 +921,21 @@ export function useGameDayApp() {
     selectTeam,
     setActiveTeamId,
     updateTeamFormat,
-    selectedCoachId,
-    setSelectedCoachId,
+    updateTeamPrimaryCoach,
+    activeTeamPrimaryCoachName,
+    setupCoachName,
+    setSetupCoachName,
     matchTeamName,
     matchCoachName,
     matchOpponent,
-    matchLocation,
+    matchLocationType,
     matchTournamentGame,
     halfLengthMinutes,
     setHalfLengthMinutes,
     opponent,
     setOpponent,
-    location,
-    setLocation,
+    locationType,
+    setLocationType,
     tournamentGame,
     setTournamentGame,
     matchDate,

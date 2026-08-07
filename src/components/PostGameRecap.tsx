@@ -15,6 +15,12 @@ import {
   savePostGameReview,
   scoreToImpact,
 } from '@/lib/supabase-api'
+import {
+  formatOpponentPrefix,
+  formatOpponentWithVenue,
+  formatVenueLabel,
+  type LocationType,
+} from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import type { Impact, MatchPlayer } from '@/types/match'
 
@@ -64,7 +70,9 @@ function ImpactToggleGroup({
 type PostGameRecapProps = {
   matchId: string
   teamName: string
+  coachName: string
   opponent: string
+  locationType: LocationType
   homeScore: number
   awayScore: number
   halfLengthMinutes: number
@@ -77,7 +85,9 @@ type PostGameRecapProps = {
 export function PostGameRecap({
   matchId,
   teamName,
+  coachName,
   opponent,
+  locationType,
   homeScore,
   awayScore,
   halfLengthMinutes,
@@ -180,8 +190,10 @@ export function PostGameRecap({
       const summary = buildRecapSummaryText({
         teamName,
         opponent,
+        locationType,
         homeScore,
         awayScore,
+        coachName,
         coachSummary,
         rows: rowsWithReviews,
       })
@@ -200,12 +212,16 @@ export function PostGameRecap({
     const summary = buildRecapSummaryText({
       teamName,
       opponent,
+      locationType,
       homeScore,
       awayScore,
+      coachName,
       coachSummary,
       rows: rowsWithReviews,
     })
-    const subject = encodeURIComponent(`${teamName} vs ${opponent} — Post-Game Recap`)
+    const subject = encodeURIComponent(
+      `${teamName} · ${formatOpponentWithVenue(opponent, locationType)} — Post-Game Recap`,
+    )
     const body = encodeURIComponent(summary)
     window.location.href = `mailto:?subject=${subject}&body=${body}`
   }
@@ -214,8 +230,10 @@ export function PostGameRecap({
     const summary = buildRecapSummaryText({
       teamName,
       opponent,
+      locationType,
       homeScore,
       awayScore,
+      coachName,
       coachSummary,
       rows: rowsWithReviews,
     })
@@ -249,9 +267,27 @@ export function PostGameRecap({
             <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
               Post-Game Recap
             </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {teamName} {homeScore} – {awayScore} {opponent}
+            <p className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
+              <span>
+                {teamName} {homeScore} – {awayScore} {formatOpponentPrefix(locationType)}{' '}
+                {opponent.trim() || 'Opponent'}
+              </span>
+              <span
+                className={cn(
+                  'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
+                  locationType === 'home'
+                    ? 'bg-neon/15 text-neon'
+                    : 'bg-secondary text-muted-foreground',
+                )}
+              >
+                {formatVenueLabel(locationType)}
+              </span>
             </p>
+            {coachName.trim() ? (
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                Head Coach: {coachName.trim()}
+              </p>
+            ) : null}
           </div>
           {onHome ? <BackToHomeButton onClick={onHome} /> : null}
         </header>

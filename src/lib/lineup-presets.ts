@@ -128,3 +128,29 @@ export function startersFromSlotAssignments(
   }
   return starters
 }
+
+export function starterIdsFromSlotAssignments(
+  slotAssignments: Record<string, string | null>,
+): string[] {
+  return Object.values(slotAssignments).filter((id): id is string => Boolean(id))
+}
+
+/** Prefer live pitch slot assignments over persisted startFirstHalf flags. */
+export function resolveSetupLineup(
+  setup: SetupLineup,
+  slotAssignments?: Record<string, string | null> | null,
+): SetupLineup {
+  if (!slotAssignments) return setup
+
+  const starterIds = new Set(starterIdsFromSlotAssignments(slotAssignments))
+  const playerIds = new Set([
+    ...Object.keys(setup.attending),
+    ...Object.keys(setup.startFirstHalf),
+  ])
+
+  const startFirstHalf = Object.fromEntries(
+    [...playerIds].map((id) => [id, starterIds.has(id)]),
+  )
+
+  return { ...setup, startFirstHalf }
+}

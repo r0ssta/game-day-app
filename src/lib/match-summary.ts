@@ -1,10 +1,12 @@
 import type { MatchPeriod, MatchPlayer } from '@/types/match'
+import { formatOpponentWithVenue } from '@/lib/match-location'
+import { formatPlayerFullName } from '@/lib/player-names'
 
 export type MatchSummaryData = {
   teamName: string
   coachName: string
   opponent: string
-  location: string
+  locationType: 'home' | 'away'
   tournamentGame: boolean
   homeScore: number
   awayScore: number
@@ -21,8 +23,7 @@ export function buildMatchSummaryText(data: MatchSummaryData): string {
     '================',
     `Team: ${data.teamName}`,
     `Coach: ${data.coachName || '—'}`,
-    `Opponent: ${data.opponent || '—'}`,
-    `Location: ${data.location || '—'}`,
+    `Opponent: ${formatOpponentWithVenue(data.opponent, data.locationType)}`,
     `Tournament: ${data.tournamentGame ? 'Yes' : 'No'}`,
     `Final Score: ${data.homeScore} - ${data.awayScore}`,
     `Clock: ${formatSummaryClock(data.seconds)} (${data.period} half)`,
@@ -38,7 +39,7 @@ export function buildMatchSummaryText(data: MatchSummaryData): string {
           (p.isOnField && p.subbedInAt !== null
             ? Math.max(0, data.clockSeconds - p.subbedInAt)
             : 0)
-        return `${p.number !== null ? `#${p.number}` : '—'} ${p.name} (${p.matchPosition}) · ${Math.floor(totalSeconds / 60)}m · impact: ${p.impact}`
+        return `${p.number !== null ? `#${p.number}` : '—'} ${formatPlayerFullName(p.firstName, p.lastName)} (${p.matchPosition}) · ${Math.floor(totalSeconds / 60)}m · impact: ${p.impact}`
       }),
   ]
   return lines.join('\n')

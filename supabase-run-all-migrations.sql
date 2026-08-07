@@ -110,3 +110,66 @@ alter table public.match_events
 alter table public.match_events
   add constraint match_events_player_required_check
   check (event_type = 'opponent_goal' or player_id is not null);
+
+-- Player first_name / last_name (replaces name; drops contact_info)
+alter table public.players
+  add column if not exists first_name text;
+
+alter table public.players
+  add column if not exists last_name text;
+
+update public.players
+set
+  first_name = case
+    when first_name is not null and trim(first_name) <> '' then trim(first_name)
+    when name is not null and position(' ' in trim(name)) > 0 then trim(split_part(trim(name), ' ', 1))
+    when name is not null then trim(name)
+    else 'Player'
+  end,
+  last_name = case
+    when last_name is not null and trim(last_name) <> '' then trim(last_name)
+    when name is not null and position(' ' in trim(name)) > 0 then trim(substring(trim(name) from position(' ' in trim(name)) + 1))
+    else ''
+  end
+where first_name is null or trim(coalesce(first_name, '')) = '';
+
+update public.players set last_name = coalesce(last_name, '') where last_name is null;
+
+alter table public.players alter column first_name set not null;
+alter table public.players alter column last_name set not null;
+alter table public.players alter column last_name set default '';
+
+alter table public.players drop column if exists name;
+alter table public.players drop column if exists contact_info;
+
+-- Team primary coach default + match coach_name persistence
+alter table public.teams
+  add column if not exists primary_coach_name text not null default '';
+
+alter table public.matches
+  add column if not exists coach_name text;
+
+update public.matches m
+set coach_name = c.name
+from public.coaches c
+where m.coach_id = c.id
+  and (m.coach_name is null or trim(m.coach_name) = '');
+
+-- Home / Away venue type for matches
+alter table public.matches
+  add column if not exists location_type text not null default 'home';
+
+alter table public.matches
+  drop constraint if exists matches_location_type_check;
+
+alter table public.matches
+  add constraint matches_location_type_check
+  check (location_type in ('home', 'away'));
+
+update public.matches
+set location_type = 'away'
+where lower(trim(coalesce(location, ''))) = 'away';
+
+update public.matches
+set location_type = 'home'
+where location_type is null or trim(location_type) = '';

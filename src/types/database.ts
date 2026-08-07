@@ -2,6 +2,7 @@ export type DbTeam = {
   id: string
   name: string
   format: string
+  primary_coach_name?: string
   created_at: string
 }
 
@@ -14,27 +15,31 @@ export type DbCoach = {
 export type DbPlayer = {
   id: string
   team_id: string
-  name: string
+  first_name: string
+  last_name: string
   jersey: number | null
   active_status: boolean
   is_guest: boolean
   position: string
   primary_position: string | null
   secondary_position: string | null
-  contact_info: string | null
   created_at: string
+  /** @deprecated Legacy column — may exist before name migration */
+  name?: string
 }
 
 export type DbMatch = {
   id: string
   team_id: string
   coach_id: string | null
+  coach_name: string | null
   opponent: string
   date: string
   match_date: string | null
   match_time: string | null
   half_length: number
   location: string
+  location_type?: string | null
   tournament_game: boolean
   home_score: number
   away_score: number

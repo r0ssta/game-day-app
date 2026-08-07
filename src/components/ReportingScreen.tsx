@@ -3,7 +3,13 @@ import { BarChart3 } from 'lucide-react'
 import { MatchRecapDetailView } from '@/components/MatchRecapDetailView'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
-import { fetchCompletedMatchesByTeamId } from '@/lib/supabase-api'
+import {
+  formatOpponentPrefix,
+  formatVenueLabel,
+  resolveMatchLocationType,
+} from '@/lib/match-location'
+import { fetchCompletedMatchesByTeamId, resolveMatchCoachName } from '@/lib/supabase-api'
+import { cn } from '@/lib/utils'
 import type { DbMatch } from '@/types/database'
 import type { RosterPlayer } from '@/types/match'
 
@@ -101,6 +107,9 @@ function MatchHistoryList({
         <ul className="space-y-3">
           {matches.map((match) => {
             const { dateLabel, timeLabel } = formatMatchDisplayDateTime(match)
+            const headCoach = resolveMatchCoachName(match, null)
+            const locationType = resolveMatchLocationType(match)
+            const opponentLabel = match.opponent.trim() || 'Opponent'
 
             return (
               <li
@@ -111,12 +120,29 @@ function MatchHistoryList({
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-foreground">{dateLabel}</p>
                     <p className="text-xs text-muted-foreground">{timeLabel}</p>
-                    <p className="mt-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
-                      vs {match.opponent}
+                    <p className="mt-2 flex flex-wrap items-center gap-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
+                      <span>
+                        {formatOpponentPrefix(locationType)} {opponentLabel}
+                      </span>
+                      <span
+                        className={cn(
+                          'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
+                          locationType === 'home'
+                            ? 'bg-neon/15 text-neon'
+                            : 'bg-secondary text-muted-foreground',
+                        )}
+                      >
+                        {formatVenueLabel(locationType)}
+                      </span>
                     </p>
                     <p className="mt-1 font-mono text-sm font-bold tabular-nums text-blue-400">
                       Final {match.home_score} – {match.away_score}
                     </p>
+                    {headCoach ? (
+                      <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                        Head Coach: {headCoach}
+                      </p>
+                    ) : null}
                   </div>
                   <button
                     type="button"

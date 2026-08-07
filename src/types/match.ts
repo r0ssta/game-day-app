@@ -12,12 +12,12 @@ export type RosterPlayer = {
   id: string
   teamId: string
   number: number | null
-  name: string
+  firstName: string
+  lastName: string
   position: string
   primaryPosition: string
   secondaryPosition: string
   isGuest: boolean
-  contactInfo: string
   activeStatus: boolean
 }
 
@@ -39,7 +39,7 @@ export type MatchPlayer = RosterPlayer & {
 export type Player = MatchPlayer
 
 export type MatchSetupConfig = {
-  location: string
+  locationType: 'home' | 'away'
   tournamentGame: boolean
   halfLengthMinutes: number
 }

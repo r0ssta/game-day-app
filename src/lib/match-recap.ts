@@ -1,4 +1,6 @@
 import { displayMatchPosition } from '@/lib/positions'
+import { formatOpponentWithVenue } from '@/lib/match-location'
+import { formatPlayerFullName } from '@/lib/player-names'
 import {
   fetchMatchEvents,
   fetchMatchReviews,
@@ -144,7 +146,7 @@ export function buildRecapRows(
 
       return {
         playerId,
-        name: player.name,
+        name: formatPlayerFullName(player.firstName, player.lastName),
         number: player.number,
         totalSeconds: stats?.totalSeconds ?? player.totalSecondsPlayed,
         positions: stats?.positions ?? [displayMatchPosition(player.matchPosition)],
@@ -161,18 +163,22 @@ export function buildRecapRows(
 export function buildRecapSummaryText(input: {
   teamName: string
   opponent: string
+  locationType?: 'home' | 'away'
   homeScore: number
   awayScore: number
+  coachName?: string
   coachSummary?: string
   rows: PlayerRecapReview[]
 }): string {
   const coachSummary = input.coachSummary?.trim()
+  const coachName = input.coachName?.trim()
+  const venueLine = formatOpponentWithVenue(input.opponent, input.locationType ?? 'home')
   const lines = [
     'POST-GAME RECAP',
     '===============',
-    `${input.teamName} vs ${input.opponent}`,
+    `${input.teamName} · ${venueLine}`,
     `Final Score: ${input.homeScore} – ${input.awayScore}`,
-    '',
+    ...(coachName ? [`Head Coach: ${coachName}`, ''] : []),
     ...(coachSummary
       ? ['COACH SUMMARY', '--------------', coachSummary, '', 'PLAYER STATS', '------------']
       : ['PLAYER STATS', '------------']),

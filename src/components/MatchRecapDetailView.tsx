@@ -7,6 +7,12 @@ import {
   type PlayerRecapReview,
 } from '@/lib/match-recap'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
+import { resolveMatchCoachName } from '@/lib/supabase-api'
+import {
+  formatOpponentPrefix,
+  formatVenueLabel,
+  resolveMatchLocationType,
+} from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import type { DbMatch } from '@/types/database'
 import type { Impact, RosterPlayer } from '@/types/match'
@@ -41,6 +47,9 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
   const [rows, setRows] = useState<PlayerRecapReview[]>([])
 
   const { dateLabel, timeLabel } = formatMatchDisplayDateTime(match)
+  const headCoach = resolveMatchCoachName(match, null)
+  const locationType = resolveMatchLocationType(match)
+  const opponentLabel = match.opponent.trim() || 'Opponent'
 
   useEffect(() => {
     let cancelled = false
@@ -82,8 +91,21 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
               <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-foreground">
                 Match Recap
               </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {teamName} {match.home_score} – {match.away_score} {match.opponent}
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span>
+                  {teamName} {match.home_score} – {match.away_score}{' '}
+                  {formatOpponentPrefix(locationType)} {opponentLabel}
+                </span>
+                <span
+                  className={cn(
+                    'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
+                    locationType === 'home'
+                      ? 'bg-neon/15 text-neon'
+                      : 'bg-secondary text-muted-foreground',
+                  )}
+                >
+                  {formatVenueLabel(locationType)}
+                </span>
               </p>
             </div>
           </div>
@@ -105,8 +127,30 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
             </div>
             <div className="col-span-2">
               <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Opponent</dt>
-              <dd className="mt-0.5 font-semibold text-foreground">{match.opponent}</dd>
+              <dd className="mt-0.5 flex flex-wrap items-center gap-2 font-semibold text-foreground">
+                <span>
+                  {formatOpponentPrefix(locationType)} {opponentLabel}
+                </span>
+                <span
+                  className={cn(
+                    'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
+                    locationType === 'home'
+                      ? 'bg-neon/15 text-neon'
+                      : 'bg-secondary text-muted-foreground',
+                  )}
+                >
+                  {formatVenueLabel(locationType)}
+                </span>
+              </dd>
             </div>
+            {headCoach ? (
+              <div className="col-span-2">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Head Coach
+                </dt>
+                <dd className="mt-0.5 font-semibold text-foreground">{headCoach}</dd>
+              </div>
+            ) : null}
           </dl>
         </section>
 

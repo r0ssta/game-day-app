@@ -1,4 +1,6 @@
-import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
+import {
+  resolvePlayerNameFields,
+} from '@/lib/player-names'
 import {
   DEFAULT_PRIMARY_POSITION,
   DEFAULT_SECONDARY_POSITION,
@@ -7,6 +9,8 @@ import {
 } from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
+import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
+import type { LocationType } from '@/lib/match-location'
 import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
@@ -121,17 +125,18 @@ export function scoreToImpact(score: number): Impact {
 export function dbPlayerToRoster(player: DbPlayer): RosterPlayer {
   const primaryPosition = player.primary_position ?? legacyPositionToProfile(player.position)
   const secondaryPosition = player.secondary_position ?? primaryPosition
+  const { firstName, lastName } = resolvePlayerNameFields(player)
 
   return {
     id: player.id,
     teamId: player.team_id,
     number: player.jersey,
-    name: player.name,
+    firstName,
+    lastName,
     position: player.position,
     primaryPosition,
     secondaryPosition,
     isGuest: player.is_guest,
-    contactInfo: player.contact_info ?? '',
     activeStatus: player.active_status,
   }
 }
@@ -234,6 +239,26 @@ export async function updateTeamFormat(teamId: string, format: string): Promise<
   return data
 }
 
+export async function updateTeamPrimaryCoachName(
+  teamId: string,
+  primaryCoachName: string,
+): Promise<DbTeam> {
+  const { data, error } = await supabase
+    .from('teams')
+    .update({ primary_coach_name: primaryCoachName.trim() })
+    .eq('id', teamId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export function resolveMatchCoachName(match: DbMatch, coach: DbCoach | null): string {
+  const stored = match.coach_name?.trim()
+  if (stored) return stored
+  return coach?.name?.trim() ?? ''
+}
+
 export async function insertCoach(name: string): Promise<DbCoach> {
   const trimmed = name.trim()
   const { data, error } = await supabase.from('coaches').insert({ name: trimmed }).select().single()
@@ -253,23 +278,43 @@ export async function findCoachByName(name: string): Promise<DbCoach | null> {
   return data
 }
 
+export async function resolveCoachIdForName(name: string): Promise<string | null> {
+  const trimmed = name.trim()
+  if (!trimmed) return null
+
+  const existing = await findCoachByName(trimmed)
+  if (existing) return existing.id
+
+  try {
+    const created = await insertCoach(trimmed)
+    return created.id
+  } catch {
+    const retry = await findCoachByName(trimmed)
+    return retry?.id ?? null
+  }
+}
+
 export async function upsertPlayer(input: {
   id?: string
   teamId: string
-  name: string
+  firstName: string
+  lastName: string
   jersey: number | null
   isGuest?: boolean
   position?: string
   primaryPosition?: string
   secondaryPosition?: string
-  contactInfo?: string
 }): Promise<DbPlayer> {
-  const contact = input.contactInfo?.trim() || null
+  const firstName = input.firstName.trim()
+  const lastName = input.lastName.trim()
+  if (!firstName) throw new Error('First name is required')
+
   const primaryPosition = input.primaryPosition?.trim() || DEFAULT_PRIMARY_POSITION
   const secondaryPosition = input.secondaryPosition?.trim() || DEFAULT_SECONDARY_POSITION
   const legacyPosition = input.position ?? rosterProfilePositionToLegacy(primaryPosition)
   const baseUpdate = {
-    name: input.name.trim(),
+    first_name: firstName,
+    last_name: lastName,
     jersey: input.jersey,
     is_guest: input.isGuest ?? false,
     position: legacyPosition,
@@ -279,7 +324,6 @@ export async function upsertPlayer(input: {
   if (input.id) {
     const withProfile = {
       ...baseUpdate,
-      contact_info: contact,
       primary_position: primaryPosition,
       secondary_position: secondaryPosition,
     }
@@ -292,15 +336,6 @@ export async function upsertPlayer(input: {
     if (!error) return data
 
     if (isMissingColumnError(error)) {
-      const withContact = { ...baseUpdate, contact_info: contact }
-      const { data: contactData, error: contactError } = await supabase
-        .from('players')
-        .update(withContact)
-        .eq('id', input.id)
-        .select()
-        .single()
-      if (!contactError) return contactData
-
       const { data: legacyData, error: legacyError } = await supabase
         .from('players')
         .update(baseUpdate)
@@ -316,7 +351,6 @@ export async function upsertPlayer(input: {
   const withProfile = {
     team_id: input.teamId,
     ...baseUpdate,
-    contact_info: contact,
     primary_position: primaryPosition,
     secondary_position: secondaryPosition,
   }
@@ -324,18 +358,6 @@ export async function upsertPlayer(input: {
   if (!error) return data
 
   if (isMissingColumnError(error)) {
-    const withContact = {
-      team_id: input.teamId,
-      ...baseUpdate,
-      contact_info: contact,
-    }
-    const { data: contactData, error: contactError } = await supabase
-      .from('players')
-      .insert(withContact)
-      .select()
-      .single()
-    if (!contactError) return contactData
-
     const { data: legacyData, error: legacyError } = await supabase
       .from('players')
       .insert({
@@ -353,18 +375,26 @@ export async function upsertPlayer(input: {
 export async function createMatchRecord(input: {
   teamId: string
   coachId: string | null
+  coachName: string
   opponent: string
-  location: string
+  locationType: LocationType
   tournamentGame: boolean
   halfLength: number
   matchDate: string
   matchTime: string
 }): Promise<DbMatch> {
-  const basePayload = {
+  const coachName = input.coachName.trim() || null
+  const matchDate = input.matchDate.trim() || null
+  const matchTime =
+    input.matchTime.trim().length === 5
+      ? `${input.matchTime.trim()}:00`
+      : input.matchTime.trim() || null
+
+  const minimalPayload = {
     team_id: input.teamId,
     coach_id: input.coachId,
     opponent: input.opponent,
-    location: input.location,
+    location: input.locationType,
     tournament_game: input.tournamentGame,
     half_length: input.halfLength,
     clock_seconds: input.halfLength * 60,
@@ -372,23 +402,49 @@ export async function createMatchRecord(input: {
     status: 'active' as const,
   }
 
-  const fullPayload = {
-    ...basePayload,
-    match_date: input.matchDate.trim() || null,
-    match_time:
-      input.matchTime.trim().length === 5
-        ? `${input.matchTime.trim()}:00`
-        : input.matchTime.trim() || null,
+  const optionalFields: Record<string, unknown> = {
+    match_date: matchDate,
+    match_time: matchTime,
+    coach_name: coachName,
+    location_type: input.locationType,
   }
 
-  let { data, error } = await supabase.from('matches').insert(fullPayload).select().single()
+  // Try fullest payload first; retry with fewer optional columns when schema is behind.
+  const optionalKeys = ['match_date', 'match_time', 'coach_name', 'location_type'] as const
+  const payloadAttempts: Array<Record<string, unknown>> = []
 
-  if (error && isMissingColumnError(error)) {
-    ;({ data, error } = await supabase.from('matches').insert(basePayload).select().single())
+  for (let mask = (1 << optionalKeys.length) - 1; mask >= 0; mask--) {
+    const extras: Record<string, unknown> = {}
+    for (let i = 0; i < optionalKeys.length; i++) {
+      if (mask & (1 << i)) {
+        const key = optionalKeys[i]
+        extras[key] = optionalFields[key]
+      }
+    }
+    payloadAttempts.push({ ...minimalPayload, ...extras })
   }
 
-  if (error) throw error
-  return data
+  payloadAttempts.sort(
+    (a, b) => countOptionalFields(b, optionalKeys) - countOptionalFields(a, optionalKeys),
+  )
+
+  let lastError: unknown = null
+  for (const payload of payloadAttempts) {
+    const { data, error } = await supabase.from('matches').insert(payload).select().single()
+    if (!error) return data
+    lastError = error
+    if (!isMissingColumnError(error)) break
+  }
+
+  if (lastError) throw lastError
+  throw new Error('Failed to create match record')
+}
+
+function countOptionalFields(
+  payload: Record<string, unknown>,
+  keys: readonly string[],
+): number {
+  return keys.filter((key) => key in payload).length
 }
 
 export async function deleteMatchRecord(matchId: string) {

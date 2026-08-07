@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   LayoutGrid,
   Pencil,
@@ -19,6 +19,7 @@ import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { parseFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
 import { getDefaultFormationId, isFormationValidForFormat } from '@/lib/formations'
 import { getMaxFieldPlayers } from '@/lib/lineup'
+import { formatPlayerFullName, buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
 import {
   TEAM_FORMATS,
   getMaxFieldPlayersForFormat,
@@ -71,22 +72,22 @@ type TeamManagementScreenProps = {
   onRefreshPresets: () => Promise<void>
   onRefreshRoster: () => Promise<void>
   onAddPlayer: (input: {
-    name: string
+    firstName: string
+    lastName: string
     jersey: number | null
     isGuest: boolean
     primaryPosition?: string
     secondaryPosition?: string
-    contactInfo?: string
   }) => Promise<unknown>
   onUpdatePlayer: (
     id: string,
     updates: {
-      name: string
+      firstName: string
+      lastName: string
       jersey: number | null
       isGuest: boolean
       primaryPosition?: string
       secondaryPosition?: string
-      contactInfo?: string
     },
   ) => Promise<unknown>
   onSetPlayerActive: (id: string, active: boolean) => Promise<void>
@@ -98,6 +99,8 @@ type TeamManagementScreenProps = {
   }) => Promise<void>
   onDeletePreset: (presetId: string) => Promise<void>
   onUpdateTeamFormat: (format: TeamFormat) => Promise<void>
+  primaryCoachName: string
+  onUpdatePrimaryCoach: (name: string) => Promise<void>
   onBackToHome: () => void
   onToast: (message: string) => void
 }
@@ -121,9 +124,9 @@ function TeamRosterTab({
   | 'onToast'
 >) {
   const [showAddForm, setShowAddForm] = useState(false)
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [number, setNumber] = useState('')
-  const [contactInfo, setContactInfo] = useState('')
   const [primaryPosition, setPrimaryPosition] = useState<RosterProfilePosition>(DEFAULT_PRIMARY_POSITION)
   const [secondaryPosition, setSecondaryPosition] =
     useState<RosterProfilePosition>(DEFAULT_SECONDARY_POSITION)
@@ -131,9 +134,9 @@ function TeamRosterTab({
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     number: '',
-    contactInfo: '',
     isGuest: false,
     primaryPosition: DEFAULT_PRIMARY_POSITION as RosterProfilePosition,
     secondaryPosition: DEFAULT_SECONDARY_POSITION as RosterProfilePosition,
@@ -143,9 +146,9 @@ function TeamRosterTab({
   const inactivePlayers = teamRoster.filter((p) => !p.activeStatus)
 
   const resetAddForm = () => {
-    setName('')
+    setFirstName('')
+    setLastName('')
     setNumber('')
-    setContactInfo('')
     setPrimaryPosition(DEFAULT_PRIMARY_POSITION)
     setSecondaryPosition(DEFAULT_SECONDARY_POSITION)
     setIsGuest(false)
@@ -154,8 +157,9 @@ function TeamRosterTab({
 
   const handleAdd = async (e: FormEvent) => {
     e.preventDefault()
-    const trimmed = name.trim()
-    if (!trimmed) return
+    const trimmedFirst = firstName.trim()
+    const trimmedLast = lastName.trim()
+    if (!trimmedFirst || !trimmedLast) return
     let jersey: number | null = null
     if (number.trim()) {
       const parsed = Number(number.trim())
@@ -165,14 +169,14 @@ function TeamRosterTab({
     setSaving(true)
     try {
       await onAddPlayer({
-        name: trimmed,
+        firstName: trimmedFirst,
+        lastName: trimmedLast,
         jersey,
         isGuest,
         primaryPosition,
         secondaryPosition,
-        contactInfo: contactInfo.trim(),
       })
-      onToast(`Added ${trimmed}`)
+      onToast(`Added ${formatPlayerFullName(trimmedFirst, trimmedLast)}`)
       resetAddForm()
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to add player')
@@ -184,9 +188,9 @@ function TeamRosterTab({
   const startEdit = (player: RosterPlayer) => {
     setEditId(player.id)
     setEditDraft({
-      name: player.name,
+      firstName: player.firstName,
+      lastName: player.lastName,
       number: player.number !== null ? String(player.number) : '',
-      contactInfo: player.contactInfo,
       isGuest: player.isGuest,
       primaryPosition: player.primaryPosition as RosterProfilePosition,
       secondaryPosition: player.secondaryPosition as RosterProfilePosition,
@@ -195,8 +199,9 @@ function TeamRosterTab({
 
   const saveEdit = async () => {
     if (!editId) return
-    const trimmed = editDraft.name.trim()
-    if (!trimmed) return
+    const trimmedFirst = editDraft.firstName.trim()
+    const trimmedLast = editDraft.lastName.trim()
+    if (!trimmedFirst || !trimmedLast) return
     let jersey: number | null = null
     if (editDraft.number.trim()) {
       const parsed = Number(editDraft.number.trim())
@@ -206,14 +211,14 @@ function TeamRosterTab({
     setSaving(true)
     try {
       await onUpdatePlayer(editId, {
-        name: trimmed,
+        firstName: trimmedFirst,
+        lastName: trimmedLast,
         jersey,
         isGuest: editDraft.isGuest,
         primaryPosition: editDraft.primaryPosition,
         secondaryPosition: editDraft.secondaryPosition,
-        contactInfo: editDraft.contactInfo.trim(),
       })
-      onToast('Player updated')
+      onToast(`Updated ${formatPlayerFullName(trimmedFirst, trimmedLast)}`)
       setEditId(null)
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to update player')
@@ -228,29 +233,31 @@ function TeamRosterTab({
     if (isEditing) {
       return (
         <li key={player.id} className="space-y-3 rounded-xl border border-neon/40 bg-card p-3">
-          <input
-            type="text"
-            value={editDraft.name}
-            onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
-            placeholder="Name"
-          />
           <div className="grid grid-cols-2 gap-2">
             <input
-              type="number"
-              value={editDraft.number}
-              onChange={(e) => setEditDraft((d) => ({ ...d, number: e.target.value }))}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums"
-              placeholder="Jersey"
+              type="text"
+              required
+              value={editDraft.firstName}
+              onChange={(e) => setEditDraft((d) => ({ ...d, firstName: e.target.value }))}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
+              placeholder="First name"
             />
             <input
               type="text"
-              value={editDraft.contactInfo}
-              onChange={(e) => setEditDraft((d) => ({ ...d, contactInfo: e.target.value }))}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              placeholder="Contact"
+              required
+              value={editDraft.lastName}
+              onChange={(e) => setEditDraft((d) => ({ ...d, lastName: e.target.value }))}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
+              placeholder="Last name"
             />
           </div>
+          <input
+            type="number"
+            value={editDraft.number}
+            onChange={(e) => setEditDraft((d) => ({ ...d, number: e.target.value }))}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums"
+            placeholder="Jersey"
+          />
           <RosterPositionFields
             idPrefix={`edit-${player.id}`}
             compact
@@ -292,16 +299,15 @@ function TeamRosterTab({
           {formatJersey(player.number)}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-bold text-foreground">{player.name}</p>
+          <p className="truncate font-bold text-foreground">
+            {formatPlayerFullName(player.firstName, player.lastName)}
+          </p>
           <p className="text-xs text-muted-foreground">
             {player.primaryPosition}
             {player.secondaryPosition && player.secondaryPosition !== player.primaryPosition
               ? ` · ${player.secondaryPosition}`
               : ''}
           </p>
-          {player.contactInfo ? (
-            <p className="truncate text-xs text-muted-foreground">{player.contactInfo}</p>
-          ) : null}
           {player.isGuest && (
             <span className="mt-0.5 inline-block rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase">
               Guest
@@ -311,7 +317,7 @@ function TeamRosterTab({
         <div className="flex shrink-0 gap-1">
           <button
             type="button"
-            aria-label={`Edit ${player.name}`}
+            aria-label={`Edit ${formatPlayerFullName(player.firstName, player.lastName)}`}
             onClick={() => startEdit(player)}
             className="flex size-9 items-center justify-center rounded-lg bg-secondary active:scale-90"
           >
@@ -319,10 +325,18 @@ function TeamRosterTab({
           </button>
           <button
             type="button"
-            aria-label={inactive ? `Reactivate ${player.name}` : `Deactivate ${player.name}`}
+            aria-label={
+              inactive
+                ? `Reactivate ${formatPlayerFullName(player.firstName, player.lastName)}`
+                : `Deactivate ${formatPlayerFullName(player.firstName, player.lastName)}`
+            }
             onClick={() =>
               void onSetPlayerActive(player.id, inactive).then(() =>
-                onToast(inactive ? `${player.name} reactivated` : `${player.name} deactivated`),
+                onToast(
+                  inactive
+                    ? `${formatPlayerFullName(player.firstName, player.lastName)} reactivated`
+                    : `${formatPlayerFullName(player.firstName, player.lastName)} deactivated`,
+                ),
               )
             }
             className="flex size-9 items-center justify-center rounded-lg bg-secondary text-danger active:scale-90"
@@ -352,30 +366,31 @@ function TeamRosterTab({
 
       {showAddForm && (
         <form onSubmit={(e) => void handleAdd(e)} className="space-y-3 rounded-xl border border-border bg-card p-4">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Player name"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold"
-            required
-          />
           <div className="grid grid-cols-2 gap-2">
             <input
-              type="number"
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-              placeholder={suggestedJersey ? `#${suggestedJersey}` : 'Jersey'}
-              className="rounded-lg border border-border bg-background px-3 py-2.5 tabular-nums"
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="First name"
+              className="rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold"
+              required
             />
             <input
               type="text"
-              value={contactInfo}
-              onChange={(e) => setContactInfo(e.target.value)}
-              placeholder="Email / phone"
-              className="rounded-lg border border-border bg-background px-3 py-2.5"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Last name"
+              className="rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold"
+              required
             />
           </div>
+          <input
+            type="number"
+            value={number}
+            onChange={(e) => setNumber(e.target.value)}
+            placeholder={suggestedJersey ? `#${suggestedJersey}` : 'Jersey'}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 tabular-nums"
+          />
           <RosterPositionFields
             idPrefix="team-add-player"
             compact
@@ -390,7 +405,7 @@ function TeamRosterTab({
           </label>
           <button
             type="submit"
-            disabled={saving || !name.trim()}
+            disabled={saving || !firstName.trim() || !lastName.trim()}
             className="w-full rounded-lg bg-neon py-3 text-sm font-bold uppercase text-neon-foreground disabled:opacity-40"
           >
             {saving ? 'Adding…' : 'Add to Roster'}
@@ -426,25 +441,41 @@ function TeamRosterTab({
 
 function TeamSettingsTab({
   activeTeamFormat,
+  primaryCoachName,
   onUpdateTeamFormat,
+  onUpdatePrimaryCoach,
   onToast,
-}: Pick<TeamManagementScreenProps, 'activeTeamFormat' | 'onUpdateTeamFormat' | 'onToast'>) {
+}: Pick<
+  TeamManagementScreenProps,
+  'activeTeamFormat' | 'primaryCoachName' | 'onUpdateTeamFormat' | 'onUpdatePrimaryCoach' | 'onToast'
+>) {
   const [format, setFormat] = useState<TeamFormat>(activeTeamFormat)
+  const [coachName, setCoachName] = useState(primaryCoachName)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     setFormat(activeTeamFormat)
   }, [activeTeamFormat])
 
+  useEffect(() => {
+    setCoachName(primaryCoachName)
+  }, [primaryCoachName])
+
+  const formatChanged = format !== activeTeamFormat
+  const coachChanged = coachName.trim() !== primaryCoachName.trim()
+  const canSave = (formatChanged || coachChanged) && !saving
+
   const handleSave = async () => {
-    if (format === activeTeamFormat) return
+    if (!canSave) return
     setSaving(true)
     try {
-      await onUpdateTeamFormat(format)
-      onToast(`Team format updated to ${format}`)
+      if (formatChanged) await onUpdateTeamFormat(format)
+      if (coachChanged) await onUpdatePrimaryCoach(coachName.trim())
+      onToast('Team settings saved')
     } catch (err) {
-      onToast(err instanceof Error ? err.message : 'Failed to update team format')
+      onToast(err instanceof Error ? err.message : 'Failed to save team settings')
       setFormat(activeTeamFormat)
+      setCoachName(primaryCoachName)
     } finally {
       setSaving(false)
     }
@@ -482,13 +513,33 @@ function TeamSettingsTab({
         </p>
       </div>
 
+      <div>
+        <label
+          htmlFor="primary-coach-name"
+          className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+        >
+          Primary Coach
+        </label>
+        <input
+          id="primary-coach-name"
+          type="text"
+          value={coachName}
+          onChange={(e) => setCoachName(e.target.value)}
+          placeholder="e.g. Coach Smith"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+        />
+        <p className="mt-2 text-sm text-muted-foreground">
+          Default head coach for new games with this team. You can override it on game day.
+        </p>
+      </div>
+
       <button
         type="button"
         onClick={() => void handleSave()}
-        disabled={saving || format === activeTeamFormat}
+        disabled={!canSave}
         className="w-full rounded-xl bg-athletic py-3 text-sm font-bold uppercase tracking-wide text-athletic-foreground disabled:opacity-40"
       >
-        {saving ? 'Saving…' : 'Save Format'}
+        {saving ? 'Saving…' : 'Save Settings'}
       </button>
     </section>
   )
@@ -531,6 +582,10 @@ function TeamLineupsTab({
 
   const activeRoster = teamRoster.filter((p) => p.activeStatus)
   const attending = Object.fromEntries(activeRoster.map((p) => [p.id, true]))
+  const sidelineNames = useMemo(
+    () => buildSidelineNameMap(activeRoster),
+    [activeRoster],
+  )
 
   const resetEditor = useCallback(() => {
     setEditingPresetId(null)
@@ -659,7 +714,7 @@ function TeamLineupsTab({
             }}
             players={activeRoster.map((player) => ({
               id: player.id,
-              name: player.name,
+              name: getSidelineName(player, sidelineNames),
               number: player.number,
               isGuest: player.isGuest,
               primaryPosition: player.primaryPosition,
@@ -755,7 +810,9 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
         {tab === 'settings' && (
           <TeamSettingsTab
             activeTeamFormat={props.activeTeamFormat}
+            primaryCoachName={props.primaryCoachName}
             onUpdateTeamFormat={props.onUpdateTeamFormat}
+            onUpdatePrimaryCoach={props.onUpdatePrimaryCoach}
             onToast={props.onToast}
           />
         )}

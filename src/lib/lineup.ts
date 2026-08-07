@@ -54,9 +54,20 @@ export function countSecondHalfStarters(secondHalfStarters: Record<string, boole
 }
 
 export function isSetupLineupValid(setup: SetupLineup, maxFieldPlayers: number): boolean {
+  return getSetupLineupBlockReason(setup, maxFieldPlayers) === null
+}
+
+export function getSetupLineupBlockReason(
+  setup: SetupLineup,
+  maxFieldPlayers: number,
+): string | null {
   const attending = getAttendingIds(setup).length
-  if (attending === 0) return false
-  return countFirstHalfStarters(setup) <= maxFieldPlayers
+  if (attending === 0) return 'Add at least one attending player to start.'
+  const starters = countFirstHalfStarters(setup)
+  if (starters > maxFieldPlayers) {
+    return `Too many starters (${starters}/${maxFieldPlayers}). Remove a player from the pitch.`
+  }
+  return null
 }
 
 export function isHalftimeLineupValid(

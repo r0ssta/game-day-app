@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject } from 'react'
 import {
   CheckCircle2,
   Goal,
@@ -30,9 +30,10 @@ import {
   getAttendingIds,
   getFirstHalfStarterIds,
   getMaxFieldPlayers,
+  getSetupLineupBlockReason,
   isHalftimeLineupValid,
-  isSetupLineupValid,
 } from '@/lib/lineup'
+import { resolveSetupLineup } from '@/lib/lineup-presets'
 import type { TeamFormat } from '@/lib/team-format'
 import {
   applySubIn,
@@ -42,7 +43,6 @@ import {
   stampAllOnField,
 } from '@/lib/play-time'
 import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS, tickCountdownClock, type QaSpeedMultiplier } from '@/lib/match-clock'
-import { ADD_NEW_OPTION } from '@/lib/named-entities'
 import type { RosterProfilePosition } from '@/lib/positions'
 import {
   syncMatchClock,
@@ -55,12 +55,20 @@ import {
   formatSupabaseError,
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
+import {
+  buildSidelineNameMap,
+  formatPlayerFullName,
+  formatPlayerLabel,
+  getSidelineName,
+} from '@/lib/player-names'
 import type {
   MatchPeriod,
   MatchPlayer,
   RosterPlayer,
   SetupLineup,
 } from '@/types/match'
+import type { LocationType } from '@/lib/match-location'
+import { formatVenueLabel } from '@/lib/match-location'
 
 
 const HALF_LENGTH_OPTIONS = [25, 30, 35, 40, 45]
@@ -77,51 +85,20 @@ function periodLabel(period: MatchPeriod) {
   return period === '1st' ? '1st Half' : '2nd Half'
 }
 
-type NamedEntity = { id: string; name: string }
-
-type EntitySelectProps = {
-  id: string
-  label: string
-  valueId: string | null
-  options: NamedEntity[]
-  addNewLabel: string
-  placeholder: string
-  onChange: (id: string) => void
-  onAddNew: (name: string) => Promise<string | void>
-}
-
-function EntitySelect({
+function CoachNameField({
   id,
   label,
-  valueId,
-  options,
-  addNewLabel,
-  placeholder,
+  value,
+  suggestions,
   onChange,
-  onAddNew,
-}: EntitySelectProps) {
-  const [isAdding, setIsAdding] = useState(false)
-  const [draft, setDraft] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const selectValue = isAdding ? ADD_NEW_OPTION : valueId ?? ''
-
-  const commitDraft = async () => {
-    const trimmed = draft.trim()
-    if (!trimmed) {
-      setIsAdding(false)
-      return
-    }
-    setSaving(true)
-    try {
-      const newId = await onAddNew(trimmed)
-      if (newId) onChange(newId)
-      setDraft('')
-      setIsAdding(false)
-    } finally {
-      setSaving(false)
-    }
-  }
+}: {
+  id: string
+  label: string
+  value: string
+  suggestions: string[]
+  onChange: (value: string) => void
+}) {
+  const listId = `${id}-suggestions`
 
   return (
     <div>
@@ -131,56 +108,60 @@ function EntitySelect({
       >
         {label}
       </label>
-      <select
+      <input
         id={id}
-        value={selectValue}
-        disabled={saving}
-        onChange={(e) => {
-          if (e.target.value === ADD_NEW_OPTION) {
-            setIsAdding(true)
-            setDraft('')
-            return
-          }
-          setIsAdding(false)
-          onChange(e.target.value)
-        }}
-        className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30 disabled:opacity-60"
-      >
-        {options.length === 0 && !valueId ? (
-          <option value="" disabled>
-            Select or add…
-          </option>
-        ) : !valueId && !isAdding ? (
-          <option value="" disabled>
-            Select a team…
-          </option>
-        ) : null}
-        {options.map((entity) => (
-          <option key={entity.id} value={entity.id}>
-            {entity.name}
-          </option>
+        type="text"
+        list={listId}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="e.g. Coach Smith"
+        className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+      />
+      <datalist id={listId}>
+        {suggestions.map((name) => (
+          <option key={name} value={name} />
         ))}
-        <option value={ADD_NEW_OPTION}>{addNewLabel}</option>
-      </select>
-      {isAdding && (
-        <input
-          type="text"
-          autoFocus
-          value={draft}
-          disabled={saving}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void commitDraft()
-            if (e.key === 'Escape') {
-              setDraft('')
-              setIsAdding(false)
-            }
-          }}
-          onBlur={() => void commitDraft()}
-          placeholder={placeholder}
-          className="mt-2 w-full rounded-xl border border-neon/50 bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-        />
-      )}
+      </datalist>
+    </div>
+  )
+}
+
+function HomeAwayToggle({
+  value,
+  onChange,
+}: {
+  value: LocationType
+  onChange: (value: LocationType) => void
+}) {
+  return (
+    <div>
+      <span className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+        Home / Away
+      </span>
+      <div
+        role="group"
+        aria-label="Home or Away"
+        className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-card p-1"
+      >
+        {(['home', 'away'] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={value === option}
+            onClick={() => onChange(option)}
+            className={cn(
+              'rounded-lg py-3 text-sm font-bold uppercase tracking-wide transition-colors active:scale-[0.98]',
+              value === option
+                ? option === 'home'
+                  ? 'bg-neon text-neon-foreground shadow-sm'
+                  : 'bg-athletic text-athletic-foreground shadow-sm'
+                : 'text-muted-foreground',
+            )}
+          >
+            {formatVenueLabel(option)}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -312,7 +293,8 @@ function MatchHeader({
 
 type PlayerEditDraft = {
   id: string
-  name: string
+  firstName: string
+  lastName: string
   number: string
   isGuest: boolean
   primaryPosition: RosterProfilePosition
@@ -323,7 +305,8 @@ type AddPlayerToRosterProps = {
   selectedTeamId: string | null
   suggestedJersey: number
   onAdd: (input: {
-    name: string
+    firstName: string
+    lastName: string
     jersey: number | null
     isGuest: boolean
     primaryPosition?: string
@@ -333,7 +316,8 @@ type AddPlayerToRosterProps = {
 
 function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayerToRosterProps) {
   const [expanded, setExpanded] = useState(false)
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [number, setNumber] = useState('')
   const [isGuest, setIsGuest] = useState(false)
   const [primaryPosition, setPrimaryPosition] = useState<RosterProfilePosition>(DEFAULT_PRIMARY_POSITION)
@@ -342,10 +326,12 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
   const [saving, setSaving] = useState(false)
 
   const teamSelected = Boolean(selectedTeamId)
-  const canSubmit = teamSelected && name.trim().length > 0 && !saving
+  const canSubmit =
+    teamSelected && firstName.trim().length > 0 && lastName.trim().length > 0 && !saving
 
   const resetForm = () => {
-    setName('')
+    setFirstName('')
+    setLastName('')
     setIsGuest(false)
     setNumber('')
     setPrimaryPosition(DEFAULT_PRIMARY_POSITION)
@@ -356,7 +342,8 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
     e.preventDefault()
     if (!canSubmit || !selectedTeamId) return
 
-    const trimmed = name.trim()
+    const trimmedFirst = firstName.trim()
+    const trimmedLast = lastName.trim()
     const jerseyRaw = number.trim()
     let jersey: number | null = null
     if (jerseyRaw !== '') {
@@ -368,7 +355,8 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
     setSaving(true)
     try {
       await onAdd({
-        name: trimmed,
+        firstName: trimmedFirst,
+        lastName: trimmedLast,
         jersey,
         isGuest,
         primaryPosition,
@@ -423,21 +411,41 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
       )}
 
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
-          <div>
-            <label
-              htmlFor="new-player-name"
-              className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-            >
-              Name
-            </label>
-            <input
-              id="new-player-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Player name"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label
+                htmlFor="new-player-first-name"
+                className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                First Name
+              </label>
+              <input
+                id="new-player-first-name"
+                type="text"
+                required
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="First name"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="new-player-last-name"
+                className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                Last Name
+              </label>
+              <input
+                id="new-player-last-name"
+                type="text"
+                required
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Last name"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
           </div>
 
           <div>
@@ -506,14 +514,14 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
 type SetupScreenProps = {
   activeTeamName: string
   activeTeamFormat: TeamFormat
-  coaches: NamedEntity[]
-  selectedCoachId: string | null
-  onCoachChange: (id: string) => void
-  onAddCoach: (name: string) => Promise<void>
+  coachName: string
+  onCoachNameChange: (value: string) => void
+  coachSuggestions: string[]
   rosterLoading: boolean
   suggestedJersey: number
   onAddPlayer: (input: {
-    name: string
+    firstName: string
+    lastName: string
     jersey: number | null
     isGuest: boolean
     primaryPosition?: string
@@ -525,8 +533,8 @@ type SetupScreenProps = {
   onMatchDateChange: (value: string) => void
   matchTime: string
   onMatchTimeChange: (value: string) => void
-  location: string
-  onLocationChange: (value: string) => void
+  locationType: LocationType
+  onLocationTypeChange: (value: LocationType) => void
   tournamentGame: boolean
   onTournamentGameChange: (value: boolean) => void
   halfLengthMinutes: number
@@ -541,21 +549,22 @@ type SetupScreenProps = {
   onEditPlayer: (id: string) => void
   onStartMatch: () => void
   canStartMatch: boolean
+  startMatchBlockReason: string | null
   attendingCount: number
   lineupPresets: { id: string; preset_name: string }[]
   onLoadLineupPreset: (presetId: string) => void
   onBackToHome: () => void
   setupSlotAssignments?: Record<string, string | null>
   setupPitchKey: number
+  setupAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
 }
 
 function SetupScreen({
   activeTeamName,
   activeTeamFormat,
-  coaches,
-  selectedCoachId,
-  onCoachChange,
-  onAddCoach,
+  coachName,
+  onCoachNameChange,
+  coachSuggestions,
   rosterLoading,
   suggestedJersey,
   onAddPlayer,
@@ -565,8 +574,8 @@ function SetupScreen({
   onMatchDateChange,
   matchTime,
   onMatchTimeChange,
-  location,
-  onLocationChange,
+  locationType,
+  onLocationTypeChange,
   tournamentGame,
   onTournamentGameChange,
   halfLengthMinutes,
@@ -581,16 +590,27 @@ function SetupScreen({
   onEditPlayer,
   onStartMatch,
   canStartMatch,
+  startMatchBlockReason,
   attendingCount,
   lineupPresets,
   onLoadLineupPreset,
   onBackToHome,
   setupSlotAssignments,
   setupPitchKey,
+  setupAssignmentsRef,
   activeTeamId,
 }: SetupScreenProps & { activeTeamId: string | null }) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
+
+  const attendingRoster = useMemo(
+    () => masterRoster.filter((player) => setupLineup.attending[player.id]),
+    [masterRoster, setupLineup.attending],
+  )
+  const sidelineNameMap = useMemo(
+    () => buildSidelineNameMap(attendingRoster),
+    [attendingRoster],
+  )
 
   return (
     <main className="min-h-dvh bg-background pb-10">
@@ -614,15 +634,12 @@ function SetupScreen({
             </p>
           </div>
 
-          <EntitySelect
-            id="coach-name"
-            label="Coach Name"
-            valueId={selectedCoachId}
-            options={coaches}
-            addNewLabel="+ Add New Coach"
-            placeholder="e.g. Coach Smith"
-            onChange={onCoachChange}
-            onAddNew={onAddCoach}
+          <CoachNameField
+            id="head-coach"
+            label="Head Coach"
+            value={coachName}
+            suggestions={coachSuggestions}
+            onChange={onCoachNameChange}
           />
 
           <div>
@@ -675,22 +692,7 @@ function SetupScreen({
             </div>
           </div>
 
-          <div>
-            <label
-              htmlFor="location"
-              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-            >
-              Location
-            </label>
-            <input
-              id="location"
-              type="text"
-              value={location}
-              onChange={(e) => onLocationChange(e.target.value)}
-              placeholder="e.g. Bryan Park Field 3"
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-            />
-          </div>
+          <HomeAwayToggle value={locationType} onChange={onLocationTypeChange} />
 
           <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
             <span className="text-sm font-bold text-foreground">Tournament Game</span>
@@ -798,9 +800,13 @@ function SetupScreen({
                 onFormationChange={onSetFirstHalfFormation}
                 initialSlotAssignments={setupSlotAssignments}
                 assignmentsResetKey={setupPitchKey}
+                assignmentsRef={setupAssignmentsRef}
                 players={masterRoster.map((player) => ({
                   id: player.id,
-                  name: player.name,
+                  name: formatPlayerFullName(player.firstName, player.lastName),
+                  shortName: setupLineup.attending[player.id]
+                    ? getSidelineName(player, sidelineNameMap)
+                    : formatPlayerFullName(player.firstName, player.lastName),
                   number: player.number,
                   isGuest: player.isGuest,
                   primaryPosition: player.primaryPosition,
@@ -837,6 +843,11 @@ function SetupScreen({
         >
           <span className="font-display text-4xl font-bold uppercase tracking-wide">Start Match</span>
         </button>
+        {!canStartMatch && startMatchBlockReason ? (
+          <p className="text-center text-sm font-semibold text-muted-foreground">
+            {startMatchBlockReason}
+          </p>
+        ) : null}
       </div>
     </main>
   )
@@ -885,6 +896,10 @@ function HalftimeSetupScreen({
 }: HalftimeSetupScreenProps) {
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const attendingPlayers = players.filter((p) => p.attending)
+  const sidelineNameMap = useMemo(
+    () => buildSidelineNameMap(attendingPlayers),
+    [attendingPlayers],
+  )
 
   return (
     <main className="min-h-dvh bg-background pb-10">
@@ -904,7 +919,8 @@ function HalftimeSetupScreen({
           assignmentsRef={halftimeAssignmentsRef}
           players={attendingPlayers.map((player) => ({
             id: player.id,
-            name: player.name,
+            name: formatPlayerFullName(player.firstName, player.lastName),
+            shortName: getSidelineName(player, sidelineNameMap),
             number: player.number,
             isGuest: player.isGuest,
             matchPosition: player.matchPosition,
@@ -987,20 +1003,39 @@ function PlayerEditModal({
         </div>
 
         <div className="space-y-4">
-          <div>
-            <label
-              htmlFor="player-name"
-              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-            >
-              Name
-            </label>
-            <input
-              id="player-name"
-              type="text"
-              value={draft.name}
-              onChange={(e) => onChange({ ...draft, name: e.target.value })}
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label
+                htmlFor="player-first-name"
+                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                First Name
+              </label>
+              <input
+                id="player-first-name"
+                type="text"
+                required
+                value={draft.firstName}
+                onChange={(e) => onChange({ ...draft, firstName: e.target.value })}
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="player-last-name"
+                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                Last Name
+              </label>
+              <input
+                id="player-last-name"
+                type="text"
+                required
+                value={draft.lastName}
+                onChange={(e) => onChange({ ...draft, lastName: e.target.value })}
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
           </div>
           <div>
             <label
@@ -1056,7 +1091,7 @@ function PlayerEditModal({
         <button
           type="button"
           onClick={onSave}
-          disabled={!draft.name.trim()}
+          disabled={!draft.firstName.trim() || !draft.lastName.trim()}
           className="mt-6 w-full rounded-xl bg-athletic py-4 font-display text-xl font-bold uppercase tracking-wide text-athletic-foreground active:scale-[0.98] disabled:opacity-40"
         >
           Save Player
@@ -1207,17 +1242,20 @@ export default function App() {
     setActiveTeamId,
     activeTeamFormat,
     updateTeamFormat,
-    selectedCoachId,
-    setSelectedCoachId,
+    updateTeamPrimaryCoach,
+    activeTeamPrimaryCoachName,
+    setupCoachName,
+    setSetupCoachName,
     matchTeamName,
     matchCoachName,
     matchOpponent,
+    matchLocationType,
     halfLengthMinutes,
     setHalfLengthMinutes,
     opponent,
     setOpponent,
-    location,
-    setLocation,
+    locationType,
+    setLocationType,
     tournamentGame,
     setTournamentGame,
     matchDate,
@@ -1250,7 +1288,6 @@ export default function App() {
     finishGame,
     returnToHome,
     createTeam,
-    createCoach,
     addPlayer,
     updatePlayer,
     beginMatch,
@@ -1259,6 +1296,11 @@ export default function App() {
     setStartFirstHalf,
     setSetupMatchPosition,
   } = useGameDayApp()
+
+  const coachSuggestions = useMemo(
+    () => coaches.map((coach) => coach.name).sort((a, b) => a.localeCompare(b)),
+    [coaches],
+  )
 
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
@@ -1272,6 +1314,7 @@ export default function App() {
   const [qaPanelExpanded, setQaPanelExpanded] = useState(false)
 
   const livePitchRef = useRef<LiveTacticalPitchHandle>(null)
+  const setupAssignmentsRef = useRef<Record<string, string | null> | null>(null)
   const halftimeAssignmentsRef = useRef<Record<string, string | null> | null>(null)
 
   const clockSyncRef = useRef({ homeScore, awayScore, seconds, period, periodClockStarted })
@@ -1284,7 +1327,8 @@ export default function App() {
   const activeTeamName =
     teams.find((team) => team.id === activeTeamId)?.name ?? 'Team'
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
-  const canStartMatch = isSetupLineupValid(setupLineup, maxFieldPlayers) && Boolean(activeTeamId)
+  const startMatchBlockReason = getSetupLineupBlockReason(setupLineup, maxFieldPlayers)
+  const canStartMatch = startMatchBlockReason === null && Boolean(activeTeamId)
   const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf, maxFieldPlayers)
   const activeFormation = period === '1st' ? matchFormations.first : matchFormations.second
 
@@ -1336,28 +1380,30 @@ export default function App() {
     if (!canStartMatch || !activeTeamId || startingMatch) return
 
     const team = teams.find((t) => t.id === activeTeamId)
-    const coach = selectedCoachId ? coaches.find((c) => c.id === selectedCoachId) : null
     if (!team) return
 
     setStartingMatch(true)
     try {
+      const resolvedLineup = resolveSetupLineup(
+        setupLineup,
+        setupAssignmentsRef.current,
+      )
       const attendingPlayers = masterRoster.filter(
-        (p) => setupLineup.attending[p.id] !== false,
+        (p) => resolvedLineup.attending[p.id] !== false,
       )
 
       await beginMatch({
         teamId: activeTeamId,
-        coachId: selectedCoachId,
         teamName: team.name,
-        coachName: coach?.name ?? '',
+        coachName: setupCoachName.trim(),
         opponent,
-        location,
+        locationType,
         tournamentGame,
         halfLength: halfLengthMinutes,
         matchDate,
         matchTime,
         attendingPlayers,
-        firstHalfStarterIds: getFirstHalfStarterIds(setupLineup),
+        firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
         matchPositions,
         firstHalfFormation: matchFormations.first,
       })
@@ -1373,14 +1419,13 @@ export default function App() {
   }, [
     canStartMatch,
     activeTeamId,
-    selectedCoachId,
+    setupCoachName,
     startingMatch,
     teams,
-    coaches,
     setupLineup,
     masterRoster,
     opponent,
-    location,
+    locationType,
     tournamentGame,
     halfLengthMinutes,
     matchDate,
@@ -1484,7 +1529,8 @@ export default function App() {
       if (!player) return
       setEditDraft({
         id: player.id,
-        name: player.name,
+        firstName: player.firstName,
+        lastName: player.lastName,
         number: player.number !== null ? String(player.number) : '',
         isGuest: player.isGuest,
         primaryPosition: player.primaryPosition as RosterProfilePosition,
@@ -1496,8 +1542,9 @@ export default function App() {
 
   const savePlayerDraft = useCallback(async () => {
     if (!editDraft) return
-    const name = editDraft.name.trim()
-    if (!name) return
+    const firstName = editDraft.firstName.trim()
+    const lastName = editDraft.lastName.trim()
+    if (!firstName || !lastName) return
 
     const jerseyRaw = editDraft.number.trim()
     let jersey: number | null = null
@@ -1509,7 +1556,8 @@ export default function App() {
 
     try {
       await updatePlayer(editDraft.id, {
-        name,
+        firstName,
+        lastName,
         jersey,
         isGuest: editDraft.isGuest,
         primaryPosition: editDraft.primaryPosition,
@@ -1523,7 +1571,8 @@ export default function App() {
 
   const handleAddPlayer = useCallback(
     async (input: {
-      name: string
+      firstName: string
+      lastName: string
       jersey: number | null
       isGuest: boolean
       primaryPosition?: string
@@ -1532,7 +1581,7 @@ export default function App() {
       try {
         await addPlayer(input)
         const jerseyLabel = input.jersey !== null ? `#${input.jersey} ` : ''
-        setToast(`Added ${jerseyLabel}${input.name}`)
+        setToast(`Added ${jerseyLabel}${formatPlayerFullName(input.firstName, input.lastName)}`)
       } catch (err) {
         setToast(err instanceof Error ? err.message : 'Failed to add player')
         throw err
@@ -1583,6 +1632,7 @@ export default function App() {
       if (onFieldCount >= maxFieldPlayers) return
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
 
       setPlayers((prev) => {
         const next = applySubIn(prev, benchId, seconds).map((p) =>
@@ -1600,9 +1650,7 @@ export default function App() {
               formation: activeFormation,
             },
           ])
-          setToast(
-            `Sub in · ${benchPlayer.number !== null ? `#${benchPlayer.number} ` : ''}${benchPlayer.name}`,
-          )
+          setToast(`Sub in · ${formatPlayerLabel(benchPlayer, sidelineMap)}`)
         }
         return next
       })
@@ -1614,6 +1662,7 @@ export default function App() {
     (fieldId: string) => {
       if (!matchId) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
 
       setPlayers((prev) => {
         const next = applySubOut(prev, fieldId, seconds)
@@ -1629,20 +1678,19 @@ export default function App() {
               formation: activeFormation,
             },
           ])
-          setToast(
-            `Sub out · ${fieldPlayer.number !== null ? `#${fieldPlayer.number} ` : ''}${fieldPlayer.name}`,
-          )
+          setToast(`Sub out · ${formatPlayerLabel(fieldPlayer, sidelineMap)}`)
         }
         return next
       })
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
+    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
   )
 
   const handleLiveSwap = useCallback(
     (benchId: string, fieldId: string, tacticalPosition: string) => {
       if (!matchId) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
 
       setPlayers((prev) => {
         const next = applySubstitution(prev, benchId, fieldId, seconds).map((p) =>
@@ -1671,13 +1719,13 @@ export default function App() {
             },
           ])
           setToast(
-            `Sub · ${benchPlayer.number !== null ? `#${benchPlayer.number} ` : ''}${benchPlayer.name} for ${fieldPlayer.number !== null ? `#${fieldPlayer.number} ` : ''}${fieldPlayer.name}`,
+            `Sub · ${formatPlayerLabel(benchPlayer, sidelineMap)} for ${formatPlayerLabel(fieldPlayer, sidelineMap)}`,
           )
         }
         return next
       })
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
+    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
   )
 
   const closeGoalWizard = useCallback(() => {
@@ -1741,9 +1789,10 @@ export default function App() {
       const assistPlayer = assistPlayerId
         ? players.find((p) => p.id === assistPlayerId)
         : null
-      const scorerLabel = `${scorer.number !== null ? `#${scorer.number} ` : ''}${scorer.name}`
+      const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
+      const scorerLabel = formatPlayerLabel(scorer, sidelineMap)
       const assistLabel = assistPlayer
-        ? `${assistPlayer.number !== null ? `#${assistPlayer.number} ` : ''}${assistPlayer.name}`
+        ? formatPlayerLabel(assistPlayer, sidelineMap)
         : 'Unassisted'
 
       setToast(`Goal · ${scorerLabel} (${assistLabel})`)
@@ -1811,12 +1860,9 @@ export default function App() {
           activeTeamId={activeTeamId}
           activeTeamName={activeTeamName}
           activeTeamFormat={activeTeamFormat}
-          coaches={coaches}
-          selectedCoachId={selectedCoachId}
-          onCoachChange={setSelectedCoachId}
-          onAddCoach={async (name) => {
-            await createCoach(name)
-          }}
+          coachName={setupCoachName}
+          onCoachNameChange={setSetupCoachName}
+          coachSuggestions={coachSuggestions}
           rosterLoading={rosterLoading}
           suggestedJersey={suggestedJersey}
           onAddPlayer={handleAddPlayer}
@@ -1826,8 +1872,8 @@ export default function App() {
           onMatchDateChange={setMatchDate}
           matchTime={matchTime}
           onMatchTimeChange={setMatchTime}
-          location={location}
-          onLocationChange={setLocation}
+          locationType={locationType}
+          onLocationTypeChange={setLocationType}
           tournamentGame={tournamentGame}
           onTournamentGameChange={setTournamentGame}
           halfLengthMinutes={halfLengthMinutes}
@@ -1842,12 +1888,14 @@ export default function App() {
           onEditPlayer={openEditPlayer}
           onStartMatch={() => void handleStartMatch()}
           canStartMatch={canStartMatch && !startingMatch}
+          startMatchBlockReason={startingMatch ? 'Starting match…' : startMatchBlockReason}
           attendingCount={attendingCount}
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadLineupPreset}
           onBackToHome={() => setAppMode('home')}
           setupSlotAssignments={setupSlotAssignments}
           setupPitchKey={setupPitchKey}
+          setupAssignmentsRef={setupAssignmentsRef}
         />
         <PlayerEditModal
           draft={editDraft}
@@ -1855,6 +1903,14 @@ export default function App() {
           onSave={() => void savePlayerDraft()}
           onClose={() => setEditDraft(null)}
         />
+        {toast && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
+              <CheckCircle2 className="size-5" strokeWidth={2.5} />
+              {toast}
+            </div>
+          </div>
+        )}
       </>
     )
   }
@@ -1880,6 +1936,10 @@ export default function App() {
           onSavePreset={saveLineupPreset}
           onDeletePreset={removeLineupPreset}
           onUpdateTeamFormat={updateTeamFormat}
+          primaryCoachName={activeTeamPrimaryCoachName}
+          onUpdatePrimaryCoach={async (name) => {
+            await updateTeamPrimaryCoach(name)
+          }}
           onBackToHome={() => setAppMode('home')}
           onToast={setToast}
         />
@@ -1957,7 +2017,9 @@ export default function App() {
         <PostGameRecap
           matchId={matchId}
           teamName={matchTeamName}
+          coachName={matchCoachName}
           opponent={matchOpponent}
+          locationType={matchLocationType}
           homeScore={homeScore}
           awayScore={awayScore}
           halfLengthMinutes={halfLengthMinutes}
