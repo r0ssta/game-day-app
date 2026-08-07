@@ -95,10 +95,15 @@ export function PostGameRecap({
       setLoading(true)
       setLoadError(null)
       try {
-        const [events, existingReviews] = await Promise.all([
-          fetchMatchEvents(matchId),
-          fetchMatchReviews(matchId),
-        ])
+        const events = await fetchMatchEvents(matchId)
+        if (cancelled) return
+
+        let existingReviews: Awaited<ReturnType<typeof fetchMatchReviews>> = []
+        try {
+          existingReviews = await fetchMatchReviews(matchId)
+        } catch (reviewErr) {
+          console.warn('[PostGameRecap] could not load saved reviews', reviewErr)
+        }
         if (cancelled) return
 
         const initialReviews: Record<string, { impact: Impact; notes: string }> = {}

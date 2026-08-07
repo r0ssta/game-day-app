@@ -41,3 +41,9 @@ alter table public.match_reviews enable row level security;
 create policy "match_reviews_select_all" on public.match_reviews for select to anon, authenticated using (true);
 create policy "match_reviews_insert_all" on public.match_reviews for insert to anon, authenticated with check (true);
 create policy "match_reviews_update_all" on public.match_reviews for update to anon, authenticated using (true) with check (true);
+
+-- Assist linked on goal events
+alter table public.match_events
+  add column if not exists assist_player_id uuid references public.players (id) on delete set null;
+
+create index if not exists idx_match_events_assist_player_id on public.match_events (assist_player_id);

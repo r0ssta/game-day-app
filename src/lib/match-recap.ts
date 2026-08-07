@@ -70,6 +70,9 @@ export function aggregatePlayerRecaps(
         break
       case 'goal':
         row.goals += 1
+        if (event.assist_player_id) {
+          ensure(event.assist_player_id).assists += 1
+        }
         break
       case 'assist':
         row.assists += 1

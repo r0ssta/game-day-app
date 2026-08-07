@@ -49,6 +49,7 @@ export type DbMatchEvent = {
   timestamp: number
   event_notes: string | null
   formation: string | null
+  assist_player_id: string | null
   created_at: string
 }
 

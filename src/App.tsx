@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   CheckCircle2,
+  Goal,
   UserPlus,
   Users,
   X,
 } from 'lucide-react'
+import { GoalWizardModal } from '@/components/GoalWizardModal'
 import { LiveTacticalPitch, type PositionReassignUpdate } from '@/components/LiveTacticalPitch'
 import { PostGameRecap } from '@/components/PostGameRecap'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
@@ -28,6 +30,7 @@ import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS
 import { ADD_NEW_OPTION } from '@/lib/named-entities'
 import {
   syncMatchClock,
+  syncMatchEvent,
   syncMatchEvents,
   syncMatchRecord,
   syncMatchStat,
@@ -1055,6 +1058,7 @@ export default function App() {
     players,
     setPlayers,
     homeScore,
+    setHomeScore,
     awayScore,
     seconds,
     setSeconds,
@@ -1109,6 +1113,9 @@ export default function App() {
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
   const [toast, setToast] = useState<string | null>(null)
+  const [goalWizardOpen, setGoalWizardOpen] = useState(false)
+  const [goalWizardStep, setGoalWizardStep] = useState<'scorer' | 'assist'>('scorer')
+  const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
@@ -1228,6 +1235,9 @@ export default function App() {
       }
     }
     await endMatch()
+    setGoalWizardOpen(false)
+    setGoalWizardStep('scorer')
+    setGoalScorerId(null)
     setQaSpeedMultiplier(1)
     setQaPanelExpanded(false)
     setToast(null)
@@ -1476,6 +1486,66 @@ export default function App() {
     [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
   )
 
+  const closeGoalWizard = useCallback(() => {
+    setGoalWizardOpen(false)
+    setGoalWizardStep('scorer')
+    setGoalScorerId(null)
+  }, [])
+
+  const handleSelectGoalScorer = useCallback((player: MatchPlayer) => {
+    setGoalScorerId(player.id)
+    setGoalWizardStep('assist')
+  }, [])
+
+  const handleCompleteGoal = useCallback(
+    (assistPlayerId: string | null) => {
+      if (!matchId || !goalScorerId) return
+
+      const scorer = players.find((p) => p.id === goalScorerId)
+      if (!scorer) return
+
+      if (assistPlayerId === goalScorerId) return
+
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+
+      setHomeScore((s) => {
+        const next = s + 1
+        syncMatchRecord(matchId, { home_score: next })
+        return next
+      })
+
+      syncMatchEvent({
+        matchId,
+        playerId: goalScorerId,
+        eventType: 'goal',
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        assistPlayerId,
+      })
+
+      const assistPlayer = assistPlayerId
+        ? players.find((p) => p.id === assistPlayerId)
+        : null
+      const scorerLabel = `${scorer.number !== null ? `#${scorer.number} ` : ''}${scorer.name}`
+      const assistLabel = assistPlayer
+        ? `${assistPlayer.number !== null ? `#${assistPlayer.number} ` : ''}${assistPlayer.name}`
+        : 'Unassisted'
+
+      setToast(`Goal · ${scorerLabel} (${assistLabel})`)
+      closeGoalWizard()
+    },
+    [
+      matchId,
+      goalScorerId,
+      players,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      setHomeScore,
+      closeGoalWizard,
+    ],
+  )
+
   if (loading) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background px-4">
@@ -1643,6 +1713,17 @@ export default function App() {
           />
         )}
 
+        {periodClockStarted && (
+          <button
+            type="button"
+            onClick={() => setGoalWizardOpen(true)}
+            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-neon py-6 font-display text-4xl font-black uppercase tracking-wide text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95"
+          >
+            <Goal className="size-10" strokeWidth={2.5} />
+            Goal
+          </button>
+        )}
+
         <LiveTacticalPitch
           key={period}
           periodKey={period}
@@ -1667,6 +1748,16 @@ export default function App() {
           </button>
         </div>
       </div>
+
+      <GoalWizardModal
+        open={goalWizardOpen}
+        step={goalWizardStep}
+        players={players}
+        scorerId={goalScorerId}
+        onSelectScorer={handleSelectGoalScorer}
+        onSelectAssist={handleCompleteGoal}
+        onClose={closeGoalWizard}
+      />
 
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">

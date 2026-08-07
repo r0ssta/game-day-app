@@ -11,9 +11,10 @@ export type MatchEventInput = {
   timestamp: number
   formation: string
   eventNotes?: string | null
+  assistPlayerId?: string | null
 }
 
-function matchEventToRow(event: MatchEventInput, includeFormation = true) {
+function matchEventToRow(event: MatchEventInput, includeExtended = true) {
   const row = {
     match_id: event.matchId,
     player_id: event.playerId,
@@ -21,7 +22,13 @@ function matchEventToRow(event: MatchEventInput, includeFormation = true) {
     timestamp: event.timestamp,
     event_notes: event.eventNotes ?? null,
   }
-  return includeFormation ? { ...row, formation: event.formation } : row
+  if (!includeExtended) return row
+
+  const extended: Record<string, unknown> = { ...row, formation: event.formation }
+  if (event.eventType === 'goal') {
+    extended.assist_player_id = event.assistPlayerId ?? null
+  }
+  return extended
 }
 
 export function formatSupabaseError(err: unknown): string {
@@ -42,6 +49,19 @@ function isMissingColumnError(err: unknown): boolean {
   )
 }
 
+/** match_reviews is optional until migration is applied */
+function isOptionalTableError(err: unknown): boolean {
+  const message = formatSupabaseError(err).toLowerCase()
+  return (
+    message.includes('match_reviews') &&
+    (message.includes('does not exist') ||
+      message.includes('could not find') ||
+      message.includes('schema cache') ||
+      message.includes('permission denied') ||
+      message.includes('not found'))
+  )
+}
+
 async function insertMatchEventRows(
   rows: Array<ReturnType<typeof matchEventToRow>>,
 ): Promise<void> {
@@ -55,8 +75,13 @@ async function insertMatchEventRows(
       const {
         formation: _formation,
         event_notes: _eventNotes,
+        assist_player_id: _assistPlayerId,
         ...legacy
-      } = row as Record<string, unknown> & { formation?: string; event_notes?: string | null }
+      } = row as Record<string, unknown> & {
+        formation?: string
+        event_notes?: string | null
+        assist_player_id?: string | null
+      }
       return legacy
     })
     const { error: legacyError } = await supabase.from('match_events').insert(legacyRows)
@@ -407,8 +432,12 @@ export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[
     .from('match_reviews')
     .select('*')
     .eq('match_id', matchId)
-  if (error) throw error
-  return data ?? []
+  if (!error) return data ?? []
+  if (isOptionalTableError(error)) {
+    console.warn('[fetchMatchReviews] match_reviews unavailable:', formatSupabaseError(error))
+    return []
+  }
+  throw error
 }
 
 export type PostGameReviewInput = {
@@ -432,7 +461,10 @@ export async function savePostGameReview(matchId: string, reviews: PostGameRevie
   const { error: reviewError } = await supabase
     .from('match_reviews')
     .upsert(reviewRows, { onConflict: 'match_id,player_id' })
-  if (reviewError) throw reviewError
+  if (reviewError && !isOptionalTableError(reviewError)) throw reviewError
+  if (reviewError) {
+    console.warn('[savePostGameReview] match_reviews unavailable:', formatSupabaseError(reviewError))
+  }
 
   await Promise.all(
     reviews.map((review) =>

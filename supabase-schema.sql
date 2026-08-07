@@ -59,6 +59,7 @@ create table if not exists public.match_events (
   timestamp integer not null check (timestamp >= 0),
   event_notes text,
   formation text,
+  assist_player_id uuid references public.players (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -88,6 +89,7 @@ create table if not exists public.match_stats (
 create index if not exists idx_players_team_id on public.players (team_id);
 create index if not exists idx_matches_status on public.matches (status);
 create index if not exists idx_match_events_match_id on public.match_events (match_id);
+create index if not exists idx_match_events_assist_player_id on public.match_events (assist_player_id);
 create index if not exists idx_match_stats_match_id on public.match_stats (match_id);
 
 create table if not exists public.match_reviews (
