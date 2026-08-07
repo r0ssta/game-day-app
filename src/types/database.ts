@@ -45,7 +45,7 @@ export type DbMatch = {
   away_score: number
   clock_seconds: number
   period: '1st' | '2nd'
-  status: 'active' | 'completed'
+  status: 'active' | 'pending_review' | 'completed'
   period_clock_started: boolean
   coach_summary_notes: string | null
   created_at: string

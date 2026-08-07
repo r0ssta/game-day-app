@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { BarChart3, ClipboardList, Users } from 'lucide-react'
 import { TeamSelector } from '@/components/AppNavigation'
+import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
+import type { DbMatch } from '@/types/database'
 
 type NamedEntity = { id: string; name: string }
 
@@ -11,6 +13,8 @@ type HomeScreenProps = {
   onAddTeam: (name: string) => Promise<string | void>
   hasActiveMatch: boolean
   activeMatchLabel?: string
+  pendingReviewMatches: DbMatch[]
+  onOpenPendingReview: (matchId: string) => void
   onNewGame: () => void
   onTeamManagement: () => void
   onReporting: () => void
@@ -24,6 +28,8 @@ export function HomeScreen({
   onAddTeam,
   hasActiveMatch,
   activeMatchLabel,
+  pendingReviewMatches,
+  onOpenPendingReview,
   onNewGame,
   onTeamManagement,
   onReporting,
@@ -50,6 +56,11 @@ export function HomeScreen({
         />
 
         <div className="mt-6 flex flex-1 flex-col justify-center gap-4">
+          <GameRecapNeededAlerts
+            matches={pendingReviewMatches}
+            onOpenRecap={onOpenPendingReview}
+          />
+
           {hasActiveMatch && (
             <button
               type="button"

@@ -53,7 +53,7 @@ create table if not exists public.matches (
   away_score integer not null default 0 check (away_score >= 0),
   clock_seconds integer not null default 0 check (clock_seconds >= 0),
   period text not null default '1st' check (period in ('1st', '2nd')),
-  status text not null default 'active' check (status in ('active', 'completed')),
+  status text not null default 'active' check (status in ('active', 'pending_review', 'completed')),
   period_clock_started boolean not null default false,
   coach_summary_notes text,
   created_at timestamptz not null default now()

@@ -39,12 +39,14 @@ import {
   fetchActiveMatch,
   fetchCoaches,
   fetchLineupPresetsByTeamId,
+  fetchMatchRecapBundle,
   fetchPlayersByTeamId,
   fetchTeams,
   insertCoach,
   insertLineupPreset,
   insertTeam,
   insertMatchEvent,
+  markMatchPendingReview,
   rebuildMatchPlayers,
   resolveCoachIdForName,
   resolveMatchCoachName,
@@ -55,7 +57,7 @@ import {
   upsertPlayer,
   setPlayerActiveStatus,
 } from '@/lib/supabase-api'
-import type { DbCoach, DbLineupPreset, DbTeam } from '@/types/database'
+import type { DbCoach, DbLineupPreset, DbMatch, DbTeam } from '@/types/database'
 import type {
   AppMode,
   MatchPeriod,
@@ -79,6 +81,7 @@ export function useGameDayApp() {
 
   const [appMode, setAppMode] = useState<AppMode>('home')
   const [matchId, setMatchId] = useState<string | null>(null)
+  const [matchStatus, setMatchStatus] = useState<DbMatch['status'] | null>(null)
   const [players, setPlayers] = useState<MatchPlayer[]>([])
   const [homeScore, setHomeScore] = useState(0)
   const [awayScore, setAwayScore] = useState(0)
@@ -217,6 +220,7 @@ export function useGameDayApp() {
           resolvedTeamId = match.team_id
           setMasterRoster(roster)
           setMatchId(match.id)
+          setMatchStatus('active')
           setAppMode('home')
           setPlayers(matchPlayers)
           setHomeScore(match.home_score)
@@ -642,6 +646,7 @@ export function useGameDayApp() {
         )
 
         setMatchId(match.id)
+        setMatchStatus('active')
         setAppMode('match')
         setPlayers(matchPlayers)
         setHomeScore(0)
@@ -814,12 +819,13 @@ export function useGameDayApp() {
 
         if (matchId) {
           void syncMatchStats(matchId, finalized)
-          void completeMatch(matchId)
+          void markMatchPendingReview(matchId)
         }
 
         return finalized
       })
 
+      setMatchStatus('pending_review')
       setAppMode('recap')
     },
     [matchId, halfLengthMinutes, setRunning, getActiveFormation],
@@ -856,7 +862,38 @@ export function useGameDayApp() {
     setMatchDate(defaultMatchDate())
     setMatchTime(defaultMatchTime())
     setMatchId(null)
+    setMatchStatus(null)
   }, [activeTeamFormat])
+
+  const openPendingReviewRecap = useCallback(async (targetMatchId: string) => {
+    const bundle = await fetchMatchRecapBundle(targetMatchId)
+    if (!bundle) throw new Error('Match not found')
+
+    const { match, team, coach, stats } = bundle
+    const teamPlayers = await fetchPlayersByTeamId(match.team_id)
+    const roster = teamPlayers.map(dbPlayerToRoster)
+    const matchPlayers = rebuildMatchPlayers(roster, stats)
+
+    setSelectedTeamId(match.team_id)
+    setMasterRoster(roster)
+    setMatchId(match.id)
+    setMatchStatus('pending_review')
+    setPlayers(matchPlayers)
+    setHomeScore(match.home_score)
+    setAwayScore(match.away_score)
+    setSeconds(match.clock_seconds)
+    setPeriod(match.period)
+    setPeriodClockStarted(match.period_clock_started)
+    setHalfLengthMinutes(match.half_length)
+    setMatchTeamName(team.name)
+    setMatchCoachName(resolveMatchCoachName(match, coach))
+    setMatchOpponent(match.opponent)
+    setMatchLocationType(resolveMatchLocationType(match))
+    setMatchTournamentGame(match.tournament_game)
+    setFirstHalfStarterIds(stats.filter((s) => s.is_first_half_starter).map((s) => s.player_id))
+    setSecondHalfStarterIds(stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id))
+    setAppMode('recap')
+  }, [])
 
   const endMatch = useCallback(async () => {
     if (matchId) {
@@ -915,6 +952,9 @@ export function useGameDayApp() {
     beginSecondHalf,
     finishGame,
     returnToHome,
+    openPendingReviewRecap,
+    matchStatus,
+    hasLiveMatch: matchStatus === 'active' && Boolean(matchId),
     selectedTeamId,
     activeTeamId: selectedTeamId,
     activeTeamFormat,

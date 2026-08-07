@@ -591,12 +591,58 @@ export async function saveCoachMatchSummary(matchId: string, coachSummaryNotes: 
   throw error
 }
 
+export async function markMatchPendingReview(matchId: string) {
+  const { error } = await supabase
+    .from('matches')
+    .update({ status: 'pending_review' })
+    .eq('id', matchId)
+  if (error) throw error
+}
+
 export async function completeMatch(matchId: string) {
   const { error } = await supabase
     .from('matches')
     .update({ status: 'completed' })
     .eq('id', matchId)
   if (error) throw error
+}
+
+export async function finalizeMatchReview(matchId: string) {
+  await completeMatch(matchId)
+}
+
+export async function fetchPendingReviewMatchesByTeamId(teamId: string): Promise<DbMatch[]> {
+  const { data, error } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('team_id', teamId)
+    .eq('status', 'pending_review')
+    .order('date', { ascending: false })
+  if (error) throw error
+  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
+}
+
+export async function fetchMatchRecapBundle(matchId: string): Promise<ActiveMatchBundle | null> {
+  const { data: match, error: matchError } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('id', matchId)
+    .maybeSingle()
+
+  if (matchError) throw matchError
+  if (!match) return null
+
+  const [{ data: team }, { data: coach }, { data: stats }] = await Promise.all([
+    supabase.from('teams').select('*').eq('id', match.team_id).single(),
+    match.coach_id
+      ? supabase.from('coaches').select('*').eq('id', match.coach_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase.from('match_stats').select('*').eq('match_id', match.id),
+  ])
+
+  if (!team || !stats) return null
+
+  return { match, team, coach: coach ?? null, stats }
 }
 
 export async function fetchCompletedMatchesByTeamId(teamId: string): Promise<DbMatch[]> {
@@ -707,6 +753,10 @@ export function syncMatchEvent(input: Parameters<typeof insertMatchEvent>[0]) {
 
 export function syncMatchEvents(events: Parameters<typeof insertMatchEvents>[0]) {
   void insertMatchEvents(events).catch((e) => logSyncError('insertMatchEvents', e))
+}
+
+export function syncMarkMatchPendingReview(matchId: string) {
+  void markMatchPendingReview(matchId).catch((e) => logSyncError('markMatchPendingReview', e))
 }
 
 export function syncCompleteMatch(matchId: string) {

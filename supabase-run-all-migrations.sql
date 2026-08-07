@@ -173,3 +173,11 @@ where lower(trim(coalesce(location, ''))) = 'away';
 update public.matches
 set location_type = 'home'
 where location_type is null or trim(location_type) = '';
+
+-- Post-game recap drafts: pending_review until finalized
+alter table public.matches
+  drop constraint if exists matches_status_check;
+
+alter table public.matches
+  add constraint matches_status_check
+  check (status in ('active', 'pending_review', 'completed'));

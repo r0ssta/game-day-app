@@ -5,6 +5,7 @@ import {
   resolveMatchLocationType,
 } from '@/lib/match-location'
 import { resolveMatchCoachName } from '@/lib/supabase-api'
+import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
 import type { SeasonReportData } from '@/lib/season-reporting'
 import { SeasonRecordBanner } from '@/components/reporting/SeasonRecordBanner'
 import { cn } from '@/lib/utils'
@@ -12,13 +13,20 @@ import type { DbMatch } from '@/types/database'
 
 type PreviousMatchesTabProps = {
   data: SeasonReportData
+  pendingReviewMatches: DbMatch[]
+  onOpenPendingReview: (matchId: string) => void
   onViewRecap: (match: DbMatch) => void
 }
 
-export function PreviousMatchesTab({ data, onViewRecap }: PreviousMatchesTabProps) {
+export function PreviousMatchesTab({
+  data,
+  pendingReviewMatches,
+  onOpenPendingReview,
+  onViewRecap,
+}: PreviousMatchesTabProps) {
   const { matches, seasonRecord } = data
 
-  if (matches.length === 0) {
+  if (matches.length === 0 && pendingReviewMatches.length === 0) {
     return (
       <div className="space-y-4">
         <SeasonRecordBanner record={seasonRecord} />
@@ -31,10 +39,20 @@ export function PreviousMatchesTab({ data, onViewRecap }: PreviousMatchesTabProp
 
   return (
     <div className="space-y-4">
+      <GameRecapNeededAlerts
+        matches={pendingReviewMatches}
+        onOpenRecap={onOpenPendingReview}
+      />
+
       <SeasonRecordBanner record={seasonRecord} />
 
-      <ul className="space-y-3">
-        {matches.map((match) => {
+      {matches.length === 0 ? (
+        <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+          No finalized matches yet. Complete a pending recap to see it here.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {matches.map((match) => {
           const { dateLabel, timeLabel } = formatMatchDisplayDateTime(match)
           const headCoach = resolveMatchCoachName(match, null)
           const locationType = resolveMatchLocationType(match)
@@ -93,7 +111,8 @@ export function PreviousMatchesTab({ data, onViewRecap }: PreviousMatchesTabProp
             </li>
           )
         })}
-      </ul>
+        </ul>
+      )}
     </div>
   )
 }

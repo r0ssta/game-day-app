@@ -53,8 +53,10 @@ import {
   syncMatchStats,
   upsertMatchStats,
   formatSupabaseError,
+  fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
+import type { DbMatch } from '@/types/database'
 import {
   buildSidelineNameMap,
   formatPlayerFullName,
@@ -1287,6 +1289,8 @@ export default function App() {
     beginSecondHalf,
     finishGame,
     returnToHome,
+    openPendingReviewRecap,
+    hasLiveMatch,
     createTeam,
     addPlayer,
     updatePlayer,
@@ -1305,6 +1309,7 @@ export default function App() {
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
   const [toast, setToast] = useState<string | null>(null)
+  const [pendingReviewMatches, setPendingReviewMatches] = useState<DbMatch[]>([])
   const [goalWizardOpen, setGoalWizardOpen] = useState(false)
   const [goalWizardStep, setGoalWizardStep] = useState<'scorer' | 'assist'>('scorer')
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
@@ -1322,6 +1327,58 @@ export default function App() {
   useEffect(() => {
     clockSyncRef.current = { homeScore, awayScore, seconds, period, periodClockStarted }
   }, [homeScore, awayScore, seconds, period, periodClockStarted])
+
+  useEffect(() => {
+    if (!activeTeamId) {
+      setPendingReviewMatches([])
+      return
+    }
+
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const pending = await fetchPendingReviewMatchesByTeamId(activeTeamId)
+        if (!cancelled) setPendingReviewMatches(pending)
+      } catch (err) {
+        console.warn('[pending review] failed to load', err)
+        if (!cancelled) setPendingReviewMatches([])
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTeamId, appMode])
+
+  const refreshPendingReviewMatches = useCallback(async () => {
+    if (!activeTeamId) {
+      setPendingReviewMatches([])
+      return
+    }
+    try {
+      const pending = await fetchPendingReviewMatchesByTeamId(activeTeamId)
+      setPendingReviewMatches(pending)
+    } catch (err) {
+      console.warn('[pending review] failed to refresh', err)
+    }
+  }, [activeTeamId])
+
+  const handleOpenPendingReview = useCallback(
+    async (targetMatchId: string) => {
+      try {
+        await openPendingReviewRecap(targetMatchId)
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : 'Failed to open recap')
+      }
+    },
+    [openPendingReviewRecap],
+  )
+
+  const handleFinalizeRecap = useCallback(async () => {
+    returnToHome()
+    await refreshPendingReviewMatches()
+  }, [returnToHome, refreshPendingReviewMatches])
 
   const attendingCount = getAttendingIds(setupLineup).length
   const activeTeamName =
@@ -1461,7 +1518,7 @@ export default function App() {
         clock_seconds: seconds,
       })
     }
-    setToast('Match complete — review your players')
+    setToast('Match complete — finish your post-game recap')
   }, [seconds, matchId, finishGame, setRunning])
 
   const handleStartFirstHalf = useCallback(() => {
@@ -1841,8 +1898,10 @@ export default function App() {
         activeTeamId={activeTeamId}
         onTeamChange={setActiveTeamId}
         onAddTeam={async (name) => createTeam(name)}
-        hasActiveMatch={Boolean(matchId)}
+        hasActiveMatch={hasLiveMatch}
         activeMatchLabel={activeMatchLabel}
+        pendingReviewMatches={pendingReviewMatches}
+        onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
         onTeamManagement={() => setAppMode('team')}
         onNewGame={() => setAppMode('match_setup')}
         onReporting={() => setAppMode('reporting')}
@@ -1963,6 +2022,8 @@ export default function App() {
         activeTeamId={activeTeamId}
         activeTeamName={activeTeamName}
         teamRoster={teamRoster}
+        pendingReviewMatches={pendingReviewMatches}
+        onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
         onRefreshRoster={loadFullTeamRoster}
         onBackToHome={() => setAppMode('home')}
       />
@@ -2024,8 +2085,11 @@ export default function App() {
           awayScore={awayScore}
           halfLengthMinutes={halfLengthMinutes}
           players={players}
-          onFinalize={() => returnToHome()}
-          onHome={() => setAppMode('home')}
+          onFinalize={() => void handleFinalizeRecap()}
+          onHome={() => {
+            returnToHome()
+            void refreshPendingReviewMatches()
+          }}
           onToast={setToast}
         />
         {toast && (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardCopy, Mail } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
 import {
@@ -12,6 +12,7 @@ import {
   fetchMatchById,
   fetchMatchEvents,
   fetchMatchReviews,
+  finalizeMatchReview,
   savePostGameReview,
   scoreToImpact,
 } from '@/lib/supabase-api'
@@ -102,6 +103,8 @@ export function PostGameRecap({
   const [eventStats, setEventStats] = useState<Map<string, PlayerRecapStats>>(new Map())
   const [reviews, setReviews] = useState<Record<string, { impact: Impact; notes: string }>>({})
   const [coachSummary, setCoachSummary] = useState('')
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const saveDraftRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
     let cancelled = false
@@ -174,18 +177,57 @@ export function PostGameRecap({
     [recapRows, reviews],
   )
 
+  const reviewPayload = useMemo(
+    () =>
+      rowsWithReviews.map((row) => ({
+        playerId: row.playerId,
+        impact: row.impact,
+        notes: row.notes,
+      })),
+    [rowsWithReviews],
+  )
+
+  const saveDraft = useCallback(async () => {
+    await savePostGameReview(matchId, reviewPayload, coachSummary)
+    setDraftSavedAt(Date.now())
+  }, [matchId, reviewPayload, coachSummary])
+
+  useEffect(() => {
+    saveDraftRef.current = saveDraft
+  }, [saveDraft])
+
+  useEffect(() => {
+    if (loading) return
+    const id = setTimeout(() => {
+      void saveDraft().catch((err) => {
+        console.warn('[PostGameRecap] draft auto-save failed', err)
+      })
+    }, 1200)
+    return () => clearTimeout(id)
+  }, [loading, saveDraft])
+
+  useEffect(() => {
+    return () => {
+      void saveDraftRef.current().catch((err) => {
+        console.warn('[PostGameRecap] draft save on exit failed', err)
+      })
+    }
+  }, [])
+
+  const handleExit = async () => {
+    try {
+      await saveDraft()
+      onHome?.()
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Failed to save draft')
+    }
+  }
+
   const handleFinalize = async () => {
     setSaving(true)
     try {
-      await savePostGameReview(
-        matchId,
-        rowsWithReviews.map((row) => ({
-          playerId: row.playerId,
-          impact: row.impact,
-          notes: row.notes,
-        })),
-        coachSummary,
-      )
+      await savePostGameReview(matchId, reviewPayload, coachSummary)
+      await finalizeMatchReview(matchId)
 
       const summary = buildRecapSummaryText({
         teamName,
@@ -199,10 +241,10 @@ export function PostGameRecap({
       })
 
       await navigator.clipboard.writeText(summary)
-      onToast('Recap saved — returning home')
+      onToast('Recap finalized — returning home')
       onFinalize()
     } catch (err) {
-      onToast(err instanceof Error ? err.message : 'Failed to save recap')
+      onToast(err instanceof Error ? err.message : 'Failed to finalize recap')
     } finally {
       setSaving(false)
     }
@@ -289,8 +331,14 @@ export function PostGameRecap({
               </p>
             ) : null}
           </div>
-          {onHome ? <BackToHomeButton onClick={onHome} /> : null}
+          {onHome ? <BackToHomeButton onClick={() => void handleExit()} /> : null}
         </header>
+
+        {draftSavedAt ? (
+          <p className="text-center text-xs font-semibold text-muted-foreground">
+            Draft saved — finalize when your review is complete.
+          </p>
+        ) : null}
 
         <section className="rounded-xl border border-neon/30 bg-neon/5 p-4">
           <label
@@ -375,7 +423,7 @@ export function PostGameRecap({
               disabled={saving}
               className="w-full rounded-xl bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98] disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Save & Exit'}
+              {saving ? 'Finalizing…' : 'Finalize & Save'}
             </button>
             <div className="grid grid-cols-2 gap-2">
               <button

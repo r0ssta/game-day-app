@@ -23,6 +23,8 @@ type ReportingScreenProps = {
   activeTeamId: string | null
   activeTeamName: string
   teamRoster: RosterPlayer[]
+  pendingReviewMatches: DbMatch[]
+  onOpenPendingReview: (matchId: string) => void
   onRefreshRoster: () => Promise<void>
   onBackToHome: () => void
 }
@@ -31,6 +33,8 @@ export function ReportingScreen({
   activeTeamId,
   activeTeamName,
   teamRoster,
+  pendingReviewMatches,
+  onOpenPendingReview,
   onRefreshRoster,
   onBackToHome,
 }: ReportingScreenProps) {
@@ -144,7 +148,12 @@ export function ReportingScreen({
             <ReportingTabBar activeTab={activeTab} onTabChange={setActiveTab} />
 
             {activeTab === 'matches' ? (
-              <PreviousMatchesTab data={reportData} onViewRecap={setSelectedMatch} />
+              <PreviousMatchesTab
+                data={reportData}
+                pendingReviewMatches={pendingReviewMatches}
+                onOpenPendingReview={onOpenPendingReview}
+                onViewRecap={setSelectedMatch}
+              />
             ) : null}
 
             {activeTab === 'players' ? (
