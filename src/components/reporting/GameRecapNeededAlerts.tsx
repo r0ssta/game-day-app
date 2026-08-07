@@ -33,7 +33,7 @@ export function GameRecapNeededAlerts({ matches, onOpenRecap }: GameRecapNeededA
                 className="w-full rounded-xl border-2 border-athletic/50 bg-athletic/10 px-4 py-4 text-left shadow-sm active:scale-[0.98]"
               >
                 <span className="block font-display text-sm font-black uppercase tracking-wide text-athletic">
-                  Finish Post-Game Recap
+                  Complete Match Recap
                 </span>
                 <span className="mt-1 block text-sm font-semibold text-foreground">
                   {dateLabel} · {formatOpponentPrefix(locationType)} {opponentLabel}

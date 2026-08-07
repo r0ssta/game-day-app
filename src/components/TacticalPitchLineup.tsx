@@ -27,6 +27,8 @@ export type PitchLineupPlayer = {
   isGuest: boolean
   badge?: string
   meta?: string
+  /** 1st-half minutes played — shown next to the player name at halftime. */
+  minutesLabel?: string
   matchPosition?: string
   primaryPosition?: string
   secondaryPosition?: string
@@ -131,6 +133,11 @@ function PitchSlotBadge({
           <span className="max-w-[52px] truncate text-[9px] font-bold leading-tight">
             {player.shortName ?? player.name}
           </span>
+          {player.minutesLabel ? (
+            <span className="mt-0.5 font-mono text-[8px] font-bold tabular-nums leading-none text-white/90">
+              {player.minutesLabel}
+            </span>
+          ) : null}
         </div>
       ) : (
         <div
@@ -179,6 +186,11 @@ function PoolPlayerChip({
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1">
             <span className="truncate text-sm font-bold text-foreground">{player.name}</span>
+            {player.minutesLabel ? (
+              <span className="font-mono text-xs font-bold tabular-nums text-blue-400">
+                {player.minutesLabel}
+              </span>
+            ) : null}
             {player.isGuest && <GuestBadge />}
             {player.primaryPosition && (
               <RosterPositionHint position={player.primaryPosition} variant="primary" />

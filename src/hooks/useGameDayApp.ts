@@ -24,7 +24,7 @@ import {
   getDefaultFormationId,
   isFormationValidForFormat,
 } from '@/lib/formations'
-import { applyPresetToSetup, validatePresetFormation } from '@/lib/lineup-presets'
+import { applyPresetToSetup, applyPresetToHalftime, validatePresetFormation } from '@/lib/lineup-presets'
 import {
   normalizeTeamFormat,
   type TeamFormat,
@@ -105,6 +105,7 @@ export function useGameDayApp() {
     Record<string, string | null> | undefined
   >(undefined)
   const [setupPitchKey, setSetupPitchKey] = useState(0)
+  const [halftimePitchKey, setHalftimePitchKey] = useState(0)
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
   const [setupCoachName, setSetupCoachName] = useState('')
@@ -315,7 +316,7 @@ export function useGameDayApp() {
   }, [masterRoster])
 
   useEffect(() => {
-    if (!selectedTeamId || (appMode !== 'match_setup' && appMode !== 'team' && appMode !== 'reporting')) return
+    if (!selectedTeamId || (appMode !== 'match_setup' && appMode !== 'team' && appMode !== 'reporting' && appMode !== 'halftime' && appMode !== 'match')) return
 
     let cancelled = false
     void (async () => {
@@ -367,6 +368,27 @@ export function useGameDayApp() {
       setSetupPitchKey((k) => k + 1)
     },
     [masterRoster, setFirstHalfFormation, teams, selectedTeamId],
+  )
+
+  const applyHalftimeLineupPreset = useCallback(
+    (preset: DbLineupPreset) => {
+      const team = teams.find((t) => t.id === selectedTeamId)
+      const format = normalizeTeamFormat(team?.format)
+      const attendingPlayers = players.filter((player) => player.attending)
+      const applied = applyPresetToHalftime(preset, attendingPlayers, format)
+
+      setMatchFormations((prev) => ({ ...prev, second: applied.formationId }))
+      setHalftimeSlotAssignments(applied.slotAssignments)
+      setHalftimeSecondHalf(applied.starters)
+      setPlayers((prev) =>
+        prev.map((player) => {
+          const nextPosition = applied.matchPositions[player.id]
+          return nextPosition ? { ...player, matchPosition: nextPosition } : player
+        }),
+      )
+      setHalftimePitchKey((key) => key + 1)
+    },
+    [players, teams, selectedTeamId],
   )
 
   const saveLineupPreset = useCallback(
@@ -730,6 +752,7 @@ export function useGameDayApp() {
       if (slotAssignments) setHalftimeSlotAssignments(slotAssignments)
       setCarriedFromFirstHalf(carried)
       setHalftimeSecondHalf(toggles)
+      setHalftimePitchKey(0)
       setMatchFormations((prev) => ({ ...prev, second: prev.first }))
       setAppMode('halftime')
       return nextPlayers
@@ -848,6 +871,7 @@ export function useGameDayApp() {
     setCarriedFromFirstHalf({})
     setSetupSlotAssignments(undefined)
     setSetupPitchKey((k) => k + 1)
+    setHalftimePitchKey(0)
     setMatchTeamName('')
     setMatchCoachName('')
     setSetupCoachName('')
@@ -943,11 +967,13 @@ export function useGameDayApp() {
     refreshLineupPresets,
     loadFullTeamRoster,
     applyLineupPreset,
+    applyHalftimeLineupPreset,
     saveLineupPreset,
     removeLineupPreset,
     setPlayerActive,
     setupSlotAssignments,
     setupPitchKey,
+    halftimePitchKey,
     enterHalftime,
     beginSecondHalf,
     finishGame,
@@ -955,6 +981,7 @@ export function useGameDayApp() {
     openPendingReviewRecap,
     matchStatus,
     hasLiveMatch: matchStatus === 'active' && Boolean(matchId),
+    hasPendingRecap: matchStatus === 'pending_review' && Boolean(matchId),
     selectedTeamId,
     activeTeamId: selectedTeamId,
     activeTeamFormat,

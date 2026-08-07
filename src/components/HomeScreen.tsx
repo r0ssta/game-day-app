@@ -13,6 +13,9 @@ type HomeScreenProps = {
   onAddTeam: (name: string) => Promise<string | void>
   hasActiveMatch: boolean
   activeMatchLabel?: string
+  hasPendingRecap: boolean
+  pendingRecapLabel?: string
+  onCompleteMatchRecap: () => void
   pendingReviewMatches: DbMatch[]
   onOpenPendingReview: (matchId: string) => void
   onNewGame: () => void
@@ -28,6 +31,9 @@ export function HomeScreen({
   onAddTeam,
   hasActiveMatch,
   activeMatchLabel,
+  hasPendingRecap,
+  pendingRecapLabel,
+  onCompleteMatchRecap,
   pendingReviewMatches,
   onOpenPendingReview,
   onNewGame,
@@ -56,6 +62,26 @@ export function HomeScreen({
         />
 
         <div className="mt-6 flex flex-1 flex-col justify-center gap-4">
+          {hasPendingRecap ? (
+            <button
+              type="button"
+              onClick={onCompleteMatchRecap}
+              className="w-full rounded-2xl border-2 border-athletic bg-athletic/10 px-6 py-5 text-left shadow-lg shadow-athletic/10 active:scale-[0.98]"
+            >
+              <span className="font-display text-lg font-black uppercase tracking-wide text-athletic">
+                Complete Match Recap
+              </span>
+              {pendingRecapLabel ? (
+                <span className="mt-1 block text-sm font-semibold text-foreground">
+                  {pendingRecapLabel}
+                </span>
+              ) : null}
+              <span className="mt-2 block text-xs text-muted-foreground">
+                Finalize player ratings and coach notes for this match.
+              </span>
+            </button>
+          ) : null}
+
           <GameRecapNeededAlerts
             matches={pendingReviewMatches}
             onOpenRecap={onOpenPendingReview}

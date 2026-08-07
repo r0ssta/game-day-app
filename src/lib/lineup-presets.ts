@@ -119,6 +119,47 @@ export function applyPresetToSetup(
   }
 }
 
+export function applyPresetToHalftime(
+  preset: DbLineupPreset,
+  attendingPlayers: Array<{ id: string }>,
+  teamFormat: TeamFormat,
+): {
+  formationId: string
+  slotAssignments: Record<string, string | null>
+  starters: Record<string, boolean>
+  matchPositions: Record<string, string>
+} {
+  const parsed = parseFormationJson(preset.formation_json, teamFormat)
+  validatePresetFormation(parsed.formationId, teamFormat)
+
+  const formation = getFormationById(parsed.formationId, teamFormat)
+  const rosterIds = new Set(attendingPlayers.map((player) => player.id))
+  const slotAssignments = sanitizeSlotAssignments(parsed.slotAssignments, rosterIds, formation)
+
+  const starters: Record<string, boolean> = {}
+  for (const player of attendingPlayers) {
+    starters[player.id] = false
+  }
+  for (const playerId of Object.values(slotAssignments)) {
+    if (playerId) starters[playerId] = true
+  }
+
+  const matchPositions: Record<string, string> = {}
+  for (const slot of formation.slots) {
+    const playerId = slotAssignments[slot.id]
+    if (playerId) {
+      matchPositions[playerId] = roleToTacticalPosition(slot.role)
+    }
+  }
+
+  return {
+    formationId: parsed.formationId,
+    slotAssignments,
+    starters,
+    matchPositions,
+  }
+}
+
 export function startersFromSlotAssignments(
   slotAssignments: Record<string, string | null>,
 ): Record<string, boolean> {
