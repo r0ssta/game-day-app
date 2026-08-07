@@ -25,7 +25,8 @@ import {
 } from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
-import type { FormationRole } from '@/lib/formations'
+import type { FormationRole, FormationRemapResult } from '@/lib/formations'
+import { getFormationLabel } from '@/lib/formations'
 import {
   getAttendingIds,
   getFirstHalfStarterIds,
@@ -56,6 +57,7 @@ import {
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
+import { APP_CONTAINER, APP_SHELL, MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import type { DbMatch } from '@/types/database'
 import {
   buildSidelineNameMap,
@@ -214,7 +216,7 @@ function MatchHeader({
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="mx-auto max-w-md px-4 pb-4 pt-3">
+      <div className={`${APP_CONTAINER} pb-4 pt-3`}>
         <div className="mb-2 flex justify-end">
           <BackToHomeButton onClick={onHome} />
         </div>
@@ -615,8 +617,8 @@ function SetupScreen({
   )
 
   return (
-    <main className="min-h-dvh bg-background pb-10">
-      <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
+    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+      <div className={`${APP_CONTAINER} space-y-6 pt-6 md:space-y-8 md:pt-8`}>
         <ScreenHeader
           title="Game Day Setup"
           subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
@@ -909,8 +911,8 @@ function HalftimeSetupScreen({
   )
 
   return (
-    <main className="min-h-dvh bg-background pb-10">
-      <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
+    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+      <div className={`${APP_CONTAINER} space-y-6 pt-6 md:space-y-8 md:pt-8`}>
         <ScreenHeader
           title="Halftime Setup"
           subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${formatClock(seconds)} / ${formatClock(halfLengthMinutes * 60)}`}
@@ -1019,26 +1021,27 @@ function PlayerEditModal({
       role="dialog"
       aria-modal="true"
       aria-label="Edit Player"
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-background/70 backdrop-blur-sm"
+      className={MODAL_OVERLAY}
       onClick={onClose}
     >
       <div
-        className="mx-auto w-full max-w-md rounded-t-2xl border-t border-border bg-popover px-5 pb-8 pt-4 shadow-2xl"
+        className={cn(MODAL_PANEL, 'min-h-0')}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-4">
           <h2 className="font-display text-2xl font-bold uppercase text-foreground">Edit Player</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex size-11 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-90"
+            className={`${TOUCH_ICON_BUTTON} bg-secondary text-foreground`}
           >
             <X className="size-6" strokeWidth={3} />
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8">
+          <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label
@@ -1122,16 +1125,17 @@ function PlayerEditModal({
               />
             </button>
           </div>
-        </div>
+          </div>
 
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={!draft.firstName.trim() || !draft.lastName.trim()}
-          className="mt-6 w-full rounded-xl bg-athletic py-4 font-display text-xl font-bold uppercase tracking-wide text-athletic-foreground active:scale-[0.98] disabled:opacity-40"
-        >
-          Save Player
-        </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!draft.firstName.trim() || !draft.lastName.trim()}
+            className="mt-6 min-h-11 w-full touch-manipulation rounded-xl bg-athletic py-4 font-display text-xl font-bold uppercase tracking-wide text-athletic-foreground active:scale-[0.98] disabled:opacity-40"
+          >
+            Save Player
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1698,6 +1702,77 @@ export default function App() {
     [addPlayer],
   )
 
+  const handleLiveFormationSwitch = useCallback(
+    (nextFormationId: string, remap: FormationRemapResult) => {
+      if (!matchId) return
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const previousLabel = getFormationLabel(activeFormation)
+      const nextLabel = getFormationLabel(nextFormationId)
+
+      setActiveFormation(nextFormationId)
+
+      syncMatchEvents([
+        {
+          matchId,
+          eventType: 'formation_change',
+          timestamp: eventTimestamp,
+          formation: nextFormationId,
+          eventNotes: `${previousLabel} → ${nextLabel}`,
+        },
+      ])
+
+      if (remap.positionUpdates.length > 0 || remap.overflowPlayerIds.length > 0) {
+        setPlayers((prev) => {
+          let next = prev.map((player) => {
+            const update = remap.positionUpdates.find((u) => u.playerId === player.id)
+            return update ? { ...player, matchPosition: update.position } : player
+          })
+
+          for (const update of remap.positionUpdates) {
+            const updated = next.find((p) => p.id === update.playerId)
+            if (updated) syncMatchStat(matchId, updated)
+            syncMatchEvents([
+              {
+                matchId,
+                playerId: update.playerId,
+                eventType: 'position_change',
+                timestamp: eventTimestamp,
+                eventNotes: update.position,
+                formation: nextFormationId,
+              },
+            ])
+          }
+
+          for (const playerId of remap.overflowPlayerIds) {
+            next = applySubOut(next, playerId, seconds)
+            const fieldPlayer = next.find((p) => p.id === playerId)
+            if (fieldPlayer) {
+              syncMatchStat(matchId, fieldPlayer)
+              syncMatchEvents([
+                {
+                  matchId,
+                  playerId: fieldPlayer.id,
+                  eventType: 'sub_out',
+                  timestamp: eventTimestamp,
+                  formation: nextFormationId,
+                },
+              ])
+            }
+          }
+
+          return next
+        })
+      }
+
+      const overflowNote =
+        remap.overflowPlayerIds.length > 0
+          ? ` · ${remap.overflowPlayerIds.length} to bench`
+          : ''
+      setToast(`Formation · ${nextLabel}${overflowNote}`)
+    },
+    [matchId, seconds, halfLengthMinutes, activeFormation, players, setActiveFormation, setPlayers],
+  )
+
   const handleLiveReassignPosition = useCallback(
     (updates: PositionReassignUpdate[]) => {
       if (!matchId || updates.length === 0) return
@@ -2164,7 +2239,7 @@ export default function App() {
   }
 
   return (
-    <main className="min-h-dvh bg-background pb-10">
+    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
       <QaSpeedPanel
         speed={qaSpeedMultiplier}
         onSpeedChange={setQaSpeedMultiplier}
@@ -2186,7 +2261,7 @@ export default function App() {
         onHome={() => setAppMode('home')}
       />
 
-      <div className="mx-auto max-w-md space-y-6 px-4 pt-5">
+      <div className={`${APP_CONTAINER} space-y-6 pt-5 md:space-y-8 md:pt-6`}>
         {!periodClockStarted && period === '1st' && (
           <PeriodStartButton label="Start 1st Half" onStart={handleStartFirstHalf} />
         )}
@@ -2225,7 +2300,7 @@ export default function App() {
           key={period}
           periodKey={period}
           formationId={activeFormation}
-          onFormationChange={setActiveFormation}
+          onFormationSwitch={handleLiveFormationSwitch}
           players={players}
           clockSeconds={seconds}
           maxFieldPlayers={maxFieldPlayers}

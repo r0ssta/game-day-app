@@ -1,5 +1,6 @@
 import { Home } from 'lucide-react'
 import { ADD_NEW_OPTION } from '@/lib/named-entities'
+import { TOUCH_ICON_BUTTON } from '@/lib/layout'
 
 type NamedEntity = { id: string; name: string }
 
@@ -9,7 +10,7 @@ export function BackToHomeButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-label="Back to home"
-      className="flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-bold uppercase tracking-wide text-foreground active:scale-95"
+      className={`${TOUCH_ICON_BUTTON} shrink-0 gap-1.5 bg-secondary px-4 text-xs font-bold uppercase tracking-wide text-foreground`}
     >
       <Home className="size-4" />
       Home

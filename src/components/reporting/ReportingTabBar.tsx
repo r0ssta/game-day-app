@@ -17,7 +17,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex-1 rounded-lg px-1.5 py-2.5 text-[10px] font-bold uppercase tracking-wide transition-colors active:scale-[0.98] sm:text-xs',
+        'flex min-h-11 flex-1 touch-manipulation items-center justify-center rounded-lg px-1.5 py-3 text-[10px] font-bold uppercase tracking-wide transition-colors active:scale-[0.98] sm:text-xs',
         active ? 'bg-neon text-neon-foreground' : 'bg-secondary text-muted-foreground',
       )}
     >

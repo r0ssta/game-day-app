@@ -241,3 +241,103 @@ export function buildAssignmentsFromStarters(
 
   return assignments
 }
+
+function normalizePositionToken(value: string): string {
+  return value.toUpperCase()
+}
+
+function playerMatchesFormationRole(position: string, role: FormationRole): boolean {
+  const pos = normalizePositionToken(position)
+  if (role === 'GK') return pos.includes('GK') || pos.includes('KEEPER')
+  if (role === 'DEF') {
+    return /CB|DEF|LB|RB|BACK|SW|DEFENDER/.test(pos)
+  }
+  if (role === 'FWD') {
+    return /CF|ST|FW|FWD|WING|LW|RW|STRIKER|FORWARD/.test(pos)
+  }
+  return /CM|MID|CDM|CAM|AM|WM|DM|MIDFIELDER/.test(pos)
+}
+
+function scorePlayerForSlot(
+  player: { matchPosition?: string; position?: string },
+  slot: FormationSlot,
+): number {
+  const pos = normalizePositionToken(player.matchPosition ?? player.position ?? '')
+  if (!pos) return 0
+  if (playerMatchesFormationRole(pos, slot.role)) return 10
+  if (slot.role === 'MID' && /DEF|FWD/.test(pos)) return 4
+  if (slot.role === 'DEF' && /MID/.test(pos)) return 3
+  if (slot.role === 'FWD' && /MID/.test(pos)) return 3
+  return 1
+}
+
+export type FormationRemapResult = {
+  slotAssignments: Record<string, string | null>
+  positionUpdates: Array<{ playerId: string; position: string }>
+  overflowPlayerIds: string[]
+}
+
+/** Re-map on-field (or assigned) players onto a new formation shape. */
+export function remapFormationSlotAssignments(
+  currentAssignments: Record<string, string | null>,
+  nextFormation: Formation,
+  players: { id: string; matchPosition?: string; position?: string }[],
+  options?: {
+    eligiblePlayerIds?: Set<string>
+    mapRoleToPosition?: (role: FormationRole) => string
+  },
+): FormationRemapResult {
+  const mapRole = options?.mapRoleToPosition ?? roleToTacticalPosition
+  const nextAssignments: Record<string, string | null> = Object.fromEntries(
+    nextFormation.slots.map((slot) => [slot.id, null]),
+  )
+  const playerById = new Map(players.map((player) => [player.id, player]))
+
+  const pool = [
+    ...new Set(
+      Object.values(currentAssignments).filter((playerId): playerId is string => Boolean(playerId)),
+    ),
+  ].filter((playerId) => !options?.eligiblePlayerIds || options.eligiblePlayerIds.has(playerId))
+
+  const used = new Set<string>()
+  const positionUpdates: Array<{ playerId: string; position: string }> = []
+
+  const assign = (slot: FormationSlot, playerId: string) => {
+    nextAssignments[slot.id] = playerId
+    used.add(playerId)
+    positionUpdates.push({
+      playerId,
+      position: mapRole(slot.role),
+    })
+  }
+
+  for (const slot of nextFormation.slots) {
+    let bestId: string | null = null
+    let bestScore = 0
+    for (const playerId of pool) {
+      if (used.has(playerId)) continue
+      const player = playerById.get(playerId)
+      if (!player) continue
+      const score = scorePlayerForSlot(player, slot)
+      if (score > bestScore) {
+        bestScore = score
+        bestId = playerId
+      }
+    }
+    if (bestId && bestScore >= 4) assign(slot, bestId)
+  }
+
+  for (const slot of nextFormation.slots) {
+    if (nextAssignments[slot.id]) continue
+    const fallback = pool.find((playerId) => !used.has(playerId))
+    if (fallback) assign(slot, fallback)
+  }
+
+  const overflowPlayerIds = pool.filter((playerId) => !used.has(playerId))
+
+  return {
+    slotAssignments: nextAssignments,
+    positionUpdates,
+    overflowPlayerIds,
+  }
+}

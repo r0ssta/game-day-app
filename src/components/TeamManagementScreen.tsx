@@ -27,6 +27,7 @@ import {
   type TeamFormat,
 } from '@/lib/team-format'
 import { cn } from '@/lib/utils'
+import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import type { DbLineupPreset } from '@/types/database'
 import type { RosterProfilePosition } from '@/lib/positions'
 
@@ -52,7 +53,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex-1 rounded-lg px-2 py-2.5 text-xs font-bold uppercase tracking-wide transition-colors active:scale-[0.98]',
+        'flex min-h-11 flex-1 touch-manipulation items-center justify-center rounded-lg px-2 py-3 text-xs font-bold uppercase tracking-wide transition-colors active:scale-[0.98]',
         active ? 'bg-neon text-neon-foreground' : 'bg-secondary text-muted-foreground',
       )}
     >
@@ -754,8 +755,8 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
   }, [activeTeamId, props.onRefreshRoster])
 
   return (
-    <main className="min-h-dvh bg-background pb-10">
-      <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
+    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+      <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Team Management"
           subtitle={`Roster and preset lineups for ${activeTeamName || 'your team'}.`}

@@ -14,6 +14,7 @@ import {
   resolveMatchLocationType,
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
+import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import type { DbMatch } from '@/types/database'
 import type { Impact, RosterPlayer } from '@/types/match'
 
@@ -75,15 +76,15 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
   }, [match.id, match.half_length, roster])
 
   return (
-    <main className="min-h-dvh bg-background pb-10">
-      <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
+    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+      <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <header className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <button
               type="button"
               onClick={onBack}
               aria-label="Back to match history"
-              className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary active:scale-90"
+              className={`${TOUCH_ICON_BUTTON} mt-1 bg-secondary`}
             >
               <ArrowLeft className="size-5" />
             </button>

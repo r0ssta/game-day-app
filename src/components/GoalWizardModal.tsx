@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { Goal, X } from 'lucide-react'
 import { buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
 import { cn } from '@/lib/utils'
+import { MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import type { MatchPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -50,14 +51,14 @@ export function GoalWizardModal({
       role="dialog"
       aria-modal="true"
       aria-label={step === 'scorer' ? 'Who scored?' : 'Who assisted?'}
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-background/80 backdrop-blur-sm"
+      className={MODAL_OVERLAY}
       onClick={onClose}
     >
       <div
-        className="mx-auto flex max-h-[90vh] w-full max-w-md flex-col rounded-t-2xl border-t border-border bg-popover shadow-2xl"
+        className={cn(MODAL_PANEL, 'min-h-0')}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 pb-3 pt-4">
+        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-4">
           <div>
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
               <Goal className="size-4 text-neon" strokeWidth={2.5} />
@@ -77,25 +78,25 @@ export function GoalWizardModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex size-11 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-90"
+            className={`${TOUCH_ICON_BUTTON} bg-secondary text-foreground`}
           >
             <X className="size-6" strokeWidth={3} />
           </button>
         </div>
 
         {step === 'assist' && (
-          <div className="px-4 pb-3">
+          <div className="shrink-0 px-4 pb-3">
             <button
               type="button"
               onClick={() => onSelectAssist(null)}
-              className="w-full rounded-xl border-2 border-border bg-card py-5 font-display text-2xl font-black uppercase tracking-wide text-foreground transition-transform active:scale-[0.98] active:bg-secondary"
+              className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-card py-4 font-display text-2xl font-black uppercase tracking-wide text-foreground transition-transform active:scale-[0.98] active:bg-secondary md:py-5"
             >
               Unassisted
             </button>
           </div>
         )}
 
-        <ul className="grid grid-cols-1 gap-2 overflow-y-auto px-4 pb-8">
+        <ul className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto overscroll-contain px-4 pb-8 md:grid-cols-2 md:gap-3 lg:grid-cols-1">
           {(step === 'scorer' ? onFieldPlayers : assistCandidates).map((player) => (
             <li key={player.id}>
               <button
@@ -104,7 +105,7 @@ export function GoalWizardModal({
                   step === 'scorer' ? onSelectScorer(player) : onSelectAssist(player.id)
                 }
                 className={cn(
-                  'flex w-full items-center gap-4 rounded-xl bg-card px-4 py-4 text-left transition-transform active:scale-[0.98] active:bg-secondary',
+                  'flex min-h-11 w-full touch-manipulation items-center gap-4 rounded-xl bg-card px-4 py-4 text-left transition-transform active:scale-[0.98] active:bg-secondary',
                   step === 'scorer' && 'border border-border',
                 )}
               >

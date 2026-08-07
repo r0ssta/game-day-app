@@ -23,6 +23,7 @@ import {
   type LocationType,
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
+import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -51,7 +52,7 @@ function ImpactToggleGroup({
           aria-label={`${value} rating`}
           onClick={() => onSetImpact(value)}
           className={cn(
-            'flex size-8 items-center justify-center rounded-md text-sm font-bold active:scale-90',
+            'flex size-11 min-h-11 min-w-11 touch-manipulation items-center justify-center rounded-md text-sm font-bold active:scale-90',
             impact === value
               ? value === 'positive'
                 ? 'bg-neon text-neon-foreground'
@@ -302,8 +303,8 @@ export function PostGameRecap({
   }
 
   return (
-    <main className="min-h-dvh bg-background pb-28">
-      <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
+    <main className={`${APP_SHELL} pb-28 md:pb-32`}>
+      <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 text-center">
             <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
@@ -416,7 +417,7 @@ export function PostGameRecap({
         </div>
 
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur">
-          <div className="mx-auto flex max-w-md flex-col gap-2">
+          <div className={`${APP_CONTAINER} flex flex-col gap-2`}>
             <button
               type="button"
               onClick={() => void handleFinalize()}

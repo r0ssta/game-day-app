@@ -6,8 +6,8 @@ import {
   getDefaultFormationId,
   getFormationById,
   getFormationsForFormat,
+  remapFormationSlotAssignments,
   roleToTacticalPosition,
-  type Formation,
   type FormationRole,
 } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
@@ -17,6 +17,7 @@ import {
   rosterPositionAbbrev,
 } from '@/lib/positions'
 import { cn } from '@/lib/utils'
+import { PITCH_BENCH_LAYOUT, PITCH_BENCH_SIDEBAR, TOUCH_ICON_BUTTON, TOUCH_ROW } from '@/lib/layout'
 
 export type PitchLineupPlayer = {
   id: string
@@ -116,7 +117,7 @@ function PitchSlotBadge({
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={cn(
-        'absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center transition-transform active:scale-95',
+        'absolute flex min-h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 touch-manipulation flex-col items-center transition-transform active:scale-95',
         highlighted && 'z-10 scale-110',
       )}
     >
@@ -179,7 +180,7 @@ function PoolPlayerChip({
         selected ? 'border-neon ring-2 ring-neon/40' : 'border-border',
       )}
     >
-      <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+      <button type="button" onClick={onSelect} className={`flex min-w-0 flex-1 items-center gap-2 text-left ${TOUCH_ROW}`}>
         <span className="flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-neon/50 bg-neon/10 font-display text-sm font-bold tabular-nums text-neon">
           {formatJersey(player.number)}
         </span>
@@ -211,7 +212,7 @@ function PoolPlayerChip({
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${player.name}`}
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary active:scale-90"
+          className={`${TOUCH_ICON_BUTTON} bg-secondary`}
         >
           <Pencil className="size-3.5" />
         </button>
@@ -220,7 +221,7 @@ function PoolPlayerChip({
         <button
           type="button"
           onClick={onToggleAttending}
-          className="shrink-0 rounded-md bg-secondary px-2 py-1 text-[10px] font-bold uppercase text-muted-foreground active:scale-95"
+          className={`${TOUCH_ROW} shrink-0 rounded-md bg-secondary px-3 text-[10px] font-bold uppercase text-muted-foreground active:scale-95`}
         >
           Out
         </button>
@@ -286,11 +287,6 @@ export function TacticalPitchLineup({
     [players, attending],
   )
 
-  const resetSlotsForFormation = useCallback((nextFormation: Formation) => {
-    setSlotAssignments(Object.fromEntries(nextFormation.slots.map((s) => [s.id, null])))
-    setSelectedPlayerId(null)
-    setSelectedSlotId(null)
-  }, [])
 
   useEffect(() => {
     if (!teamFormat) return
@@ -407,11 +403,36 @@ export function TacticalPitchLineup({
   }
 
   const handleFormationChange = (nextId: string) => {
+    if (nextId === formationId) return
     if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
+
     const nextFormation = getFormationById(nextId, teamFormat)
-    for (const playerId of assignedPlayerIds) onRemoveStarter(playerId)
+    const remap = remapFormationSlotAssignments(
+      slotAssignments,
+      nextFormation,
+      players.map((p) => ({
+        id: p.id,
+        matchPosition: p.matchPosition ?? p.meta,
+        position: p.primaryPosition,
+      })),
+    )
+
+    for (const playerId of assignedPlayerIds) {
+      const stillAssigned = Object.values(remap.slotAssignments).includes(playerId)
+      if (!stillAssigned) onRemoveStarter(playerId)
+    }
+
+    for (const [slotId, playerId] of Object.entries(remap.slotAssignments)) {
+      if (!playerId) continue
+      const slot = nextFormation.slots.find((s) => s.id === slotId)
+      if (!slot) continue
+      onAssignStarter(playerId, slot.role, roleToTacticalPosition(slot.role))
+    }
+
     setFormationId(nextId)
-    resetSlotsForFormation(nextFormation)
+    setSlotAssignments(remap.slotAssignments)
+    setSelectedPlayerId(null)
+    setSelectedSlotId(null)
   }
 
   const markPlayerAbsent = (playerId: string) => {
@@ -465,7 +486,7 @@ export function TacticalPitchLineup({
           id="formation-select"
           value={formationId}
           onChange={(e) => handleFormationChange(e.target.value)}
-          className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+          className="min-h-11 w-full touch-manipulation rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
         >
           {availableFormations.map((f) => (
             <option key={f.id} value={f.id}>
@@ -479,75 +500,81 @@ export function TacticalPitchLineup({
         Tap a player, then tap a position — or drag from the bench onto the pitch.
       </p>
 
-      <SoccerPitchSurface>
-        {formation.slots.map((slot) => {
-          const playerId = slotAssignments[slot.id]
-          const player = playerId ? (playerById.get(playerId) ?? null) : null
-          const highlighted = Boolean(selectedPlayerId) || selectedSlotId === slot.id
+      <div className={PITCH_BENCH_LAYOUT}>
+        <div className="min-w-0">
+          <SoccerPitchSurface>
+            {formation.slots.map((slot) => {
+              const playerId = slotAssignments[slot.id]
+              const player = playerId ? (playerById.get(playerId) ?? null) : null
+              const highlighted = Boolean(selectedPlayerId) || selectedSlotId === slot.id
 
-          return (
-            <div key={slot.id} className="absolute" style={{ left: `${slot.x}%`, top: `${slot.y}%` }}>
-              <PitchSlotBadge
-                slotLabel={slot.label}
-                player={player}
-                selected={playerId === selectedPlayerId}
-                highlighted={highlighted}
-                onClick={() => handleSlotClick(slot.id)}
-                onDragOver={handleSlotDragOver}
-                onDrop={(e) => handleSlotDrop(e, slot.id)}
-              />
+              return (
+                <div key={slot.id} className="absolute" style={{ left: `${slot.x}%`, top: `${slot.y}%` }}>
+                  <PitchSlotBadge
+                    slotLabel={slot.label}
+                    player={player}
+                    selected={playerId === selectedPlayerId}
+                    highlighted={highlighted}
+                    onClick={() => handleSlotClick(slot.id)}
+                    onDragOver={handleSlotDragOver}
+                    onDrop={(e) => handleSlotDrop(e, slot.id)}
+                  />
+                </div>
+              )
+            })}
+          </SoccerPitchSurface>
+        </div>
+
+        <div className={PITCH_BENCH_SIDEBAR}>
+          <div className="rounded-xl border border-border bg-secondary/20 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">Bench / Unassigned</h3>
+              <span className="text-xs font-semibold text-muted-foreground">{poolPlayers.length} players</span>
             </div>
-          )
-        })}
-      </SoccerPitchSurface>
+            {poolPlayers.length === 0 ? (
+              <p className="py-3 text-center text-sm text-muted-foreground">All attending players are on the pitch</p>
+            ) : (
+              <ul className="space-y-2">
+                {poolPlayers.map((player) => (
+                  <li key={player.id}>
+                    <PoolPlayerChip
+                      player={player}
+                      selected={selectedPlayerId === player.id}
+                      onSelect={() => handlePoolSelect(player.id)}
+                      onDragStart={(e) => handleDragStart(e, player.id)}
+                      onToggleAttending={
+                        onSetAttending ? () => markPlayerAbsent(player.id) : undefined
+                      }
+                      onEdit={onEditPlayer ? () => onEditPlayer(player.id) : undefined}
+                      showAttendingToggle={Boolean(onSetAttending)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-      <div className="rounded-xl border border-border bg-secondary/20 p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">Bench / Unassigned</h3>
-          <span className="text-xs font-semibold text-muted-foreground">{poolPlayers.length} players</span>
+          {absentPlayers.length > 0 && (
+            <div className="rounded-xl border border-dashed border-border bg-card/50 p-3">
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Not Attending</h3>
+              <ul className="space-y-2">
+                {absentPlayers.map((player) => (
+                  <li key={player.id}>
+                    <PoolPlayerChip
+                      player={player}
+                      selected={false}
+                      onSelect={() => onSetAttending?.(player.id, true)}
+                      onDragStart={(e) => handleDragStart(e, player.id)}
+                      showAttendingToggle={false}
+                    />
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[10px] text-muted-foreground">Tap a player to mark them attending again.</p>
+            </div>
+          )}
         </div>
-        {poolPlayers.length === 0 ? (
-          <p className="py-3 text-center text-sm text-muted-foreground">All attending players are on the pitch</p>
-        ) : (
-          <ul className="space-y-2">
-            {poolPlayers.map((player) => (
-              <li key={player.id}>
-                <PoolPlayerChip
-                  player={player}
-                  selected={selectedPlayerId === player.id}
-                  onSelect={() => handlePoolSelect(player.id)}
-                  onDragStart={(e) => handleDragStart(e, player.id)}
-                  onToggleAttending={
-                    onSetAttending ? () => markPlayerAbsent(player.id) : undefined
-                  }
-                  onEdit={onEditPlayer ? () => onEditPlayer(player.id) : undefined}
-                  showAttendingToggle={Boolean(onSetAttending)}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
-
-      {absentPlayers.length > 0 && (
-        <div className="rounded-xl border border-dashed border-border bg-card/50 p-3">
-          <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Not Attending</h3>
-          <ul className="space-y-2">
-            {absentPlayers.map((player) => (
-              <li key={player.id}>
-                <PoolPlayerChip
-                  player={player}
-                  selected={false}
-                  onSelect={() => onSetAttending?.(player.id, true)}
-                  onDragStart={(e) => handleDragStart(e, player.id)}
-                  showAttendingToggle={false}
-                />
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-[10px] text-muted-foreground">Tap a player to mark them attending again.</p>
-        </div>
-      )}
     </section>
   )
 }

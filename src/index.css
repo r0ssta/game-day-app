@@ -30,11 +30,13 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 
   body {
     margin: 0;
     background-color: var(--color-background);
     color: var(--color-foreground);
+    overflow-x: hidden;
   }
 }

@@ -16,6 +16,7 @@ import {
   loadSeasonReport,
   type SeasonReportData,
 } from '@/lib/season-reporting'
+import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import type { DbMatch } from '@/types/database'
 import type { RosterPlayer } from '@/types/match'
 
@@ -122,8 +123,8 @@ export function ReportingScreen({
   }
 
   return (
-    <main className="min-h-dvh bg-background pb-10">
-      <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
+    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+      <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Reporting"
           subtitle={subtitleByTab[activeTab]}

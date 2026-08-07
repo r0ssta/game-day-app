@@ -17,7 +17,7 @@ import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/mat
 
 export type MatchEventInput = {
   matchId: string
-  eventType: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change' | 'opponent_goal'
+  eventType: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change' | 'opponent_goal' | 'formation_change'
   timestamp: number
   formation: string
   playerId?: string | null
@@ -555,7 +555,7 @@ export async function upsertMatchStats(matchId: string, players: MatchPlayer[]) 
 }
 
 export async function insertMatchEvent(input: MatchEventInput) {
-  if (input.eventType !== 'opponent_goal' && !input.playerId) {
+  if (input.eventType !== 'opponent_goal' && input.eventType !== 'formation_change' && !input.playerId) {
     throw new Error('playerId is required for this event type')
   }
   await insertMatchEventRows([matchEventToRow(input)])
@@ -564,7 +564,7 @@ export async function insertMatchEvent(input: MatchEventInput) {
 export async function insertMatchEvents(events: MatchEventInput[]) {
   if (events.length === 0) return
   for (const event of events) {
-    if (event.eventType !== 'opponent_goal' && !event.playerId) {
+    if (event.eventType !== 'opponent_goal' && event.eventType !== 'formation_change' && !event.playerId) {
       throw new Error('playerId is required for this event type')
     }
   }

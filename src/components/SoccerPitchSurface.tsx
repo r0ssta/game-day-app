@@ -1,9 +1,20 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-export function SoccerPitchSurface({ children }: { children: ReactNode }) {
+export function SoccerPitchSurface({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border-2 border-white/30 bg-gradient-to-b from-emerald-600 to-emerald-700 shadow-inner">
+    <div
+      className={cn(
+        'relative aspect-[3/4] w-full max-w-full overflow-hidden rounded-xl border-2 border-white/30 bg-gradient-to-b from-emerald-600 to-emerald-700 shadow-inner md:aspect-[4/5] lg:aspect-[3/4] lg:max-h-[min(72vh,720px)] lg:justify-self-center',
+        className,
+      )}
+    >
       <div className="pointer-events-none absolute inset-0 opacity-20">
         {Array.from({ length: 8 }).map((_, i) => (
           <div

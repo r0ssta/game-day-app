@@ -55,7 +55,7 @@ export type DbMatchEvent = {
   id: string
   match_id: string
   player_id: string | null
-  event_type: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change' | 'opponent_goal'
+  event_type: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change' | 'opponent_goal' | 'formation_change'
   timestamp: number
   event_notes: string | null
   formation: string | null

@@ -5,6 +5,7 @@ import {
   type PlayerSeasonStats,
 } from '@/lib/season-reporting'
 import { cn } from '@/lib/utils'
+import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import type { Impact, RosterPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -33,14 +34,14 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
   const header = formatPlayerSeasonHeader(player, stats)
 
   return (
-    <main className="min-h-dvh bg-background pb-10">
-      <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
+    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+      <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <header className="flex items-start gap-3">
           <button
             type="button"
             onClick={onBack}
             aria-label="Back to player list"
-            className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary active:scale-90"
+            className={`${TOUCH_ICON_BUTTON} mt-1 bg-secondary`}
           >
             <ArrowLeft className="size-5" />
           </button>

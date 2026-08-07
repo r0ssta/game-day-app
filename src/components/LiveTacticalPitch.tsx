@@ -5,7 +5,9 @@ import {
   buildAssignmentsFromStarters,
   getFormationById,
   getFormationsForFormat,
+  remapFormationSlotAssignments,
   roleToTacticalPosition,
+  type FormationRemapResult,
   type FormationSlot,
 } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
@@ -17,6 +19,7 @@ import {
 import { formatPlayingTimeClock, getLiveSecondsPlayed } from '@/lib/play-time'
 import { displayMatchPosition, formationRoleToLivePosition } from '@/lib/positions'
 import { cn } from '@/lib/utils'
+import { PITCH_BENCH_LAYOUT, PITCH_BENCH_SIDEBAR } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -43,7 +46,7 @@ type LiveTacticalPitchProps = {
   maxFieldPlayers: number
   periodKey: string
   formationId: string
-  onFormationChange: (formationId: string) => void
+  onFormationSwitch: (formationId: string, remap: FormationRemapResult) => void
   onSwap: (benchId: string, fieldId: string, tacticalPosition: string) => void
   onSubIn: (benchId: string, tacticalPosition: string) => void
   onSubOut: (fieldId: string) => void
@@ -70,7 +73,7 @@ function ImpactToggleGroup({
   onSetImpact: (impact: Impact) => void
   compact?: boolean
 }) {
-  const size = compact ? 'size-6 text-[10px]' : 'size-8 text-xs'
+  const size = compact ? 'size-10 min-h-11 min-w-11 text-[10px]' : 'size-11 text-xs'
   return (
     <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>
       {(['negative', 'neutral', 'positive'] as const).map((value) => (
@@ -238,7 +241,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       maxFieldPlayers,
       periodKey,
       formationId,
-      onFormationChange,
+      onFormationSwitch,
       onSwap,
       onSubIn,
       onSubOut,
@@ -583,22 +586,29 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     )
 
     const handleFormationChange = (nextId: string) => {
+      if (nextId === formationId) return
       if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
+
       const nextFormation = getFormationById(nextId, teamFormat)
-      const starters = Object.fromEntries(onFieldPlayers.map((p) => [p.id, true]))
-      onFormationChange(nextId)
-      setSelection(null)
-      setSlotAssignments(
-        buildAssignmentsFromStarters(
-          nextFormation,
-          onFieldPlayers.map((p) => ({
-            id: p.id,
-            matchPosition: p.matchPosition,
-            position: p.position,
-          })),
-          starters,
-        ),
+      const onFieldIds = new Set(onFieldPlayers.map((p) => p.id))
+      const remap = remapFormationSlotAssignments(
+        slotAssignments,
+        nextFormation,
+        players.map((p) => ({
+          id: p.id,
+          matchPosition: p.matchPosition,
+          position: p.position,
+        })),
+        {
+          eligiblePlayerIds: onFieldIds,
+          mapRoleToPosition: formationRoleToLivePosition,
+        },
       )
+
+      skipOnFieldSyncRef.current = true
+      setSelection(null)
+      setSlotAssignments(remap.slotAssignments)
+      onFormationSwitch(nextId, remap)
     }
 
     const isFieldSelected = (slotId: string, playerId: string | null) =>
@@ -626,7 +636,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         <select
           value={formationId}
           onChange={(e) => handleFormationChange(e.target.value)}
-          className="w-full rounded-lg border border-border bg-card px-3 py-3 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+          aria-label="Formation"
+          className="min-h-11 w-full touch-manipulation rounded-lg border border-border bg-card px-3 py-3 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
         >
           {availableFormations.map((f) => (
             <option key={f.id} value={f.id}>
@@ -658,69 +669,75 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           </p>
         )}
 
-        <SoccerPitchSurface>
-          {formation.slots.map((slot) => {
-            const playerId = slotAssignments[slot.id] ?? null
-            const player = playerId ? (playerById.get(playerId) ?? null) : null
-            const displayPlayer = player?.isOnField ? player : null
-            const effectivePlayerId = displayPlayer?.id ?? null
-            const selected = isFieldSelected(slot.id, effectivePlayerId)
-            const swapTarget = Boolean(selection && !selected)
+        <div className={PITCH_BENCH_LAYOUT}>
+          <div className="min-w-0">
+            <SoccerPitchSurface>
+              {formation.slots.map((slot) => {
+                const playerId = slotAssignments[slot.id] ?? null
+                const player = playerId ? (playerById.get(playerId) ?? null) : null
+                const displayPlayer = player?.isOnField ? player : null
+                const effectivePlayerId = displayPlayer?.id ?? null
+                const selected = isFieldSelected(slot.id, effectivePlayerId)
+                const swapTarget = Boolean(selection && !selected)
 
-            return (
-              <div key={slot.id} className="absolute" style={{ left: `${slot.x}%`, top: `${slot.y}%` }}>
-                <LivePitchPlayerBadge
-                  player={displayPlayer}
-                  displayName={
-                    displayPlayer
-                      ? getSidelineName(displayPlayer, sidelineNameMap)
-                      : slot.label
-                  }
-                  clockSeconds={clockSeconds}
-                  slotLabel={slot.label}
-                  selected={selected}
-                  swapTarget={swapTarget}
-                  flashed={displayPlayer ? flashedPlayerIds.has(displayPlayer.id) : false}
-                  onTap={() => handleFieldSlotTap(slot.id)}
-                  onSetImpact={
-                    onSetImpact && displayPlayer
-                      ? (impact) => onSetImpact(displayPlayer.id, impact)
-                      : undefined
-                  }
-                />
-              </div>
-            )
-          })}
-        </SoccerPitchSurface>
-
-        <div className="rounded-xl border-2 border-dashed border-border bg-secondary/20 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Bench</h3>
-            <span className="text-xs font-semibold text-muted-foreground">
-              {benchPlayers.length} players
-            </span>
+                return (
+                  <div key={slot.id} className="absolute" style={{ left: `${slot.x}%`, top: `${slot.y}%` }}>
+                    <LivePitchPlayerBadge
+                      player={displayPlayer}
+                      displayName={
+                        displayPlayer
+                          ? getSidelineName(displayPlayer, sidelineNameMap)
+                          : slot.label
+                      }
+                      clockSeconds={clockSeconds}
+                      slotLabel={slot.label}
+                      selected={selected}
+                      swapTarget={swapTarget}
+                      flashed={displayPlayer ? flashedPlayerIds.has(displayPlayer.id) : false}
+                      onTap={() => handleFieldSlotTap(slot.id)}
+                      onSetImpact={
+                        onSetImpact && displayPlayer
+                          ? (impact) => onSetImpact(displayPlayer.id, impact)
+                          : undefined
+                      }
+                    />
+                  </div>
+                )
+              })}
+            </SoccerPitchSurface>
           </div>
 
-          {benchPlayers.length === 0 ? (
-            <p className="py-3 text-center text-sm text-muted-foreground">No bench players</p>
-          ) : (
-            <ul className="space-y-2">
-              {benchPlayers.map((player) => (
-                <BenchPlayerRow
-                  key={player.id}
-                  player={player}
-                  displayName={getSidelineName(player, sidelineNameMap)}
-                  clockSeconds={clockSeconds}
-                  selected={isBenchSelected(player.id)}
-                  swapTarget={Boolean(selection && !isBenchSelected(player.id))}
-                  onTap={() => handleBenchPlayerTap(player.id)}
-                  onSetImpact={
-                    onSetImpact ? (impact) => onSetImpact(player.id, impact) : undefined
-                  }
-                />
-              ))}
-            </ul>
-          )}
+          <div className={PITCH_BENCH_SIDEBAR}>
+            <div className="rounded-xl border-2 border-dashed border-border bg-secondary/20 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Bench</h3>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {benchPlayers.length} players
+                </span>
+              </div>
+
+              {benchPlayers.length === 0 ? (
+                <p className="py-3 text-center text-sm text-muted-foreground">No bench players</p>
+              ) : (
+                <ul className="space-y-2">
+                  {benchPlayers.map((player) => (
+                    <BenchPlayerRow
+                      key={player.id}
+                      player={player}
+                      displayName={getSidelineName(player, sidelineNameMap)}
+                      clockSeconds={clockSeconds}
+                      selected={isBenchSelected(player.id)}
+                      swapTarget={Boolean(selection && !isBenchSelected(player.id))}
+                      onTap={() => handleBenchPlayerTap(player.id)}
+                      onSetImpact={
+                        onSetImpact ? (impact) => onSetImpact(player.id, impact) : undefined
+                      }
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     )

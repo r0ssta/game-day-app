@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { BarChart3, ClipboardList, Users } from 'lucide-react'
 import { TeamSelector } from '@/components/AppNavigation'
 import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
+import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import type { DbMatch } from '@/types/database'
 
 type NamedEntity = { id: string; name: string }
@@ -44,8 +45,8 @@ export function HomeScreen({
   const teamReady = Boolean(activeTeamId)
 
   return (
-    <main className="min-h-dvh bg-background">
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col px-4 pb-10 pt-8">
+    <main className={APP_SHELL}>
+      <div className={`${APP_CONTAINER} flex min-h-dvh flex-col pb-10 pt-8 md:pb-12 md:pt-10`}>
         <header className="mb-6 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-athletic">Game Day App</p>
           <h1 className="mt-2 font-display text-4xl font-black uppercase tracking-wide text-foreground">
