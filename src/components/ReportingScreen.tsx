@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react'
-import { BarChart3 } from 'lucide-react'
 import { MatchRecapDetailView } from '@/components/MatchRecapDetailView'
 import { ScreenHeader } from '@/components/AppNavigation'
-import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
+import { PlayerBreakdownsTab } from '@/components/reporting/PlayerBreakdownsTab'
+import { PlayerSeasonProfileView } from '@/components/reporting/PlayerSeasonProfileView'
+import { PreviousMatchesTab } from '@/components/reporting/PreviousMatchesTab'
 import {
-  formatOpponentPrefix,
-  formatVenueLabel,
-  resolveMatchLocationType,
-} from '@/lib/match-location'
-import { fetchCompletedMatchesByTeamId, resolveMatchCoachName } from '@/lib/supabase-api'
-import { cn } from '@/lib/utils'
+  ReportingTabBar,
+  type ReportingTab,
+} from '@/components/reporting/ReportingTabBar'
+import { SeasonDetailsTab } from '@/components/reporting/SeasonDetailsTab'
+import {
+  emptyPlayerSeasonStats,
+  emptySeasonReportData,
+  getPlayerFromRoster,
+  loadSeasonReport,
+  type SeasonReportData,
+} from '@/lib/season-reporting'
 import type { DbMatch } from '@/types/database'
 import type { RosterPlayer } from '@/types/match'
 
@@ -21,20 +27,33 @@ type ReportingScreenProps = {
   onBackToHome: () => void
 }
 
-function MatchHistoryList({
+export function ReportingScreen({
   activeTeamId,
-  onViewRecap,
-}: {
-  activeTeamId: string | null
-  onViewRecap: (match: DbMatch) => void
-}) {
+  activeTeamName,
+  teamRoster,
+  onRefreshRoster,
+  onBackToHome,
+}: ReportingScreenProps) {
+  const [activeTab, setActiveTab] = useState<ReportingTab>('matches')
+  const [selectedMatch, setSelectedMatch] = useState<DbMatch | null>(null)
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [matches, setMatches] = useState<DbMatch[]>([])
+  const [reportData, setReportData] = useState<SeasonReportData>(emptySeasonReportData())
+
+  useEffect(() => {
+    void onRefreshRoster()
+  }, [activeTeamId, onRefreshRoster])
+
+  useEffect(() => {
+    setActiveTab('matches')
+    setSelectedMatch(null)
+    setSelectedPlayerId(null)
+  }, [activeTeamId])
 
   useEffect(() => {
     if (!activeTeamId) {
-      setMatches([])
+      setReportData(emptySeasonReportData())
       setLoading(false)
       setLoadError(null)
       return
@@ -46,11 +65,11 @@ function MatchHistoryList({
       setLoading(true)
       setLoadError(null)
       try {
-        const completed = await fetchCompletedMatchesByTeamId(activeTeamId)
-        if (!cancelled) setMatches(completed)
+        const data = await loadSeasonReport(activeTeamId, teamRoster)
+        if (!cancelled) setReportData(data)
       } catch (err) {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to load match history')
+          setLoadError(err instanceof Error ? err.message : 'Failed to load season report')
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -60,132 +79,7 @@ function MatchHistoryList({
     return () => {
       cancelled = true
     }
-  }, [activeTeamId])
-
-  if (!activeTeamId) {
-    return (
-      <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        Select an active team on the Home screen to view match reports.
-      </p>
-    )
-  }
-
-  if (loading) {
-    return (
-      <p className="py-8 text-center text-sm font-semibold text-muted-foreground">
-        Loading match history…
-      </p>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="rounded-xl border border-danger/40 bg-card p-6 text-center">
-        <p className="font-bold text-danger">Failed to load match history</p>
-        <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="flex items-center gap-2 font-display text-base font-bold uppercase tracking-wide text-foreground">
-          <BarChart3 className="size-5 text-athletic" />
-          Match History & Recaps
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Completed matches with player stats, ratings, and coach summaries.
-        </p>
-      </div>
-
-      {matches.length === 0 ? (
-        <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-          No completed matches yet. Finish a game to see reports here.
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {matches.map((match) => {
-            const { dateLabel, timeLabel } = formatMatchDisplayDateTime(match)
-            const headCoach = resolveMatchCoachName(match, null)
-            const locationType = resolveMatchLocationType(match)
-            const opponentLabel = match.opponent.trim() || 'Opponent'
-
-            return (
-              <li
-                key={match.id}
-                className="rounded-xl border border-border bg-card p-4 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-foreground">{dateLabel}</p>
-                    <p className="text-xs text-muted-foreground">{timeLabel}</p>
-                    <p className="mt-2 flex flex-wrap items-center gap-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
-                      <span>
-                        {formatOpponentPrefix(locationType)} {opponentLabel}
-                      </span>
-                      <span
-                        className={cn(
-                          'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
-                          locationType === 'home'
-                            ? 'bg-neon/15 text-neon'
-                            : 'bg-secondary text-muted-foreground',
-                        )}
-                      >
-                        {formatVenueLabel(locationType)}
-                      </span>
-                    </p>
-                    <p className="mt-1 font-mono text-sm font-bold tabular-nums text-blue-400">
-                      Final {match.home_score} – {match.away_score}
-                    </p>
-                    {headCoach ? (
-                      <p className="mt-1 text-xs font-semibold text-muted-foreground">
-                        Head Coach: {headCoach}
-                      </p>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onViewRecap(match)}
-                    className="shrink-0 rounded-lg bg-neon px-3 py-2 text-xs font-bold uppercase tracking-wide text-neon-foreground active:scale-95"
-                  >
-                    View Recap
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      <section className="rounded-xl border border-dashed border-border bg-card/40 p-4">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-          Coming Soon
-        </h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Season analytics, playing-time charts, and tactical breakdowns.
-        </p>
-      </section>
-    </div>
-  )
-}
-
-export function ReportingScreen({
-  activeTeamId,
-  activeTeamName,
-  teamRoster,
-  onRefreshRoster,
-  onBackToHome,
-}: ReportingScreenProps) {
-  const [selectedMatch, setSelectedMatch] = useState<DbMatch | null>(null)
-
-  useEffect(() => {
-    void onRefreshRoster()
-  }, [activeTeamId, onRefreshRoster])
-
-  useEffect(() => {
-    setSelectedMatch(null)
-  }, [activeTeamId])
+  }, [activeTeamId, teamRoster])
 
   if (selectedMatch) {
     return (
@@ -199,16 +93,73 @@ export function ReportingScreen({
     )
   }
 
+  const selectedPlayer = selectedPlayerId
+    ? getPlayerFromRoster(teamRoster, selectedPlayerId)
+    : null
+
+  if (selectedPlayer && selectedPlayerId) {
+    const stats =
+      reportData.playerStats.get(selectedPlayerId) ??
+      emptyPlayerSeasonStats(selectedPlayerId)
+
+    return (
+      <PlayerSeasonProfileView
+        player={selectedPlayer}
+        stats={stats}
+        onBack={() => setSelectedPlayerId(null)}
+      />
+    )
+  }
+
+  const subtitleByTab: Record<ReportingTab, string> = {
+    matches: 'Completed matches, scores, and coach summaries.',
+    players: 'Season stats and coaching notes by player.',
+    season: 'High-level season analytics and trends.',
+  }
+
   return (
     <main className="min-h-dvh bg-background pb-10">
       <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
         <ScreenHeader
           title="Reporting"
-          subtitle={`Match history and recaps for ${activeTeamName || 'your team'}.`}
+          subtitle={subtitleByTab[activeTab]}
           onHome={onBackToHome}
         />
 
-        <MatchHistoryList activeTeamId={activeTeamId} onViewRecap={setSelectedMatch} />
+        {!activeTeamId ? (
+          <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+            Select an active team on the Home screen to view reports.
+          </p>
+        ) : loading ? (
+          <p className="py-8 text-center text-sm font-semibold text-muted-foreground">
+            Loading season report…
+          </p>
+        ) : loadError ? (
+          <div className="rounded-xl border border-danger/40 bg-card p-6 text-center">
+            <p className="font-bold text-danger">Failed to load season report</p>
+            <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+          </div>
+        ) : (
+          <>
+            <ReportingTabBar activeTab={activeTab} onTabChange={setActiveTab} />
+
+            {activeTab === 'matches' ? (
+              <PreviousMatchesTab data={reportData} onViewRecap={setSelectedMatch} />
+            ) : null}
+
+            {activeTab === 'players' ? (
+              <PlayerBreakdownsTab
+                roster={teamRoster}
+                data={reportData}
+                onSelectPlayer={setSelectedPlayerId}
+              />
+            ) : null}
+
+            {activeTab === 'season' ? (
+              <SeasonDetailsTab activeTeamName={activeTeamName} data={reportData} />
+            ) : null}
+          </>
+        )}
       </div>
     </main>
   )
