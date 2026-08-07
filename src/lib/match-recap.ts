@@ -1,4 +1,4 @@
-import { displayMatchPosition } from '@/lib/positions'
+import { normalizeRecapPosition } from '@/lib/positions'
 import { formatOpponentWithVenue } from '@/lib/match-location'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
@@ -44,7 +44,7 @@ export type SavedPositionReview = {
 const LEGACY_REVIEW_POSITION = 'Overall'
 
 export function playerPositionReviewKey(playerId: string, position: string): string {
-  return `${playerId}::${position}`
+  return `${playerId}::${normalizeRecapPosition(position)}`
 }
 
 type TimelineEvent = DbMatchEvent & { absTimestamp: number }
@@ -66,22 +66,66 @@ function toAbsoluteTimeline(events: DbMatchEvent[], halfLengthSeconds: number): 
   })
 }
 
-function addPosition(positions: string[], rawPosition: string | null | undefined) {
-  const position = displayMatchPosition(rawPosition?.trim() ?? '')
+function addRecapPosition(positions: string[], rawPosition: string | null | undefined) {
+  const position = normalizeRecapPosition(rawPosition?.trim() ?? '')
   if (!position || position === '—') return
   if (!positions.includes(position)) positions.push(position)
+}
+
+/** Reconstruct every unique position a player held, in order of first appearance. */
+export function computePlayerPositionsFromTimeline(
+  playerId: string,
+  timeline: TimelineEvent[],
+  fallbackPosition?: string,
+): string[] {
+  const playerEvents = timeline.filter(
+    (event) => event.player_id === playerId && event.event_type !== 'opponent_goal',
+  )
+  const positions: string[] = []
+  let onField = false
+
+  for (const event of playerEvents) {
+    switch (event.event_type) {
+      case 'sub_in':
+        onField = true
+        if (event.event_notes?.trim()) {
+          addRecapPosition(positions, event.event_notes)
+        }
+        break
+      case 'sub_out':
+        onField = false
+        break
+      case 'position_change':
+        if (onField) {
+          addRecapPosition(positions, event.event_notes)
+        }
+        break
+    }
+  }
+
+  if (positions.length === 0) {
+    const fallback = normalizeRecapPosition(fallbackPosition ?? '')
+    return fallback !== '—' ? [fallback] : ['—']
+  }
+
+  const finalPosition = normalizeRecapPosition(fallbackPosition ?? '')
+  if (finalPosition !== '—' && !positions.includes(finalPosition)) {
+    positions.push(finalPosition)
+  }
+
+  return positions
 }
 
 export function aggregatePlayerRecaps(
   events: DbMatchEvent[],
   halfLengthSeconds: number,
+  playersById?: Map<string, Pick<MatchPlayer, 'matchPosition'>>,
 ): Map<string, PlayerRecapStats> {
   const timeline = toAbsoluteTimeline(events, halfLengthSeconds)
   const stats = new Map<
     string,
     {
       totalSeconds: number
-      positions: string[]
       goals: number
       assists: number
     }
@@ -89,7 +133,7 @@ export function aggregatePlayerRecaps(
 
   const ensure = (playerId: string) => {
     if (!stats.has(playerId)) {
-      stats.set(playerId, { totalSeconds: 0, positions: [], goals: 0, assists: 0 })
+      stats.set(playerId, { totalSeconds: 0, goals: 0, assists: 0 })
     }
     return stats.get(playerId)!
   }
@@ -104,7 +148,6 @@ export function aggregatePlayerRecaps(
     switch (event.event_type) {
       case 'sub_in':
         openStints.set(event.player_id, event.absTimestamp)
-        addPosition(row.positions, event.event_notes)
         break
       case 'sub_out': {
         const start = openStints.get(event.player_id)
@@ -114,9 +157,6 @@ export function aggregatePlayerRecaps(
         }
         break
       }
-      case 'position_change':
-        addPosition(row.positions, event.event_notes)
-        break
       case 'goal':
         row.goals += 1
         if (event.assist_player_id) {
@@ -129,12 +169,16 @@ export function aggregatePlayerRecaps(
     }
   }
 
+  const playerIds = new Set<string>([...stats.keys(), ...(playersById ? playersById.keys() : [])])
+
   const result = new Map<string, PlayerRecapStats>()
-  for (const [playerId, row] of stats) {
+  for (const playerId of playerIds) {
+    const row = stats.get(playerId) ?? { totalSeconds: 0, goals: 0, assists: 0 }
+    const fallbackPosition = playersById?.get(playerId)?.matchPosition
     result.set(playerId, {
       playerId,
       totalSeconds: row.totalSeconds,
-      positions: row.positions,
+      positions: computePlayerPositionsFromTimeline(playerId, timeline, fallbackPosition),
       goals: row.goals,
       assists: row.assists,
     })
@@ -146,18 +190,12 @@ export function resolvePlayerPositions(
   eventStats: PlayerRecapStats | undefined,
   player: Pick<MatchPlayer, 'matchPosition'>,
 ): string[] {
-  const fromEvents = eventStats?.positions ?? []
-  const finalPosition = displayMatchPosition(player.matchPosition)
-
-  if (fromEvents.length === 0) {
-    return finalPosition !== '—' ? [finalPosition] : ['—']
+  if (eventStats && eventStats.positions.length > 0) {
+    return eventStats.positions
   }
 
-  if (finalPosition !== '—' && !fromEvents.includes(finalPosition)) {
-    return [...fromEvents, finalPosition]
-  }
-
-  return fromEvents
+  const finalPosition = normalizeRecapPosition(player.matchPosition)
+  return finalPosition !== '—' ? [finalPosition] : ['—']
 }
 
 export function formatRecapMinutes(totalSeconds: number): string {
@@ -186,7 +224,7 @@ export function buildPositionReviews(
       (legacyReview && (positions.length === 1 || index === 0) ? legacyReview : undefined)
 
     return {
-      position,
+      position: normalizeRecapPosition(position),
       impact: saved?.impact ?? fallbackImpact,
       notes: saved?.notes ?? '',
     }
@@ -263,7 +301,11 @@ export function buildRecapSummaryText(input: {
       const positions = row.positions.length > 0 ? row.positions.join(', ') : '—'
       const ratingLines = row.positionReviews.map((review) => {
         const notes = review.notes.trim() ? ` · Notes: ${review.notes.trim()}` : ''
-        return `  ${review.position}: ${formatImpactSymbol(review.impact)}${notes}`
+        const label =
+          row.positionReviews.length > 1
+            ? `${row.name} - ${review.position}`
+            : `${row.name} (${review.position})`
+        return `  ${label}: ${formatImpactSymbol(review.impact)}${notes}`
       })
 
       return [
@@ -321,7 +363,8 @@ export async function loadHistoricalRecapRows(
   ])
 
   const players = rebuildMatchPlayers(roster, stats)
-  const eventStats = aggregatePlayerRecaps(events, halfLengthMinutes * 60)
+  const playersById = new Map(players.map((player) => [player.id, player]))
+  const eventStats = aggregatePlayerRecaps(events, halfLengthMinutes * 60, playersById)
   const { savedReviews, legacyReviews } = indexSavedReviews(existingReviews)
 
   return buildRecapRows(players, eventStats, savedReviews, legacyReviews)

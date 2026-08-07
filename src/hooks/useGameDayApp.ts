@@ -791,12 +791,14 @@ export function useGameDayApp() {
 
         if (matchId) {
           for (const id of starterIds) {
+            const starter = stamped.find((player) => player.id === id)
             void insertMatchEvent({
               matchId,
               playerId: id,
               eventType: 'sub_in',
               timestamp: 0,
               formation,
+              eventNotes: starter?.matchPosition,
             })
           }
           void syncMatchStats(matchId, stamped)

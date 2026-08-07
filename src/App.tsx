@@ -1808,6 +1808,7 @@ export default function App() {
               eventType: 'sub_in',
               timestamp: eventTimestamp,
               formation: activeFormation,
+              eventNotes: tacticalPosition,
             },
           ])
           setToast(`Sub in · ${formatPlayerLabel(benchPlayer, sidelineMap)}`)
@@ -1876,6 +1877,7 @@ export default function App() {
               eventType: 'sub_in',
               timestamp: eventTimestamp,
               formation: activeFormation,
+              eventNotes: tacticalPosition,
             },
           ])
           setToast(

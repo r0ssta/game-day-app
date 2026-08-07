@@ -5,6 +5,7 @@ import {
   DEFAULT_PRIMARY_POSITION,
   DEFAULT_SECONDARY_POSITION,
   legacyPositionToProfile,
+  normalizeRecapPosition,
   rosterProfilePositionToLegacy,
 } from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
@@ -487,6 +488,7 @@ export async function createMatchStats(
         eventType: 'sub_in',
         timestamp: 0,
         formation,
+        eventNotes: p.matchPosition,
       }),
     )
 
@@ -708,7 +710,7 @@ export async function savePostGameReview(
   const reviewRows = reviews.map((review) => ({
     match_id: matchId,
     player_id: review.playerId,
-    position: review.position.trim() || 'Overall',
+    position: normalizeRecapPosition(review.position.trim() || 'Overall'),
     impact_score: impactToScore(review.impact),
     review_notes: review.notes.trim() || null,
     updated_at: now,

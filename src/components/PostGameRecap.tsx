@@ -134,7 +134,11 @@ export function PostGameRecap({
         }
         if (cancelled) return
 
-        const recapStats = aggregatePlayerRecaps(events, halfLengthMinutes * 60)
+        const recapStats = aggregatePlayerRecaps(
+          events,
+          halfLengthMinutes * 60,
+          new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
+        )
         const { savedReviews, legacyReviews } = indexSavedReviews(existingReviews)
         const recapRows = buildRecapRows(players, recapStats, savedReviews, legacyReviews)
 
@@ -400,20 +404,78 @@ export function PostGameRecap({
           />
         </section>
 
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-          <div className="grid grid-cols-[2.5rem_1fr] gap-x-2 border-b border-border bg-secondary/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            <span>#</span>
-            <span>Player · Minutes · G/A · Position Ratings</span>
+        <section className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="border-b border-border bg-secondary/40 px-4 py-3">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              Player Review by Position
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Rate each role separately when a player changed positions during the match.
+            </p>
           </div>
 
           <ul className="divide-y divide-border">
             {recapRows.map((row) => {
               const positionsLabel = row.positions.length > 0 ? row.positions.join(', ') : '—'
-              const singlePosition = row.positionReviews.length === 1
+              const multiPosition = row.positionReviews.length > 1
+
+              if (!multiPosition) {
+                const review = row.positionReviews[0]
+                if (!review) return null
+                const reviewKey = playerPositionReviewKey(row.playerId, review.position)
+                const saved = reviews[reviewKey] ?? review
+
+                return (
+                  <li key={row.playerId} className="space-y-3 px-3 py-4">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={cn(
+                          'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
+                          IMPACT_RING[saved.impact],
+                        )}
+                      >
+                        {formatJersey(row.number)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-base font-bold text-foreground">{row.name}</span>
+                          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
+                            {review.position}
+                          </span>
+                          <span className="font-mono text-sm font-bold tabular-nums text-blue-400">
+                            {formatRecapMinutes(row.totalSeconds)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                          Goals {row.goals} · Assists {row.assists}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 pl-[3.25rem]">
+                      <ImpactToggleGroup
+                        impact={saved.impact}
+                        onSetImpact={(impact) =>
+                          updateReview(row.playerId, review.position, { impact })
+                        }
+                      />
+                      <input
+                        type="text"
+                        value={saved.notes}
+                        onChange={(e) =>
+                          updateReview(row.playerId, review.position, { notes: e.target.value })
+                        }
+                        placeholder="Notes / comments"
+                        className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                      />
+                    </div>
+                  </li>
+                )
+              }
 
               return (
                 <li key={row.playerId} className="space-y-3 px-3 py-4">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 border-b border-border/60 pb-3">
                     <div
                       className={cn(
                         'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
@@ -429,26 +491,29 @@ export function PostGameRecap({
                           {formatRecapMinutes(row.totalSeconds)}
                         </span>
                       </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{positionsLabel}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Played: {positionsLabel}
+                      </p>
                       <p className="text-xs font-semibold text-muted-foreground">
                         Goals {row.goals} · Assists {row.assists}
                       </p>
                     </div>
                   </div>
 
-                  <div className="space-y-3 pl-[3.25rem]">
+                  <div className="space-y-4 pl-[3.25rem]">
                     {row.positionReviews.map((review) => {
                       const reviewKey = playerPositionReviewKey(row.playerId, review.position)
                       const saved = reviews[reviewKey] ?? review
 
                       return (
-                        <div key={reviewKey} className="space-y-2">
+                        <div
+                          key={reviewKey}
+                          className="space-y-2 rounded-lg border border-neon/20 bg-neon/5 p-3"
+                        >
                           <div className="flex flex-wrap items-center gap-3">
-                            {!singlePosition ? (
-                              <span className="min-w-[6.5rem] text-sm font-bold text-foreground">
-                                {row.name} ({review.position})
-                              </span>
-                            ) : null}
+                            <span className="text-sm font-bold text-foreground">
+                              {row.name} - {review.position}
+                            </span>
                             <ImpactToggleGroup
                               impact={saved.impact}
                               onSetImpact={(impact) =>
@@ -462,11 +527,7 @@ export function PostGameRecap({
                             onChange={(e) =>
                               updateReview(row.playerId, review.position, { notes: e.target.value })
                             }
-                            placeholder={
-                              singlePosition
-                                ? 'Notes / comments'
-                                : `Notes for ${review.position}`
-                            }
+                            placeholder={`Notes for ${review.position}`}
                             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
                           />
                         </div>
@@ -477,7 +538,7 @@ export function PostGameRecap({
               )
             })}
           </ul>
-        </div>
+        </section>
 
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur">
           <div className={`${APP_CONTAINER} flex flex-col gap-2`}>

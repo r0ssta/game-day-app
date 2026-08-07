@@ -6,7 +6,7 @@ import {
   getFormationById,
   getFormationsForFormat,
   remapFormationSlotAssignments,
-  roleToTacticalPosition,
+  slotToTacticalPosition,
   type FormationRemapResult,
   type FormationSlot,
 } from '@/lib/formations'
@@ -17,7 +17,7 @@ import {
   getSidelineName,
 } from '@/lib/player-names'
 import { formatPlayingTimeClock, getLiveSecondsPlayed } from '@/lib/play-time'
-import { displayMatchPosition, formationRoleToLivePosition } from '@/lib/positions'
+import { displayMatchPosition } from '@/lib/positions'
 import { cn } from '@/lib/utils'
 import { PITCH_BENCH_LAYOUT, PITCH_BENCH_SIDEBAR } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
@@ -390,7 +390,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         const sourceSlot = slotById.get(sourceSlotId)
         if (!sourceSlot) return
 
-        const targetPosition = formationRoleToLivePosition(targetSlot.role)
+        const targetPosition = slotToTacticalPosition(targetSlot)
         const updates: PositionReassignUpdate[] = [
           { playerId: draggedPlayerId, position: targetPosition },
         ]
@@ -398,7 +398,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         if (occupantId && occupantId !== draggedPlayerId) {
           updates.push({
             playerId: occupantId,
-            position: formationRoleToLivePosition(sourceSlot.role),
+            position: slotToTacticalPosition(sourceSlot),
           })
         }
 
@@ -438,7 +438,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         const benchPlayer = playerById.get(benchPlayerId)
         if (!benchPlayer || benchPlayer.isOnField) return
 
-        const tacticalPosition = roleToTacticalPosition(targetSlot.role)
+        const tacticalPosition = slotToTacticalPosition(targetSlot)
         const occupantId = getOnFieldPlayerAtSlot(targetSlotId)
 
         if (occupantId) {
@@ -477,7 +477,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         const benchPlayer = playerById.get(benchPlayerId)
         if (!benchPlayer || benchPlayer.isOnField) return
 
-        const tacticalPosition = roleToTacticalPosition(targetSlot.role)
+        const tacticalPosition = slotToTacticalPosition(targetSlot)
         onSwap(benchPlayerId, fieldPlayerId, tacticalPosition)
         setSlotAssignments((prev) => ({ ...prev, [sourceSlotId!]: benchPlayerId }))
         flashPlayers([benchPlayerId, fieldPlayerId])
@@ -601,7 +601,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         })),
         {
           eligiblePlayerIds: onFieldIds,
-          mapRoleToPosition: formationRoleToLivePosition,
+          mapSlotToPosition: slotToTacticalPosition,
         },
       )
 

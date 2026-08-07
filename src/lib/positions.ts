@@ -86,6 +86,47 @@ export function formationRoleToLivePosition(role: 'GK' | 'DEF' | 'MID' | 'FWD'):
   }
 }
 
+/** Short label for post-game recap rows and per-position rating storage. */
+export function normalizeRecapPosition(value: string): string {
+  const normalized = value.trim().toUpperCase()
+  if (!normalized) return '—'
+
+  const tacticalCodes = [
+    'GK',
+    'CB',
+    'LB',
+    'RB',
+    'LWB',
+    'RWB',
+    'CDM',
+    'CM',
+    'CAM',
+    'LM',
+    'RM',
+    'LW',
+    'RW',
+    'CF',
+    'ST',
+    'LF',
+    'RF',
+  ]
+  if (tacticalCodes.includes(normalized)) return normalized
+
+  const display = displayMatchPosition(value)
+  switch (display) {
+    case 'Keeper':
+      return 'GK'
+    case 'Defender':
+      return 'DEF'
+    case 'Midfielder':
+      return 'MID'
+    case 'Forward':
+      return 'FWD'
+    default:
+      return normalized
+  }
+}
+
 /** Human-readable position for pitch badges (supports tactical codes and live labels). */
 export function displayMatchPosition(value: string): string {
   if (isLiveFieldPosition(value)) return value

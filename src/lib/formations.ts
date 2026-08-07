@@ -182,6 +182,17 @@ export function roleToTacticalPosition(role: FormationRole): string {
   }
 }
 
+const GENERIC_SLOT_LABELS = new Set(['DEF', 'MID', 'FWD', 'GK'])
+
+/** Tactical code for a formation slot (CB, CF, ST, etc.). */
+export function slotToTacticalPosition(slot: FormationSlot): string {
+  const label = slot.label.trim().toUpperCase()
+  if (label && !GENERIC_SLOT_LABELS.has(label)) {
+    return label
+  }
+  return roleToTacticalPosition(slot.role)
+}
+
 export function getFormationsForFormat(format: TeamFormat): Formation[] {
   return FORMATIONS.filter((formation) => formation.format === format)
 }
@@ -285,9 +296,12 @@ export function remapFormationSlotAssignments(
   options?: {
     eligiblePlayerIds?: Set<string>
     mapRoleToPosition?: (role: FormationRole) => string
+    mapSlotToPosition?: (slot: FormationSlot) => string
   },
 ): FormationRemapResult {
-  const mapRole = options?.mapRoleToPosition ?? roleToTacticalPosition
+  const mapSlot =
+    options?.mapSlotToPosition ??
+    ((slot: FormationSlot) => (options?.mapRoleToPosition ?? roleToTacticalPosition)(slot.role))
   const nextAssignments: Record<string, string | null> = Object.fromEntries(
     nextFormation.slots.map((slot) => [slot.id, null]),
   )
@@ -307,7 +321,7 @@ export function remapFormationSlotAssignments(
     used.add(playerId)
     positionUpdates.push({
       playerId,
-      position: mapRole(slot.role),
+      position: mapSlot(slot),
     })
   }
 

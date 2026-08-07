@@ -205,8 +205,9 @@ export async function loadSeasonReport(
         fetchMatchReviews(match.id).catch(() => []),
       ])
 
-      const eventStats = aggregatePlayerRecaps(events, match.half_length * 60)
       const matchPlayers = rebuildMatchPlayers(roster, stats)
+      const playersById = new Map(matchPlayers.map((player) => [player.id, player]))
+      const eventStats = aggregatePlayerRecaps(events, match.half_length * 60, playersById)
       const reviewsByPlayerPosition = new Map<string, Array<{ position: string; impact: Impact; notes: string }>>()
 
       for (const review of reviews) {
