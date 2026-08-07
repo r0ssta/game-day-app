@@ -893,7 +893,9 @@ function SetupScreen({
           disabled={!canStartMatch}
           className="flex w-full items-center justify-center gap-3 rounded-xl bg-neon py-8 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <span className="font-display text-4xl font-bold uppercase tracking-wide">Start Match</span>
+          <span className="font-display text-3xl font-bold uppercase tracking-wide sm:text-4xl">
+            Ready for 1st Half
+          </span>
         </button>
         {!canStartMatch && startMatchBlockReason ? (
           <p className="text-center text-sm font-semibold text-muted-foreground">
@@ -1486,7 +1488,7 @@ export default function App() {
       })
 
       setQaSpeedMultiplier(1)
-      setToast('Match started')
+      setToast('Ready for 1st half')
     } catch (err) {
       setToast(formatSupabaseError(err))
     } finally {
@@ -2058,7 +2060,7 @@ export default function App() {
           onEditPlayer={openEditPlayer}
           onStartMatch={() => void handleStartMatch()}
           canStartMatch={canStartMatch && !startingMatch}
-          startMatchBlockReason={startingMatch ? 'Starting match…' : startMatchBlockReason}
+          startMatchBlockReason={startingMatch ? 'Getting ready…' : startMatchBlockReason}
           attendingCount={attendingCount}
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadLineupPreset}
