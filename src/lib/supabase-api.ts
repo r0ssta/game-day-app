@@ -83,20 +83,18 @@ async function insertMatchEventRows(
   if (!error) return
 
   if (isMissingColumnError(error)) {
-    const legacyRows = rows.map((row) => {
+    const withoutExtendedColumns = rows.map((row) => {
       const {
         formation: _formation,
-        event_notes: _eventNotes,
         assist_player_id: _assistPlayerId,
-        ...legacy
+        ...keep
       } = row as Record<string, unknown> & {
         formation?: string
-        event_notes?: string | null
         assist_player_id?: string | null
       }
-      return legacy
+      return keep
     })
-    const { error: legacyError } = await supabase.from('match_events').insert(legacyRows)
+    const { error: legacyError } = await supabase.from('match_events').insert(withoutExtendedColumns)
     if (legacyError) throw legacyError
     return
   }

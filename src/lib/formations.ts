@@ -184,13 +184,53 @@ export function roleToTacticalPosition(role: FormationRole): string {
 
 const GENERIC_SLOT_LABELS = new Set(['DEF', 'MID', 'FWD', 'GK'])
 
+function tacticalPositionFromGenericSlot(slot: FormationSlot): string {
+  const id = slot.id.toLowerCase()
+
+  if (slot.role === 'GK') return 'GK'
+
+  if (slot.role === 'DEF') {
+    if (id.includes('lwb')) return 'LWB'
+    if (id.includes('rwb')) return 'RWB'
+    if (id.includes('lb') || id.endsWith('-l') || id.includes('-l-')) return 'LB'
+    if (id.includes('rb') || id.endsWith('-r') || id.includes('-r-')) return 'RB'
+    return 'CB'
+  }
+
+  if (slot.role === 'MID') {
+    if (id.includes('cdm') || id.includes('-dm')) return 'CDM'
+    if (id.startsWith('am-')) {
+      if (id.endsWith('-l')) return 'LM'
+      if (id.endsWith('-r')) return 'RM'
+      return 'CAM'
+    }
+    if (id.includes('cam')) return 'CAM'
+    if (id.includes('lwb')) return 'LWB'
+    if (id.includes('rwb')) return 'RWB'
+    if (id.includes('lm') || id.endsWith('-l') || id.includes('-l-')) return 'LM'
+    if (id.includes('rm') || id.endsWith('-r') || id.includes('-r-')) return 'RM'
+    return 'CM'
+  }
+
+  if (slot.role === 'FWD') {
+    if (id.includes('lw')) return 'LW'
+    if (id.includes('rw')) return 'RW'
+    if (id.includes('st')) return 'ST'
+    if (id.includes('lf') || id.endsWith('-l') || id.includes('-l-')) return 'LF'
+    if (id.includes('rf') || id.endsWith('-r') || id.includes('-r-')) return 'RF'
+    return 'CF'
+  }
+
+  return roleToTacticalPosition(slot.role)
+}
+
 /** Tactical code for a formation slot (CB, CF, ST, etc.). */
 export function slotToTacticalPosition(slot: FormationSlot): string {
   const label = slot.label.trim().toUpperCase()
   if (label && !GENERIC_SLOT_LABELS.has(label)) {
     return label
   }
-  return roleToTacticalPosition(slot.role)
+  return tacticalPositionFromGenericSlot(slot)
 }
 
 /** Derive per-player tactical positions from saved pitch slot assignments. */

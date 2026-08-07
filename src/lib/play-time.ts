@@ -1,4 +1,4 @@
-import { normalizeMatchPosition } from '@/lib/positions'
+import { normalizeTacticalMatchPosition } from '@/lib/positions'
 import { getFormationById, slotToTacticalPosition } from '@/lib/formations'
 import type { MatchPlayer, RosterPlayer } from '@/types/match'
 
@@ -21,7 +21,7 @@ export function createMatchPlayer(
     isFirstHalfStarter: input.isFirstHalfStarter,
     isSecondHalfStarter: input.isSecondHalfStarter,
     isOnField: input.isOnField,
-    matchPosition: normalizeMatchPosition(input.matchPosition),
+    matchPosition: normalizeTacticalMatchPosition(input.matchPosition),
     totalSecondsPlayed: 0,
     subbedInAt: null,
   }

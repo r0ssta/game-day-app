@@ -4,7 +4,7 @@ import {
   ensureHalftimeStarters,
   ensureSetupLineup,
 } from '@/lib/lineup'
-import { ensureMatchPositions, normalizeMatchPosition } from '@/lib/positions'
+import { ensureMatchPositions, normalizeRecapPosition } from '@/lib/positions'
 import {
   applySecondHalfLineup,
   applySlotAssignmentPositions,
@@ -929,7 +929,7 @@ export function useGameDayApp() {
   }, [matchId, returnToHome])
 
   const setSetupMatchPosition = useCallback((id: string, matchPosition: string) => {
-    setMatchPositions((prev) => ({ ...prev, [id]: normalizeMatchPosition(matchPosition) }))
+    setMatchPositions((prev) => ({ ...prev, [id]: normalizeRecapPosition(matchPosition) }))
   }, [])
 
   return {

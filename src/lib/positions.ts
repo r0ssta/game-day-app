@@ -166,6 +166,11 @@ const LEGACY_POSITION_MAP: Record<string, MatchPosition> = {
   SUB: 'CM',
 }
 
+/** Preserve tactical codes (LB, CDM, etc.) for in-match position tracking and recap. */
+export function normalizeTacticalMatchPosition(position: string): string {
+  return normalizeRecapPosition(position)
+}
+
 export function normalizeMatchPosition(position: string): MatchPosition {
   const key = position.trim().toUpperCase()
   if (MATCH_POSITIONS.includes(key as MatchPosition)) {
