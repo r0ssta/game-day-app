@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ClipboardCopy, Mail } from 'lucide-react'
+import { BackToHomeButton } from '@/components/AppNavigation'
 import {
   aggregatePlayerRecaps,
   buildRecapRows,
@@ -8,6 +9,7 @@ import {
   type PlayerRecapStats,
 } from '@/lib/match-recap'
 import {
+  fetchMatchById,
   fetchMatchEvents,
   fetchMatchReviews,
   savePostGameReview,
@@ -69,6 +71,7 @@ type PostGameRecapProps = {
   players: MatchPlayer[]
   onFinalize: () => void
   onToast: (message: string) => void
+  onHome?: () => void
 }
 
 export function PostGameRecap({
@@ -81,12 +84,14 @@ export function PostGameRecap({
   players,
   onFinalize,
   onToast,
+  onHome,
 }: PostGameRecapProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [eventStats, setEventStats] = useState<Map<string, PlayerRecapStats>>(new Map())
   const [reviews, setReviews] = useState<Record<string, { impact: Impact; notes: string }>>({})
+  const [coachSummary, setCoachSummary] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -95,8 +100,15 @@ export function PostGameRecap({
       setLoading(true)
       setLoadError(null)
       try {
-        const events = await fetchMatchEvents(matchId)
+        const [events, matchRecord] = await Promise.all([
+          fetchMatchEvents(matchId),
+          fetchMatchById(matchId),
+        ])
         if (cancelled) return
+
+        if (matchRecord?.coach_summary_notes) {
+          setCoachSummary(matchRecord.coach_summary_notes)
+        }
 
         let existingReviews: Awaited<ReturnType<typeof fetchMatchReviews>> = []
         try {
@@ -162,6 +174,7 @@ export function PostGameRecap({
           impact: row.impact,
           notes: row.notes,
         })),
+        coachSummary,
       )
 
       const summary = buildRecapSummaryText({
@@ -169,11 +182,12 @@ export function PostGameRecap({
         opponent,
         homeScore,
         awayScore,
+        coachSummary,
         rows: rowsWithReviews,
       })
 
       await navigator.clipboard.writeText(summary)
-      onToast('Recap saved and copied to clipboard')
+      onToast('Recap saved — returning home')
       onFinalize()
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to save recap')
@@ -188,6 +202,7 @@ export function PostGameRecap({
       opponent,
       homeScore,
       awayScore,
+      coachSummary,
       rows: rowsWithReviews,
     })
     const subject = encodeURIComponent(`${teamName} vs ${opponent} — Post-Game Recap`)
@@ -201,6 +216,7 @@ export function PostGameRecap({
       opponent,
       homeScore,
       awayScore,
+      coachSummary,
       rows: rowsWithReviews,
     })
     void navigator.clipboard.writeText(summary).then(() => onToast('Summary copied'))
@@ -228,14 +244,37 @@ export function PostGameRecap({
   return (
     <main className="min-h-dvh bg-background pb-28">
       <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
-        <header className="text-center">
-          <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
-            Post-Game Recap
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {teamName} {homeScore} – {awayScore} {opponent}
-          </p>
+        <header className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 text-center">
+            <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
+              Post-Game Recap
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {teamName} {homeScore} – {awayScore} {opponent}
+            </p>
+          </div>
+          {onHome ? <BackToHomeButton onClick={onHome} /> : null}
         </header>
+
+        <section className="rounded-xl border border-neon/30 bg-neon/5 p-4">
+          <label
+            htmlFor="coach-match-summary"
+            className="mb-2 block font-display text-sm font-bold uppercase tracking-wide text-foreground"
+          >
+            Coach&apos;s Match Summary
+          </label>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Overall game thoughts, tactical takeaways, and what to work on next.
+          </p>
+          <textarea
+            id="coach-match-summary"
+            value={coachSummary}
+            onChange={(e) => setCoachSummary(e.target.value)}
+            rows={5}
+            placeholder="How did we play? What worked well? What should we focus on in training?"
+            className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+          />
+        </section>
 
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           <div className="grid grid-cols-[2.5rem_1fr] gap-x-2 border-b border-border bg-secondary/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -300,7 +339,7 @@ export function PostGameRecap({
               disabled={saving}
               className="w-full rounded-xl bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98] disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Finalize & Save'}
+              {saving ? 'Saving…' : 'Save & Exit'}
             </button>
             <div className="grid grid-cols-2 gap-2">
               <button

@@ -274,6 +274,22 @@ export function TacticalPitchLineup({
       setSlotAssignments(initialSlotAssignments)
       setSelectedPlayerId(null)
       setSelectedSlotId(null)
+
+      const assignedIds = new Set(
+        Object.values(initialSlotAssignments).filter((id): id is string => Boolean(id)),
+      )
+      for (const player of players) {
+        if (attending[player.id] === false) continue
+        if (assignedIds.has(player.id)) {
+          const slotId = Object.entries(initialSlotAssignments).find(([, id]) => id === player.id)?.[0]
+          const slot = formation.slots.find((s) => s.id === slotId)
+          if (slot) {
+            onAssignStarter(player.id, slot.role, roleToTacticalPosition(slot.role))
+          }
+        } else {
+          onRemoveStarter(player.id)
+        }
+      }
       return
     }
 

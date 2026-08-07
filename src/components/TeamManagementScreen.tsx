@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  ArrowLeft,
-  History,
   LayoutGrid,
   Pencil,
   Save,
@@ -10,25 +8,22 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react'
-import { MatchRecapDetailView } from '@/components/MatchRecapDetailView'
+import { ScreenHeader } from '@/components/AppNavigation'
 import {
   DEFAULT_PRIMARY_POSITION,
   DEFAULT_SECONDARY_POSITION,
   RosterPositionFields,
 } from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
-import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { parseFormationJson } from '@/lib/lineup-presets'
 import { MAX_FIELD_PLAYERS } from '@/lib/lineup'
-import { fetchCompletedMatchesByTeamId } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
-import type { DbLineupPreset, DbMatch } from '@/types/database'
+import type { DbLineupPreset } from '@/types/database'
 import type { RosterProfilePosition } from '@/lib/positions'
 
 import type { RosterPlayer } from '@/types/match'
 
-type NamedEntity = { id: string; name: string }
-type TeamTab = 'roster' | 'lineups' | 'history'
+type TeamTab = 'roster' | 'lineups'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
@@ -58,9 +53,8 @@ function TabButton({
 }
 
 type TeamManagementScreenProps = {
-  teams: NamedEntity[]
-  selectedTeamId: string | null
-  onTeamChange: (id: string) => void
+  activeTeamId: string | null
+  activeTeamName: string
   rosterLoading: boolean
   teamRoster: RosterPlayer[]
   suggestedJersey: number
@@ -94,7 +88,7 @@ type TeamManagementScreenProps = {
     slotAssignments: Record<string, string | null>
   }) => Promise<void>
   onDeletePreset: (presetId: string) => Promise<void>
-  onBack: () => void
+  onBackToHome: () => void
   onToast: (message: string) => void
 }
 
@@ -421,7 +415,7 @@ function TeamRosterTab({
 }
 
 function TeamLineupsTab({
-  selectedTeamId,
+  activeTeamId,
   rosterLoading,
   teamRoster,
   lineupPresets,
@@ -431,7 +425,7 @@ function TeamLineupsTab({
   onToast,
 }: Pick<
   TeamManagementScreenProps,
-  | 'selectedTeamId'
+  | 'activeTeamId'
   | 'rosterLoading'
   | 'teamRoster'
   | 'lineupPresets'
@@ -465,7 +459,7 @@ function TeamLineupsTab({
 
   useEffect(() => {
     void onRefreshPresets()
-  }, [selectedTeamId, onRefreshPresets])
+  }, [activeTeamId, onRefreshPresets])
 
   const loadPreset = (preset: DbLineupPreset) => {
     const parsed = parseFormationJson(preset.formation_json)
@@ -483,7 +477,7 @@ function TeamLineupsTab({
 
   const handleSave = async () => {
     const trimmed = presetName.trim()
-    if (!trimmed || !selectedTeamId) {
+    if (!trimmed || !activeTeamId) {
       onToast('Enter a preset name')
       return
     }
@@ -563,7 +557,7 @@ function TeamLineupsTab({
           <p className="text-sm text-muted-foreground">Add active players on the Roster tab first.</p>
         ) : (
           <TacticalPitchLineup
-            key={`${selectedTeamId}-${assignmentsKey}`}
+            key={`${activeTeamId}-${assignmentsKey}`}
             title="Preset Formation"
             formationId={formationId}
             onFormationChange={(id) => {
@@ -591,7 +585,7 @@ function TeamLineupsTab({
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={saving || !selectedTeamId || !presetName.trim()}
+          disabled={saving || !activeTeamId || !presetName.trim()}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-neon py-4 font-display text-xl font-black uppercase text-neon-foreground disabled:opacity-40"
         >
           <Save className="size-5" />
@@ -602,197 +596,22 @@ function TeamLineupsTab({
   )
 }
 
-function TeamMatchHistoryTab({
-  selectedTeamId,
-  onViewRecap,
-}: {
-  selectedTeamId: string | null
-  onViewRecap: (match: DbMatch) => void
-}) {
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [matches, setMatches] = useState<DbMatch[]>([])
-
-  useEffect(() => {
-    if (!selectedTeamId) {
-      setMatches([])
-      setLoading(false)
-      setLoadError(null)
-      return
-    }
-
-    let cancelled = false
-
-    void (async () => {
-      setLoading(true)
-      setLoadError(null)
-      try {
-        const completed = await fetchCompletedMatchesByTeamId(selectedTeamId)
-        if (!cancelled) setMatches(completed)
-      } catch (err) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to load match history')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedTeamId])
-
-  if (!selectedTeamId) {
-    return (
-      <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        Select a team to view completed matches.
-      </p>
-    )
-  }
-
-  if (loading) {
-    return (
-      <p className="py-8 text-center text-sm font-semibold text-muted-foreground">
-        Loading match history…
-      </p>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="rounded-xl border border-danger/40 bg-card p-6 text-center">
-        <p className="font-bold text-danger">Failed to load match history</p>
-        <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="font-display text-base font-bold uppercase tracking-wide text-foreground">
-          Match History & Recaps
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Completed matches with post-game stats, ratings, and coach notes.
-        </p>
-      </div>
-
-      {matches.length === 0 ? (
-        <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-          No completed matches yet. Finish a game to see it here.
-        </p>
-      ) : (
-        <ul className="space-y-3">
-          {matches.map((match) => {
-            const { dateLabel, timeLabel } = formatMatchDisplayDateTime(match)
-
-            return (
-              <li
-                key={match.id}
-                className="rounded-xl border border-border bg-card p-4 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-foreground">{dateLabel}</p>
-                    <p className="text-xs text-muted-foreground">{timeLabel}</p>
-                    <p className="mt-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
-                      vs {match.opponent}
-                    </p>
-                    <p className="mt-1 font-mono text-sm font-bold tabular-nums text-blue-400">
-                      Final {match.home_score} – {match.away_score}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onViewRecap(match)}
-                    className="shrink-0 rounded-lg bg-neon px-3 py-2 text-xs font-bold uppercase tracking-wide text-neon-foreground active:scale-95"
-                  >
-                    View Recap
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </div>
-  )
-}
-
 export function TeamManagementScreen(props: TeamManagementScreenProps) {
-  const { teams, selectedTeamId, onTeamChange, onBack } = props
+  const { activeTeamId, activeTeamName, onBackToHome } = props
   const [tab, setTab] = useState<TeamTab>('roster')
-  const [selectedHistoryMatch, setSelectedHistoryMatch] = useState<DbMatch | null>(null)
-
-  const teamName = teams.find((team) => team.id === selectedTeamId)?.name ?? 'Team'
 
   useEffect(() => {
     void props.onRefreshRoster()
-  }, [selectedTeamId, props.onRefreshRoster])
-
-  useEffect(() => {
-    setSelectedHistoryMatch(null)
-  }, [selectedTeamId, tab])
-
-  if (selectedHistoryMatch) {
-    return (
-      <MatchRecapDetailView
-        match={selectedHistoryMatch}
-        teamName={teamName}
-        roster={props.teamRoster}
-        onBack={() => setSelectedHistoryMatch(null)}
-      />
-    )
-  }
+  }, [activeTeamId, props.onRefreshRoster])
 
   return (
     <main className="min-h-dvh bg-background pb-10">
       <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
-        <header className="flex items-start gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to home"
-            className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary active:scale-90"
-          >
-            <ArrowLeft className="size-5" />
-          </button>
-          <div>
-            <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
-              Team Management
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Roster, preset lineups, and match history for your squad.
-            </p>
-          </div>
-        </header>
-
-        <div>
-          <label
-            htmlFor="team-mgmt-team"
-            className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-          >
-            Team
-          </label>
-          <select
-            id="team-mgmt-team"
-            value={selectedTeamId ?? ''}
-            onChange={(e) => onTeamChange(e.target.value)}
-            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-          >
-            {teams.length === 0 ? (
-              <option value="">No teams yet</option>
-            ) : (
-              teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
+        <ScreenHeader
+          title="Team Management"
+          subtitle={`Roster and preset lineups for ${activeTeamName || 'your team'}.`}
+          onHome={onBackToHome}
+        />
 
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
           <TabButton active={tab === 'roster'} onClick={() => setTab('roster')}>
@@ -805,12 +624,6 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
             <span className="inline-flex items-center justify-center gap-1">
               <LayoutGrid className="size-3.5" />
               Lineups
-            </span>
-          </TabButton>
-          <TabButton active={tab === 'history'} onClick={() => setTab('history')}>
-            <span className="inline-flex items-center justify-center gap-1">
-              <History className="size-3.5" />
-              History
             </span>
           </TabButton>
         </div>
@@ -828,7 +641,7 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
         )}
         {tab === 'lineups' && (
           <TeamLineupsTab
-            selectedTeamId={props.selectedTeamId}
+            activeTeamId={props.activeTeamId}
             rosterLoading={props.rosterLoading}
             teamRoster={props.teamRoster}
             lineupPresets={props.lineupPresets}
@@ -836,12 +649,6 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
             onSavePreset={props.onSavePreset}
             onDeletePreset={props.onDeletePreset}
             onToast={props.onToast}
-          />
-        )}
-        {tab === 'history' && (
-          <TeamMatchHistoryTab
-            selectedTeamId={props.selectedTeamId}
-            onViewRecap={setSelectedHistoryMatch}
           />
         )}
       </div>

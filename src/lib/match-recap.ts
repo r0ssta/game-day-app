@@ -161,16 +161,19 @@ export function buildRecapSummaryText(input: {
   opponent: string
   homeScore: number
   awayScore: number
+  coachSummary?: string
   rows: PlayerRecapReview[]
 }): string {
+  const coachSummary = input.coachSummary?.trim()
   const lines = [
     'POST-GAME RECAP',
     '===============',
     `${input.teamName} vs ${input.opponent}`,
     `Final Score: ${input.homeScore} – ${input.awayScore}`,
     '',
-    'PLAYER STATS',
-    '------------',
+    ...(coachSummary
+      ? ['COACH SUMMARY', '--------------', coachSummary, '', 'PLAYER STATS', '------------']
+      : ['PLAYER STATS', '------------']),
     ...input.rows.map((row) => {
       const positions = row.positions.length > 0 ? row.positions.join(', ') : '—'
       const impact =

@@ -254,6 +254,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
   const [hoverSlotId, setHoverSlotId] = useState<string | null>(null)
   const [flashedPlayerIds, setFlashedPlayerIds] = useState<Set<string>>(new Set())
   const hydratedKeyRef = useRef<string | null>(null)
+  const skipOnFieldSyncRef = useRef(false)
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const formation = getFormationById(formationId)
@@ -281,6 +282,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
 
     if (initialSlotAssignments && Object.values(initialSlotAssignments).some(Boolean)) {
       setSlotAssignments(initialSlotAssignments)
+      skipOnFieldSyncRef.current = true
       return
     }
 
@@ -292,9 +294,15 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         starters,
       ),
     )
+    skipOnFieldSyncRef.current = true
   }, [periodKey, formation, players, initialSlotAssignments])
 
   useEffect(() => {
+    if (skipOnFieldSyncRef.current) {
+      skipOnFieldSyncRef.current = false
+      return
+    }
+
     setSlotAssignments((prev) => {
       const onFieldIds = new Set(onFieldPlayers.map((p) => p.id))
       let changed = false

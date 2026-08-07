@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import { BackToHomeButton } from '@/components/AppNavigation'
 import {
   formatRecapMinutes,
   loadHistoricalRecapRows,
@@ -31,9 +32,10 @@ type MatchRecapDetailViewProps = {
   teamName: string
   roster: RosterPlayer[]
   onBack: () => void
+  onHome?: () => void
 }
 
-export function MatchRecapDetailView({ match, teamName, roster, onBack }: MatchRecapDetailViewProps) {
+export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }: MatchRecapDetailViewProps) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [rows, setRows] = useState<PlayerRecapReview[]>([])
@@ -66,23 +68,26 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack }: MatchR
   return (
     <main className="min-h-dvh bg-background pb-10">
       <div className="mx-auto max-w-md space-y-5 px-4 pt-6">
-        <header className="flex items-start gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to match history"
-            className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary active:scale-90"
-          >
-            <ArrowLeft className="size-5" />
-          </button>
-          <div>
-            <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-foreground">
-              Match Recap
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {teamName} {match.home_score} – {match.away_score} {match.opponent}
-            </p>
+        <header className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back to match history"
+              className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary active:scale-90"
+            >
+              <ArrowLeft className="size-5" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-foreground">
+                Match Recap
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {teamName} {match.home_score} – {match.away_score} {match.opponent}
+              </p>
+            </div>
           </div>
+          {onHome ? <BackToHomeButton onClick={onHome} /> : null}
         </header>
 
         <section className="rounded-xl border border-border bg-card p-4">
@@ -103,6 +108,24 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack }: MatchR
               <dd className="mt-0.5 font-semibold text-foreground">{match.opponent}</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="rounded-xl border border-neon/30 bg-neon/5 p-4">
+          <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+            Coach&apos;s Notes
+          </h2>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Post-Game Executive Summary
+          </p>
+          {match.coach_summary_notes?.trim() ? (
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+              {match.coach_summary_notes.trim()}
+            </p>
+          ) : (
+            <p className="mt-3 text-sm italic text-muted-foreground">
+              No coach summary recorded for this match.
+            </p>
+          )}
         </section>
 
         {loading && (

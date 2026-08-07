@@ -51,6 +51,7 @@ create table if not exists public.matches (
   period text not null default '1st' check (period in ('1st', '2nd')),
   status text not null default 'active' check (status in ('active', 'completed')),
   period_clock_started boolean not null default false,
+  coach_summary_notes text,
   created_at timestamptz not null default now()
 );
 

@@ -1,4 +1,5 @@
 import { normalizeMatchPosition } from '@/lib/positions'
+import { getFormationById, roleToTacticalPosition } from '@/lib/formations'
 import type { MatchPlayer, RosterPlayer } from '@/types/match'
 
 type CreateMatchPlayerInput = {
@@ -87,6 +88,29 @@ export function applySecondHalfLineup(
       isOnField: starts,
       subbedInAt: null,
     }
+  })
+}
+
+/** Map saved pitch slot assignments back onto player match positions. */
+export function applySlotAssignmentPositions(
+  players: MatchPlayer[],
+  slotAssignments: Record<string, string | null>,
+  formationId: string,
+): MatchPlayer[] {
+  const formation = getFormationById(formationId)
+  const slotById = new Map(formation.slots.map((slot) => [slot.id, slot]))
+  const playerSlot = new Map<string, (typeof formation.slots)[number]>()
+
+  for (const [slotId, playerId] of Object.entries(slotAssignments)) {
+    if (!playerId) continue
+    const slot = slotById.get(slotId)
+    if (slot) playerSlot.set(playerId, slot)
+  }
+
+  return players.map((player) => {
+    const slot = playerSlot.get(player.id)
+    if (!slot) return player
+    return { ...player, matchPosition: roleToTacticalPosition(slot.role) }
   })
 }
 

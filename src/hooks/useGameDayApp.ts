@@ -7,6 +7,7 @@ import {
 import { ensureMatchPositions, normalizeMatchPosition } from '@/lib/positions'
 import {
   applySecondHalfLineup,
+  applySlotAssignmentPositions,
   finalizeAllOnField,
   stampAllOnField,
 } from '@/lib/play-time'
@@ -62,7 +63,7 @@ export function useGameDayApp() {
   const [coaches, setCoaches] = useState<DbCoach[]>([])
   const [masterRoster, setMasterRoster] = useState<RosterPlayer[]>([])
 
-  const [appMode, setAppMode] = useState<AppMode>('setup')
+  const [appMode, setAppMode] = useState<AppMode>('home')
   const [matchId, setMatchId] = useState<string | null>(null)
   const [players, setPlayers] = useState<MatchPlayer[]>([])
   const [homeScore, setHomeScore] = useState(0)
@@ -184,6 +185,8 @@ export function useGameDayApp() {
         const active = await fetchActiveMatch()
         if (cancelled) return
 
+        let resolvedTeamId: string | null = null
+
         if (active) {
           const { match, team, coach, stats } = active
           const teamPlayers = await fetchPlayersByTeamId(match.team_id)
@@ -193,9 +196,10 @@ export function useGameDayApp() {
           const matchPlayers = rebuildMatchPlayers(roster, stats)
 
           setSelectedTeamId(match.team_id)
+          resolvedTeamId = match.team_id
           setMasterRoster(roster)
           setMatchId(match.id)
-          setAppMode('match')
+          setAppMode('home')
           setPlayers(matchPlayers)
           setHomeScore(match.home_score)
           setAwayScore(match.away_score)
@@ -216,6 +220,16 @@ export function useGameDayApp() {
           setSecondHalfStarterIds(
             stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id),
           )
+        } else if (teamsData.length > 0) {
+          resolvedTeamId = teamsData[0].id
+          setSelectedTeamId(teamsData[0].id)
+        }
+
+        if (resolvedTeamId) {
+          const playersData = await fetchPlayersByTeamId(resolvedTeamId)
+          if (!cancelled) {
+            applyRoster(playersData.map(dbPlayerToRoster))
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -237,7 +251,7 @@ export function useGameDayApp() {
   }, [])
 
   useEffect(() => {
-    if (appMode !== 'setup' || !selectedTeamId) return
+    if (appMode !== 'match_setup' || !selectedTeamId) return
 
     let cancelled = false
 
@@ -263,7 +277,7 @@ export function useGameDayApp() {
   }, [masterRoster])
 
   useEffect(() => {
-    if (!selectedTeamId || (appMode !== 'setup' && appMode !== 'team')) return
+    if (!selectedTeamId || (appMode !== 'match_setup' && appMode !== 'team' && appMode !== 'reporting')) return
 
     let cancelled = false
     void (async () => {
@@ -349,15 +363,20 @@ export function useGameDayApp() {
     [refreshLineupPresets],
   )
 
-  const selectTeam = useCallback((teamId: string) => {
-    console.log('[game-day] active team_id:', teamId)
-    setSelectedTeamId(teamId)
-    setMasterRoster([])
-    setSetupLineup({ attending: {}, startFirstHalf: {} })
-    setMatchPositions({})
-    setSetupSlotAssignments(undefined)
-    setSetupPitchKey((k) => k + 1)
-  }, [])
+  const setActiveTeamId = useCallback(
+    (teamId: string) => {
+      setSelectedTeamId(teamId)
+      setMasterRoster([])
+      setSetupLineup({ attending: {}, startFirstHalf: {} })
+      setMatchPositions({})
+      setSetupSlotAssignments(undefined)
+      setSetupPitchKey((k) => k + 1)
+      void loadTeamRoster(teamId)
+    },
+    [loadTeamRoster],
+  )
+
+  const selectTeam = setActiveTeamId
 
   const createTeam = useCallback(async (name: string) => {
     const team = await insertTeam(name)
@@ -638,42 +657,56 @@ export function useGameDayApp() {
     setHalftimeSecondHalf((prev) => ({ ...prev, [id]: starts }))
   }, [])
 
-  const beginSecondHalf = useCallback(async () => {
-    const newClock = initialHalfClock(halfLengthMinutes)
-    const starterIds = new Set(
-      Object.entries(halftimeSecondHalf)
+  const beginSecondHalf = useCallback(
+    async (slotAssignments?: Record<string, string | null>) => {
+      const newClock = initialHalfClock(halfLengthMinutes)
+      const formation = matchFormationsRef.current.second
+
+      const assignmentIds = slotAssignments
+        ? Object.values(slotAssignments).filter((id): id is string => Boolean(id))
+        : []
+      const toggleIds = Object.entries(halftimeSecondHalf)
         .filter(([, starts]) => starts)
-        .map(([id]) => id),
-    )
+        .map(([id]) => id)
 
-    setPlayers((prev) => {
-      const linedUp = applySecondHalfLineup(prev, starterIds)
-      const stamped = stampAllOnField(linedUp, newClock)
+      const starterIds = new Set(assignmentIds.length > 0 ? assignmentIds : toggleIds)
 
-      if (matchId) {
-        const formation = matchFormationsRef.current.second
-        for (const id of starterIds) {
-          void insertMatchEvent({
-            matchId,
-            playerId: id,
-            eventType: 'sub_in',
-            timestamp: 0,
-            formation,
-          })
-        }
-        void syncMatchStats(matchId, stamped)
+      if (slotAssignments) {
+        setSecondHalfSlotAssignments(slotAssignments)
       }
 
-      return stamped
-    })
+      setPlayers((prev) => {
+        let linedUp = applySecondHalfLineup(prev, starterIds)
+        if (slotAssignments && assignmentIds.length > 0) {
+          linedUp = applySlotAssignmentPositions(linedUp, slotAssignments, formation)
+        }
+        const stamped = stampAllOnField(linedUp, newClock)
 
-    setSecondHalfStarterIds([...starterIds])
-    setPeriod('2nd')
-    setSeconds(newClock)
-    setRunning(true)
-    setPeriodClockStarted(true)
-    setAppMode('match')
-  }, [halftimeSecondHalf, halfLengthMinutes, matchId, setPeriod, setSeconds, setRunning, setPeriodClockStarted])
+        if (matchId) {
+          for (const id of starterIds) {
+            void insertMatchEvent({
+              matchId,
+              playerId: id,
+              eventType: 'sub_in',
+              timestamp: 0,
+              formation,
+            })
+          }
+          void syncMatchStats(matchId, stamped)
+        }
+
+        return stamped
+      })
+
+      setSecondHalfStarterIds([...starterIds])
+      setPeriod('2nd')
+      setSeconds(newClock)
+      setRunning(true)
+      setPeriodClockStarted(true)
+      setAppMode('match')
+    },
+    [halftimeSecondHalf, halfLengthMinutes, matchId, setPeriod, setSeconds, setRunning, setPeriodClockStarted],
+  )
 
   const finishGame = useCallback(
     async (clockSeconds: number) => {
@@ -713,8 +746,8 @@ export function useGameDayApp() {
     [matchId, halfLengthMinutes, setRunning, getActiveFormation],
   )
 
-  const returnToSetup = useCallback(() => {
-    setAppMode('setup')
+  const returnToHome = useCallback(() => {
+    setAppMode('home')
     setPlayers([])
     setHomeScore(0)
     setAwayScore(0)
@@ -745,8 +778,8 @@ export function useGameDayApp() {
     if (matchId) {
       await completeMatch(matchId)
     }
-    returnToSetup()
-  }, [matchId, returnToSetup])
+    returnToHome()
+  }, [matchId, returnToHome])
 
   const setSetupMatchPosition = useCallback((id: string, matchPosition: string) => {
     setMatchPositions((prev) => ({ ...prev, [id]: normalizeMatchPosition(matchPosition) }))
@@ -797,9 +830,11 @@ export function useGameDayApp() {
     enterHalftime,
     beginSecondHalf,
     finishGame,
-    returnToSetup,
+    returnToHome,
     selectedTeamId,
+    activeTeamId: selectedTeamId,
     selectTeam,
+    setActiveTeamId,
     selectedCoachId,
     setSelectedCoachId,
     matchTeamName,

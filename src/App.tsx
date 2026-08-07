@@ -7,6 +7,9 @@ import {
   X,
 } from 'lucide-react'
 import { GoalWizardModal } from '@/components/GoalWizardModal'
+import { HomeScreen } from '@/components/HomeScreen'
+import { ReportingScreen } from '@/components/ReportingScreen'
+import { BackToHomeButton, ScreenHeader } from '@/components/AppNavigation'
 import { TeamManagementScreen } from '@/components/TeamManagementScreen'
 import {
   LiveTacticalPitch,
@@ -201,6 +204,7 @@ type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
+  onHome: () => void
 }
 
 function MatchHeader({
@@ -214,6 +218,7 @@ function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
+  onHome,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
   const awayName = opponent.trim() || 'Opponent'
@@ -225,6 +230,9 @@ function MatchHeader({
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto max-w-md px-4 pb-4 pt-3">
+        <div className="mb-2 flex justify-end">
+          <BackToHomeButton onClick={onHome} />
+        </div>
         <div className="flex items-center justify-center gap-2 text-center text-sm font-semibold">
           <span className="text-foreground">{homeLabel}</span>
           <span className="rounded bg-neon px-1.5 py-0.5 text-[10px] font-bold text-neon-foreground">
@@ -477,10 +485,7 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
 }
 
 type SetupScreenProps = {
-  teams: NamedEntity[]
-  selectedTeamId: string | null
-  onTeamChange: (id: string) => void
-  onAddTeam: (name: string) => Promise<string | void>
+  activeTeamName: string
   coaches: NamedEntity[]
   selectedCoachId: string | null
   onCoachChange: (id: string) => void
@@ -519,16 +524,13 @@ type SetupScreenProps = {
   attendingCount: number
   lineupPresets: { id: string; preset_name: string }[]
   onLoadLineupPreset: (presetId: string) => void
-  onOpenTeamManagement: () => void
+  onBackToHome: () => void
   setupSlotAssignments?: Record<string, string | null>
   setupPitchKey: number
 }
 
 function SetupScreen({
-  teams,
-  selectedTeamId,
-  onTeamChange,
-  onAddTeam,
+  activeTeamName,
   coaches,
   selectedCoachId,
   onCoachChange,
@@ -561,44 +563,31 @@ function SetupScreen({
   attendingCount,
   lineupPresets,
   onLoadLineupPreset,
-  onOpenTeamManagement,
+  onBackToHome,
   setupSlotAssignments,
   setupPitchKey,
-}: SetupScreenProps) {
+  activeTeamId,
+}: SetupScreenProps & { activeTeamId: string | null }) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
 
   return (
     <main className="min-h-dvh bg-background pb-10">
       <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
-        <header className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
-              Game Day Setup
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Configure match details and your 9v9 lineups before kickoff.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenTeamManagement}
-            className="shrink-0 rounded-lg border border-border bg-card px-3 py-2 text-xs font-bold uppercase tracking-wide text-foreground active:scale-95"
-          >
-            Team Mgmt
-          </button>
-        </header>
+        <ScreenHeader
+          title="Game Day Setup"
+          subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
+          onHome={onBackToHome}
+        />
 
         <section className="space-y-4">
-          <EntitySelect
-            id="team-name"
-            label="Team Name"
-            valueId={selectedTeamId}
-            options={teams}
-            addNewLabel="+ Add New Team"
-            placeholder="e.g. FC Richmond"
-            onChange={onTeamChange}
-            onAddNew={onAddTeam}
-          />
+          <div className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Active Team
+            </p>
+            <p className="mt-1 font-display text-xl font-bold uppercase tracking-wide text-foreground">
+              {activeTeamName}
+            </p>
+          </div>
 
           <EntitySelect
             id="coach-name"
@@ -732,11 +721,7 @@ function SetupScreen({
             </span>
           </div>
 
-          {!selectedTeamId ? (
-            <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-              Select a team to load its roster and build your lineup.
-            </p>
-          ) : rosterLoading ? (
+          {rosterLoading ? (
             <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
               Loading roster…
             </p>
@@ -746,7 +731,7 @@ function SetupScreen({
                 No players on this team yet. Add a player below to get started.
               </p>
               <AddPlayerToRoster
-                selectedTeamId={selectedTeamId}
+                selectedTeamId={activeTeamId}
                 suggestedJersey={suggestedJersey}
                 onAdd={onAddPlayer}
               />
@@ -782,7 +767,7 @@ function SetupScreen({
               )}
 
               <TacticalPitchLineup
-                key={`${selectedTeamId ?? 'no-team'}-${setupPitchKey}`}
+                key={`${activeTeamId ?? 'no-team'}-${setupPitchKey}`}
                 title="1st Half Lineup"
                 formationId={firstHalfFormation}
                 onFormationChange={onSetFirstHalfFormation}
@@ -810,7 +795,7 @@ function SetupScreen({
               />
 
               <AddPlayerToRoster
-                selectedTeamId={selectedTeamId}
+                selectedTeamId={activeTeamId}
                 suggestedJersey={suggestedJersey}
                 onAdd={onAddPlayer}
               />
@@ -848,6 +833,7 @@ type HalftimeSetupScreenProps = {
   onRemoveSecondHalfStarter: (playerId: string) => void
   onBeginSecondHalf: () => void
   canBeginSecondHalf: boolean
+  onBackToHome: () => void
 }
 
 function HalftimeSetupScreen({
@@ -867,21 +853,18 @@ function HalftimeSetupScreen({
   onRemoveSecondHalfStarter,
   onBeginSecondHalf,
   canBeginSecondHalf,
+  onBackToHome,
 }: HalftimeSetupScreenProps) {
   const attendingPlayers = players.filter((p) => p.attending)
 
   return (
     <main className="min-h-dvh bg-background pb-10">
       <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
-        <header>
-          <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
-            Halftime Setup
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {teamName.trim() || 'Home'} vs {opponent.trim() || 'Opponent'} · 1st half ended at{' '}
-            {formatClock(seconds)} / {formatClock(halfLengthMinutes * 60)}
-          </p>
-        </header>
+        <ScreenHeader
+          title="Halftime Setup"
+          subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${formatClock(seconds)} / ${formatClock(halfLengthMinutes * 60)}`}
+          onHome={onBackToHome}
+        />
 
         <TacticalPitchLineup
           title="2nd Half Lineup"
@@ -1189,8 +1172,8 @@ export default function App() {
     periodClockStarted,
     setPeriodClockStarted,
     rosterLoading,
-    selectedTeamId,
-    selectTeam,
+    activeTeamId,
+    setActiveTeamId,
     selectedCoachId,
     setSelectedCoachId,
     matchTeamName,
@@ -1218,7 +1201,6 @@ export default function App() {
     setHalftimeStarter,
     halftimeSlotAssignments,
     secondHalfSlotAssignments,
-    setSecondHalfSlotAssignments,
     carriedFromFirstHalf,
     lineupPresets,
     teamRoster,
@@ -1233,7 +1215,7 @@ export default function App() {
     enterHalftime,
     beginSecondHalf,
     finishGame,
-    returnToSetup,
+    returnToHome,
     createTeam,
     createCoach,
     addPlayer,
@@ -1266,7 +1248,9 @@ export default function App() {
   }, [homeScore, awayScore, seconds, period, periodClockStarted])
 
   const attendingCount = getAttendingIds(setupLineup).length
-  const canStartMatch = isSetupLineupValid(setupLineup) && Boolean(selectedTeamId)
+  const activeTeamName =
+    teams.find((team) => team.id === activeTeamId)?.name ?? 'Team'
+  const canStartMatch = isSetupLineupValid(setupLineup) && Boolean(activeTeamId)
   const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf)
   const activeFormation = period === '1st' ? matchFormations.first : matchFormations.second
 
@@ -1306,10 +1290,18 @@ export default function App() {
     return () => clearTimeout(id)
   }, [toast])
 
-  const handleStartMatch = useCallback(async () => {
-    if (!canStartMatch || !selectedTeamId || startingMatch) return
+  useEffect(() => {
+    const needsTeam =
+      appMode === 'match_setup' || appMode === 'team' || appMode === 'reporting'
+    if (needsTeam && !activeTeamId) {
+      setAppMode('home')
+    }
+  }, [appMode, activeTeamId, setAppMode])
 
-    const team = teams.find((t) => t.id === selectedTeamId)
+  const handleStartMatch = useCallback(async () => {
+    if (!canStartMatch || !activeTeamId || startingMatch) return
+
+    const team = teams.find((t) => t.id === activeTeamId)
     const coach = selectedCoachId ? coaches.find((c) => c.id === selectedCoachId) : null
     if (!team) return
 
@@ -1320,7 +1312,7 @@ export default function App() {
       )
 
       await beginMatch({
-        teamId: selectedTeamId,
+        teamId: activeTeamId,
         coachId: selectedCoachId,
         teamName: team.name,
         coachName: coach?.name ?? '',
@@ -1346,7 +1338,7 @@ export default function App() {
     }
   }, [
     canStartMatch,
-    selectedTeamId,
+    activeTeamId,
     selectedCoachId,
     startingMatch,
     teams,
@@ -1426,9 +1418,8 @@ export default function App() {
   const handleBeginSecondHalf = useCallback(async () => {
     if (!canBeginSecondHalf) return
     const assignments = halftimeAssignmentsRef.current ?? halftimeSlotAssignments
-    setSecondHalfSlotAssignments(assignments)
     const newClock = halfDurationSeconds(halfLengthMinutes)
-    await beginSecondHalf()
+    await beginSecondHalf(assignments)
     if (matchId) {
       syncMatchRecord(matchId, {
         period: '2nd',
@@ -1437,14 +1428,7 @@ export default function App() {
       })
     }
     setToast(`2nd half underway · ${formatClock(newClock)}`)
-  }, [
-    canBeginSecondHalf,
-    halfLengthMinutes,
-    matchId,
-    beginSecondHalf,
-    halftimeSlotAssignments,
-    setSecondHalfSlotAssignments,
-  ])
+  }, [canBeginSecondHalf, halfLengthMinutes, matchId, beginSecondHalf, halftimeSlotAssignments])
 
   const handleLoadLineupPreset = useCallback(
     (presetId: string) => {
@@ -1738,14 +1722,36 @@ export default function App() {
     )
   }
 
-  if (appMode === 'setup') {
+  if (appMode === 'home') {
+    const activeMatchLabel =
+      matchId && matchTeamName
+        ? `${matchTeamName}${matchOpponent ? ` vs ${matchOpponent}` : ''}`
+        : undefined
+
+    return (
+      <HomeScreen
+        teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+        activeTeamId={activeTeamId}
+        onTeamChange={setActiveTeamId}
+        onAddTeam={async (name) => createTeam(name)}
+        hasActiveMatch={Boolean(matchId)}
+        activeMatchLabel={activeMatchLabel}
+        onTeamManagement={() => setAppMode('team')}
+        onNewGame={() => setAppMode('match_setup')}
+        onReporting={() => setAppMode('reporting')}
+        onResumeMatch={() => setAppMode('match')}
+      />
+    )
+  }
+
+  if (appMode === 'match_setup') {
+    if (!activeTeamId) return null
+
     return (
       <>
         <SetupScreen
-          teams={teams}
-          selectedTeamId={selectedTeamId}
-          onTeamChange={selectTeam}
-          onAddTeam={async (name) => createTeam(name)}
+          activeTeamId={activeTeamId}
+          activeTeamName={activeTeamName}
           coaches={coaches}
           selectedCoachId={selectedCoachId}
           onCoachChange={setSelectedCoachId}
@@ -1780,7 +1786,7 @@ export default function App() {
           attendingCount={attendingCount}
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadLineupPreset}
-          onOpenTeamManagement={() => setAppMode('team')}
+          onBackToHome={() => setAppMode('home')}
           setupSlotAssignments={setupSlotAssignments}
           setupPitchKey={setupPitchKey}
         />
@@ -1795,12 +1801,13 @@ export default function App() {
   }
 
   if (appMode === 'team') {
+    if (!activeTeamId) return null
+
     return (
       <>
         <TeamManagementScreen
-          teams={teams.map((t) => ({ id: t.id, name: t.name }))}
-          selectedTeamId={selectedTeamId}
-          onTeamChange={selectTeam}
+          activeTeamId={activeTeamId}
+          activeTeamName={activeTeamName}
           rosterLoading={rosterLoading}
           teamRoster={teamRoster}
           suggestedJersey={suggestedJersey}
@@ -1812,7 +1819,7 @@ export default function App() {
           onSetPlayerActive={setPlayerActive}
           onSavePreset={saveLineupPreset}
           onDeletePreset={removeLineupPreset}
-          onBack={() => setAppMode('setup')}
+          onBackToHome={() => setAppMode('home')}
           onToast={setToast}
         />
         {toast && (
@@ -1824,6 +1831,20 @@ export default function App() {
           </div>
         )}
       </>
+    )
+  }
+
+  if (appMode === 'reporting') {
+    if (!activeTeamId) return null
+
+    return (
+      <ReportingScreen
+        activeTeamId={activeTeamId}
+        activeTeamName={activeTeamName}
+        teamRoster={teamRoster}
+        onRefreshRoster={loadFullTeamRoster}
+        onBackToHome={() => setAppMode('home')}
+      />
     )
   }
 
@@ -1854,6 +1875,7 @@ export default function App() {
           onRemoveSecondHalfStarter={(playerId) => setHalftimeStarter(playerId, false)}
           onBeginSecondHalf={() => void handleBeginSecondHalf()}
           canBeginSecondHalf={canBeginSecondHalf}
+          onBackToHome={() => setAppMode('home')}
         />
         {toast && (
           <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
@@ -1878,7 +1900,8 @@ export default function App() {
           awayScore={awayScore}
           halfLengthMinutes={halfLengthMinutes}
           players={players}
-          onFinalize={() => returnToSetup()}
+          onFinalize={() => returnToHome()}
+          onHome={() => setAppMode('home')}
           onToast={setToast}
         />
         {toast && (
@@ -1913,6 +1936,7 @@ export default function App() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
+        onHome={() => setAppMode('home')}
       />
 
       <div className="mx-auto max-w-md space-y-6 px-4 pt-5">

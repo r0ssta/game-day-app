@@ -492,6 +492,26 @@ export async function insertMatchEvents(events: MatchEventInput[]) {
   await insertMatchEventRows(events.map((event) => matchEventToRow(event)))
 }
 
+export async function fetchMatchById(matchId: string): Promise<DbMatch | null> {
+  const { data, error } = await supabase.from('matches').select('*').eq('id', matchId).maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function saveCoachMatchSummary(matchId: string, coachSummaryNotes: string) {
+  const notes = coachSummaryNotes.trim() || null
+  const { error } = await supabase
+    .from('matches')
+    .update({ coach_summary_notes: notes })
+    .eq('id', matchId)
+  if (!error) return
+  if (isMissingColumnError(error)) {
+    console.warn('[saveCoachMatchSummary] coach_summary_notes unavailable:', formatSupabaseError(error))
+    return
+  }
+  throw error
+}
+
 export async function completeMatch(matchId: string) {
   const { error } = await supabase
     .from('matches')
@@ -549,7 +569,13 @@ export type PostGameReviewInput = {
   notes: string
 }
 
-export async function savePostGameReview(matchId: string, reviews: PostGameReviewInput[]) {
+export async function savePostGameReview(
+  matchId: string,
+  reviews: PostGameReviewInput[],
+  coachSummaryNotes?: string,
+) {
+  await saveCoachMatchSummary(matchId, coachSummaryNotes ?? '')
+
   if (reviews.length === 0) return
 
   const now = new Date().toISOString()

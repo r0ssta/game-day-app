@@ -41,6 +41,7 @@ export type DbMatch = {
   period: '1st' | '2nd'
   status: 'active' | 'completed'
   period_clock_started: boolean
+  coach_summary_notes: string | null
   created_at: string
 }
 
