@@ -690,6 +690,7 @@ export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[
 
 export type PostGameReviewInput = {
   playerId: string
+  position: string
   impact: Impact
   notes: string
 }
@@ -707,6 +708,7 @@ export async function savePostGameReview(
   const reviewRows = reviews.map((review) => ({
     match_id: matchId,
     player_id: review.playerId,
+    position: review.position.trim() || 'Overall',
     impact_score: impactToScore(review.impact),
     review_notes: review.notes.trim() || null,
     updated_at: now,
@@ -714,19 +716,42 @@ export async function savePostGameReview(
 
   const { error: reviewError } = await supabase
     .from('match_reviews')
-    .upsert(reviewRows, { onConflict: 'match_id,player_id' })
-  if (reviewError && !isOptionalTableError(reviewError)) throw reviewError
+    .upsert(reviewRows, { onConflict: 'match_id,player_id,position' })
+  if (reviewError && !isOptionalTableError(reviewError) && !isMissingColumnError(reviewError)) {
+    throw reviewError
+  }
   if (reviewError) {
-    console.warn('[savePostGameReview] match_reviews unavailable:', formatSupabaseError(reviewError))
+    if (isMissingColumnError(reviewError)) {
+      const legacyRows = reviews.map((review) => ({
+        match_id: matchId,
+        player_id: review.playerId,
+        impact_score: impactToScore(review.impact),
+        review_notes: review.notes.trim() || null,
+        updated_at: now,
+      }))
+      const { error: legacyError } = await supabase
+        .from('match_reviews')
+        .upsert(legacyRows, { onConflict: 'match_id,player_id' })
+      if (legacyError && !isOptionalTableError(legacyError)) throw legacyError
+    } else {
+      console.warn('[savePostGameReview] match_reviews unavailable:', formatSupabaseError(reviewError))
+    }
+  }
+
+  const primaryImpactByPlayer = new Map<string, Impact>()
+  for (const review of reviews) {
+    if (!primaryImpactByPlayer.has(review.playerId)) {
+      primaryImpactByPlayer.set(review.playerId, review.impact)
+    }
   }
 
   await Promise.all(
-    reviews.map((review) =>
+    [...primaryImpactByPlayer.entries()].map(([playerId, impact]) =>
       supabase
         .from('match_stats')
-        .update({ impact_score: impactToScore(review.impact) })
+        .update({ impact_score: impactToScore(impact) })
         .eq('match_id', matchId)
-        .eq('player_id', review.playerId),
+        .eq('player_id', playerId),
     ),
   )
 }

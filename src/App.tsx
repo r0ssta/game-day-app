@@ -191,7 +191,52 @@ type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
+  qaSpeed: QaSpeedMultiplier
+  onQaSpeedChange: (speed: QaSpeedMultiplier) => void
   onHome: () => void
+}
+
+function QaSpeedControls({
+  speed,
+  onSpeedChange,
+}: {
+  speed: QaSpeedMultiplier
+  onSpeedChange: (speed: QaSpeedMultiplier) => void
+}) {
+  return (
+    <div className="mt-3 w-full max-w-sm rounded-xl border-2 border-orange-500/40 bg-orange-600/10 px-3 py-3 shadow-inner">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-black uppercase tracking-widest text-orange-400">
+          QA Test Speed
+        </span>
+        <span className="text-[10px] font-semibold text-orange-300/80">
+          {speed === 1 ? 'Normal' : `${speed} sec / real sec`}
+        </span>
+      </div>
+      <div
+        className="grid grid-cols-3 gap-2"
+        role="group"
+        aria-label="QA match clock speed"
+      >
+        {QA_SPEED_MULTIPLIERS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onSpeedChange(option)}
+            aria-pressed={speed === option}
+            className={cn(
+              'min-h-11 touch-manipulation rounded-lg px-3 py-2.5 text-sm font-black tabular-nums uppercase tracking-wide transition-all active:scale-[0.97]',
+              speed === option
+                ? 'bg-orange-600 text-white shadow-md shadow-orange-600/30 ring-2 ring-orange-400/60'
+                : 'border border-orange-500/30 bg-background/80 text-orange-200 hover:bg-orange-600/20',
+            )}
+          >
+            {option}x
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function MatchHeader({
@@ -205,6 +250,8 @@ function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
+  qaSpeed,
+  onQaSpeedChange,
   onHome,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
@@ -285,6 +332,7 @@ function MatchHeader({
                 ? 'Clock stopped · confirm below'
                 : `Countdown · ${halfReference} half`}
           </span>
+          <QaSpeedControls speed={qaSpeed} onSpeedChange={onQaSpeedChange} />
         </div>
       </div>
     </header>
@@ -1181,74 +1229,6 @@ function EndPeriodButton({
   )
 }
 
-function QaSpeedPanel({
-  speed,
-  onSpeedChange,
-  expanded,
-  onToggleExpanded,
-}: {
-  speed: QaSpeedMultiplier
-  onSpeedChange: (speed: QaSpeedMultiplier) => void
-  expanded: boolean
-  onToggleExpanded: () => void
-}) {
-  return (
-    <div className="fixed bottom-20 left-3 z-40">
-      {expanded ? (
-        <div className="rounded-lg border border-border/60 bg-card/95 p-2.5 shadow-lg backdrop-blur-sm">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              QA Test Speed
-            </span>
-            <button
-              type="button"
-              aria-label="Collapse QA panel"
-              onClick={onToggleExpanded}
-              className="flex size-6 items-center justify-center rounded-md bg-secondary text-muted-foreground active:scale-90"
-            >
-              <X className="size-3.5" strokeWidth={2.5} />
-            </button>
-          </div>
-          <div className="flex gap-1">
-            {QA_SPEED_MULTIPLIERS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => onSpeedChange(option)}
-                className={cn(
-                  'min-w-[2.75rem] rounded-md px-2 py-1.5 text-xs font-bold tabular-nums transition-colors active:scale-95',
-                  speed === option
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-secondary text-muted-foreground',
-                )}
-              >
-                {option === 1 ? '1x' : `${option}x`}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
-            {speed === 1
-              ? 'Normal match speed'
-              : `${speed} match seconds per real second`}
-          </p>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={onToggleExpanded}
-          className={cn(
-            'rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-sm transition-colors active:scale-95',
-            speed > 1
-              ? 'border-orange-500/50 bg-orange-600/20 text-orange-400'
-              : 'border-border/60 bg-card/80 text-muted-foreground',
-          )}
-        >
-          QA{speed > 1 ? ` · ${speed}x` : ''}
-        </button>
-      )}
-    </div>
-  )
-}
 
 /* ------------------------------------------------------------------ */
 /* App                                                                 */
@@ -1357,7 +1337,6 @@ export default function App() {
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
-  const [qaPanelExpanded, setQaPanelExpanded] = useState(false)
 
   const livePitchRef = useRef<LiveTacticalPitchHandle>(null)
   const setupAssignmentsRef = useRef<Record<string, string | null> | null>(null)
@@ -1507,7 +1486,6 @@ export default function App() {
       })
 
       setQaSpeedMultiplier(1)
-      setQaPanelExpanded(false)
       setToast('Match started')
     } catch (err) {
       setToast(formatSupabaseError(err))
@@ -1546,7 +1524,6 @@ export default function App() {
     setGoalWizardStep('scorer')
     setGoalScorerId(null)
     setQaSpeedMultiplier(1)
-    setQaPanelExpanded(false)
     setToast(null)
   }, [matchId, players, endMatch])
 
@@ -2240,13 +2217,6 @@ export default function App() {
 
   return (
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
-      <QaSpeedPanel
-        speed={qaSpeedMultiplier}
-        onSpeedChange={setQaSpeedMultiplier}
-        expanded={qaPanelExpanded}
-        onToggleExpanded={() => setQaPanelExpanded((v) => !v)}
-      />
-
       <MatchHeader
         teamName={matchTeamName}
         coachName={matchCoachName}
@@ -2258,6 +2228,8 @@ export default function App() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
+        qaSpeed={qaSpeedMultiplier}
+        onQaSpeedChange={setQaSpeedMultiplier}
         onHome={() => setAppMode('home')}
       />
 

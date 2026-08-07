@@ -1,6 +1,6 @@
 /** Remaining seconds in the current half (countdown display value). */
 
-export const QA_SPEED_MULTIPLIERS = [1, 10, 50] as const
+export const QA_SPEED_MULTIPLIERS = [1, 50, 75] as const
 export type QaSpeedMultiplier = (typeof QA_SPEED_MULTIPLIERS)[number]
 
 export function halfDurationSeconds(halfLengthMinutes: number): number {

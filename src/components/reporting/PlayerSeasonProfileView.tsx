@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import {
   formatPlayerSeasonHeader,
+  formatPositionBreakdownLine,
   type PlayerSeasonStats,
 } from '@/lib/season-reporting'
 import { cn } from '@/lib/utils'
@@ -133,6 +134,21 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
 
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Ratings by Position
+          </h2>
+          {stats.positionBreakdown.length > 0 ? (
+            <ul className="mt-3 space-y-2 text-sm font-semibold text-foreground">
+              {stats.positionBreakdown.map((entry) => (
+                <li key={entry.position}>{formatPositionBreakdownLine(entry)}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm italic text-muted-foreground">No position ratings yet</p>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
             Positions Played
           </h2>
           {stats.positionsPlayed.length > 0 ? (
@@ -156,12 +172,15 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
             <ul className="space-y-2">
               {stats.feedbackHistory.map((entry) => (
                 <li
-                  key={`${entry.matchId}-${entry.notes.slice(0, 24)}`}
+                  key={`${entry.matchId}-${entry.position}-${entry.notes.slice(0, 24)}`}
                   className="rounded-xl border border-border bg-card p-3"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-bold text-foreground">{entry.dateLabel}</span>
                     <span className="text-xs text-muted-foreground">vs {entry.opponent}</span>
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      {entry.position}
+                    </span>
                     <span
                       className={cn(
                         'rounded px-1.5 py-0.5 text-[10px] font-bold',
@@ -193,19 +212,24 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="text-xs font-bold text-foreground">{log.dateLabel}</span>
                     <span className="text-xs text-muted-foreground">{log.venueLabel}</span>
-                    <span
-                      className={cn(
-                        'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                        IMPACT_BADGE[log.impact],
-                      )}
-                    >
-                      {formatImpactLabel(log.impact)}
-                    </span>
                   </div>
                   <p className="mt-1 text-xs font-semibold text-muted-foreground">
                     {formatRecapMinutes(log.minutes)} · {log.positions.join(', ')} · G {log.goals}{' '}
                     · A {log.assists}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {log.positionRatings.map((rating) => (
+                      <span
+                        key={`${log.matchId}-${rating.position}`}
+                        className={cn(
+                          'rounded px-1.5 py-0.5 text-[10px] font-bold',
+                          IMPACT_BADGE[rating.impact],
+                        )}
+                      >
+                        {rating.position}: {formatImpactLabel(rating.impact)}
+                      </span>
+                    ))}
+                  </div>
                 </li>
               ))}
             </ul>

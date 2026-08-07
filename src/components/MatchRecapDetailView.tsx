@@ -201,6 +201,7 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
               <ul className="divide-y divide-border">
                 {rows.map((row) => {
                   const positionsLabel = row.positions.length > 0 ? row.positions.join(', ') : '—'
+                  const primaryImpact = row.positionReviews[0]?.impact ?? 'neutral'
 
                   return (
                     <li key={row.playerId} className="space-y-2 px-3 py-4">
@@ -208,7 +209,7 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
                         <div
                           className={cn(
                             'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-                            IMPACT_RING[row.impact],
+                            IMPACT_RING[primaryImpact],
                           )}
                         >
                           {formatJersey(row.number)}
@@ -216,18 +217,6 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span className="text-base font-bold text-foreground">{row.name}</span>
-                            <span
-                              className={cn(
-                                'rounded px-1.5 py-0.5 text-xs font-bold',
-                                row.impact === 'positive'
-                                  ? 'bg-neon/15 text-neon'
-                                  : row.impact === 'negative'
-                                    ? 'bg-danger/15 text-danger'
-                                    : 'bg-secondary text-muted-foreground',
-                              )}
-                            >
-                              {formatImpactLabel(row.impact)}
-                            </span>
                             <span className="font-mono text-sm font-bold tabular-nums text-blue-400">
                               {formatRecapMinutes(row.totalSeconds)}
                             </span>
@@ -236,13 +225,41 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
                           <p className="text-xs font-semibold text-muted-foreground">
                             Goals {row.goals} · Assists {row.assists}
                           </p>
-                          {row.notes.trim() ? (
-                            <p className="mt-2 rounded-lg bg-secondary/50 px-3 py-2 text-xs text-foreground">
-                              {row.notes.trim()}
-                            </p>
-                          ) : (
-                            <p className="mt-1 text-xs italic text-muted-foreground">No coach notes</p>
-                          )}
+                          <div className="mt-2 space-y-2">
+                            {row.positionReviews.map((review) => (
+                              <div
+                                key={`${row.playerId}-${review.position}`}
+                                className="rounded-lg bg-secondary/50 px-3 py-2"
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs font-bold text-foreground">
+                                    {row.positionReviews.length > 1
+                                      ? `${row.name} (${review.position})`
+                                      : 'Rating'}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      'rounded px-1.5 py-0.5 text-[10px] font-bold',
+                                      review.impact === 'positive'
+                                        ? 'bg-neon/15 text-neon'
+                                        : review.impact === 'negative'
+                                          ? 'bg-danger/15 text-danger'
+                                          : 'bg-secondary text-muted-foreground',
+                                    )}
+                                  >
+                                    {formatImpactLabel(review.impact)}
+                                  </span>
+                                </div>
+                                {review.notes.trim() ? (
+                                  <p className="mt-1 text-xs text-foreground">{review.notes.trim()}</p>
+                                ) : (
+                                  <p className="mt-1 text-xs italic text-muted-foreground">
+                                    No coach notes
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </li>

@@ -83,6 +83,7 @@ export type DbMatchReview = {
   id: string
   match_id: string
   player_id: string
+  position: string
   impact_score: number
   review_notes: string | null
   created_at: string

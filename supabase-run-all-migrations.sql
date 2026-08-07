@@ -196,3 +196,24 @@ alter table public.match_events
 alter table public.match_events
   add constraint match_events_player_required_check
   check (event_type in ('opponent_goal', 'formation_change') or player_id is not null);
+
+-- Per-position post-game ratings
+alter table public.match_reviews
+  add column if not exists position text;
+
+update public.match_reviews
+set position = 'Overall'
+where position is null;
+
+alter table public.match_reviews
+  alter column position set default 'Overall';
+
+alter table public.match_reviews
+  alter column position set not null;
+
+alter table public.match_reviews
+  drop constraint if exists match_reviews_match_id_player_id_key;
+
+alter table public.match_reviews
+  add constraint match_reviews_match_player_position_key
+  unique (match_id, player_id, position);

@@ -19,6 +19,34 @@ export type PlayerRecapStats = {
   assists: number
 }
 
+export type PositionRecapReview = {
+  position: string
+  impact: Impact
+  notes: string
+}
+
+export type PlayerRecapReview = {
+  playerId: string
+  name: string
+  number: number | null
+  totalSeconds: number
+  positions: string[]
+  goals: number
+  assists: number
+  positionReviews: PositionRecapReview[]
+}
+
+export type SavedPositionReview = {
+  impact: Impact
+  notes: string
+}
+
+const LEGACY_REVIEW_POSITION = 'Overall'
+
+export function playerPositionReviewKey(playerId: string, position: string): string {
+  return `${playerId}::${position}`
+}
+
 type TimelineEvent = DbMatchEvent & { absTimestamp: number }
 
 function toAbsoluteTimeline(events: DbMatchEvent[], halfLengthSeconds: number): TimelineEvent[] {
@@ -38,6 +66,12 @@ function toAbsoluteTimeline(events: DbMatchEvent[], halfLengthSeconds: number): 
   })
 }
 
+function addPosition(positions: string[], rawPosition: string | null | undefined) {
+  const position = displayMatchPosition(rawPosition?.trim() ?? '')
+  if (!position || position === '—') return
+  if (!positions.includes(position)) positions.push(position)
+}
+
 export function aggregatePlayerRecaps(
   events: DbMatchEvent[],
   halfLengthSeconds: number,
@@ -45,12 +79,17 @@ export function aggregatePlayerRecaps(
   const timeline = toAbsoluteTimeline(events, halfLengthSeconds)
   const stats = new Map<
     string,
-    { totalSeconds: number; positions: Set<string>; goals: number; assists: number }
+    {
+      totalSeconds: number
+      positions: string[]
+      goals: number
+      assists: number
+    }
   >()
 
   const ensure = (playerId: string) => {
     if (!stats.has(playerId)) {
-      stats.set(playerId, { totalSeconds: 0, positions: new Set(), goals: 0, assists: 0 })
+      stats.set(playerId, { totalSeconds: 0, positions: [], goals: 0, assists: 0 })
     }
     return stats.get(playerId)!
   }
@@ -65,6 +104,7 @@ export function aggregatePlayerRecaps(
     switch (event.event_type) {
       case 'sub_in':
         openStints.set(event.player_id, event.absTimestamp)
+        addPosition(row.positions, event.event_notes)
         break
       case 'sub_out': {
         const start = openStints.get(event.player_id)
@@ -75,9 +115,7 @@ export function aggregatePlayerRecaps(
         break
       }
       case 'position_change':
-        if (event.event_notes?.trim()) {
-          row.positions.add(displayMatchPosition(event.event_notes.trim()))
-        }
+        addPosition(row.positions, event.event_notes)
         break
       case 'goal':
         row.goals += 1
@@ -96,12 +134,30 @@ export function aggregatePlayerRecaps(
     result.set(playerId, {
       playerId,
       totalSeconds: row.totalSeconds,
-      positions: [...row.positions],
+      positions: row.positions,
       goals: row.goals,
       assists: row.assists,
     })
   }
   return result
+}
+
+export function resolvePlayerPositions(
+  eventStats: PlayerRecapStats | undefined,
+  player: Pick<MatchPlayer, 'matchPosition'>,
+): string[] {
+  const fromEvents = eventStats?.positions ?? []
+  const finalPosition = displayMatchPosition(player.matchPosition)
+
+  if (fromEvents.length === 0) {
+    return finalPosition !== '—' ? [finalPosition] : ['—']
+  }
+
+  if (finalPosition !== '—' && !fromEvents.includes(finalPosition)) {
+    return [...fromEvents, finalPosition]
+  }
+
+  return fromEvents
 }
 
 export function formatRecapMinutes(totalSeconds: number): string {
@@ -111,22 +167,37 @@ export function formatRecapMinutes(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-export type PlayerRecapReview = {
-  playerId: string
-  name: string
-  number: number | null
-  totalSeconds: number
-  positions: string[]
-  goals: number
-  assists: number
-  impact: Impact
-  notes: string
+function formatImpactSymbol(impact: Impact): string {
+  if (impact === 'positive') return '+'
+  if (impact === 'negative') return '−'
+  return '='
+}
+
+export function buildPositionReviews(
+  playerId: string,
+  positions: string[],
+  savedReviews: Map<string, SavedPositionReview>,
+  legacyReview: SavedPositionReview | undefined,
+  fallbackImpact: Impact,
+): PositionRecapReview[] {
+  return positions.map((position, index) => {
+    const saved =
+      savedReviews.get(playerPositionReviewKey(playerId, position)) ??
+      (legacyReview && (positions.length === 1 || index === 0) ? legacyReview : undefined)
+
+    return {
+      position,
+      impact: saved?.impact ?? fallbackImpact,
+      notes: saved?.notes ?? '',
+    }
+  })
 }
 
 export function buildRecapRows(
   players: MatchPlayer[],
   eventStats: Map<string, PlayerRecapStats>,
-  reviews: Map<string, { impact: Impact; notes: string }>,
+  savedReviews: Map<string, SavedPositionReview>,
+  legacyReviews: Map<string, SavedPositionReview>,
 ): PlayerRecapReview[] {
   const participatingIds = new Set<string>()
   for (const player of players) {
@@ -142,18 +213,24 @@ export function buildRecapRows(
       if (!player) return null
 
       const stats = eventStats.get(playerId)
-      const review = reviews.get(playerId)
+      const positions = resolvePlayerPositions(stats, player)
+      const positionReviews = buildPositionReviews(
+        playerId,
+        positions,
+        savedReviews,
+        legacyReviews.get(playerId),
+        player.impact,
+      )
 
       return {
         playerId,
         name: formatPlayerFullName(player.firstName, player.lastName),
         number: player.number,
         totalSeconds: stats?.totalSeconds ?? player.totalSecondsPlayed,
-        positions: stats?.positions ?? [displayMatchPosition(player.matchPosition)],
+        positions,
         goals: stats?.goals ?? 0,
         assists: stats?.assists ?? 0,
-        impact: review?.impact ?? player.impact,
-        notes: review?.notes ?? '',
+        positionReviews,
       }
     })
     .filter((row): row is PlayerRecapReview => row !== null)
@@ -182,19 +259,54 @@ export function buildRecapSummaryText(input: {
     ...(coachSummary
       ? ['COACH SUMMARY', '--------------', coachSummary, '', 'PLAYER STATS', '------------']
       : ['PLAYER STATS', '------------']),
-    ...input.rows.map((row) => {
+    ...input.rows.flatMap((row) => {
       const positions = row.positions.length > 0 ? row.positions.join(', ') : '—'
-      const impact =
-        row.impact === 'positive' ? '+' : row.impact === 'negative' ? '−' : '='
-      const notes = row.notes.trim() ? ` · Notes: ${row.notes.trim()}` : ''
+      const ratingLines = row.positionReviews.map((review) => {
+        const notes = review.notes.trim() ? ` · Notes: ${review.notes.trim()}` : ''
+        return `  ${review.position}: ${formatImpactSymbol(review.impact)}${notes}`
+      })
+
       return [
         `${row.number !== null ? `#${row.number}` : '—'} ${row.name}`,
         `  ${formatRecapMinutes(row.totalSeconds)} · ${positions}`,
-        `  G:${row.goals} A:${row.assists} · Rating: ${impact}${notes}`,
+        `  G:${row.goals} A:${row.assists}`,
+        ...ratingLines,
       ].join('\n')
     }),
   ]
   return lines.join('\n')
+}
+
+export function indexSavedReviews(
+  existingReviews: Array<{
+    player_id: string
+    position?: string | null
+    impact_score: number
+    review_notes: string | null
+  }>,
+): {
+  savedReviews: Map<string, SavedPositionReview>
+  legacyReviews: Map<string, SavedPositionReview>
+} {
+  const savedReviews = new Map<string, SavedPositionReview>()
+  const legacyReviews = new Map<string, SavedPositionReview>()
+
+  for (const review of existingReviews) {
+    const payload: SavedPositionReview = {
+      impact: scoreToImpact(review.impact_score),
+      notes: review.review_notes ?? '',
+    }
+    const position = review.position?.trim() || LEGACY_REVIEW_POSITION
+
+    if (position === LEGACY_REVIEW_POSITION) {
+      legacyReviews.set(review.player_id, payload)
+      continue
+    }
+
+    savedReviews.set(playerPositionReviewKey(review.player_id, position), payload)
+  }
+
+  return { savedReviews, legacyReviews }
 }
 
 export async function loadHistoricalRecapRows(
@@ -210,14 +322,25 @@ export async function loadHistoricalRecapRows(
 
   const players = rebuildMatchPlayers(roster, stats)
   const eventStats = aggregatePlayerRecaps(events, halfLengthMinutes * 60)
-  const reviewsMap = new Map<string, { impact: Impact; notes: string }>()
+  const { savedReviews, legacyReviews } = indexSavedReviews(existingReviews)
 
-  for (const review of existingReviews) {
-    reviewsMap.set(review.player_id, {
-      impact: scoreToImpact(review.impact_score),
-      notes: review.review_notes ?? '',
-    })
+  return buildRecapRows(players, eventStats, savedReviews, legacyReviews)
+}
+
+export function dominantImpact(counts: {
+  positive: number
+  neutral: number
+  negative: number
+}): Impact {
+  if (counts.positive >= counts.neutral && counts.positive >= counts.negative) {
+    return 'positive'
   }
+  if (counts.negative >= counts.neutral && counts.negative >= counts.positive) {
+    return 'negative'
+  }
+  return 'neutral'
+}
 
-  return buildRecapRows(players, eventStats, reviewsMap)
+export function formatAverageRatingLabel(impact: Impact): string {
+  return formatImpactSymbol(impact)
 }
