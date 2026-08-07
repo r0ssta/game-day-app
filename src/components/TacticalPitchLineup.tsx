@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type DragEvent, type MutableRefObject } from 'react'
 import { Pencil, Users } from 'lucide-react'
 import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
 import {
@@ -18,6 +18,7 @@ export type PitchLineupPlayer = {
   isGuest: boolean
   badge?: string
   meta?: string
+  matchPosition?: string
 }
 
 type TacticalPitchLineupProps = {
@@ -34,6 +35,9 @@ type TacticalPitchLineupProps = {
   formationId?: string
   onFormationChange?: (formationId: string) => void
   hydrateFromStarters?: boolean
+  initialSlotAssignments?: Record<string, string | null>
+  assignmentsResetKey?: string | number
+  assignmentsRef?: MutableRefObject<Record<string, string | null> | null>
 }
 
 function formatJersey(number: number | null) {
@@ -182,6 +186,9 @@ export function TacticalPitchLineup({
   formationId: controlledFormationId,
   onFormationChange,
   hydrateFromStarters = false,
+  initialSlotAssignments,
+  assignmentsResetKey,
+  assignmentsRef,
 }: TacticalPitchLineupProps) {
   const [internalFormationId, setInternalFormationId] = useState(initialFormationId)
   const formationId = controlledFormationId ?? internalFormationId
@@ -195,7 +202,6 @@ export function TacticalPitchLineup({
   const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>({})
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
-  const hydratedRef = useRef(false)
 
   const formation = getFormationById(formationId)
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
@@ -224,20 +230,41 @@ export function TacticalPitchLineup({
   }, [])
 
   useEffect(() => {
-    if (hydratedRef.current) return
-    hydratedRef.current = true
+    if (initialSlotAssignments) {
+      setSlotAssignments(initialSlotAssignments)
+      setSelectedPlayerId(null)
+      setSelectedSlotId(null)
+      return
+    }
+
     if (hydrateFromStarters) {
       setSlotAssignments(
         buildAssignmentsFromStarters(
           formation,
-          players.map((p) => ({ id: p.id, matchPosition: p.meta, position: p.meta })),
+          players.map((p) => ({
+            id: p.id,
+            matchPosition: p.matchPosition ?? p.meta,
+            position: p.matchPosition ?? p.meta,
+          })),
           starters,
         ),
       )
-    } else {
-      setSlotAssignments(Object.fromEntries(formation.slots.map((s) => [s.id, null])))
+      return
     }
-  }, [formation, hydrateFromStarters, players, starters])
+
+    setSlotAssignments(Object.fromEntries(formation.slots.map((s) => [s.id, null])))
+  }, [
+    assignmentsResetKey,
+    formation,
+    hydrateFromStarters,
+    initialSlotAssignments,
+    players,
+    starters,
+  ])
+
+  useEffect(() => {
+    if (assignmentsRef) assignmentsRef.current = slotAssignments
+  }, [assignmentsRef, slotAssignments])
 
   const assignPlayerToSlot = useCallback(
     (playerId: string, slotId: string) => {

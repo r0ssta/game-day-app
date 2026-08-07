@@ -18,6 +18,7 @@ export type DbPlayer = {
   active_status: boolean
   is_guest: boolean
   position: string
+  contact_info: string | null
   created_at: string
 }
 
@@ -79,6 +80,15 @@ export type DbMatchReview = {
   updated_at: string
 }
 
+export type DbLineupPreset = {
+  id: string
+  team_id: string
+  preset_name: string
+  formation_json: unknown
+  created_at: string
+  updated_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -89,6 +99,7 @@ export type Database = {
       match_events: { Row: DbMatchEvent; Insert: Omit<DbMatchEvent, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchEvent> }
       match_stats: { Row: DbMatchStat; Insert: Omit<DbMatchStat, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStat> }
       match_reviews: { Row: DbMatchReview; Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbMatchReview> }
+      lineup_presets: { Row: DbLineupPreset; Insert: Omit<DbLineupPreset, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbLineupPreset> }
     }
   }
 }

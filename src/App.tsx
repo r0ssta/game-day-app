@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type MutableRefObject } from 'react'
 import {
   CheckCircle2,
   Goal,
@@ -7,7 +7,12 @@ import {
   X,
 } from 'lucide-react'
 import { GoalWizardModal } from '@/components/GoalWizardModal'
-import { LiveTacticalPitch, type PositionReassignUpdate } from '@/components/LiveTacticalPitch'
+import { TeamManagementScreen } from '@/components/TeamManagementScreen'
+import {
+  LiveTacticalPitch,
+  type LiveTacticalPitchHandle,
+  type PositionReassignUpdate,
+} from '@/components/LiveTacticalPitch'
 import { PostGameRecap } from '@/components/PostGameRecap'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
@@ -473,6 +478,11 @@ type SetupScreenProps = {
   onStartMatch: () => void
   canStartMatch: boolean
   attendingCount: number
+  lineupPresets: { id: string; preset_name: string }[]
+  onLoadLineupPreset: (presetId: string) => void
+  onOpenTeamManagement: () => void
+  setupSlotAssignments?: Record<string, string | null>
+  setupPitchKey: number
 }
 
 function SetupScreen({
@@ -510,17 +520,33 @@ function SetupScreen({
   onStartMatch,
   canStartMatch,
   attendingCount,
+  lineupPresets,
+  onLoadLineupPreset,
+  onOpenTeamManagement,
+  setupSlotAssignments,
+  setupPitchKey,
 }: SetupScreenProps) {
+  const [selectedPresetId, setSelectedPresetId] = useState('')
+
   return (
     <main className="min-h-dvh bg-background pb-10">
       <div className="mx-auto max-w-md space-y-6 px-4 pt-6">
-        <header>
-          <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
-            Game Day Setup
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Configure match details and your 9v9 lineups before kickoff.
-          </p>
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
+              Game Day Setup
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Configure match details and your 9v9 lineups before kickoff.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenTeamManagement}
+            className="shrink-0 rounded-lg border border-border bg-card px-3 py-2 text-xs font-bold uppercase tracking-wide text-foreground active:scale-95"
+          >
+            Team Mgmt
+          </button>
         </header>
 
         <section className="space-y-4">
@@ -688,11 +714,41 @@ function SetupScreen({
             </>
           ) : (
             <>
+              {lineupPresets.length > 0 && (
+                <div>
+                  <label
+                    htmlFor="load-lineup-preset"
+                    className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+                  >
+                    Load Lineup Preset
+                  </label>
+                  <select
+                    id="load-lineup-preset"
+                    value={selectedPresetId}
+                    onChange={(e) => {
+                      const presetId = e.target.value
+                      setSelectedPresetId(presetId)
+                      if (presetId) onLoadLineupPreset(presetId)
+                    }}
+                    className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                  >
+                    <option value="">Choose a saved lineup…</option>
+                    {lineupPresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.preset_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <TacticalPitchLineup
-                key={selectedTeamId ?? 'no-team'}
+                key={`${selectedTeamId ?? 'no-team'}-${setupPitchKey}`}
                 title="1st Half Lineup"
                 formationId={firstHalfFormation}
                 onFormationChange={onSetFirstHalfFormation}
+                initialSlotAssignments={setupSlotAssignments}
+                assignmentsResetKey={setupPitchKey}
                 players={masterRoster.map((player) => ({
                   id: player.id,
                   name: player.name,
@@ -743,6 +799,10 @@ type HalftimeSetupScreenProps = {
   secondHalfFormation: string
   onSetSecondHalfFormation: (formationId: string) => void
   secondHalfStarters: Record<string, boolean>
+  initialSlotAssignments?: Record<string, string | null>
+  assignmentsResetKey: string | number
+  carriedFromFirstHalf: Record<string, boolean>
+  halftimeAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
   onAssignSecondHalfStarter: (playerId: string, role: FormationRole, tacticalPosition: string) => void
   onRemoveSecondHalfStarter: (playerId: string) => void
   onBeginSecondHalf: () => void
@@ -758,6 +818,10 @@ function HalftimeSetupScreen({
   secondHalfFormation,
   onSetSecondHalfFormation,
   secondHalfStarters,
+  initialSlotAssignments,
+  assignmentsResetKey,
+  carriedFromFirstHalf,
+  halftimeAssignmentsRef,
   onAssignSecondHalfStarter,
   onRemoveSecondHalfStarter,
   onBeginSecondHalf,
@@ -782,18 +846,25 @@ function HalftimeSetupScreen({
           title="2nd Half Lineup"
           formationId={secondHalfFormation}
           onFormationChange={onSetSecondHalfFormation}
+          initialSlotAssignments={initialSlotAssignments}
+          assignmentsResetKey={assignmentsResetKey}
+          assignmentsRef={halftimeAssignmentsRef}
           players={attendingPlayers.map((player) => ({
             id: player.id,
             name: player.name,
             number: player.number,
             isGuest: player.isGuest,
-            badge: player.isFirstHalfStarter ? 'Started 1st Half' : undefined,
+            matchPosition: player.matchPosition,
+            badge: carriedFromFirstHalf[player.id]
+              ? player.isFirstHalfStarter
+                ? 'Started 1st Half'
+                : 'Carried from 1st'
+              : undefined,
             meta: `${player.matchPosition} · ${formatPlayingTimeBadge(player.totalSecondsPlayed)}`,
           }))}
           attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
           starters={secondHalfStarters}
           maxFieldPlayers={MAX_FIELD_PLAYERS}
-          hydrateFromStarters
           onAssignStarter={onAssignSecondHalfStarter}
           onRemoveStarter={onRemoveSecondHalfStarter}
         />
@@ -1054,6 +1125,7 @@ export default function App() {
     coaches,
     masterRoster,
     appMode,
+    setAppMode,
     matchId,
     players,
     setPlayers,
@@ -1095,6 +1167,20 @@ export default function App() {
     setActiveFormation,
     halftimeSecondHalf,
     setHalftimeStarter,
+    halftimeSlotAssignments,
+    secondHalfSlotAssignments,
+    setSecondHalfSlotAssignments,
+    carriedFromFirstHalf,
+    lineupPresets,
+    teamRoster,
+    refreshLineupPresets,
+    loadFullTeamRoster,
+    applyLineupPreset,
+    saveLineupPreset,
+    removeLineupPreset,
+    setPlayerActive,
+    setupSlotAssignments,
+    setupPitchKey,
     enterHalftime,
     beginSecondHalf,
     finishGame,
@@ -1120,6 +1206,9 @@ export default function App() {
   const [startingMatch, setStartingMatch] = useState(false)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
   const [qaPanelExpanded, setQaPanelExpanded] = useState(false)
+
+  const livePitchRef = useRef<LiveTacticalPitchHandle>(null)
+  const halftimeAssignmentsRef = useRef<Record<string, string | null> | null>(null)
 
   const clockSyncRef = useRef({ homeScore, awayScore, seconds, period, periodClockStarted })
 
@@ -1274,18 +1363,21 @@ export default function App() {
 
   const handleEnterHalftime = useCallback(async () => {
     setRunning(false)
-    await enterHalftime(seconds)
+    const slotAssignments = livePitchRef.current?.getSlotAssignments()
+    await enterHalftime(seconds, slotAssignments)
     if (matchId) {
       syncMatchRecord(matchId, {
         period_clock_started: false,
         clock_seconds: seconds,
       })
     }
-    setToast('Halftime — set your 2nd half lineup')
+    setToast('Halftime — 2nd half lineup carried over from the field')
   }, [seconds, matchId, enterHalftime, setRunning])
 
   const handleBeginSecondHalf = useCallback(async () => {
     if (!canBeginSecondHalf) return
+    const assignments = halftimeAssignmentsRef.current ?? halftimeSlotAssignments
+    setSecondHalfSlotAssignments(assignments)
     const newClock = halfDurationSeconds(halfLengthMinutes)
     await beginSecondHalf()
     if (matchId) {
@@ -1296,7 +1388,25 @@ export default function App() {
       })
     }
     setToast(`2nd half underway · ${formatClock(newClock)}`)
-  }, [canBeginSecondHalf, halfLengthMinutes, matchId, beginSecondHalf])
+  }, [
+    canBeginSecondHalf,
+    halfLengthMinutes,
+    matchId,
+    beginSecondHalf,
+    halftimeSlotAssignments,
+    setSecondHalfSlotAssignments,
+  ])
+
+  const handleLoadLineupPreset = useCallback(
+    (presetId: string) => {
+      const preset = lineupPresets.find((p) => p.id === presetId)
+      if (preset) {
+        applyLineupPreset(preset)
+        setToast(`Loaded preset · ${preset.preset_name}`)
+      }
+    },
+    [lineupPresets, applyLineupPreset],
+  )
 
   const openEditPlayer = useCallback(
     (id: string) => {
@@ -1605,6 +1715,11 @@ export default function App() {
           onStartMatch={() => void handleStartMatch()}
           canStartMatch={canStartMatch && !startingMatch}
           attendingCount={attendingCount}
+          lineupPresets={lineupPresets}
+          onLoadLineupPreset={handleLoadLineupPreset}
+          onOpenTeamManagement={() => setAppMode('team')}
+          setupSlotAssignments={setupSlotAssignments}
+          setupPitchKey={setupPitchKey}
         />
         <PlayerEditModal
           draft={editDraft}
@@ -1612,6 +1727,39 @@ export default function App() {
           onSave={() => void savePlayerDraft()}
           onClose={() => setEditDraft(null)}
         />
+      </>
+    )
+  }
+
+  if (appMode === 'team') {
+    return (
+      <>
+        <TeamManagementScreen
+          teams={teams.map((t) => ({ id: t.id, name: t.name }))}
+          selectedTeamId={selectedTeamId}
+          onTeamChange={selectTeam}
+          rosterLoading={rosterLoading}
+          teamRoster={teamRoster}
+          suggestedJersey={suggestedJersey}
+          lineupPresets={lineupPresets}
+          onRefreshPresets={refreshLineupPresets}
+          onRefreshRoster={loadFullTeamRoster}
+          onAddPlayer={addPlayer}
+          onUpdatePlayer={updatePlayer}
+          onSetPlayerActive={setPlayerActive}
+          onSavePreset={saveLineupPreset}
+          onDeletePreset={removeLineupPreset}
+          onBack={() => setAppMode('setup')}
+          onToast={setToast}
+        />
+        {toast && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
+              <CheckCircle2 className="size-5" strokeWidth={2.5} />
+              {toast}
+            </div>
+          </div>
+        )}
       </>
     )
   }
@@ -1628,6 +1776,10 @@ export default function App() {
           secondHalfFormation={matchFormations.second}
           onSetSecondHalfFormation={setSecondHalfFormation}
           secondHalfStarters={halftimeSecondHalf}
+          initialSlotAssignments={halftimeSlotAssignments}
+          assignmentsResetKey={`halftime-${matchId ?? 'local'}`}
+          carriedFromFirstHalf={carriedFromFirstHalf}
+          halftimeAssignmentsRef={halftimeAssignmentsRef}
           onAssignSecondHalfStarter={(playerId, _role, tacticalPosition) => {
             setHalftimeStarter(playerId, true)
             setPlayers((prev) =>
@@ -1725,6 +1877,7 @@ export default function App() {
         )}
 
         <LiveTacticalPitch
+          ref={livePitchRef}
           key={period}
           periodKey={period}
           formationId={activeFormation}
@@ -1732,6 +1885,7 @@ export default function App() {
           players={players}
           clockSeconds={seconds}
           maxFieldPlayers={MAX_FIELD_PLAYERS}
+          initialSlotAssignments={period === '2nd' ? secondHalfSlotAssignments : undefined}
           onSwap={handleLiveSwap}
           onSubIn={handleLiveSubIn}
           onSubOut={handleLiveSubOut}

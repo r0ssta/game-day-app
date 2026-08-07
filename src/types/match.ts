@@ -1,6 +1,6 @@
 export type Impact = 'neutral' | 'positive' | 'negative'
 
-export type AppMode = 'setup' | 'match' | 'halftime' | 'recap'
+export type AppMode = 'setup' | 'team' | 'match' | 'halftime' | 'recap'
 
 export type ActionType = 'GOAL' | 'ASSIST'
 
@@ -14,6 +14,8 @@ export type RosterPlayer = {
   name: string
   position: string
   isGuest: boolean
+  contactInfo: string
+  activeStatus: boolean
 }
 
 /** Active match lineup entry — single source of truth lives in the master players array */

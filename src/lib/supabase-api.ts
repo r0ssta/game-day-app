@@ -1,7 +1,8 @@
 import { matchDateTimeIso } from '@/lib/match-schedule'
 import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
-import type { DbCoach, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
+import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
+import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
 
 export type MatchEventInput = {
@@ -119,6 +120,8 @@ export function dbPlayerToRoster(player: DbPlayer): RosterPlayer {
     name: player.name,
     position: player.position,
     isGuest: player.is_guest,
+    contactInfo: player.contact_info ?? '',
+    activeStatus: player.active_status,
   }
 }
 
@@ -174,15 +177,28 @@ export async function fetchCoaches(): Promise<DbCoach[]> {
   return data ?? []
 }
 
-export async function fetchPlayersByTeamId(teamId: string): Promise<DbPlayer[]> {
-  const { data, error } = await supabase
-    .from('players')
-    .select('*')
-    .eq('team_id', teamId)
-    .eq('active_status', true)
-    .order('jersey')
+export async function fetchPlayersByTeamId(
+  teamId: string,
+  options?: { includeInactive?: boolean },
+): Promise<DbPlayer[]> {
+  let query = supabase.from('players').select('*').eq('team_id', teamId)
+  if (!options?.includeInactive) {
+    query = query.eq('active_status', true)
+  }
+  const { data, error } = await query.order('jersey')
   if (error) throw error
   return data ?? []
+}
+
+export async function setPlayerActiveStatus(playerId: string, active: boolean): Promise<DbPlayer> {
+  const { data, error } = await supabase
+    .from('players')
+    .update({ active_status: active })
+    .eq('id', playerId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
 }
 
 export async function insertTeam(name: string): Promise<DbTeam> {
@@ -218,38 +234,61 @@ export async function upsertPlayer(input: {
   jersey: number | null
   isGuest?: boolean
   position?: string
+  contactInfo?: string
 }): Promise<DbPlayer> {
+  const contact = input.contactInfo?.trim() || null
+  const baseUpdate = {
+    name: input.name.trim(),
+    jersey: input.jersey,
+    is_guest: input.isGuest ?? false,
+    position: input.position ?? 'SUB',
+    active_status: true,
+  }
+
   if (input.id) {
+    const withContact = { ...baseUpdate, contact_info: contact }
     const { data, error } = await supabase
       .from('players')
-      .update({
-        name: input.name.trim(),
-        jersey: input.jersey,
-        is_guest: input.isGuest ?? false,
-        position: input.position ?? 'SUB',
-        active_status: true,
-      })
+      .update(withContact)
       .eq('id', input.id)
       .select()
       .single()
-    if (error) throw error
-    return data
+    if (!error) return data
+
+    if (isMissingColumnError(error)) {
+      const { data: legacyData, error: legacyError } = await supabase
+        .from('players')
+        .update(baseUpdate)
+        .eq('id', input.id)
+        .select()
+        .single()
+      if (legacyError) throw legacyError
+      return legacyData
+    }
+    throw error
   }
 
-  const { data, error } = await supabase
-    .from('players')
-    .insert({
-      team_id: input.teamId,
-      name: input.name.trim(),
-      jersey: input.jersey,
-      is_guest: input.isGuest ?? false,
-      position: input.position ?? 'SUB',
-      active_status: true,
-    })
-    .select()
-    .single()
-  if (error) throw error
-  return data
+  const withContact = {
+    team_id: input.teamId,
+    ...baseUpdate,
+    contact_info: contact,
+  }
+  const { data, error } = await supabase.from('players').insert(withContact).select().single()
+  if (!error) return data
+
+  if (isMissingColumnError(error)) {
+    const { data: legacyData, error: legacyError } = await supabase
+      .from('players')
+      .insert({
+        team_id: input.teamId,
+        ...baseUpdate,
+      })
+      .select()
+      .single()
+    if (legacyError) throw legacyError
+    return legacyData
+  }
+  throw error
 }
 
 export async function createMatchRecord(input: {
@@ -535,4 +574,73 @@ export function syncMatchClock(matchId: string, clock: MatchClockPatch) {
     period: clock.period,
     period_clock_started: clock.periodClockStarted,
   })
+}
+
+function isOptionalLineupPresetsError(err: unknown): boolean {
+  const message = formatSupabaseError(err).toLowerCase()
+  return (
+    message.includes('lineup_presets') &&
+    (message.includes('does not exist') ||
+      message.includes('could not find') ||
+      message.includes('schema cache') ||
+      message.includes('permission denied'))
+  )
+}
+
+export async function fetchLineupPresetsByTeamId(teamId: string): Promise<DbLineupPreset[]> {
+  const { data, error } = await supabase
+    .from('lineup_presets')
+    .select('*')
+    .eq('team_id', teamId)
+    .order('preset_name', { ascending: true })
+  if (!error) return data ?? []
+  if (isOptionalLineupPresetsError(error)) {
+    console.warn('[fetchLineupPresetsByTeamId] lineup_presets unavailable:', formatSupabaseError(error))
+    return []
+  }
+  throw error
+}
+
+export async function insertLineupPreset(input: {
+  teamId: string
+  presetName: string
+  formationJson: LineupPresetFormationJson
+}): Promise<DbLineupPreset> {
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('lineup_presets')
+    .insert({
+      team_id: input.teamId,
+      preset_name: input.presetName.trim(),
+      formation_json: input.formationJson,
+      updated_at: now,
+    })
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateLineupPreset(
+  presetId: string,
+  input: { presetName: string; formationJson: LineupPresetFormationJson },
+): Promise<DbLineupPreset> {
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('lineup_presets')
+    .update({
+      preset_name: input.presetName.trim(),
+      formation_json: input.formationJson,
+      updated_at: now,
+    })
+    .eq('id', presetId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteLineupPreset(presetId: string): Promise<void> {
+  const { error } = await supabase.from('lineup_presets').delete().eq('id', presetId)
+  if (error) throw error
 }

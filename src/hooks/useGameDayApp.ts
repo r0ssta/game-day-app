@@ -17,24 +17,30 @@ import {
 } from '@/lib/match-schedule'
 import { elapsedInHalf, initialHalfClock } from '@/lib/match-clock'
 import { DEFAULT_FORMATION_ID } from '@/lib/formations'
+import { applyPresetToSetup } from '@/lib/lineup-presets'
 import {
   completeMatch,
   createMatchRecord,
   createMatchStats,
   deleteMatchRecord,
+  deleteLineupPreset,
   dbPlayerToRoster,
   fetchActiveMatch,
   fetchCoaches,
+  fetchLineupPresetsByTeamId,
   fetchPlayersByTeamId,
   fetchTeams,
   insertCoach,
+  insertLineupPreset,
   insertTeam,
   insertMatchEvent,
   rebuildMatchPlayers,
   syncMatchStats,
+  updateLineupPreset,
   upsertPlayer,
+  setPlayerActiveStatus,
 } from '@/lib/supabase-api'
-import type { DbCoach, DbTeam } from '@/types/database'
+import type { DbCoach, DbLineupPreset, DbTeam } from '@/types/database'
 import type {
   AppMode,
   MatchPeriod,
@@ -68,6 +74,19 @@ export function useGameDayApp() {
   const [firstHalfStarterIds, setFirstHalfStarterIds] = useState<string[]>([])
   const [secondHalfStarterIds, setSecondHalfStarterIds] = useState<string[]>([])
   const [halftimeSecondHalf, setHalftimeSecondHalf] = useState<Record<string, boolean>>({})
+  const [halftimeSlotAssignments, setHalftimeSlotAssignments] = useState<
+    Record<string, string | null>
+  >({})
+  const [secondHalfSlotAssignments, setSecondHalfSlotAssignments] = useState<
+    Record<string, string | null>
+  >({})
+  const [carriedFromFirstHalf, setCarriedFromFirstHalf] = useState<Record<string, boolean>>({})
+  const [lineupPresets, setLineupPresets] = useState<DbLineupPreset[]>([])
+  const [teamRoster, setTeamRoster] = useState<RosterPlayer[]>([])
+  const [setupSlotAssignments, setSetupSlotAssignments] = useState<
+    Record<string, string | null> | undefined
+  >(undefined)
+  const [setupPitchKey, setSetupPitchKey] = useState(0)
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
   const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null)
@@ -243,12 +262,101 @@ export function useGameDayApp() {
     setMatchPositions((prev) => ensureMatchPositions(masterRoster, prev))
   }, [masterRoster])
 
+  useEffect(() => {
+    if (!selectedTeamId || (appMode !== 'setup' && appMode !== 'team')) return
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const presets = await fetchLineupPresetsByTeamId(selectedTeamId)
+        if (!cancelled) setLineupPresets(presets)
+      } catch (err) {
+        console.warn('[lineup presets] failed to load', err)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTeamId, appMode])
+
+  const loadFullTeamRoster = useCallback(async () => {
+    if (!selectedTeamId) {
+      setTeamRoster([])
+      return
+    }
+    setRosterLoading(true)
+    try {
+      const playersData = await fetchPlayersByTeamId(selectedTeamId, { includeInactive: true })
+      setTeamRoster(playersData.map(dbPlayerToRoster))
+    } finally {
+      setRosterLoading(false)
+    }
+  }, [selectedTeamId])
+
+  const refreshLineupPresets = useCallback(async () => {
+    if (!selectedTeamId) {
+      setLineupPresets([])
+      return
+    }
+    const presets = await fetchLineupPresetsByTeamId(selectedTeamId)
+    setLineupPresets(presets)
+  }, [selectedTeamId])
+
+  const applyLineupPreset = useCallback(
+    (preset: DbLineupPreset) => {
+      const applied = applyPresetToSetup(preset, masterRoster)
+      setSetupLineup(applied.setupLineup)
+      setMatchPositions(applied.matchPositions)
+      setFirstHalfFormation(applied.formationId)
+      setSetupSlotAssignments(applied.slotAssignments)
+      setSetupPitchKey((k) => k + 1)
+    },
+    [masterRoster, setFirstHalfFormation],
+  )
+
+  const saveLineupPreset = useCallback(
+    async (input: {
+      presetId?: string
+      presetName: string
+      formationId: string
+      slotAssignments: Record<string, string | null>
+    }) => {
+      if (!selectedTeamId) throw new Error('Select a team first')
+      const formationJson = { formationId: input.formationId, slotAssignments: input.slotAssignments }
+      if (input.presetId) {
+        await updateLineupPreset(input.presetId, {
+          presetName: input.presetName,
+          formationJson,
+        })
+      } else {
+        await insertLineupPreset({
+          teamId: selectedTeamId,
+          presetName: input.presetName,
+          formationJson,
+        })
+      }
+      await refreshLineupPresets()
+    },
+    [selectedTeamId, refreshLineupPresets],
+  )
+
+  const removeLineupPreset = useCallback(
+    async (presetId: string) => {
+      await deleteLineupPreset(presetId)
+      await refreshLineupPresets()
+    },
+    [refreshLineupPresets],
+  )
+
   const selectTeam = useCallback((teamId: string) => {
     console.log('[game-day] active team_id:', teamId)
     setSelectedTeamId(teamId)
     setMasterRoster([])
     setSetupLineup({ attending: {}, startFirstHalf: {} })
     setMatchPositions({})
+    setSetupSlotAssignments(undefined)
+    setSetupPitchKey((k) => k + 1)
   }, [])
 
   const createTeam = useCallback(async (name: string) => {
@@ -281,7 +389,13 @@ export function useGameDayApp() {
   }, [])
 
   const addPlayer = useCallback(
-    async (input: { name: string; jersey: number | null; isGuest: boolean; position?: string }) => {
+    async (input: {
+      name: string
+      jersey: number | null
+      isGuest: boolean
+      position?: string
+      contactInfo?: string
+    }) => {
       if (!selectedTeamId) throw new Error('Select a team before adding players')
 
       const created = await upsertPlayer({
@@ -290,9 +404,13 @@ export function useGameDayApp() {
         jersey: input.jersey,
         isGuest: input.isGuest,
         position: input.position,
+        contactInfo: input.contactInfo,
       })
       const rosterPlayer = dbPlayerToRoster(created)
       setMasterRoster((prev) =>
+        [...prev, rosterPlayer].sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
+      )
+      setTeamRoster((prev) =>
         [...prev, rosterPlayer].sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
       )
       setSetupLineup((prev) => ({
@@ -309,8 +427,11 @@ export function useGameDayApp() {
   )
 
   const updatePlayer = useCallback(
-    async (id: string, updates: { name: string; jersey: number | null; isGuest: boolean }) => {
-      const existing = masterRoster.find((p) => p.id === id)
+    async (
+      id: string,
+      updates: { name: string; jersey: number | null; isGuest: boolean; contactInfo?: string },
+    ) => {
+      const existing = masterRoster.find((p) => p.id === id) ?? teamRoster.find((p) => p.id === id)
       if (!existing) throw new Error('Player not found')
 
       const updated = await upsertPlayer({
@@ -319,16 +440,49 @@ export function useGameDayApp() {
         name: updates.name,
         jersey: updates.jersey,
         isGuest: updates.isGuest,
+        contactInfo: updates.contactInfo,
       })
       const rosterPlayer = dbPlayerToRoster(updated)
       setMasterRoster((prev) =>
+        prev
+          .map((p) => (p.id === id ? rosterPlayer : p))
+          .filter((p) => p.activeStatus)
+          .sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
+      )
+      setTeamRoster((prev) =>
         prev
           .map((p) => (p.id === id ? rosterPlayer : p))
           .sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
       )
       return rosterPlayer
     },
-    [masterRoster],
+    [masterRoster, teamRoster],
+  )
+
+  const setPlayerActive = useCallback(
+    async (id: string, active: boolean) => {
+      const updated = await setPlayerActiveStatus(id, active)
+      const rosterPlayer = dbPlayerToRoster(updated)
+      setTeamRoster((prev) =>
+        prev
+          .map((p) => (p.id === id ? rosterPlayer : p))
+          .sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
+      )
+      if (active) {
+        setMasterRoster((prev) =>
+          [...prev.filter((p) => p.id !== id), rosterPlayer].sort(
+            (a, b) => (a.number ?? 999) - (b.number ?? 999),
+          ),
+        )
+      } else {
+        setMasterRoster((prev) => prev.filter((p) => p.id !== id))
+        setSetupLineup((prev) => ({
+          attending: { ...prev.attending, [id]: false },
+          startFirstHalf: { ...prev.startFirstHalf, [id]: false },
+        }))
+      }
+    },
+    [],
   )
 
   const beginMatch = useCallback(
@@ -415,11 +569,12 @@ export function useGameDayApp() {
   )
 
   const enterHalftime = useCallback(
-    async (clockSeconds: number) => {
+    async (clockSeconds: number, slotAssignments?: Record<string, string | null>) => {
       setRunning(false)
 
       let nextPlayers: MatchPlayer[] = []
       let toggles: Record<string, boolean> = {}
+      let carried: Record<string, boolean> = {}
 
       setPlayers((prev) => {
         if (matchId) {
@@ -444,6 +599,9 @@ export function useGameDayApp() {
           finalized.filter((p) => p.attending).map((p) => [p.id, p.isOnField]),
         )
         toggles = ensureHalftimeStarters(attendingIds, onFieldById)
+        carried = Object.fromEntries(
+          finalized.filter((p) => p.attending && onFieldById[p.id]).map((p) => [p.id, true]),
+        )
 
         nextPlayers = finalized.map((p) =>
           p.attending ? { ...p, isOnField: false, subbedInAt: null } : p,
@@ -453,8 +611,10 @@ export function useGameDayApp() {
         return nextPlayers
       })
 
+      if (slotAssignments) setHalftimeSlotAssignments(slotAssignments)
+      setCarriedFromFirstHalf(carried)
       setHalftimeSecondHalf(toggles)
-      setMatchFormations((prev) => ({ ...prev, second: prev.second || prev.first }))
+      setMatchFormations((prev) => ({ ...prev, second: prev.first }))
       setAppMode('halftime')
       return nextPlayers
     },
@@ -552,6 +712,11 @@ export function useGameDayApp() {
     setFirstHalfStarterIds([])
     setSecondHalfStarterIds([])
     setHalftimeSecondHalf({})
+    setHalftimeSlotAssignments({})
+    setSecondHalfSlotAssignments({})
+    setCarriedFromFirstHalf({})
+    setSetupSlotAssignments(undefined)
+    setSetupPitchKey((k) => k + 1)
     setMatchTeamName('')
     setMatchCoachName('')
     setMatchOpponent('')
@@ -602,6 +767,20 @@ export function useGameDayApp() {
     secondHalfStarterIds,
     halftimeSecondHalf,
     setHalftimeStarter,
+    halftimeSlotAssignments,
+    secondHalfSlotAssignments,
+    setSecondHalfSlotAssignments,
+    carriedFromFirstHalf,
+    lineupPresets,
+    teamRoster,
+    refreshLineupPresets,
+    loadFullTeamRoster,
+    applyLineupPreset,
+    saveLineupPreset,
+    removeLineupPreset,
+    setPlayerActive,
+    setupSlotAssignments,
+    setupPitchKey,
     enterHalftime,
     beginSecondHalf,
     finishGame,

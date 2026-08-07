@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Users } from 'lucide-react'
 import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
 import {
@@ -40,6 +40,11 @@ type LiveTacticalPitchProps = {
   onSubOut: (fieldId: string) => void
   onReassignPosition: (updates: PositionReassignUpdate[]) => void
   onSetImpact?: (id: string, impact: Impact) => void
+  initialSlotAssignments?: Record<string, string | null>
+}
+
+export type LiveTacticalPitchHandle = {
+  getSlotAssignments: () => Record<string, string | null>
 }
 
 function ImpactToggleGroup({
@@ -217,20 +222,31 @@ function BenchPlayerRow({
   )
 }
 
-export function LiveTacticalPitch({
-  players,
-  clockSeconds,
-  maxFieldPlayers,
-  periodKey,
-  formationId,
-  onFormationChange,
-  onSwap,
-  onSubIn,
-  onSubOut,
-  onReassignPosition,
-  onSetImpact,
-}: LiveTacticalPitchProps) {
+export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTacticalPitchProps>(
+  function LiveTacticalPitch(
+    {
+      players,
+      clockSeconds,
+      maxFieldPlayers,
+      periodKey,
+      formationId,
+      onFormationChange,
+      onSwap,
+      onSubIn,
+      onSubOut,
+      onReassignPosition,
+      onSetImpact,
+      initialSlotAssignments,
+    },
+    ref,
+  ) {
   const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>({})
+  const slotAssignmentsRef = useRef(slotAssignments)
+  slotAssignmentsRef.current = slotAssignments
+
+  useImperativeHandle(ref, () => ({
+    getSlotAssignments: () => slotAssignmentsRef.current,
+  }))
   const [benchDropHighlight, setBenchDropHighlight] = useState(false)
   const [dragSource, setDragSource] = useState<{ from: 'field' | 'bench'; slotId?: string } | null>(
     null,
@@ -262,6 +278,12 @@ export function LiveTacticalPitch({
   useEffect(() => {
     if (hydratedKeyRef.current === periodKey) return
     hydratedKeyRef.current = periodKey
+
+    if (initialSlotAssignments && Object.values(initialSlotAssignments).some(Boolean)) {
+      setSlotAssignments(initialSlotAssignments)
+      return
+    }
+
     const starters = Object.fromEntries(players.map((p) => [p.id, p.attending && p.isOnField]))
     setSlotAssignments(
       buildAssignmentsFromStarters(
@@ -270,7 +292,7 @@ export function LiveTacticalPitch({
         starters,
       ),
     )
-  }, [periodKey, formation, players])
+  }, [periodKey, formation, players, initialSlotAssignments])
 
   useEffect(() => {
     setSlotAssignments((prev) => {
@@ -563,4 +585,4 @@ export function LiveTacticalPitch({
       </div>
     </div>
   )
-}
+})

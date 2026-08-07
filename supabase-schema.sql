@@ -24,6 +24,7 @@ create table if not exists public.players (
   jersey integer,
   active_status boolean not null default true,
   is_guest boolean not null default false,
+  contact_info text,
   -- Roster position used by the lineup builder (GK, CB, CM, etc.)
   position text not null default 'SUB',
   created_at timestamptz not null default now(),
@@ -105,6 +106,18 @@ create table if not exists public.match_reviews (
 
 create index if not exists idx_match_reviews_match_id on public.match_reviews (match_id);
 
+create table if not exists public.lineup_presets (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  preset_name text not null,
+  formation_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (team_id, preset_name)
+);
+
+create index if not exists idx_lineup_presets_team_id on public.lineup_presets (team_id);
+
 -- ---------------------------------------------------------------------------
 -- Row Level Security (MVP: open read/write for anon + authenticated)
 -- ---------------------------------------------------------------------------
@@ -116,6 +129,7 @@ alter table public.matches enable row level security;
 alter table public.match_events enable row level security;
 alter table public.match_stats enable row level security;
 alter table public.match_reviews enable row level security;
+alter table public.lineup_presets enable row level security;
 
 -- Teams
 create policy "teams_select_all" on public.teams for select to anon, authenticated using (true);
@@ -150,6 +164,12 @@ create policy "match_stats_update_all" on public.match_stats for update to anon,
 create policy "match_reviews_select_all" on public.match_reviews for select to anon, authenticated using (true);
 create policy "match_reviews_insert_all" on public.match_reviews for insert to anon, authenticated with check (true);
 create policy "match_reviews_update_all" on public.match_reviews for update to anon, authenticated using (true) with check (true);
+
+-- Lineup presets
+create policy "lineup_presets_select_all" on public.lineup_presets for select to anon, authenticated using (true);
+create policy "lineup_presets_insert_all" on public.lineup_presets for insert to anon, authenticated with check (true);
+create policy "lineup_presets_update_all" on public.lineup_presets for update to anon, authenticated using (true) with check (true);
+create policy "lineup_presets_delete_all" on public.lineup_presets for delete to anon, authenticated using (true);
 
 -- ---------------------------------------------------------------------------
 -- Table privileges (required — RLS alone is not enough)
