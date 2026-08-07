@@ -10,6 +10,7 @@ import {
 } from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
+import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
 import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
@@ -151,6 +152,7 @@ export function statToMatchPlayer(roster: RosterPlayer, stat: DbMatchStat): Matc
     matchPosition: stat.match_position,
     totalSecondsPlayed: stat.total_seconds_played,
     subbedInAt: stat.subbed_in_at,
+    plusMinus: stat.plus_minus ?? 0,
   }
 }
 
@@ -173,6 +175,7 @@ export function matchPlayerToStatPayload(matchId: string, player: MatchPlayer) {
     is_first_half_starter: player.isFirstHalfStarter,
     is_second_half_starter: player.isSecondHalfStarter,
     attending: player.attending,
+    plus_minus: player.plusMinus,
   }
 }
 
@@ -607,7 +610,38 @@ export async function completeMatch(matchId: string) {
   if (error) throw error
 }
 
+export async function persistMatchPlusMinusFromEvents(matchId: string) {
+  const [match, events, stats] = await Promise.all([
+    fetchMatchById(matchId),
+    fetchMatchEvents(matchId),
+    fetchMatchStatsByMatchId(matchId),
+  ])
+  if (!match) return
+
+  const firstHalfStarterIds = stats
+    .filter((row) => row.is_first_half_starter)
+    .map((row) => row.player_id)
+  const ledger = computeMatchPlusMinus(events, match.half_length * 60, { firstHalfStarterIds })
+
+  const updates = stats
+    .filter((row) => row.attending)
+    .map((row) =>
+      supabase
+        .from('match_stats')
+        .update({ plus_minus: ledger.get(row.player_id) ?? 0 })
+        .eq('match_id', matchId)
+        .eq('player_id', row.player_id),
+    )
+
+  const results = await Promise.all(updates)
+  const firstError = results.find((result) => result.error)?.error
+  if (firstError && !isMissingColumnError(firstError)) {
+    throw firstError
+  }
+}
+
 export async function finalizeMatchReview(matchId: string) {
+  await persistMatchPlusMinusFromEvents(matchId)
   await completeMatch(matchId)
 }
 

@@ -1,12 +1,20 @@
-import { BarChart3, LineChart, TrendingUp } from 'lucide-react'
+import { useMemo } from 'react'
+import { BarChart3 } from 'lucide-react'
+import { LineupCombinationsDashboard } from '@/components/reporting/LineupCombinationsDashboard'
+import { PlusMinusDashboard } from '@/components/reporting/PlusMinusDashboard'
+import { PlayerDevelopmentDashboard } from '@/components/reporting/PlayerDevelopmentDashboard'
+import { PlayingTimeDashboard } from '@/components/reporting/PlayingTimeDashboard'
+import { ScoringDefenseDashboard } from '@/components/reporting/ScoringDefenseDashboard'
+import { buildSeasonAnalytics } from '@/lib/season-analytics'
 import {
   formatSeasonRecordSummary,
-  type SeasonRecord,
   type SeasonReportData,
 } from '@/lib/season-reporting'
+import type { RosterPlayer } from '@/types/match'
 
 type SeasonDetailsTabProps = {
   activeTeamName: string
+  roster: RosterPlayer[]
   data: SeasonReportData
 }
 
@@ -28,19 +36,20 @@ function StatCard({
   )
 }
 
-function recordWinRate(record: SeasonRecord): string {
-  if (record.matchesPlayed === 0) return '—'
-  const pct = Math.round((record.wins / record.matchesPlayed) * 100)
+function recordWinRate(matchesPlayed: number, wins: number): string {
+  if (matchesPlayed === 0) return '—'
+  const pct = Math.round((wins / matchesPlayed) * 100)
   return `${pct}%`
 }
 
-function recordGoalDiff(record: SeasonRecord): string {
-  const diff = record.goalsFor - record.goalsAgainst
+function recordGoalDiff(goalsFor: number, goalsAgainst: number): string {
+  const diff = goalsFor - goalsAgainst
   return diff > 0 ? `+${diff}` : String(diff)
 }
 
-export function SeasonDetailsTab({ activeTeamName, data }: SeasonDetailsTabProps) {
-  const { seasonRecord, matches } = data
+export function SeasonDetailsTab({ activeTeamName, roster, data }: SeasonDetailsTabProps) {
+  const { seasonRecord } = data
+  const analytics = useMemo(() => buildSeasonAnalytics(data, roster), [data, roster])
 
   return (
     <div className="space-y-4">
@@ -50,7 +59,7 @@ export function SeasonDetailsTab({ activeTeamName, data }: SeasonDetailsTabProps
           Season Overview
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          High-level analytics for {activeTeamName || 'your team'}. Deeper trend charts coming soon.
+          Analytics for {activeTeamName || 'your team'} from completed matches and post-game reviews.
         </p>
       </div>
 
@@ -67,8 +76,14 @@ export function SeasonDetailsTab({ activeTeamName, data }: SeasonDetailsTabProps
           </section>
 
           <div className="grid grid-cols-2 gap-3">
-            <StatCard label="Win Rate" value={recordWinRate(seasonRecord)} />
-            <StatCard label="Goal Diff" value={recordGoalDiff(seasonRecord)} />
+            <StatCard
+              label="Win Rate"
+              value={recordWinRate(seasonRecord.matchesPlayed, seasonRecord.wins)}
+            />
+            <StatCard
+              label="Goal Diff"
+              value={recordGoalDiff(seasonRecord.goalsFor, seasonRecord.goalsAgainst)}
+            />
             <StatCard
               label="Matches"
               value={String(seasonRecord.matchesPlayed)}
@@ -80,54 +95,24 @@ export function SeasonDetailsTab({ activeTeamName, data }: SeasonDetailsTabProps
               hint="Per match"
             />
           </div>
+
+          <section className="space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Analytics Dashboards
+            </h3>
+            <PlayingTimeDashboard analytics={analytics.playingTime} />
+            <PlusMinusDashboard analytics={analytics.plusMinus} />
+            <ScoringDefenseDashboard analytics={analytics.scoringDefense} />
+            <LineupCombinationsDashboard analytics={analytics.lineupCombinations} />
+            <PlayerDevelopmentDashboard analytics={analytics.playerDevelopment} />
+          </section>
         </>
       )}
 
-      <section className="space-y-3 rounded-xl border border-dashed border-border bg-card/40 p-4">
-        <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-          <TrendingUp className="size-4" />
-          Analytics Framework
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          This section will expand with playing-time trends, formation usage, scoring timelines, and
-          roster depth charts as aggregation logic is added.
-        </p>
-
-        <ul className="space-y-2">
-          {[
-            {
-              icon: LineChart,
-              title: 'Playing Time Trends',
-              description: 'Minutes distribution and bench rotation patterns across the season.',
-            },
-            {
-              icon: BarChart3,
-              title: 'Scoring & Defense',
-              description: 'Goals for/against by month, venue, and opponent strength.',
-            },
-            {
-              icon: TrendingUp,
-              title: 'Player Development',
-              description: 'Rating trajectory and position versatility over time.',
-            },
-          ].map(({ icon: Icon, title, description }) => (
-            <li
-              key={title}
-              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 opacity-80"
-            >
-              <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-bold text-foreground">{title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        <p className="text-xs text-muted-foreground">
-          {matches.length} completed match{matches.length === 1 ? '' : 'es'} loaded for aggregation.
-        </p>
-      </section>
+      <p className="text-center text-xs text-muted-foreground">
+        {analytics.completedMatchCount} completed match
+        {analytics.completedMatchCount === 1 ? '' : 'es'} loaded for aggregation.
+      </p>
     </div>
   )
 }

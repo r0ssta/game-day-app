@@ -33,6 +33,7 @@ export type MatchPlayer = RosterPlayer & {
   matchPosition: string
   totalSecondsPlayed: number
   subbedInAt: number | null
+  plusMinus: number
 }
 
 /** @deprecated Use MatchPlayer in match context */

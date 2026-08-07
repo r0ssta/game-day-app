@@ -24,6 +24,7 @@ export function createMatchPlayer(
     matchPosition: normalizeTacticalMatchPosition(input.matchPosition),
     totalSecondsPlayed: 0,
     subbedInAt: null,
+    plusMinus: 0,
   }
 }
 

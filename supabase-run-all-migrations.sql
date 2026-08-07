@@ -220,3 +220,10 @@ alter table public.match_reviews
 alter table public.match_reviews
   add constraint match_reviews_match_player_position_key
   unique (match_id, player_id, position);
+
+-- Plus/minus per player per match
+alter table public.match_stats
+  add column if not exists plus_minus integer not null default 0;
+
+create index if not exists idx_match_stats_plus_minus
+  on public.match_stats (match_id, plus_minus);

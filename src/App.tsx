@@ -45,6 +45,7 @@ import {
 } from '@/lib/play-time'
 import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS, tickCountdownClock, type QaSpeedMultiplier } from '@/lib/match-clock'
 import type { RosterProfilePosition } from '@/lib/positions'
+import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import {
   syncMatchClock,
   syncMatchEvent,
@@ -1935,7 +1936,13 @@ export default function App() {
       timestamp: eventTimestamp,
       formation: activeFormation,
     })
-  }, [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore])
+
+    setPlayers((prev) => {
+      const next = applyPlusMinusDelta(prev, -1)
+      if (matchId) syncMatchStats(matchId, next)
+      return next
+    })
+  }, [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore, setPlayers])
 
   const handleCompleteGoal = useCallback(
     (assistPlayerId: string | null) => {
@@ -1963,6 +1970,12 @@ export default function App() {
         assistPlayerId,
       })
 
+      setPlayers((prev) => {
+        const next = applyPlusMinusDelta(prev, 1)
+        if (matchId) syncMatchStats(matchId, next)
+        return next
+      })
+
       const assistPlayer = assistPlayerId
         ? players.find((p) => p.id === assistPlayerId)
         : null
@@ -1984,6 +1997,7 @@ export default function App() {
       activeFormation,
       setHomeScore,
       closeGoalWizard,
+      setPlayers,
     ],
   )
 

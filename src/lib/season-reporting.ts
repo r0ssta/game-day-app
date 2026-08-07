@@ -11,6 +11,12 @@ import {
   OVERALL_REVIEW_POSITION,
   resolvePlayerPositions,
 } from '@/lib/match-recap'
+import { computeMatchPlusMinus } from '@/lib/plus-minus'
+import {
+  computeLineupCombinationAnalytics,
+  mergeLineupCombinationAnalytics,
+  type LineupCombinationAnalytics,
+} from '@/lib/lineup-analytics'
 import {
   fetchCompletedMatchesByTeamId,
   fetchMatchEvents,
@@ -47,6 +53,7 @@ export type PlayerMatchLog = {
   minutes: number
   goals: number
   assists: number
+  plusMinus: number
   overallRating: { impact: Impact; notes: string }
   positionRatings: Array<{ position: string; impact: Impact; notes: string }>
   positions: string[]
@@ -59,6 +66,7 @@ export type PlayerSeasonStats = {
   averageMinutesPerMatch: number
   goals: number
   assists: number
+  plusMinus: number
   positionsPlayed: string[]
   primaryPositionPlayed: string
   secondaryPositionPlayed: string
@@ -80,6 +88,7 @@ export type SeasonReportData = {
   matches: DbMatch[]
   seasonRecord: SeasonRecord
   playerStats: Map<string, PlayerSeasonStats>
+  lineupAnalytics: LineupCombinationAnalytics
 }
 
 export function emptySeasonReportData(): SeasonReportData {
@@ -94,6 +103,7 @@ export function emptySeasonReportData(): SeasonReportData {
       matchesPlayed: 0,
     },
     playerStats: new Map(),
+    lineupAnalytics: { topPairs: [], topFormations: [], positionEfficiency: [] },
   }
 }
 
@@ -139,6 +149,7 @@ export function emptyPlayerSeasonStats(playerId: string): PlayerSeasonStats {
     averageMinutesPerMatch: 0,
     goals: 0,
     assists: 0,
+    plusMinus: 0,
     positionsPlayed: [],
     primaryPositionPlayed: '—',
     secondaryPositionPlayed: '—',
@@ -207,6 +218,8 @@ export async function loadSeasonReport(
     ratedMatchesByPosition.set(player.id, new Map())
   }
 
+  const lineupChunks: LineupCombinationAnalytics[] = []
+
   await Promise.all(
     matches.map(async (match) => {
       const { dateLabel } = formatMatchDisplayDateTime(match)
@@ -224,6 +237,17 @@ export async function loadSeasonReport(
       const matchPlayers = rebuildMatchPlayers(roster, stats)
       const playersById = new Map(matchPlayers.map((player) => [player.id, player]))
       const eventStats = aggregatePlayerRecaps(events, match.half_length * 60, playersById)
+      const firstHalfStarterIds = stats
+        .filter((row) => row.is_first_half_starter)
+        .map((row) => row.player_id)
+      const plusMinusLedger = computeMatchPlusMinus(events, match.half_length * 60, {
+        firstHalfStarterIds,
+      })
+      lineupChunks.push(
+        computeLineupCombinationAnalytics(events, match.half_length * 60, roster, {
+          firstHalfStarterIds,
+        }),
+      )
       const reviewsByPlayerPosition = new Map<string, Array<{ position: string; impact: Impact; notes: string }>>()
 
       for (const review of reviews) {
@@ -270,6 +294,7 @@ export async function loadSeasonReport(
         entry.totalMinutes += minutes
         entry.goals += goals
         entry.assists += assists
+        entry.plusMinus += plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0
         entry.ratingCounts[overallReview.impact] += 1
 
         const posMap = positionCounts.get(stat.player_id)!
@@ -322,6 +347,7 @@ export async function loadSeasonReport(
           minutes,
           goals,
           assists,
+          plusMinus: plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0,
           overallRating: {
             impact: overallReview.impact,
             notes: overallReview.notes,
@@ -356,7 +382,85 @@ export async function loadSeasonReport(
       .sort((a, b) => b.matchCount - a.matchCount || a.position.localeCompare(b.position))
   }
 
-  return { matches, seasonRecord, playerStats }
+  const mergedLineup = mergeLineupCombinationAnalytics(lineupChunks)
+  const positionEfficiency = buildPositionEfficiencyFromPlayerStats(roster, playerStats)
+
+  return {
+    matches,
+    seasonRecord,
+    playerStats,
+    lineupAnalytics: {
+      ...mergedLineup,
+      positionEfficiency,
+    },
+  }
+}
+
+function buildPositionEfficiencyFromPlayerStats(
+  roster: RosterPlayer[],
+  playerStats: Map<string, PlayerSeasonStats>,
+) {
+  const buckets = new Map<
+    string,
+    {
+      plusMinus: number
+      positive: number
+      neutral: number
+      negative: number
+      players: Set<string>
+      goals: number
+      assists: number
+    }
+  >()
+
+  for (const player of roster) {
+    const stats = playerStats.get(player.id)
+    if (!stats || stats.matchesPlayed === 0) continue
+
+    const positions =
+      stats.positionsPlayed.length > 0
+        ? stats.positionsPlayed
+        : stats.primaryPositionPlayed !== '—'
+          ? [stats.primaryPositionPlayed]
+          : []
+
+    if (positions.length === 0) continue
+
+    const share = 1 / positions.length
+    for (const position of positions) {
+      const bucket = buckets.get(position) ?? {
+        plusMinus: 0,
+        positive: 0,
+        neutral: 0,
+        negative: 0,
+        players: new Set<string>(),
+        goals: 0,
+        assists: 0,
+      }
+      bucket.plusMinus += stats.plusMinus * share
+      bucket.positive += stats.ratingCounts.positive * share
+      bucket.neutral += stats.ratingCounts.neutral * share
+      bucket.negative += stats.ratingCounts.negative * share
+      bucket.players.add(player.id)
+      bucket.goals += stats.goals * share
+      bucket.assists += stats.assists * share
+      buckets.set(position, bucket)
+    }
+  }
+
+  return [...buckets.entries()]
+    .map(([position, bucket]) => {
+      const rated = bucket.positive + bucket.neutral + bucket.negative
+      return {
+        position,
+        plusMinus: Math.round(bucket.plusMinus * 10) / 10,
+        positivePercent: rated > 0 ? Math.round((bucket.positive / rated) * 100) : 0,
+        players: bucket.players.size,
+        goals: Math.round(bucket.goals * 10) / 10,
+        assists: Math.round(bucket.assists * 10) / 10,
+      }
+    })
+    .sort((a, b) => b.plusMinus - a.plusMinus || b.positivePercent - a.positivePercent)
 }
 
 export function getPlayerFromRoster(roster: RosterPlayer[], playerId: string) {

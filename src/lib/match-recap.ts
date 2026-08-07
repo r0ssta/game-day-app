@@ -60,7 +60,10 @@ export function playerPositionReviewKey(playerId: string, position: string): str
 
 type TimelineEvent = DbMatchEvent & { absTimestamp: number }
 
-function toAbsoluteTimeline(events: DbMatchEvent[], halfLengthSeconds: number): TimelineEvent[] {
+export function buildAbsoluteMatchTimeline(
+  events: DbMatchEvent[],
+  halfLengthSeconds: number,
+): TimelineEvent[] {
   const sorted = [...events].sort(
     (a, b) => a.created_at.localeCompare(b.created_at) || a.timestamp - b.timestamp,
   )
@@ -127,7 +130,7 @@ export function aggregatePlayerRecaps(
   halfLengthSeconds: number,
   playersById?: Map<string, Pick<MatchPlayer, 'matchPosition'>>,
 ): Map<string, PlayerRecapStats> {
-  const timeline = toAbsoluteTimeline(events, halfLengthSeconds)
+  const timeline = buildAbsoluteMatchTimeline(events, halfLengthSeconds)
   const stats = new Map<
     string,
     {

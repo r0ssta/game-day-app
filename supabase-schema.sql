@@ -83,6 +83,7 @@ create table if not exists public.match_stats (
     check (match_status in ('on-field', 'bench', 'absent')),
   match_position text not null default 'CM',
   total_seconds_played integer not null default 0 check (total_seconds_played >= 0),
+  plus_minus integer not null default 0,
   subbed_in_at integer,
   is_first_half_starter boolean not null default false,
   is_second_half_starter boolean not null default false,

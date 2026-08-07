@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
+import { formatPlusMinus } from '@/lib/plus-minus'
 import {
   formatPlayerSeasonHeader,
   formatPositionBreakdownDetail,
@@ -96,6 +97,23 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
                 Assists
               </dt>
               <dd className="mt-0.5 font-bold tabular-nums text-foreground">{stats.assists}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Plus/Minus
+              </dt>
+              <dd
+                className={cn(
+                  'mt-0.5 font-bold tabular-nums',
+                  stats.plusMinus > 0
+                    ? 'text-neon'
+                    : stats.plusMinus < 0
+                      ? 'text-danger'
+                      : 'text-foreground',
+                )}
+              >
+                {formatPlusMinus(stats.plusMinus)}
+              </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -226,7 +244,7 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
                   </div>
                   <p className="mt-1 text-xs font-semibold text-muted-foreground">
                     {formatRecapMinutes(log.minutes)} · {log.positions.join(', ')} · G {log.goals}{' '}
-                    · A {log.assists}
+                    · A {log.assists} · +/- {formatPlusMinus(log.plusMinus)}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span

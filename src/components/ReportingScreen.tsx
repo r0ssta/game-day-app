@@ -166,7 +166,11 @@ export function ReportingScreen({
             ) : null}
 
             {activeTab === 'season' ? (
-              <SeasonDetailsTab activeTeamName={activeTeamName} data={reportData} />
+              <SeasonDetailsTab
+                activeTeamName={activeTeamName}
+                roster={teamRoster}
+                data={reportData}
+              />
             ) : null}
           </>
         )}

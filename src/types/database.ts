@@ -76,6 +76,7 @@ export type DbMatchStat = {
   is_first_half_starter: boolean
   is_second_half_starter: boolean
   attending: boolean
+  plus_minus?: number
   created_at: string
 }
 
