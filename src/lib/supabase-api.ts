@@ -1,4 +1,10 @@
-import { matchDateTimeIso } from '@/lib/match-schedule'
+import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
+import {
+  DEFAULT_PRIMARY_POSITION,
+  DEFAULT_SECONDARY_POSITION,
+  legacyPositionToProfile,
+  rosterProfilePositionToLegacy,
+} from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
 import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
@@ -113,12 +119,17 @@ export function scoreToImpact(score: number): Impact {
 }
 
 export function dbPlayerToRoster(player: DbPlayer): RosterPlayer {
+  const primaryPosition = player.primary_position ?? legacyPositionToProfile(player.position)
+  const secondaryPosition = player.secondary_position ?? primaryPosition
+
   return {
     id: player.id,
     teamId: player.team_id,
     number: player.jersey,
     name: player.name,
     position: player.position,
+    primaryPosition,
+    secondaryPosition,
     isGuest: player.is_guest,
     contactInfo: player.contact_info ?? '',
     activeStatus: player.active_status,
@@ -234,28 +245,47 @@ export async function upsertPlayer(input: {
   jersey: number | null
   isGuest?: boolean
   position?: string
+  primaryPosition?: string
+  secondaryPosition?: string
   contactInfo?: string
 }): Promise<DbPlayer> {
   const contact = input.contactInfo?.trim() || null
+  const primaryPosition = input.primaryPosition?.trim() || DEFAULT_PRIMARY_POSITION
+  const secondaryPosition = input.secondaryPosition?.trim() || DEFAULT_SECONDARY_POSITION
+  const legacyPosition = input.position ?? rosterProfilePositionToLegacy(primaryPosition)
   const baseUpdate = {
     name: input.name.trim(),
     jersey: input.jersey,
     is_guest: input.isGuest ?? false,
-    position: input.position ?? 'SUB',
+    position: legacyPosition,
     active_status: true,
   }
 
   if (input.id) {
-    const withContact = { ...baseUpdate, contact_info: contact }
+    const withProfile = {
+      ...baseUpdate,
+      contact_info: contact,
+      primary_position: primaryPosition,
+      secondary_position: secondaryPosition,
+    }
     const { data, error } = await supabase
       .from('players')
-      .update(withContact)
+      .update(withProfile)
       .eq('id', input.id)
       .select()
       .single()
     if (!error) return data
 
     if (isMissingColumnError(error)) {
+      const withContact = { ...baseUpdate, contact_info: contact }
+      const { data: contactData, error: contactError } = await supabase
+        .from('players')
+        .update(withContact)
+        .eq('id', input.id)
+        .select()
+        .single()
+      if (!contactError) return contactData
+
       const { data: legacyData, error: legacyError } = await supabase
         .from('players')
         .update(baseUpdate)
@@ -268,15 +298,29 @@ export async function upsertPlayer(input: {
     throw error
   }
 
-  const withContact = {
+  const withProfile = {
     team_id: input.teamId,
     ...baseUpdate,
     contact_info: contact,
+    primary_position: primaryPosition,
+    secondary_position: secondaryPosition,
   }
-  const { data, error } = await supabase.from('players').insert(withContact).select().single()
+  const { data, error } = await supabase.from('players').insert(withProfile).select().single()
   if (!error) return data
 
   if (isMissingColumnError(error)) {
+    const withContact = {
+      team_id: input.teamId,
+      ...baseUpdate,
+      contact_info: contact,
+    }
+    const { data: contactData, error: contactError } = await supabase
+      .from('players')
+      .insert(withContact)
+      .select()
+      .single()
+    if (!contactError) return contactData
+
     const { data: legacyData, error: legacyError } = await supabase
       .from('players')
       .insert({
@@ -454,6 +498,26 @@ export async function completeMatch(matchId: string) {
     .update({ status: 'completed' })
     .eq('id', matchId)
   if (error) throw error
+}
+
+export async function fetchCompletedMatchesByTeamId(teamId: string): Promise<DbMatch[]> {
+  const { data, error } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('team_id', teamId)
+    .eq('status', 'completed')
+    .order('date', { ascending: false })
+  if (error) throw error
+  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
+}
+
+export async function fetchMatchStatsByMatchId(matchId: string): Promise<DbMatchStat[]> {
+  const { data, error } = await supabase
+    .from('match_stats')
+    .select('*')
+    .eq('match_id', matchId)
+  if (error) throw error
+  return data ?? []
 }
 
 export async function fetchMatchEvents(matchId: string): Promise<DbMatchEvent[]> {

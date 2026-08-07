@@ -2,6 +2,69 @@ export const LIVE_FIELD_POSITIONS = ['Forward', 'Midfielder', 'Defender', 'Keepe
 
 export type LiveFieldPosition = (typeof LIVE_FIELD_POSITIONS)[number]
 
+/** Roster profile positions (stored on players.primary_position / secondary_position). */
+export const ROSTER_PROFILE_POSITIONS = [
+  'Forward',
+  'Midfielder',
+  'Defender',
+  'Goalkeeper',
+] as const
+
+export type RosterProfilePosition = (typeof ROSTER_PROFILE_POSITIONS)[number]
+
+export const DEFAULT_PRIMARY_POSITION: RosterProfilePosition = 'Midfielder'
+export const DEFAULT_SECONDARY_POSITION: RosterProfilePosition = 'Midfielder'
+
+export function isRosterProfilePosition(value: string): value is RosterProfilePosition {
+  return ROSTER_PROFILE_POSITIONS.includes(value as RosterProfilePosition)
+}
+
+export function rosterProfilePositionToLegacy(position: string): string {
+  switch (position) {
+    case 'Forward':
+      return 'CF'
+    case 'Midfielder':
+      return 'CM'
+    case 'Defender':
+      return 'CB'
+    case 'Goalkeeper':
+      return 'GK'
+    default:
+      return 'CM'
+  }
+}
+
+export function legacyPositionToProfile(position: string): RosterProfilePosition {
+  const label = displayMatchPosition(position)
+  if (label === 'Forward') return 'Forward'
+  if (label === 'Midfielder') return 'Midfielder'
+  if (label === 'Defender') return 'Defender'
+  if (label === 'Keeper') return 'Goalkeeper'
+  return DEFAULT_PRIMARY_POSITION
+}
+
+export function rosterPositionAbbrev(position: string): string {
+  switch (position) {
+    case 'Forward':
+      return 'FWD'
+    case 'Midfielder':
+      return 'MID'
+    case 'Defender':
+      return 'DEF'
+    case 'Goalkeeper':
+      return 'GK'
+    default:
+      return position.slice(0, 3).toUpperCase()
+  }
+}
+
+export const ROSTER_POSITION_HINT_CLASS: Record<RosterProfilePosition, string> = {
+  Forward: 'bg-orange-500/20 text-orange-400 ring-orange-500/30',
+  Midfielder: 'bg-blue-500/20 text-blue-400 ring-blue-500/30',
+  Defender: 'bg-emerald-500/20 text-emerald-400 ring-emerald-500/30',
+  Goalkeeper: 'bg-amber-500/20 text-amber-400 ring-amber-500/30',
+}
+
 export function isLiveFieldPosition(value: string): value is LiveFieldPosition {
   return LIVE_FIELD_POSITIONS.includes(value as LiveFieldPosition)
 }

@@ -1,6 +1,13 @@
 import { displayMatchPosition } from '@/lib/positions'
+import {
+  fetchMatchEvents,
+  fetchMatchReviews,
+  fetchMatchStatsByMatchId,
+  rebuildMatchPlayers,
+  scoreToImpact,
+} from '@/lib/supabase-api'
 import type { DbMatchEvent } from '@/types/database'
-import type { Impact, MatchPlayer } from '@/types/match'
+import type { Impact, MatchPlayer, RosterPlayer } from '@/types/match'
 
 export type PlayerRecapStats = {
   playerId: string
@@ -177,4 +184,29 @@ export function buildRecapSummaryText(input: {
     }),
   ]
   return lines.join('\n')
+}
+
+export async function loadHistoricalRecapRows(
+  matchId: string,
+  halfLengthMinutes: number,
+  roster: RosterPlayer[],
+): Promise<PlayerRecapReview[]> {
+  const [events, stats, existingReviews] = await Promise.all([
+    fetchMatchEvents(matchId),
+    fetchMatchStatsByMatchId(matchId),
+    fetchMatchReviews(matchId).catch(() => []),
+  ])
+
+  const players = rebuildMatchPlayers(roster, stats)
+  const eventStats = aggregatePlayerRecaps(events, halfLengthMinutes * 60)
+  const reviewsMap = new Map<string, { impact: Impact; notes: string }>()
+
+  for (const review of existingReviews) {
+    reviewsMap.set(review.player_id, {
+      impact: scoreToImpact(review.impact_score),
+      notes: review.review_notes ?? '',
+    })
+  }
+
+  return buildRecapRows(players, eventStats, reviewsMap)
 }

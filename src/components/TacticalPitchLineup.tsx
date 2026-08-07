@@ -9,6 +9,11 @@ import {
   type Formation,
   type FormationRole,
 } from '@/lib/formations'
+import {
+  ROSTER_POSITION_HINT_CLASS,
+  isRosterProfilePosition,
+  rosterPositionAbbrev,
+} from '@/lib/positions'
 import { cn } from '@/lib/utils'
 
 export type PitchLineupPlayer = {
@@ -19,6 +24,8 @@ export type PitchLineupPlayer = {
   badge?: string
   meta?: string
   matchPosition?: string
+  primaryPosition?: string
+  secondaryPosition?: string
 }
 
 type TacticalPitchLineupProps = {
@@ -48,6 +55,32 @@ function GuestBadge() {
   return (
     <span className="rounded-full bg-black/30 px-1 py-0.5 text-[8px] font-bold uppercase text-white">
       G
+    </span>
+  )
+}
+
+function RosterPositionHint({
+  position,
+  variant,
+}: {
+  position: string
+  variant: 'primary' | 'secondary'
+}) {
+  const abbrev = rosterPositionAbbrev(position)
+  const colorClass = isRosterProfilePosition(position)
+    ? ROSTER_POSITION_HINT_CLASS[position]
+    : 'bg-secondary text-muted-foreground ring-border'
+
+  return (
+    <span
+      title={`${variant === 'primary' ? 'Primary' : 'Secondary'}: ${position}`}
+      className={cn(
+        'inline-flex items-center rounded px-1 py-0.5 text-[9px] font-black uppercase tabular-nums ring-1',
+        colorClass,
+        variant === 'secondary' && 'opacity-75',
+      )}
+    >
+      {abbrev}
     </span>
   )
 }
@@ -142,6 +175,13 @@ function PoolPlayerChip({
           <span className="flex flex-wrap items-center gap-1">
             <span className="truncate text-sm font-bold text-foreground">{player.name}</span>
             {player.isGuest && <GuestBadge />}
+            {player.primaryPosition && (
+              <RosterPositionHint position={player.primaryPosition} variant="primary" />
+            )}
+            {player.secondaryPosition &&
+              player.secondaryPosition !== player.primaryPosition && (
+                <RosterPositionHint position={player.secondaryPosition} variant="secondary" />
+              )}
           </span>
           {player.badge && (
             <span className="text-[10px] font-semibold text-muted-foreground">{player.badge}</span>
@@ -253,14 +293,10 @@ export function TacticalPitchLineup({
     }
 
     setSlotAssignments(Object.fromEntries(formation.slots.map((s) => [s.id, null])))
-  }, [
-    assignmentsResetKey,
-    formation,
-    hydrateFromStarters,
-    initialSlotAssignments,
-    players,
-    starters,
-  ])
+    // Only re-hydrate when parent explicitly bumps assignmentsResetKey (load preset, reset editor).
+    // Do not depend on `players`, `starters`, or `formation` — those change on every assign/render
+    // and were wiping drag-and-drop / tap assignments immediately after placement.
+  }, [assignmentsResetKey])
 
   useEffect(() => {
     if (assignmentsRef) assignmentsRef.current = slotAssignments

@@ -27,6 +27,8 @@ create table if not exists public.players (
   contact_info text,
   -- Roster position used by the lineup builder (GK, CB, CM, etc.)
   position text not null default 'SUB',
+  primary_position text not null default 'Midfielder',
+  secondary_position text not null default 'Midfielder',
   created_at timestamptz not null default now(),
   unique (team_id, jersey)
 );

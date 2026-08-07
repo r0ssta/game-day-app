@@ -13,6 +13,8 @@ export type RosterPlayer = {
   number: number | null
   name: string
   position: string
+  primaryPosition: string
+  secondaryPosition: string
   isGuest: boolean
   contactInfo: string
   activeStatus: boolean

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   ArrowLeft,
-  BarChart3,
+  History,
   LayoutGrid,
   Pencil,
   Save,
@@ -10,15 +10,25 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react'
+import { MatchRecapDetailView } from '@/components/MatchRecapDetailView'
+import {
+  DEFAULT_PRIMARY_POSITION,
+  DEFAULT_SECONDARY_POSITION,
+  RosterPositionFields,
+} from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
+import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { parseFormationJson } from '@/lib/lineup-presets'
 import { MAX_FIELD_PLAYERS } from '@/lib/lineup'
+import { fetchCompletedMatchesByTeamId } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
-import type { DbLineupPreset } from '@/types/database'
+import type { DbLineupPreset, DbMatch } from '@/types/database'
+import type { RosterProfilePosition } from '@/lib/positions'
+
 import type { RosterPlayer } from '@/types/match'
 
 type NamedEntity = { id: string; name: string }
-type TeamTab = 'roster' | 'lineups' | 'reports'
+type TeamTab = 'roster' | 'lineups' | 'history'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
@@ -61,11 +71,20 @@ type TeamManagementScreenProps = {
     name: string
     jersey: number | null
     isGuest: boolean
+    primaryPosition?: string
+    secondaryPosition?: string
     contactInfo?: string
   }) => Promise<unknown>
   onUpdatePlayer: (
     id: string,
-    updates: { name: string; jersey: number | null; isGuest: boolean; contactInfo?: string },
+    updates: {
+      name: string
+      jersey: number | null
+      isGuest: boolean
+      primaryPosition?: string
+      secondaryPosition?: string
+      contactInfo?: string
+    },
   ) => Promise<unknown>
   onSetPlayerActive: (id: string, active: boolean) => Promise<void>
   onSavePreset: (input: {
@@ -101,10 +120,20 @@ function TeamRosterTab({
   const [name, setName] = useState('')
   const [number, setNumber] = useState('')
   const [contactInfo, setContactInfo] = useState('')
+  const [primaryPosition, setPrimaryPosition] = useState<RosterProfilePosition>(DEFAULT_PRIMARY_POSITION)
+  const [secondaryPosition, setSecondaryPosition] =
+    useState<RosterProfilePosition>(DEFAULT_SECONDARY_POSITION)
   const [isGuest, setIsGuest] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState({ name: '', number: '', contactInfo: '', isGuest: false })
+  const [editDraft, setEditDraft] = useState({
+    name: '',
+    number: '',
+    contactInfo: '',
+    isGuest: false,
+    primaryPosition: DEFAULT_PRIMARY_POSITION as RosterProfilePosition,
+    secondaryPosition: DEFAULT_SECONDARY_POSITION as RosterProfilePosition,
+  })
 
   const activePlayers = teamRoster.filter((p) => p.activeStatus)
   const inactivePlayers = teamRoster.filter((p) => !p.activeStatus)
@@ -113,6 +142,8 @@ function TeamRosterTab({
     setName('')
     setNumber('')
     setContactInfo('')
+    setPrimaryPosition(DEFAULT_PRIMARY_POSITION)
+    setSecondaryPosition(DEFAULT_SECONDARY_POSITION)
     setIsGuest(false)
     setShowAddForm(false)
   }
@@ -129,7 +160,14 @@ function TeamRosterTab({
     }
     setSaving(true)
     try {
-      await onAddPlayer({ name: trimmed, jersey, isGuest, contactInfo: contactInfo.trim() })
+      await onAddPlayer({
+        name: trimmed,
+        jersey,
+        isGuest,
+        primaryPosition,
+        secondaryPosition,
+        contactInfo: contactInfo.trim(),
+      })
       onToast(`Added ${trimmed}`)
       resetAddForm()
     } catch (err) {
@@ -146,6 +184,8 @@ function TeamRosterTab({
       number: player.number !== null ? String(player.number) : '',
       contactInfo: player.contactInfo,
       isGuest: player.isGuest,
+      primaryPosition: player.primaryPosition as RosterProfilePosition,
+      secondaryPosition: player.secondaryPosition as RosterProfilePosition,
     })
   }
 
@@ -165,6 +205,8 @@ function TeamRosterTab({
         name: trimmed,
         jersey,
         isGuest: editDraft.isGuest,
+        primaryPosition: editDraft.primaryPosition,
+        secondaryPosition: editDraft.secondaryPosition,
         contactInfo: editDraft.contactInfo.trim(),
       })
       onToast('Player updated')
@@ -205,6 +247,14 @@ function TeamRosterTab({
               placeholder="Contact"
             />
           </div>
+          <RosterPositionFields
+            idPrefix={`edit-${player.id}`}
+            compact
+            primaryPosition={editDraft.primaryPosition}
+            secondaryPosition={editDraft.secondaryPosition}
+            onPrimaryChange={(value) => setEditDraft((d) => ({ ...d, primaryPosition: value }))}
+            onSecondaryChange={(value) => setEditDraft((d) => ({ ...d, secondaryPosition: value }))}
+          />
           <div className="flex gap-2">
             <button
               type="button"
@@ -239,11 +289,15 @@ function TeamRosterTab({
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate font-bold text-foreground">{player.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {player.primaryPosition}
+            {player.secondaryPosition && player.secondaryPosition !== player.primaryPosition
+              ? ` · ${player.secondaryPosition}`
+              : ''}
+          </p>
           {player.contactInfo ? (
             <p className="truncate text-xs text-muted-foreground">{player.contactInfo}</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">No contact info</p>
-          )}
+          ) : null}
           {player.isGuest && (
             <span className="mt-0.5 inline-block rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase">
               Guest
@@ -318,6 +372,14 @@ function TeamRosterTab({
               className="rounded-lg border border-border bg-background px-3 py-2.5"
             />
           </div>
+          <RosterPositionFields
+            idPrefix="team-add-player"
+            compact
+            primaryPosition={primaryPosition}
+            secondaryPosition={secondaryPosition}
+            onPrimaryChange={setPrimaryPosition}
+            onSecondaryChange={setSecondaryPosition}
+          />
           <label className="flex items-center gap-2 text-sm font-semibold">
             <input type="checkbox" checked={isGuest} onChange={(e) => setIsGuest(e.target.checked)} />
             Guest player
@@ -504,13 +566,17 @@ function TeamLineupsTab({
             key={`${selectedTeamId}-${assignmentsKey}`}
             title="Preset Formation"
             formationId={formationId}
-            onFormationChange={setFormationId}
+            onFormationChange={(id) => {
+              setFormationId(id)
+              setInitialSlotAssignments(undefined)
+            }}
             players={activeRoster.map((player) => ({
               id: player.id,
               name: player.name,
               number: player.number,
               isGuest: player.isGuest,
-              meta: `Roster: ${player.position}`,
+              primaryPosition: player.primaryPosition,
+              secondaryPosition: player.secondaryPosition,
             }))}
             attending={attending}
             starters={starters}
@@ -536,118 +602,121 @@ function TeamLineupsTab({
   )
 }
 
-function TeamReportsTab() {
-  const mockMinutes = [
-    { name: 'Alex', minutes: 420 },
-    { name: 'Jordan', minutes: 380 },
-    { name: 'Sam', minutes: 310 },
-    { name: 'Riley', minutes: 285 },
-  ]
-  const maxMinutes = mockMinutes[0]?.minutes ?? 1
+function TeamMatchHistoryTab({
+  selectedTeamId,
+  onViewRecap,
+}: {
+  selectedTeamId: string | null
+  onViewRecap: (match: DbMatch) => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [matches, setMatches] = useState<DbMatch[]>([])
 
-  const mockFormations = [
-    { formation: '3-3-2', goalsFor: 12, goalsAgainst: 4 },
-    { formation: '3-2-3', goalsFor: 8, goalsAgainst: 6 },
-    { formation: '2-3-1', goalsFor: 5, goalsAgainst: 3 },
-  ]
+  useEffect(() => {
+    if (!selectedTeamId) {
+      setMatches([])
+      setLoading(false)
+      setLoadError(null)
+      return
+    }
 
-  const mockRatings = [
-    { name: 'Alex', positive: 8, neutral: 2, negative: 1 },
-    { name: 'Jordan', positive: 6, neutral: 4, negative: 0 },
-  ]
+    let cancelled = false
+
+    void (async () => {
+      setLoading(true)
+      setLoadError(null)
+      try {
+        const completed = await fetchCompletedMatchesByTeamId(selectedTeamId)
+        if (!cancelled) setMatches(completed)
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load match history')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedTeamId])
+
+  if (!selectedTeamId) {
+    return (
+      <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+        Select a team to view completed matches.
+      </p>
+    )
+  }
+
+  if (loading) {
+    return (
+      <p className="py-8 text-center text-sm font-semibold text-muted-foreground">
+        Loading match history…
+      </p>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-danger/40 bg-card p-6 text-center">
+        <p className="font-bold text-danger">Failed to load match history</p>
+        <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3">
-        <p className="text-sm font-semibold text-foreground">
-          Reports pull automatically from finalized match logs and post-game reviews.
-        </p>
+    <div className="space-y-4">
+      <div>
+        <h2 className="font-display text-base font-bold uppercase tracking-wide text-foreground">
+          Match History & Recaps
+        </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Season analytics are coming soon — preview layouts below use sample data.
+          Completed matches with post-game stats, ratings, and coach notes.
         </p>
       </div>
 
-      <section className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-display text-base font-bold uppercase tracking-wide text-foreground">
-            Playing Time Distribution
-          </h2>
-          <span className="rounded bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
-            Coming Soon
-          </span>
-        </div>
-        <p className="mb-4 text-xs text-muted-foreground">Total minutes per player across the season.</p>
-        <ul className="space-y-2">
-          {mockMinutes.map((row) => (
-            <li key={row.name}>
-              <div className="mb-1 flex justify-between text-xs font-semibold">
-                <span>{row.name}</span>
-                <span className="tabular-nums text-muted-foreground">{row.minutes}m</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                <div
-                  className="h-full rounded-full bg-athletic"
-                  style={{ width: `${(row.minutes / maxMinutes) * 100}%` }}
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-display text-base font-bold uppercase tracking-wide text-foreground">
-            Tactical Breakdown
-          </h2>
-          <span className="rounded bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
-            Coming Soon
-          </span>
-        </div>
-        <p className="mb-4 text-xs text-muted-foreground">
-          Goals scored and conceded by formation used during matches.
+      {matches.length === 0 ? (
+        <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+          No completed matches yet. Finish a game to see it here.
         </p>
+      ) : (
         <ul className="space-y-3">
-          {mockFormations.map((row) => (
-            <li key={row.formation} className="rounded-lg bg-secondary/40 px-3 py-2.5">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-foreground">{row.formation}</span>
-                <span className="text-xs font-semibold tabular-nums text-muted-foreground">
-                  GF {row.goalsFor} · GA {row.goalsAgainst}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+          {matches.map((match) => {
+            const { dateLabel, timeLabel } = formatMatchDisplayDateTime(match)
 
-      <section className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-display text-base font-bold uppercase tracking-wide text-foreground">
-            Player Rating Trends
-          </h2>
-          <span className="rounded bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
-            Coming Soon
-          </span>
-        </div>
-        <p className="mb-4 text-xs text-muted-foreground">
-          Aggregated + / − / = post-game reviews and coach comments over time.
-        </p>
-        <ul className="space-y-3">
-          {mockRatings.map((row) => (
-            <li key={row.name} className="flex items-center justify-between rounded-lg bg-secondary/40 px-3 py-2.5">
-              <span className="font-bold text-foreground">{row.name}</span>
-              <span className="text-xs font-bold tabular-nums">
-                <span className="text-neon">+{row.positive}</span>
-                <span className="mx-1 text-muted-foreground">/</span>
-                <span className="text-muted-foreground">={row.neutral}</span>
-                <span className="mx-1 text-muted-foreground">/</span>
-                <span className="text-danger">−{row.negative}</span>
-              </span>
-            </li>
-          ))}
+            return (
+              <li
+                key={match.id}
+                className="rounded-xl border border-border bg-card p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-foreground">{dateLabel}</p>
+                    <p className="text-xs text-muted-foreground">{timeLabel}</p>
+                    <p className="mt-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
+                      vs {match.opponent}
+                    </p>
+                    <p className="mt-1 font-mono text-sm font-bold tabular-nums text-blue-400">
+                      Final {match.home_score} – {match.away_score}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onViewRecap(match)}
+                    className="shrink-0 rounded-lg bg-neon px-3 py-2 text-xs font-bold uppercase tracking-wide text-neon-foreground active:scale-95"
+                  >
+                    View Recap
+                  </button>
+                </div>
+              </li>
+            )
+          })}
         </ul>
-      </section>
+      )}
     </div>
   )
 }
@@ -655,10 +724,28 @@ function TeamReportsTab() {
 export function TeamManagementScreen(props: TeamManagementScreenProps) {
   const { teams, selectedTeamId, onTeamChange, onBack } = props
   const [tab, setTab] = useState<TeamTab>('roster')
+  const [selectedHistoryMatch, setSelectedHistoryMatch] = useState<DbMatch | null>(null)
+
+  const teamName = teams.find((team) => team.id === selectedTeamId)?.name ?? 'Team'
 
   useEffect(() => {
     void props.onRefreshRoster()
   }, [selectedTeamId, props.onRefreshRoster])
+
+  useEffect(() => {
+    setSelectedHistoryMatch(null)
+  }, [selectedTeamId, tab])
+
+  if (selectedHistoryMatch) {
+    return (
+      <MatchRecapDetailView
+        match={selectedHistoryMatch}
+        teamName={teamName}
+        roster={props.teamRoster}
+        onBack={() => setSelectedHistoryMatch(null)}
+      />
+    )
+  }
 
   return (
     <main className="min-h-dvh bg-background pb-10">
@@ -677,7 +764,7 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
               Team Management
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Roster, preset lineups, and season reports for your squad.
+              Roster, preset lineups, and match history for your squad.
             </p>
           </div>
         </header>
@@ -720,10 +807,10 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
               Lineups
             </span>
           </TabButton>
-          <TabButton active={tab === 'reports'} onClick={() => setTab('reports')}>
+          <TabButton active={tab === 'history'} onClick={() => setTab('history')}>
             <span className="inline-flex items-center justify-center gap-1">
-              <BarChart3 className="size-3.5" />
-              Reports
+              <History className="size-3.5" />
+              History
             </span>
           </TabButton>
         </div>
@@ -751,7 +838,12 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
             onToast={props.onToast}
           />
         )}
-        {tab === 'reports' && <TeamReportsTab />}
+        {tab === 'history' && (
+          <TeamMatchHistoryTab
+            selectedTeamId={props.selectedTeamId}
+            onViewRecap={setSelectedHistoryMatch}
+          />
+        )}
       </div>
     </main>
   )

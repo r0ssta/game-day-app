@@ -70,3 +70,10 @@ create policy "lineup_presets_select_all" on public.lineup_presets for select to
 create policy "lineup_presets_insert_all" on public.lineup_presets for insert to anon, authenticated with check (true);
 create policy "lineup_presets_update_all" on public.lineup_presets for update to anon, authenticated using (true) with check (true);
 create policy "lineup_presets_delete_all" on public.lineup_presets for delete to anon, authenticated using (true);
+
+-- Roster primary / secondary positions
+alter table public.players
+  add column if not exists primary_position text not null default 'Midfielder';
+
+alter table public.players
+  add column if not exists secondary_position text not null default 'Midfielder';

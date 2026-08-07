@@ -14,6 +14,11 @@ import {
   type PositionReassignUpdate,
 } from '@/components/LiveTacticalPitch'
 import { PostGameRecap } from '@/components/PostGameRecap'
+import {
+  DEFAULT_PRIMARY_POSITION,
+  DEFAULT_SECONDARY_POSITION,
+  RosterPositionFields,
+} from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
 import type { FormationRole } from '@/lib/formations'
@@ -33,6 +38,7 @@ import {
 } from '@/lib/play-time'
 import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS, tickCountdownClock, type QaSpeedMultiplier } from '@/lib/match-clock'
 import { ADD_NEW_OPTION } from '@/lib/named-entities'
+import type { RosterProfilePosition } from '@/lib/positions'
 import {
   syncMatchClock,
   syncMatchEvent,
@@ -282,12 +288,20 @@ type PlayerEditDraft = {
   name: string
   number: string
   isGuest: boolean
+  primaryPosition: RosterProfilePosition
+  secondaryPosition: RosterProfilePosition
 }
 
 type AddPlayerToRosterProps = {
   selectedTeamId: string | null
   suggestedJersey: number
-  onAdd: (input: { name: string; jersey: number | null; isGuest: boolean }) => Promise<void>
+  onAdd: (input: {
+    name: string
+    jersey: number | null
+    isGuest: boolean
+    primaryPosition?: string
+    secondaryPosition?: string
+  }) => Promise<void>
 }
 
 function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayerToRosterProps) {
@@ -295,6 +309,9 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
   const [name, setName] = useState('')
   const [number, setNumber] = useState('')
   const [isGuest, setIsGuest] = useState(false)
+  const [primaryPosition, setPrimaryPosition] = useState<RosterProfilePosition>(DEFAULT_PRIMARY_POSITION)
+  const [secondaryPosition, setSecondaryPosition] =
+    useState<RosterProfilePosition>(DEFAULT_SECONDARY_POSITION)
   const [saving, setSaving] = useState(false)
 
   const teamSelected = Boolean(selectedTeamId)
@@ -304,6 +321,8 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
     setName('')
     setIsGuest(false)
     setNumber('')
+    setPrimaryPosition(DEFAULT_PRIMARY_POSITION)
+    setSecondaryPosition(DEFAULT_SECONDARY_POSITION)
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -321,7 +340,13 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
 
     setSaving(true)
     try {
-      await onAdd({ name: trimmed, jersey, isGuest })
+      await onAdd({
+        name: trimmed,
+        jersey,
+        isGuest,
+        primaryPosition,
+        secondaryPosition,
+      })
       resetForm()
       setExpanded(false)
     } finally {
@@ -407,6 +432,14 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
             />
           </div>
 
+          <RosterPositionFields
+            idPrefix="setup-add-player"
+            primaryPosition={primaryPosition}
+            secondaryPosition={secondaryPosition}
+            onPrimaryChange={setPrimaryPosition}
+            onSecondaryChange={setSecondaryPosition}
+          />
+
           <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
             <label htmlFor="new-player-guest" className="text-sm font-bold text-foreground">
               Is Guest Player?
@@ -454,7 +487,13 @@ type SetupScreenProps = {
   onAddCoach: (name: string) => Promise<void>
   rosterLoading: boolean
   suggestedJersey: number
-  onAddPlayer: (input: { name: string; jersey: number | null; isGuest: boolean }) => Promise<void>
+  onAddPlayer: (input: {
+    name: string
+    jersey: number | null
+    isGuest: boolean
+    primaryPosition?: string
+    secondaryPosition?: string
+  }) => Promise<void>
   opponent: string
   onOpponentChange: (value: string) => void
   matchDate: string
@@ -754,6 +793,8 @@ function SetupScreen({
                   name: player.name,
                   number: player.number,
                   isGuest: player.isGuest,
+                  primaryPosition: player.primaryPosition,
+                  secondaryPosition: player.secondaryPosition,
                   meta: `Roster: ${player.position}`,
                 }))}
                 attending={setupLineup.attending}
@@ -965,6 +1006,14 @@ function PlayerEditModal({
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold tabular-nums text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
             />
           </div>
+
+          <RosterPositionFields
+            idPrefix="edit-player-modal"
+            primaryPosition={draft.primaryPosition}
+            secondaryPosition={draft.secondaryPosition}
+            onPrimaryChange={(value) => onChange({ ...draft, primaryPosition: value })}
+            onSecondaryChange={(value) => onChange({ ...draft, secondaryPosition: value })}
+          />
 
           <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
             <label htmlFor="edit-player-guest" className="text-sm font-bold text-foreground">
@@ -1417,6 +1466,8 @@ export default function App() {
         name: player.name,
         number: player.number !== null ? String(player.number) : '',
         isGuest: player.isGuest,
+        primaryPosition: player.primaryPosition as RosterProfilePosition,
+        secondaryPosition: player.secondaryPosition as RosterProfilePosition,
       })
     },
     [masterRoster],
@@ -1436,7 +1487,13 @@ export default function App() {
     }
 
     try {
-      await updatePlayer(editDraft.id, { name, jersey, isGuest: editDraft.isGuest })
+      await updatePlayer(editDraft.id, {
+        name,
+        jersey,
+        isGuest: editDraft.isGuest,
+        primaryPosition: editDraft.primaryPosition,
+        secondaryPosition: editDraft.secondaryPosition,
+      })
       setEditDraft(null)
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Failed to save player')
@@ -1444,7 +1501,13 @@ export default function App() {
   }, [editDraft, updatePlayer])
 
   const handleAddPlayer = useCallback(
-    async (input: { name: string; jersey: number | null; isGuest: boolean }) => {
+    async (input: {
+      name: string
+      jersey: number | null
+      isGuest: boolean
+      primaryPosition?: string
+      secondaryPosition?: string
+    }) => {
       try {
         await addPlayer(input)
         const jerseyLabel = input.jersey !== null ? `#${input.jersey} ` : ''

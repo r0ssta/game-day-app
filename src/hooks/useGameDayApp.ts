@@ -394,6 +394,8 @@ export function useGameDayApp() {
       jersey: number | null
       isGuest: boolean
       position?: string
+      primaryPosition?: string
+      secondaryPosition?: string
       contactInfo?: string
     }) => {
       if (!selectedTeamId) throw new Error('Select a team before adding players')
@@ -404,6 +406,8 @@ export function useGameDayApp() {
         jersey: input.jersey,
         isGuest: input.isGuest,
         position: input.position,
+        primaryPosition: input.primaryPosition,
+        secondaryPosition: input.secondaryPosition,
         contactInfo: input.contactInfo,
       })
       const rosterPlayer = dbPlayerToRoster(created)
@@ -429,7 +433,14 @@ export function useGameDayApp() {
   const updatePlayer = useCallback(
     async (
       id: string,
-      updates: { name: string; jersey: number | null; isGuest: boolean; contactInfo?: string },
+      updates: {
+        name: string
+        jersey: number | null
+        isGuest: boolean
+        primaryPosition?: string
+        secondaryPosition?: string
+        contactInfo?: string
+      },
     ) => {
       const existing = masterRoster.find((p) => p.id === id) ?? teamRoster.find((p) => p.id === id)
       if (!existing) throw new Error('Player not found')
@@ -440,6 +451,8 @@ export function useGameDayApp() {
         name: updates.name,
         jersey: updates.jersey,
         isGuest: updates.isGuest,
+        primaryPosition: updates.primaryPosition ?? existing.primaryPosition,
+        secondaryPosition: updates.secondaryPosition ?? existing.secondaryPosition,
         contactInfo: updates.contactInfo,
       })
       const rosterPlayer = dbPlayerToRoster(updated)

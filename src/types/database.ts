@@ -18,6 +18,8 @@ export type DbPlayer = {
   active_status: boolean
   is_guest: boolean
   position: string
+  primary_position: string | null
+  secondary_position: string | null
   contact_info: string | null
   created_at: string
 }
