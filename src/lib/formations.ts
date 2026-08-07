@@ -193,6 +193,25 @@ export function slotToTacticalPosition(slot: FormationSlot): string {
   return roleToTacticalPosition(slot.role)
 }
 
+/** Derive per-player tactical positions from saved pitch slot assignments. */
+export function matchPositionsFromSlotAssignments(
+  slotAssignments: Record<string, string | null>,
+  formationId: string,
+  format?: TeamFormat,
+): Record<string, string> {
+  const formation = getFormationById(formationId, format)
+  const slotById = new Map(formation.slots.map((slot) => [slot.id, slot]))
+  const positions: Record<string, string> = {}
+
+  for (const [slotId, playerId] of Object.entries(slotAssignments)) {
+    if (!playerId) continue
+    const slot = slotById.get(slotId)
+    if (slot) positions[playerId] = slotToTacticalPosition(slot)
+  }
+
+  return positions
+}
+
 export function getFormationsForFormat(format: TeamFormat): Formation[] {
   return FORMATIONS.filter((formation) => formation.format === format)
 }

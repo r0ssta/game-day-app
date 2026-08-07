@@ -26,7 +26,7 @@ import {
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
 import type { FormationRole, FormationRemapResult } from '@/lib/formations'
-import { getFormationLabel } from '@/lib/formations'
+import { getFormationLabel, matchPositionsFromSlotAssignments } from '@/lib/formations'
 import {
   getAttendingIds,
   getFirstHalfStarterIds,
@@ -1467,6 +1467,18 @@ export default function App() {
         setupLineup,
         setupAssignmentsRef.current,
       )
+      const slotAssignments = setupAssignmentsRef.current
+      const resolvedMatchPositions =
+        slotAssignments && Object.values(slotAssignments).some(Boolean)
+          ? {
+              ...matchPositions,
+              ...matchPositionsFromSlotAssignments(
+                slotAssignments,
+                matchFormations.first,
+                activeTeamFormat,
+              ),
+            }
+          : matchPositions
       const attendingPlayers = masterRoster.filter(
         (p) => resolvedLineup.attending[p.id] !== false,
       )
@@ -1483,7 +1495,7 @@ export default function App() {
         matchTime,
         attendingPlayers,
         firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
-        matchPositions,
+        matchPositions: resolvedMatchPositions,
         firstHalfFormation: matchFormations.first,
       })
 
@@ -1510,6 +1522,7 @@ export default function App() {
     matchTime,
     matchPositions,
     matchFormations,
+    activeTeamFormat,
     beginMatch,
   ])
 

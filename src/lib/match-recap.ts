@@ -93,23 +93,18 @@ export function computePlayerPositionsFromTimeline(
     (event) => event.player_id === playerId && event.event_type !== 'opponent_goal',
   )
   const positions: string[] = []
-  let onField = false
 
   for (const event of playerEvents) {
     switch (event.event_type) {
       case 'sub_in':
-        onField = true
         if (event.event_notes?.trim()) {
           addRecapPosition(positions, event.event_notes)
+        } else if (positions.length === 0 && fallbackPosition) {
+          addRecapPosition(positions, fallbackPosition)
         }
-        break
-      case 'sub_out':
-        onField = false
         break
       case 'position_change':
-        if (onField) {
-          addRecapPosition(positions, event.event_notes)
-        }
+        addRecapPosition(positions, event.event_notes)
         break
     }
   }

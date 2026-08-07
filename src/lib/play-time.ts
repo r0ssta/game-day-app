@@ -1,5 +1,5 @@
 import { normalizeMatchPosition } from '@/lib/positions'
-import { getFormationById, roleToTacticalPosition } from '@/lib/formations'
+import { getFormationById, slotToTacticalPosition } from '@/lib/formations'
 import type { MatchPlayer, RosterPlayer } from '@/types/match'
 
 type CreateMatchPlayerInput = {
@@ -110,7 +110,7 @@ export function applySlotAssignmentPositions(
   return players.map((player) => {
     const slot = playerSlot.get(player.id)
     if (!slot) return player
-    return { ...player, matchPosition: roleToTacticalPosition(slot.role) }
+    return { ...player, matchPosition: slotToTacticalPosition(slot) }
   })
 }
 

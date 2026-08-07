@@ -2,7 +2,7 @@ import {
   getFormationById,
   getDefaultFormationId,
   isFormationValidForFormat,
-  roleToTacticalPosition,
+  slotToTacticalPosition,
   type Formation,
 } from '@/lib/formations'
 import { ensureSetupLineup } from '@/lib/lineup'
@@ -107,7 +107,7 @@ export function applyPresetToSetup(
   for (const slot of formation.slots) {
     const playerId = slotAssignments[slot.id]
     if (playerId) {
-      matchPositions[playerId] = roleToTacticalPosition(slot.role)
+      matchPositions[playerId] = slotToTacticalPosition(slot)
     }
   }
 
@@ -148,7 +148,7 @@ export function applyPresetToHalftime(
   for (const slot of formation.slots) {
     const playerId = slotAssignments[slot.id]
     if (playerId) {
-      matchPositions[playerId] = roleToTacticalPosition(slot.role)
+      matchPositions[playerId] = slotToTacticalPosition(slot)
     }
   }
 

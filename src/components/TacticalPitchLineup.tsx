@@ -7,7 +7,7 @@ import {
   getFormationById,
   getFormationsForFormat,
   remapFormationSlotAssignments,
-  roleToTacticalPosition,
+  slotToTacticalPosition,
   type FormationRole,
 } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
@@ -310,7 +310,7 @@ export function TacticalPitchLineup({
           const slotId = Object.entries(initialSlotAssignments).find(([, id]) => id === player.id)?.[0]
           const slot = formation.slots.find((s) => s.id === slotId)
           if (slot) {
-            onAssignStarter(player.id, slot.role, roleToTacticalPosition(slot.role))
+            onAssignStarter(player.id, slot.role, slotToTacticalPosition(slot))
           }
         } else {
           onRemoveStarter(player.id)
@@ -363,7 +363,7 @@ export function TacticalPitchLineup({
         return next
       })
 
-      onAssignStarter(playerId, slot.role, roleToTacticalPosition(slot.role))
+      onAssignStarter(playerId, slot.role, slotToTacticalPosition(slot))
       setSelectedPlayerId(null)
       setSelectedSlotId(null)
     },
@@ -415,6 +415,7 @@ export function TacticalPitchLineup({
         matchPosition: p.matchPosition ?? p.meta,
         position: p.primaryPosition,
       })),
+      { mapSlotToPosition: slotToTacticalPosition },
     )
 
     for (const playerId of assignedPlayerIds) {
@@ -426,7 +427,7 @@ export function TacticalPitchLineup({
       if (!playerId) continue
       const slot = nextFormation.slots.find((s) => s.id === slotId)
       if (!slot) continue
-      onAssignStarter(playerId, slot.role, roleToTacticalPosition(slot.role))
+      onAssignStarter(playerId, slot.role, slotToTacticalPosition(slot))
     }
 
     setFormationId(nextId)
