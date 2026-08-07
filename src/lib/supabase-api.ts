@@ -13,10 +13,10 @@ import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/mat
 
 export type MatchEventInput = {
   matchId: string
-  playerId: string
-  eventType: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change'
+  eventType: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change' | 'opponent_goal'
   timestamp: number
   formation: string
+  playerId?: string | null
   eventNotes?: string | null
   assistPlayerId?: string | null
 }
@@ -24,7 +24,7 @@ export type MatchEventInput = {
 function matchEventToRow(event: MatchEventInput, includeExtended = true) {
   const row = {
     match_id: event.matchId,
-    player_id: event.playerId,
+    player_id: event.playerId ?? null,
     event_type: event.eventType,
     timestamp: event.timestamp,
     event_notes: event.eventNotes ?? null,
@@ -214,7 +214,22 @@ export async function setPlayerActiveStatus(playerId: string, active: boolean): 
 
 export async function insertTeam(name: string): Promise<DbTeam> {
   const trimmed = name.trim()
-  const { data, error } = await supabase.from('teams').insert({ name: trimmed }).select().single()
+  const { data, error } = await supabase
+    .from('teams')
+    .insert({ name: trimmed, format: '9v9' })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateTeamFormat(teamId: string, format: string): Promise<DbTeam> {
+  const { data, error } = await supabase
+    .from('teams')
+    .update({ format })
+    .eq('id', teamId)
+    .select()
+    .single()
   if (error) throw error
   return data
 }
@@ -484,11 +499,19 @@ export async function upsertMatchStats(matchId: string, players: MatchPlayer[]) 
 }
 
 export async function insertMatchEvent(input: MatchEventInput) {
+  if (input.eventType !== 'opponent_goal' && !input.playerId) {
+    throw new Error('playerId is required for this event type')
+  }
   await insertMatchEventRows([matchEventToRow(input)])
 }
 
 export async function insertMatchEvents(events: MatchEventInput[]) {
   if (events.length === 0) return
+  for (const event of events) {
+    if (event.eventType !== 'opponent_goal' && !event.playerId) {
+      throw new Error('playerId is required for this event type')
+    }
+  }
   await insertMatchEventRows(events.map((event) => matchEventToRow(event)))
 }
 

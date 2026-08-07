@@ -9,7 +9,7 @@ alter table public.match_events
 
 alter table public.match_events
   add constraint match_events_event_type_check
-  check (event_type in ('goal', 'assist', 'sub_in', 'sub_out', 'position_change'));
+  check (event_type in ('goal', 'assist', 'sub_in', 'sub_out', 'position_change', 'opponent_goal'));
 
 -- Formation snapshot on events
 alter table public.match_events
@@ -81,3 +81,32 @@ alter table public.players
 -- Coach executive summary on completed matches
 alter table public.matches
   add column if not exists coach_summary_notes text;
+
+-- Team match format (7v7, 9v9, 11v11)
+alter table public.teams
+  add column if not exists format text not null default '9v9';
+
+alter table public.teams
+  drop constraint if exists teams_format_check;
+
+alter table public.teams
+  add constraint teams_format_check
+  check (format in ('7v7', '9v9', '11v11'));
+
+-- Opponent goal events (no player attribution)
+alter table public.match_events
+  drop constraint if exists match_events_event_type_check;
+
+alter table public.match_events
+  add constraint match_events_event_type_check
+  check (event_type in ('goal', 'assist', 'sub_in', 'sub_out', 'position_change', 'opponent_goal'));
+
+alter table public.match_events
+  alter column player_id drop not null;
+
+alter table public.match_events
+  drop constraint if exists match_events_player_required_check;
+
+alter table public.match_events
+  add constraint match_events_player_required_check
+  check (event_type = 'opponent_goal' or player_id is not null);

@@ -1,6 +1,13 @@
-import { getFormationById, roleToTacticalPosition, type Formation } from '@/lib/formations'
+import {
+  getFormationById,
+  getDefaultFormationId,
+  isFormationValidForFormat,
+  roleToTacticalPosition,
+  type Formation,
+} from '@/lib/formations'
 import { ensureSetupLineup } from '@/lib/lineup'
 import { ensureMatchPositions } from '@/lib/positions'
+import type { TeamFormat } from '@/lib/team-format'
 import type { DbLineupPreset } from '@/types/database'
 import type { MatchPositionsConfig, RosterPlayer, SetupLineup } from '@/types/match'
 
@@ -9,13 +16,14 @@ export type LineupPresetFormationJson = {
   slotAssignments: Record<string, string | null>
 }
 
-export function parseFormationJson(raw: unknown): LineupPresetFormationJson {
+export function parseFormationJson(raw: unknown, teamFormat?: TeamFormat): LineupPresetFormationJson {
+  const fallbackFormationId = teamFormat ? getDefaultFormationId(teamFormat) : '3-3-2'
   if (!raw || typeof raw !== 'object') {
-    return { formationId: '3-3-2', slotAssignments: {} }
+    return { formationId: fallbackFormationId, slotAssignments: {} }
   }
   const data = raw as Record<string, unknown>
   const formationId =
-    typeof data.formationId === 'string' ? data.formationId : '3-3-2'
+    typeof data.formationId === 'string' ? data.formationId : fallbackFormationId
   const slotAssignments: Record<string, string | null> = {}
   if (data.slotAssignments && typeof data.slotAssignments === 'object') {
     for (const [slotId, playerId] of Object.entries(
@@ -32,6 +40,14 @@ export function buildFormationJson(
   slotAssignments: Record<string, string | null>,
 ): LineupPresetFormationJson {
   return { formationId, slotAssignments }
+}
+
+export function validatePresetFormation(formationId: string, teamFormat: TeamFormat): void {
+  if (!isFormationValidForFormat(formationId, teamFormat)) {
+    throw new Error(
+      `This lineup uses a formation that doesn't match the team's ${teamFormat} format.`,
+    )
+  }
 }
 
 export function sanitizeSlotAssignments(
@@ -64,14 +80,17 @@ export function sanitizeSlotAssignments(
 export function applyPresetToSetup(
   preset: DbLineupPreset,
   roster: RosterPlayer[],
+  teamFormat: TeamFormat,
 ): {
   setupLineup: SetupLineup
   matchPositions: MatchPositionsConfig
   formationId: string
   slotAssignments: Record<string, string | null>
 } {
-  const parsed = parseFormationJson(preset.formation_json)
-  const formation = getFormationById(parsed.formationId)
+  const parsed = parseFormationJson(preset.formation_json, teamFormat)
+  validatePresetFormation(parsed.formationId, teamFormat)
+
+  const formation = getFormationById(parsed.formationId, teamFormat)
   const rosterIds = new Set(roster.map((p) => p.id))
   const slotAssignments = sanitizeSlotAssignments(parsed.slotAssignments, rosterIds, formation)
 

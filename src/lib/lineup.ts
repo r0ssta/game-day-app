@@ -1,6 +1,12 @@
+import { getMaxFieldPlayersForFormat, type TeamFormat } from '@/lib/team-format'
 import type { SetupLineup } from '@/types/match'
 
+/** @deprecated Use getMaxFieldPlayersForFormat(teamFormat) instead */
 export const MAX_FIELD_PLAYERS = 9
+
+export function getMaxFieldPlayers(format: TeamFormat): number {
+  return getMaxFieldPlayersForFormat(format)
+}
 
 export function createDefaultSetupLineup(playerIds: string[]): SetupLineup {
   return {
@@ -47,12 +53,15 @@ export function countSecondHalfStarters(secondHalfStarters: Record<string, boole
   return Object.values(secondHalfStarters).filter(Boolean).length
 }
 
-export function isSetupLineupValid(setup: SetupLineup): boolean {
+export function isSetupLineupValid(setup: SetupLineup, maxFieldPlayers: number): boolean {
   const attending = getAttendingIds(setup).length
   if (attending === 0) return false
-  return countFirstHalfStarters(setup) <= MAX_FIELD_PLAYERS
+  return countFirstHalfStarters(setup) <= maxFieldPlayers
 }
 
-export function isHalftimeLineupValid(secondHalfStarters: Record<string, boolean>): boolean {
-  return countSecondHalfStarters(secondHalfStarters) <= MAX_FIELD_PLAYERS
+export function isHalftimeLineupValid(
+  secondHalfStarters: Record<string, boolean>,
+  maxFieldPlayers: number,
+): boolean {
+  return countSecondHalfStarters(secondHalfStarters) <= maxFieldPlayers
 }

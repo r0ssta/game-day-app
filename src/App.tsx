@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type MutableR
 import {
   CheckCircle2,
   Goal,
+  Shield,
   UserPlus,
   Users,
   X,
@@ -28,10 +29,11 @@ import type { FormationRole } from '@/lib/formations'
 import {
   getAttendingIds,
   getFirstHalfStarterIds,
+  getMaxFieldPlayers,
   isHalftimeLineupValid,
   isSetupLineupValid,
-  MAX_FIELD_PLAYERS,
 } from '@/lib/lineup'
+import type { TeamFormat } from '@/lib/team-format'
 import {
   applySubIn,
   applySubOut,
@@ -246,9 +248,26 @@ function MatchHeader({
         </div>
 
         <p className="mt-1 text-center text-xs font-semibold text-muted-foreground">
-          {homeLabel} {homeScore} – {awayScore} {awayName}
-          {coachLine ? ` · ${coachLine}` : ''}
+          {coachLine ?? `${homeLabel} vs ${awayName}`}
         </p>
+
+        <div className="mt-3 flex items-center justify-center gap-5">
+          <div className="min-w-[4.5rem] text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-neon">{homeLabel}</p>
+            <p className="font-display text-4xl font-black tabular-nums leading-none text-neon">
+              {homeScore}
+            </p>
+          </div>
+          <span className="font-display text-2xl font-bold text-muted-foreground">–</span>
+          <div className="min-w-[4.5rem] text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              {awayName}
+            </p>
+            <p className="font-display text-4xl font-black tabular-nums leading-none text-foreground">
+              {awayScore}
+            </p>
+          </div>
+        </div>
 
         <div className="mt-2 flex flex-col items-center gap-1">
           <div className="flex items-center justify-center gap-2">
@@ -486,6 +505,7 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
 
 type SetupScreenProps = {
   activeTeamName: string
+  activeTeamFormat: TeamFormat
   coaches: NamedEntity[]
   selectedCoachId: string | null
   onCoachChange: (id: string) => void
@@ -531,6 +551,7 @@ type SetupScreenProps = {
 
 function SetupScreen({
   activeTeamName,
+  activeTeamFormat,
   coaches,
   selectedCoachId,
   onCoachChange,
@@ -569,6 +590,7 @@ function SetupScreen({
   activeTeamId,
 }: SetupScreenProps & { activeTeamId: string | null }) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
+  const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
 
   return (
     <main className="min-h-dvh bg-background pb-10">
@@ -586,6 +608,9 @@ function SetupScreen({
             </p>
             <p className="mt-1 font-display text-xl font-bold uppercase tracking-wide text-foreground">
               {activeTeamName}
+            </p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {activeTeamFormat} format · {maxFieldPlayers} on field
             </p>
           </div>
 
@@ -714,7 +739,7 @@ function SetupScreen({
           <div className="mb-3 flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-display text-xl font-bold uppercase tracking-wide text-foreground">
               <Users className="size-5 text-athletic" />
-              9v9 Lineup Builder
+              {activeTeamFormat} Lineup Builder
             </h2>
             <span className="rounded bg-secondary px-2 py-0.5 text-xs font-bold text-muted-foreground">
               {attendingCount} attending
@@ -784,7 +809,8 @@ function SetupScreen({
                 }))}
                 attending={setupLineup.attending}
                 starters={setupLineup.startFirstHalf}
-                maxFieldPlayers={MAX_FIELD_PLAYERS}
+                maxFieldPlayers={maxFieldPlayers}
+                teamFormat={activeTeamFormat}
                 onAssignStarter={(playerId, _role: FormationRole, tacticalPosition) => {
                   onSetStartFirstHalf(playerId, true)
                   onSetMatchPosition(playerId, tacticalPosition)
@@ -834,6 +860,7 @@ type HalftimeSetupScreenProps = {
   onBeginSecondHalf: () => void
   canBeginSecondHalf: boolean
   onBackToHome: () => void
+  activeTeamFormat: TeamFormat
 }
 
 function HalftimeSetupScreen({
@@ -854,7 +881,9 @@ function HalftimeSetupScreen({
   onBeginSecondHalf,
   canBeginSecondHalf,
   onBackToHome,
+  activeTeamFormat,
 }: HalftimeSetupScreenProps) {
+  const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const attendingPlayers = players.filter((p) => p.attending)
 
   return (
@@ -888,7 +917,8 @@ function HalftimeSetupScreen({
           }))}
           attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
           starters={secondHalfStarters}
-          maxFieldPlayers={MAX_FIELD_PLAYERS}
+          maxFieldPlayers={maxFieldPlayers}
+          teamFormat={activeTeamFormat}
           onAssignStarter={onAssignSecondHalfStarter}
           onRemoveStarter={onRemoveSecondHalfStarter}
         />
@@ -1164,6 +1194,7 @@ export default function App() {
     homeScore,
     setHomeScore,
     awayScore,
+    setAwayScore,
     seconds,
     setSeconds,
     period,
@@ -1174,6 +1205,8 @@ export default function App() {
     rosterLoading,
     activeTeamId,
     setActiveTeamId,
+    activeTeamFormat,
+    updateTeamFormat,
     selectedCoachId,
     setSelectedCoachId,
     matchTeamName,
@@ -1250,8 +1283,9 @@ export default function App() {
   const attendingCount = getAttendingIds(setupLineup).length
   const activeTeamName =
     teams.find((team) => team.id === activeTeamId)?.name ?? 'Team'
-  const canStartMatch = isSetupLineupValid(setupLineup) && Boolean(activeTeamId)
-  const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf)
+  const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
+  const canStartMatch = isSetupLineupValid(setupLineup, maxFieldPlayers) && Boolean(activeTeamId)
+  const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf, maxFieldPlayers)
   const activeFormation = period === '1st' ? matchFormations.first : matchFormations.second
 
   useEffect(() => {
@@ -1433,9 +1467,12 @@ export default function App() {
   const handleLoadLineupPreset = useCallback(
     (presetId: string) => {
       const preset = lineupPresets.find((p) => p.id === presetId)
-      if (preset) {
+      if (!preset) return
+      try {
         applyLineupPreset(preset)
         setToast(`Loaded preset · ${preset.preset_name}`)
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : 'Failed to load preset')
       }
     },
     [lineupPresets, applyLineupPreset],
@@ -1543,7 +1580,7 @@ export default function App() {
     (benchId: string, tacticalPosition: string) => {
       if (!matchId) return
       const onFieldCount = players.filter((p) => p.attending && p.isOnField).length
-      if (onFieldCount >= MAX_FIELD_PLAYERS) return
+      if (onFieldCount >= maxFieldPlayers) return
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
 
@@ -1570,7 +1607,7 @@ export default function App() {
         return next
       })
     },
-    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
+    [matchId, players, seconds, halfLengthMinutes, activeFormation, maxFieldPlayers, setPlayers],
   )
 
   const handleLiveSubOut = useCallback(
@@ -1653,6 +1690,27 @@ export default function App() {
     setGoalScorerId(player.id)
     setGoalWizardStep('assist')
   }, [])
+
+  const handleOpponentGoal = useCallback(() => {
+    if (!matchId) return
+
+    const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+    const opponentLabel = matchOpponent.trim() || 'Opponent'
+
+    setAwayScore((current) => {
+      const next = current + 1
+      syncMatchRecord(matchId, { away_score: next })
+      setToast(`Opponent goal · ${opponentLabel} ${next}`)
+      return next
+    })
+
+    syncMatchEvent({
+      matchId,
+      eventType: 'opponent_goal',
+      timestamp: eventTimestamp,
+      formation: activeFormation,
+    })
+  }, [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore])
 
   const handleCompleteGoal = useCallback(
     (assistPlayerId: string | null) => {
@@ -1752,6 +1810,7 @@ export default function App() {
         <SetupScreen
           activeTeamId={activeTeamId}
           activeTeamName={activeTeamName}
+          activeTeamFormat={activeTeamFormat}
           coaches={coaches}
           selectedCoachId={selectedCoachId}
           onCoachChange={setSelectedCoachId}
@@ -1808,6 +1867,7 @@ export default function App() {
         <TeamManagementScreen
           activeTeamId={activeTeamId}
           activeTeamName={activeTeamName}
+          activeTeamFormat={activeTeamFormat}
           rosterLoading={rosterLoading}
           teamRoster={teamRoster}
           suggestedJersey={suggestedJersey}
@@ -1819,6 +1879,7 @@ export default function App() {
           onSetPlayerActive={setPlayerActive}
           onSavePreset={saveLineupPreset}
           onDeletePreset={removeLineupPreset}
+          onUpdateTeamFormat={updateTeamFormat}
           onBackToHome={() => setAppMode('home')}
           onToast={setToast}
         />
@@ -1876,6 +1937,7 @@ export default function App() {
           onBeginSecondHalf={() => void handleBeginSecondHalf()}
           canBeginSecondHalf={canBeginSecondHalf}
           onBackToHome={() => setAppMode('home')}
+          activeTeamFormat={activeTeamFormat}
         />
         {toast && (
           <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
@@ -1953,14 +2015,24 @@ export default function App() {
         )}
 
         {periodClockStarted && (
-          <button
-            type="button"
-            onClick={() => setGoalWizardOpen(true)}
-            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-neon py-6 font-display text-4xl font-black uppercase tracking-wide text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95"
-          >
-            <Goal className="size-10" strokeWidth={2.5} />
-            Goal
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setGoalWizardOpen(true)}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-neon py-6 font-display text-2xl font-black uppercase tracking-wide text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95"
+            >
+              <Goal className="size-8" strokeWidth={2.5} />
+              Goal
+            </button>
+            <button
+              type="button"
+              onClick={handleOpponentGoal}
+              className="flex items-center justify-center gap-2 rounded-2xl border-2 border-border bg-secondary py-6 font-display text-xl font-black uppercase tracking-wide text-muted-foreground shadow-md transition-transform active:scale-[0.98] active:bg-secondary/80"
+            >
+              <Shield className="size-7" strokeWidth={2.5} />
+              Opp. Goal
+            </button>
+          </div>
         )}
 
         <LiveTacticalPitch
@@ -1971,7 +2043,8 @@ export default function App() {
           onFormationChange={setActiveFormation}
           players={players}
           clockSeconds={seconds}
-          maxFieldPlayers={MAX_FIELD_PLAYERS}
+          maxFieldPlayers={maxFieldPlayers}
+          teamFormat={activeTeamFormat}
           initialSlotAssignments={period === '2nd' ? secondHalfSlotAssignments : undefined}
           onSwap={handleLiveSwap}
           onSubIn={handleLiveSubIn}

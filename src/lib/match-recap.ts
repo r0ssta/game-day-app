@@ -56,6 +56,8 @@ export function aggregatePlayerRecaps(
   const openStints = new Map<string, number>()
 
   for (const event of timeline) {
+    if (event.event_type === 'opponent_goal' || !event.player_id) continue
+
     const row = ensure(event.player_id)
 
     switch (event.event_type) {

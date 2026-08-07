@@ -2,13 +2,15 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent, type Mutable
 import { Pencil, Users } from 'lucide-react'
 import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
 import {
-  FORMATIONS,
   buildAssignmentsFromStarters,
+  getDefaultFormationId,
   getFormationById,
+  getFormationsForFormat,
   roleToTacticalPosition,
   type Formation,
   type FormationRole,
 } from '@/lib/formations'
+import type { TeamFormat } from '@/lib/team-format'
 import {
   ROSTER_POSITION_HINT_CLASS,
   isRosterProfilePosition,
@@ -45,6 +47,7 @@ type TacticalPitchLineupProps = {
   initialSlotAssignments?: Record<string, string | null>
   assignmentsResetKey?: string | number
   assignmentsRef?: MutableRefObject<Record<string, string | null> | null>
+  teamFormat?: TeamFormat
 }
 
 function formatJersey(number: number | null) {
@@ -229,8 +232,14 @@ export function TacticalPitchLineup({
   initialSlotAssignments,
   assignmentsResetKey,
   assignmentsRef,
+  teamFormat,
 }: TacticalPitchLineupProps) {
-  const [internalFormationId, setInternalFormationId] = useState(initialFormationId)
+  const availableFormations = useMemo(
+    () => (teamFormat ? getFormationsForFormat(teamFormat) : getFormationsForFormat('9v9')),
+    [teamFormat],
+  )
+  const defaultFormationId = teamFormat ? getDefaultFormationId(teamFormat) : initialFormationId
+  const [internalFormationId, setInternalFormationId] = useState(defaultFormationId)
   const formationId = controlledFormationId ?? internalFormationId
   const setFormationId = useCallback(
     (nextId: string) => {
@@ -243,7 +252,7 @@ export function TacticalPitchLineup({
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
-  const formation = getFormationById(formationId)
+  const formation = getFormationById(formationId, teamFormat)
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
 
   const assignedPlayerIds = useMemo(
@@ -268,6 +277,13 @@ export function TacticalPitchLineup({
     setSelectedPlayerId(null)
     setSelectedSlotId(null)
   }, [])
+
+  useEffect(() => {
+    if (!teamFormat) return
+    if (!availableFormations.some((entry) => entry.id === formationId)) {
+      setFormationId(getDefaultFormationId(teamFormat))
+    }
+  }, [availableFormations, formationId, setFormationId, teamFormat])
 
   useEffect(() => {
     if (initialSlotAssignments) {
@@ -323,6 +339,9 @@ export function TacticalPitchLineup({
       const slot = formation.slots.find((s) => s.id === slotId)
       if (!slot) return
 
+      const isReplacing = Boolean(slotAssignments[slotId])
+      if (!isReplacing && assignedPlayerIds.size >= maxFieldPlayers) return
+
       setSlotAssignments((prev) => {
         const next = { ...prev }
         for (const [id, assigned] of Object.entries(next)) {
@@ -338,7 +357,7 @@ export function TacticalPitchLineup({
       setSelectedPlayerId(null)
       setSelectedSlotId(null)
     },
-    [formation.slots, onAssignStarter, onRemoveStarter],
+    [formation.slots, onAssignStarter, onRemoveStarter, assignedPlayerIds.size, maxFieldPlayers, slotAssignments],
   )
 
   const removePlayerFromSlot = useCallback(
@@ -374,7 +393,8 @@ export function TacticalPitchLineup({
   }
 
   const handleFormationChange = (nextId: string) => {
-    const nextFormation = getFormationById(nextId)
+    if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
+    const nextFormation = getFormationById(nextId, teamFormat)
     for (const playerId of assignedPlayerIds) onRemoveStarter(playerId)
     setFormationId(nextId)
     resetSlotsForFormation(nextFormation)
@@ -433,7 +453,7 @@ export function TacticalPitchLineup({
           onChange={(e) => handleFormationChange(e.target.value)}
           className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
         >
-          {FORMATIONS.map((f) => (
+          {availableFormations.map((f) => (
             <option key={f.id} value={f.id}>
               {f.label}
             </option>

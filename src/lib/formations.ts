@@ -1,3 +1,6 @@
+import type { TeamFormat } from '@/lib/team-format'
+import { DEFAULT_TEAM_FORMAT } from '@/lib/team-format'
+
 export type FormationRole = 'GK' | 'DEF' | 'MID' | 'FWD'
 
 export type FormationSlot = {
@@ -13,13 +16,43 @@ export type FormationSlot = {
 export type Formation = {
   id: string
   label: string
+  format: TeamFormat
   slots: FormationSlot[]
 }
 
 export const FORMATIONS: Formation[] = [
   {
+    id: '2-3-1',
+    label: '2-3-1',
+    format: '7v7',
+    slots: [
+      { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 90 },
+      { id: 'def-l', role: 'DEF', label: 'DEF', x: 35, y: 76 },
+      { id: 'def-r', role: 'DEF', label: 'DEF', x: 65, y: 76 },
+      { id: 'mid-l', role: 'MID', label: 'MID', x: 28, y: 52 },
+      { id: 'mid-c', role: 'MID', label: 'MID', x: 50, y: 50 },
+      { id: 'mid-r', role: 'MID', label: 'MID', x: 72, y: 52 },
+      { id: 'fwd', role: 'FWD', label: 'FWD', x: 50, y: 26 },
+    ],
+  },
+  {
+    id: '3-2-1',
+    label: '3-2-1',
+    format: '7v7',
+    slots: [
+      { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 90 },
+      { id: 'def-l', role: 'DEF', label: 'DEF', x: 28, y: 76 },
+      { id: 'def-c', role: 'DEF', label: 'DEF', x: 50, y: 78 },
+      { id: 'def-r', role: 'DEF', label: 'DEF', x: 72, y: 76 },
+      { id: 'mid-l', role: 'MID', label: 'MID', x: 38, y: 52 },
+      { id: 'mid-r', role: 'MID', label: 'MID', x: 62, y: 52 },
+      { id: 'fwd', role: 'FWD', label: 'FWD', x: 50, y: 26 },
+    ],
+  },
+  {
     id: '3-3-2',
     label: '3-3-2',
+    format: '9v9',
     slots: [
       { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 90 },
       { id: 'def-l', role: 'DEF', label: 'DEF', x: 22, y: 74 },
@@ -35,6 +68,7 @@ export const FORMATIONS: Formation[] = [
   {
     id: '3-2-3',
     label: '3-2-3',
+    format: '9v9',
     slots: [
       { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 90 },
       { id: 'def-l', role: 'DEF', label: 'DEF', x: 24, y: 74 },
@@ -50,6 +84,7 @@ export const FORMATIONS: Formation[] = [
   {
     id: '4-3-1',
     label: '4-3-1',
+    format: '9v9',
     slots: [
       { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 90 },
       { id: 'def-lb', role: 'DEF', label: 'DEF', x: 15, y: 74 },
@@ -65,6 +100,7 @@ export const FORMATIONS: Formation[] = [
   {
     id: '2-3-2-1',
     label: '2-3-2-1',
+    format: '9v9',
     slots: [
       { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 90 },
       { id: 'def-l', role: 'DEF', label: 'DEF', x: 35, y: 76 },
@@ -78,16 +114,57 @@ export const FORMATIONS: Formation[] = [
     ],
   },
   {
-    id: '2-3-1',
-    label: '2-3-1 (7v7)',
+    id: '4-4-2',
+    label: '4-4-2',
+    format: '11v11',
     slots: [
-      { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 90 },
-      { id: 'def-l', role: 'DEF', label: 'DEF', x: 35, y: 76 },
-      { id: 'def-r', role: 'DEF', label: 'DEF', x: 65, y: 76 },
-      { id: 'mid-l', role: 'MID', label: 'MID', x: 28, y: 52 },
-      { id: 'mid-c', role: 'MID', label: 'MID', x: 50, y: 50 },
-      { id: 'mid-r', role: 'MID', label: 'MID', x: 72, y: 52 },
-      { id: 'fwd', role: 'FWD', label: 'FWD', x: 50, y: 26 },
+      { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 92 },
+      { id: 'def-lb', role: 'DEF', label: 'LB', x: 14, y: 78 },
+      { id: 'def-lcb', role: 'DEF', label: 'CB', x: 36, y: 80 },
+      { id: 'def-rcb', role: 'DEF', label: 'CB', x: 64, y: 80 },
+      { id: 'def-rb', role: 'DEF', label: 'RB', x: 86, y: 78 },
+      { id: 'mid-lm', role: 'MID', label: 'LM', x: 18, y: 54 },
+      { id: 'mid-lcm', role: 'MID', label: 'CM', x: 38, y: 56 },
+      { id: 'mid-rcm', role: 'MID', label: 'CM', x: 62, y: 56 },
+      { id: 'mid-rm', role: 'MID', label: 'RM', x: 82, y: 54 },
+      { id: 'fwd-ls', role: 'FWD', label: 'ST', x: 38, y: 24 },
+      { id: 'fwd-rs', role: 'FWD', label: 'ST', x: 62, y: 24 },
+    ],
+  },
+  {
+    id: '4-3-3',
+    label: '4-3-3',
+    format: '11v11',
+    slots: [
+      { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 92 },
+      { id: 'def-lb', role: 'DEF', label: 'LB', x: 14, y: 78 },
+      { id: 'def-lcb', role: 'DEF', label: 'CB', x: 36, y: 80 },
+      { id: 'def-rcb', role: 'DEF', label: 'CB', x: 64, y: 80 },
+      { id: 'def-rb', role: 'DEF', label: 'RB', x: 86, y: 78 },
+      { id: 'mid-lcm', role: 'MID', label: 'CM', x: 32, y: 54 },
+      { id: 'mid-cdm', role: 'MID', label: 'CDM', x: 50, y: 58 },
+      { id: 'mid-rcm', role: 'MID', label: 'CM', x: 68, y: 54 },
+      { id: 'fwd-lw', role: 'FWD', label: 'LW', x: 22, y: 26 },
+      { id: 'fwd-st', role: 'FWD', label: 'ST', x: 50, y: 22 },
+      { id: 'fwd-rw', role: 'FWD', label: 'RW', x: 78, y: 26 },
+    ],
+  },
+  {
+    id: '3-5-2',
+    label: '3-5-2',
+    format: '11v11',
+    slots: [
+      { id: 'gk', role: 'GK', label: 'GK', x: 50, y: 92 },
+      { id: 'def-lcb', role: 'DEF', label: 'CB', x: 30, y: 80 },
+      { id: 'def-cb', role: 'DEF', label: 'CB', x: 50, y: 82 },
+      { id: 'def-rcb', role: 'DEF', label: 'CB', x: 70, y: 80 },
+      { id: 'mid-lwb', role: 'MID', label: 'LWB', x: 12, y: 58 },
+      { id: 'mid-lcm', role: 'MID', label: 'CM', x: 35, y: 54 },
+      { id: 'mid-cdm', role: 'MID', label: 'CDM', x: 50, y: 58 },
+      { id: 'mid-rcm', role: 'MID', label: 'CM', x: 65, y: 54 },
+      { id: 'mid-rwb', role: 'MID', label: 'RWB', x: 88, y: 58 },
+      { id: 'fwd-ls', role: 'FWD', label: 'ST', x: 40, y: 24 },
+      { id: 'fwd-rs', role: 'FWD', label: 'ST', x: 60, y: 24 },
     ],
   },
 ]
@@ -105,11 +182,27 @@ export function roleToTacticalPosition(role: FormationRole): string {
   }
 }
 
-export function getFormationById(id: string): Formation {
-  return FORMATIONS.find((f) => f.id === id) ?? FORMATIONS[0]
+export function getFormationsForFormat(format: TeamFormat): Formation[] {
+  return FORMATIONS.filter((formation) => formation.format === format)
 }
 
-export const DEFAULT_FORMATION_ID = FORMATIONS[0].id
+export function getDefaultFormationId(format: TeamFormat = DEFAULT_TEAM_FORMAT): string {
+  return getFormationsForFormat(format)[0]?.id ?? '3-3-2'
+}
+
+export function isFormationValidForFormat(formationId: string, format: TeamFormat): boolean {
+  const formation = FORMATIONS.find((entry) => entry.id === formationId)
+  return formation?.format === format
+}
+
+export function getFormationById(id: string, format?: TeamFormat): Formation {
+  const found = FORMATIONS.find((formation) => formation.id === id)
+  if (found && (!format || found.format === format)) return found
+  if (format) return getFormationsForFormat(format)[0] ?? FORMATIONS[0]
+  return found ?? FORMATIONS.find((formation) => formation.format === DEFAULT_TEAM_FORMAT) ?? FORMATIONS[0]
+}
+
+export const DEFAULT_FORMATION_ID = getDefaultFormationId(DEFAULT_TEAM_FORMAT)
 
 export function getFormationLabel(id: string): string {
   return getFormationById(id).label

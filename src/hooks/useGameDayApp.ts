@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createDefaultSetupLineup,
   ensureHalftimeStarters,
@@ -17,8 +17,16 @@ import {
   normalizeMatchTimeForInput,
 } from '@/lib/match-schedule'
 import { elapsedInHalf, initialHalfClock } from '@/lib/match-clock'
-import { DEFAULT_FORMATION_ID } from '@/lib/formations'
-import { applyPresetToSetup } from '@/lib/lineup-presets'
+import {
+  DEFAULT_FORMATION_ID,
+  getDefaultFormationId,
+  isFormationValidForFormat,
+} from '@/lib/formations'
+import { applyPresetToSetup, validatePresetFormation } from '@/lib/lineup-presets'
+import {
+  normalizeTeamFormat,
+  type TeamFormat,
+} from '@/lib/team-format'
 import {
   completeMatch,
   createMatchRecord,
@@ -38,6 +46,7 @@ import {
   rebuildMatchPlayers,
   syncMatchStats,
   updateLineupPreset,
+  updateTeamFormat as updateTeamFormatApi,
   upsertPlayer,
   setPlayerActiveStatus,
 } from '@/lib/supabase-api'
@@ -319,14 +328,16 @@ export function useGameDayApp() {
 
   const applyLineupPreset = useCallback(
     (preset: DbLineupPreset) => {
-      const applied = applyPresetToSetup(preset, masterRoster)
+      const team = teams.find((t) => t.id === selectedTeamId)
+      const format = normalizeTeamFormat(team?.format)
+      const applied = applyPresetToSetup(preset, masterRoster, format)
       setSetupLineup(applied.setupLineup)
       setMatchPositions(applied.matchPositions)
       setFirstHalfFormation(applied.formationId)
       setSetupSlotAssignments(applied.slotAssignments)
       setSetupPitchKey((k) => k + 1)
     },
-    [masterRoster, setFirstHalfFormation],
+    [masterRoster, setFirstHalfFormation, teams, selectedTeamId],
   )
 
   const saveLineupPreset = useCallback(
@@ -337,6 +348,9 @@ export function useGameDayApp() {
       slotAssignments: Record<string, string | null>
     }) => {
       if (!selectedTeamId) throw new Error('Select a team first')
+      const team = teams.find((t) => t.id === selectedTeamId)
+      const format = normalizeTeamFormat(team?.format)
+      validatePresetFormation(input.formationId, format)
       const formationJson = { formationId: input.formationId, slotAssignments: input.slotAssignments }
       if (input.presetId) {
         await updateLineupPreset(input.presetId, {
@@ -352,7 +366,7 @@ export function useGameDayApp() {
       }
       await refreshLineupPresets()
     },
-    [selectedTeamId, refreshLineupPresets],
+    [selectedTeamId, refreshLineupPresets, teams],
   )
 
   const removeLineupPreset = useCallback(
@@ -371,9 +385,13 @@ export function useGameDayApp() {
       setMatchPositions({})
       setSetupSlotAssignments(undefined)
       setSetupPitchKey((k) => k + 1)
+      const team = teams.find((t) => t.id === teamId)
+      const format = normalizeTeamFormat(team?.format)
+      const defaultFormation = getDefaultFormationId(format)
+      setMatchFormations({ first: defaultFormation, second: defaultFormation })
       void loadTeamRoster(teamId)
     },
-    [loadTeamRoster],
+    [loadTeamRoster, teams],
   )
 
   const selectTeam = setActiveTeamId
@@ -391,6 +409,27 @@ export function useGameDayApp() {
     setSelectedCoachId(coach.id)
     return coach
   }, [])
+
+  const activeTeamFormat = useMemo(() => {
+    const team = teams.find((t) => t.id === selectedTeamId)
+    return normalizeTeamFormat(team?.format)
+  }, [teams, selectedTeamId])
+
+  const updateTeamFormat = useCallback(
+    async (format: TeamFormat) => {
+      if (!selectedTeamId) throw new Error('Select a team first')
+      const updated = await updateTeamFormatApi(selectedTeamId, format)
+      setTeams((prev) => prev.map((team) => (team.id === updated.id ? updated : team)))
+      const defaultFormation = getDefaultFormationId(format)
+      setMatchFormations((prev) => ({
+        first: isFormationValidForFormat(prev.first, format) ? prev.first : defaultFormation,
+        second: isFormationValidForFormat(prev.second, format) ? prev.second : defaultFormation,
+      }))
+      setSetupSlotAssignments(undefined)
+      setSetupPitchKey((k) => k + 1)
+    },
+    [selectedTeamId],
+  )
 
   const setPlayerAttending = useCallback((id: string, attending: boolean) => {
     setSetupLineup((prev) => ({
@@ -768,11 +807,14 @@ export function useGameDayApp() {
     setMatchOpponent('')
     setMatchLocation('')
     setMatchTournamentGame(false)
-    setMatchFormations({ first: DEFAULT_FORMATION_ID, second: DEFAULT_FORMATION_ID })
+    setMatchFormations({
+      first: getDefaultFormationId(activeTeamFormat),
+      second: getDefaultFormationId(activeTeamFormat),
+    })
     setMatchDate(defaultMatchDate())
     setMatchTime(defaultMatchTime())
     setMatchId(null)
-  }, [])
+  }, [activeTeamFormat])
 
   const endMatch = useCallback(async () => {
     if (matchId) {
@@ -833,8 +875,10 @@ export function useGameDayApp() {
     returnToHome,
     selectedTeamId,
     activeTeamId: selectedTeamId,
+    activeTeamFormat,
     selectTeam,
     setActiveTeamId,
+    updateTeamFormat,
     selectedCoachId,
     setSelectedCoachId,
     matchTeamName,

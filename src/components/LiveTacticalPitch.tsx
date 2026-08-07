@@ -2,12 +2,13 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { Users } from 'lucide-react'
 import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
 import {
-  FORMATIONS,
   buildAssignmentsFromStarters,
   getFormationById,
+  getFormationsForFormat,
   roleToTacticalPosition,
   type FormationSlot,
 } from '@/lib/formations'
+import type { TeamFormat } from '@/lib/team-format'
 import { formatPlayingTimeClock, getLiveSecondsPlayed } from '@/lib/play-time'
 import { displayMatchPosition, formationRoleToLivePosition } from '@/lib/positions'
 import { cn } from '@/lib/utils'
@@ -41,6 +42,7 @@ type LiveTacticalPitchProps = {
   onReassignPosition: (updates: PositionReassignUpdate[]) => void
   onSetImpact?: (id: string, impact: Impact) => void
   initialSlotAssignments?: Record<string, string | null>
+  teamFormat?: TeamFormat
 }
 
 export type LiveTacticalPitchHandle = {
@@ -237,9 +239,14 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       onReassignPosition,
       onSetImpact,
       initialSlotAssignments,
+      teamFormat,
     },
     ref,
   ) {
+  const availableFormations = useMemo(
+    () => (teamFormat ? getFormationsForFormat(teamFormat) : getFormationsForFormat('9v9')),
+    [teamFormat],
+  )
   const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>({})
   const slotAssignmentsRef = useRef(slotAssignments)
   slotAssignmentsRef.current = slotAssignments
@@ -257,7 +264,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
   const skipOnFieldSyncRef = useRef(false)
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const formation = getFormationById(formationId)
+  const formation = getFormationById(formationId, teamFormat)
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const slotById = useMemo(() => new Map(formation.slots.map((s) => [s.id, s])), [formation.slots])
 
@@ -468,7 +475,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
   }
 
   const handleFormationChange = (nextId: string) => {
-    const nextFormation = getFormationById(nextId)
+    if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
+    const nextFormation = getFormationById(nextId, teamFormat)
     const starters = Object.fromEntries(onFieldPlayers.map((p) => [p.id, true]))
     onFormationChange(nextId)
     setSlotAssignments(
@@ -503,7 +511,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         onChange={(e) => handleFormationChange(e.target.value)}
         className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
       >
-        {FORMATIONS.map((f) => (
+        {availableFormations.map((f) => (
           <option key={f.id} value={f.id}>
             {f.label}
           </option>

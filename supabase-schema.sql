@@ -8,6 +8,7 @@
 create table if not exists public.teams (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
+  format text not null default '9v9' check (format in ('7v7', '9v9', '11v11')),
   created_at timestamptz not null default now()
 );
 
@@ -58,13 +59,14 @@ create table if not exists public.matches (
 create table if not exists public.match_events (
   id uuid primary key default gen_random_uuid(),
   match_id uuid not null references public.matches (id) on delete cascade,
-  player_id uuid not null references public.players (id) on delete cascade,
-  event_type text not null check (event_type in ('goal', 'assist', 'sub_in', 'sub_out', 'position_change')),
+  player_id uuid references public.players (id) on delete cascade,
+  event_type text not null check (event_type in ('goal', 'assist', 'sub_in', 'sub_out', 'position_change', 'opponent_goal')),
   timestamp integer not null check (timestamp >= 0),
   event_notes text,
   formation text,
   assist_player_id uuid references public.players (id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint match_events_player_required_check check (event_type = 'opponent_goal' or player_id is not null)
 );
 
 create table if not exists public.match_stats (

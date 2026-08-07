@@ -3,6 +3,7 @@ import {
   LayoutGrid,
   Pencil,
   Save,
+  Settings,
   Trash2,
   UserMinus,
   UserPlus,
@@ -15,15 +16,22 @@ import {
   RosterPositionFields,
 } from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
-import { parseFormationJson } from '@/lib/lineup-presets'
-import { MAX_FIELD_PLAYERS } from '@/lib/lineup'
+import { parseFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
+import { getDefaultFormationId, isFormationValidForFormat } from '@/lib/formations'
+import { getMaxFieldPlayers } from '@/lib/lineup'
+import {
+  TEAM_FORMATS,
+  getMaxFieldPlayersForFormat,
+  teamFormatLabel,
+  type TeamFormat,
+} from '@/lib/team-format'
 import { cn } from '@/lib/utils'
 import type { DbLineupPreset } from '@/types/database'
 import type { RosterProfilePosition } from '@/lib/positions'
 
 import type { RosterPlayer } from '@/types/match'
 
-type TeamTab = 'roster' | 'lineups'
+type TeamTab = 'roster' | 'lineups' | 'settings'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
@@ -55,6 +63,7 @@ function TabButton({
 type TeamManagementScreenProps = {
   activeTeamId: string | null
   activeTeamName: string
+  activeTeamFormat: TeamFormat
   rosterLoading: boolean
   teamRoster: RosterPlayer[]
   suggestedJersey: number
@@ -88,6 +97,7 @@ type TeamManagementScreenProps = {
     slotAssignments: Record<string, string | null>
   }) => Promise<void>
   onDeletePreset: (presetId: string) => Promise<void>
+  onUpdateTeamFormat: (format: TeamFormat) => Promise<void>
   onBackToHome: () => void
   onToast: (message: string) => void
 }
@@ -414,8 +424,79 @@ function TeamRosterTab({
   )
 }
 
+function TeamSettingsTab({
+  activeTeamFormat,
+  onUpdateTeamFormat,
+  onToast,
+}: Pick<TeamManagementScreenProps, 'activeTeamFormat' | 'onUpdateTeamFormat' | 'onToast'>) {
+  const [format, setFormat] = useState<TeamFormat>(activeTeamFormat)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setFormat(activeTeamFormat)
+  }, [activeTeamFormat])
+
+  const handleSave = async () => {
+    if (format === activeTeamFormat) return
+    setSaving(true)
+    try {
+      await onUpdateTeamFormat(format)
+      onToast(`Team format updated to ${format}`)
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Failed to update team format')
+      setFormat(activeTeamFormat)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="space-y-4 rounded-xl border border-border bg-card p-4">
+      <h2 className="flex items-center gap-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
+        <Settings className="size-5 text-athletic" />
+        Team Settings
+      </h2>
+
+      <div>
+        <label
+          htmlFor="team-format"
+          className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+        >
+          Match Format
+        </label>
+        <select
+          id="team-format"
+          value={format}
+          onChange={(e) => setFormat(e.target.value as TeamFormat)}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+        >
+          {TEAM_FORMATS.map((entry) => (
+            <option key={entry} value={entry}>
+              {teamFormatLabel(entry)}
+            </option>
+          ))}
+        </select>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Sets the pitch layout and lineup limits for this team (
+          {getMaxFieldPlayersForFormat(format)} players on field).
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => void handleSave()}
+        disabled={saving || format === activeTeamFormat}
+        className="w-full rounded-xl bg-athletic py-3 text-sm font-bold uppercase tracking-wide text-athletic-foreground disabled:opacity-40"
+      >
+        {saving ? 'Saving…' : 'Save Format'}
+      </button>
+    </section>
+  )
+}
+
 function TeamLineupsTab({
   activeTeamId,
+  activeTeamFormat,
   rosterLoading,
   teamRoster,
   lineupPresets,
@@ -426,6 +507,7 @@ function TeamLineupsTab({
 }: Pick<
   TeamManagementScreenProps,
   | 'activeTeamId'
+  | 'activeTeamFormat'
   | 'rosterLoading'
   | 'teamRoster'
   | 'lineupPresets'
@@ -434,10 +516,12 @@ function TeamLineupsTab({
   | 'onDeletePreset'
   | 'onToast'
 >) {
+  const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
+  const defaultFormationId = getDefaultFormationId(activeTeamFormat)
   const assignmentsRef = useRef<Record<string, string | null> | null>(null)
   const [presetName, setPresetName] = useState('')
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null)
-  const [formationId, setFormationId] = useState('3-3-2')
+  const [formationId, setFormationId] = useState(defaultFormationId)
   const [starters, setStarters] = useState<Record<string, boolean>>({})
   const [assignmentsKey, setAssignmentsKey] = useState(0)
   const [initialSlotAssignments, setInitialSlotAssignments] = useState<
@@ -451,18 +535,26 @@ function TeamLineupsTab({
   const resetEditor = useCallback(() => {
     setEditingPresetId(null)
     setPresetName('')
-    setFormationId('3-3-2')
+    setFormationId(defaultFormationId)
     setStarters({})
     setInitialSlotAssignments(undefined)
     setAssignmentsKey((k) => k + 1)
-  }, [])
+  }, [defaultFormationId])
+
+  useEffect(() => {
+    resetEditor()
+  }, [activeTeamFormat, resetEditor])
 
   useEffect(() => {
     void onRefreshPresets()
   }, [activeTeamId, onRefreshPresets])
 
   const loadPreset = (preset: DbLineupPreset) => {
-    const parsed = parseFormationJson(preset.formation_json)
+    const parsed = parseFormationJson(preset.formation_json, activeTeamFormat)
+    if (!isFormationValidForFormat(parsed.formationId, activeTeamFormat)) {
+      onToast(`This preset doesn't match the team's ${activeTeamFormat} format.`)
+      return
+    }
     const nextStarters: Record<string, boolean> = {}
     for (const playerId of Object.values(parsed.slotAssignments)) {
       if (playerId) nextStarters[playerId] = true
@@ -483,6 +575,7 @@ function TeamLineupsTab({
     }
     setSaving(true)
     try {
+      validatePresetFormation(formationId, activeTeamFormat)
       await onSavePreset({
         presetId: editingPresetId ?? undefined,
         presetName: trimmed,
@@ -574,7 +667,8 @@ function TeamLineupsTab({
             }))}
             attending={attending}
             starters={starters}
-            maxFieldPlayers={MAX_FIELD_PLAYERS}
+            maxFieldPlayers={maxFieldPlayers}
+            teamFormat={activeTeamFormat}
             initialSlotAssignments={initialSlotAssignments}
             assignmentsResetKey={assignmentsKey}
             assignmentsRef={assignmentsRef}
@@ -626,6 +720,12 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
               Lineups
             </span>
           </TabButton>
+          <TabButton active={tab === 'settings'} onClick={() => setTab('settings')}>
+            <span className="inline-flex items-center justify-center gap-1">
+              <Settings className="size-3.5" />
+              Settings
+            </span>
+          </TabButton>
         </div>
 
         {tab === 'roster' && (
@@ -642,12 +742,20 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
         {tab === 'lineups' && (
           <TeamLineupsTab
             activeTeamId={props.activeTeamId}
+            activeTeamFormat={props.activeTeamFormat}
             rosterLoading={props.rosterLoading}
             teamRoster={props.teamRoster}
             lineupPresets={props.lineupPresets}
             onRefreshPresets={props.onRefreshPresets}
             onSavePreset={props.onSavePreset}
             onDeletePreset={props.onDeletePreset}
+            onToast={props.onToast}
+          />
+        )}
+        {tab === 'settings' && (
+          <TeamSettingsTab
+            activeTeamFormat={props.activeTeamFormat}
+            onUpdateTeamFormat={props.onUpdateTeamFormat}
             onToast={props.onToast}
           />
         )}
