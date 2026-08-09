@@ -14,6 +14,12 @@ import {
   type SavedPositionReview,
 } from '@/lib/match-recap'
 import {
+  aggregateMicroStats,
+  formatMicroStatsSummary,
+  hasMicroStats,
+  type PlayerMicroStats,
+} from '@/lib/stat-tracker'
+import {
   fetchMatchById,
   fetchMatchEvents,
   fetchMatchReviews,
@@ -106,6 +112,7 @@ export function PostGameRecap({
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [eventStats, setEventStats] = useState<Map<string, PlayerRecapStats>>(new Map())
+  const [microStats, setMicroStats] = useState<Map<string, PlayerMicroStats>>(new Map())
   const [reviews, setReviews] = useState<Record<string, SavedPositionReview>>({})
   const [touchedPositionReviews, setTouchedPositionReviews] = useState<Set<string>>(() => new Set())
   const [coachSummary, setCoachSummary] = useState('')
@@ -166,6 +173,7 @@ export function PostGameRecap({
         setReviews(initialReviews)
         setTouchedPositionReviews(initialTouchedPositions)
         setEventStats(recapStats)
+        setMicroStats(aggregateMicroStats(events))
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : 'Failed to load recap data')
@@ -311,6 +319,10 @@ export function PostGameRecap({
           notes: row.overallReview.notes,
         }),
       },
+      sidelineStatsSummary: (() => {
+        const stats = microStats.get(row.playerId)
+        return stats && hasMicroStats(stats) ? formatMicroStatsSummary(stats) : null
+      })(),
       positionReviews: row.positionReviews
         .filter((review) =>
           touchedPositionReviews.has(playerPositionReviewKey(row.playerId, review.position)),
@@ -480,6 +492,11 @@ export function PostGameRecap({
                 impact: row.overallReview.impact,
                 notes: row.overallReview.notes,
               })
+              const playerMicroStats = microStats.get(row.playerId)
+              const microSummary =
+                playerMicroStats && hasMicroStats(playerMicroStats)
+                  ? formatMicroStatsSummary(playerMicroStats)
+                  : null
 
               return (
                 <li key={row.playerId} className="space-y-4 px-3 py-4">
@@ -505,6 +522,11 @@ export function PostGameRecap({
                       <p className="text-xs font-semibold text-muted-foreground">
                         Goals {row.goals} · Assists {row.assists}
                       </p>
+                      {microSummary ? (
+                        <p className="mt-0.5 text-xs font-semibold text-athletic">
+                          Sideline stats: {microSummary}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 

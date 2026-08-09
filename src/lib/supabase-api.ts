@@ -13,13 +13,23 @@ import { createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
+import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEventType, type StatTrackerRosterPlayer, rosterPlayerFromDb } from '@/lib/stat-tracker'
 import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
 
 export type MatchEventInput = {
   matchId: string
-  eventType: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change' | 'opponent_goal' | 'formation_change'
+  eventType:
+    | 'goal'
+    | 'assist'
+    | 'sub_in'
+    | 'sub_out'
+    | 'position_change'
+    | 'opponent_goal'
+    | 'formation_change'
+    | StatTrackerEventType
+    | 'stat_team_log'
   timestamp: number
   formation: string
   playerId?: string | null
@@ -558,7 +568,11 @@ export async function upsertMatchStats(matchId: string, players: MatchPlayer[]) 
 }
 
 export async function insertMatchEvent(input: MatchEventInput) {
-  if (input.eventType !== 'opponent_goal' && input.eventType !== 'formation_change' && !input.playerId) {
+  const playerOptional =
+    input.eventType === 'opponent_goal' ||
+    input.eventType === 'formation_change' ||
+    input.eventType === 'stat_team_log'
+  if (!playerOptional && !input.playerId) {
     throw new Error('playerId is required for this event type')
   }
   await insertMatchEventRows([matchEventToRow(input)])
@@ -567,7 +581,11 @@ export async function insertMatchEvent(input: MatchEventInput) {
 export async function insertMatchEvents(events: MatchEventInput[]) {
   if (events.length === 0) return
   for (const event of events) {
-    if (event.eventType !== 'opponent_goal' && event.eventType !== 'formation_change' && !event.playerId) {
+    const playerOptional =
+      event.eventType === 'opponent_goal' ||
+      event.eventType === 'formation_change' ||
+      event.eventType === 'stat_team_log'
+    if (!playerOptional && !event.playerId) {
       throw new Error('playerId is required for this event type')
     }
   }
@@ -924,4 +942,240 @@ export async function updateLineupPreset(
 export async function deleteLineupPreset(presetId: string): Promise<void> {
   const { error } = await supabase.from('lineup_presets').delete().eq('id', presetId)
   if (error) throw error
+}
+
+export type StatTrackerContext = {
+  match: DbMatch
+  teamName: string
+  roster: StatTrackerRosterPlayer[]
+}
+
+function isMissingStatTrackerTableError(err: unknown): boolean {
+  const message = formatSupabaseError(err).toLowerCase()
+  return (
+    message.includes('match_stat_trackers') &&
+    (message.includes('does not exist') ||
+      message.includes('could not find') ||
+      message.includes('schema cache') ||
+      message.includes('not found'))
+  )
+}
+
+async function findMatchForStatTracker(matchId: string, token: string): Promise<DbMatch | null> {
+  const normalizedToken = normalizeStatTrackerToken(token)
+  if (!normalizedToken) return null
+
+  const match = await fetchMatchById(matchId)
+  if (match?.stat_tracker_token) {
+    const stored = normalizeStatTrackerToken(match.stat_tracker_token)
+    if (stored === normalizedToken) return match
+  }
+
+  const { data: matchedRow, error: matchError } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('id', matchId)
+    .eq('stat_tracker_token', normalizedToken)
+    .maybeSingle()
+
+  if (!matchError && matchedRow) return matchedRow
+
+  if (matchError && !isMissingColumnError(matchError)) {
+    throw matchError
+  }
+
+  const { data: legacyRow, error: legacyError } = await supabase
+    .from('match_stat_trackers')
+    .select('match_id')
+    .eq('match_id', matchId)
+    .eq('token', normalizedToken)
+    .is('revoked_at', null)
+    .maybeSingle()
+
+  if (legacyError && !isMissingStatTrackerTableError(legacyError)) {
+    throw legacyError
+  }
+  if (!legacyRow) return null
+
+  return fetchMatchById(matchId)
+}
+
+async function fetchStoredStatTrackerToken(matchId: string): Promise<string | null> {
+  const { data: matchRow, error: matchError } = await supabase
+    .from('matches')
+    .select('stat_tracker_token')
+    .eq('id', matchId)
+    .maybeSingle()
+
+  if (!matchError && matchRow?.stat_tracker_token?.trim()) {
+    return matchRow.stat_tracker_token.trim()
+  }
+
+  if (matchError && !isMissingColumnError(matchError)) {
+    throw matchError
+  }
+
+  const { data: trackerRow, error: trackerError } = await supabase
+    .from('match_stat_trackers')
+    .select('token')
+    .eq('match_id', matchId)
+    .is('revoked_at', null)
+    .maybeSingle()
+
+  if (trackerError) {
+    if (isMissingStatTrackerTableError(trackerError)) return null
+    throw trackerError
+  }
+
+  return trackerRow?.token?.trim() ?? null
+}
+
+async function persistStatTrackerToken(matchId: string, token: string): Promise<void> {
+  const { error: matchError } = await supabase
+    .from('matches')
+    .update({ stat_tracker_token: token })
+    .eq('id', matchId)
+
+  if (!matchError) return
+
+  if (!isMissingColumnError(matchError)) {
+    throw matchError
+  }
+
+  const { error: trackerError } = await supabase.from('match_stat_trackers').upsert(
+    {
+      match_id: matchId,
+      token,
+      revoked_at: null,
+    },
+    { onConflict: 'match_id' },
+  )
+
+  if (trackerError) {
+    if (isMissingStatTrackerTableError(trackerError)) {
+      throw new Error(
+        'Stat tracker is not set up yet. Run supabase-match-stat-tracker-migration.sql in the Supabase SQL Editor.',
+      )
+    }
+    throw trackerError
+  }
+}
+
+export async function validateStatTrackerToken(matchId: string, token: string): Promise<boolean> {
+  const match = await findMatchForStatTracker(matchId, token)
+  return match !== null
+}
+
+export async function ensureStatTrackerToken(matchId: string): Promise<string> {
+  const match = await fetchMatchById(matchId)
+  if (!match) {
+    throw new Error('Match not found.')
+  }
+
+  const existingToken = await fetchStoredStatTrackerToken(matchId)
+  if (existingToken) {
+    await persistStatTrackerToken(matchId, existingToken)
+    return existingToken
+  }
+
+  const token = generateStatTrackerToken()
+  await persistStatTrackerToken(matchId, token)
+
+  const verified = await findMatchForStatTracker(matchId, token)
+  if (verified) return token
+
+  const stored = await fetchStoredStatTrackerToken(matchId)
+  if (stored && normalizeStatTrackerToken(stored) === normalizeStatTrackerToken(token)) {
+    return stored
+  }
+
+  throw new Error(
+    'Stat tracker token could not be verified after saving. Reload the Supabase API schema cache (Project Settings → API → Reload schema), then try Share Stat Tracker again.',
+  )
+}
+
+export async function fetchStatTrackerContext(
+  matchId: string,
+  token: string,
+): Promise<StatTrackerContext | null> {
+  const match = await findMatchForStatTracker(matchId, token)
+  if (!match) {
+    const anyToken = await fetchStoredStatTrackerToken(matchId)
+    if (!anyToken) {
+      throw new Error(
+        'No stat tracker link exists for this match yet. Ask the coach to tap Share Stat Tracker from the live match screen.',
+      )
+    }
+    throw new Error(
+      'This stat tracker link is invalid or outdated. Ask the coach to share a fresh link from the live match screen.',
+    )
+  }
+
+  const [{ data: team, error: teamError }, stats, { data: players, error: playersError }] =
+    await Promise.all([
+      supabase.from('teams').select('name').eq('id', match.team_id).maybeSingle(),
+      fetchMatchStatsByMatchId(matchId),
+      supabase.from('players').select('id, first_name, last_name, jersey').eq('team_id', match.team_id),
+    ])
+
+  if (teamError) throw teamError
+  if (playersError) throw playersError
+
+  const attendingIds = new Set(
+    stats.filter((row) => row.attending).map((row) => row.player_id),
+  )
+
+  const roster = (players ?? [])
+    .filter((player) => attendingIds.has(player.id))
+    .map((player) => rosterPlayerFromDb(player))
+    .sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
+
+  return {
+    match,
+    teamName: team?.name ?? 'Team',
+    roster,
+  }
+}
+
+export async function insertStatTrackerEvent(input: {
+  matchId: string
+  token: string
+  playerId?: string | null
+  eventType: StatTrackerEventType
+  timestamp: number
+  anonymous?: boolean
+}) {
+  const valid = await validateStatTrackerToken(input.matchId, input.token)
+  if (!valid) {
+    throw new Error('Invalid or expired stat tracker link.')
+  }
+
+  const match = await fetchMatchById(input.matchId)
+  if (!match) {
+    throw new Error('Match not found.')
+  }
+  if (match.status !== 'active') {
+    throw new Error('This match is no longer accepting sideline stats.')
+  }
+
+  if (input.anonymous || !input.playerId) {
+    await insertMatchEvent({
+      matchId: input.matchId,
+      playerId: null,
+      eventType: 'stat_team_log',
+      timestamp: input.timestamp,
+      formation: '',
+      eventNotes: input.eventType,
+    })
+    return
+  }
+
+  await insertMatchEvent({
+    matchId: input.matchId,
+    playerId: input.playerId,
+    eventType: input.eventType,
+    timestamp: input.timestamp,
+    formation: '',
+    eventNotes: 'stat_tracker',
+  })
 }

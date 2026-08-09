@@ -56,6 +56,7 @@ create table if not exists public.matches (
   status text not null default 'active' check (status in ('active', 'pending_review', 'completed')),
   period_clock_started boolean not null default false,
   coach_summary_notes text,
+  stat_tracker_token text,
   created_at timestamptz not null default now()
 );
 
@@ -63,13 +64,17 @@ create table if not exists public.match_events (
   id uuid primary key default gen_random_uuid(),
   match_id uuid not null references public.matches (id) on delete cascade,
   player_id uuid references public.players (id) on delete cascade,
-  event_type text not null check (event_type in ('goal', 'assist', 'sub_in', 'sub_out', 'position_change', 'opponent_goal', 'formation_change')),
+  event_type text not null check (event_type in (
+    'goal', 'assist', 'sub_in', 'sub_out', 'position_change', 'opponent_goal', 'formation_change',
+    'stat_shot_on_target', 'stat_shot_off_target', 'stat_goal', 'stat_assist', 'stat_dribble',
+    'stat_tackle', 'stat_save', 'stat_pass', 'stat_key_pass', 'stat_team_log'
+  )),
   timestamp integer not null check (timestamp >= 0),
   event_notes text,
   formation text,
   assist_player_id uuid references public.players (id) on delete set null,
   created_at timestamptz not null default now(),
-  constraint match_events_player_required_check check (event_type in ('opponent_goal', 'formation_change') or player_id is not null)
+  constraint match_events_player_required_check check (event_type in ('opponent_goal', 'formation_change', 'stat_team_log') or player_id is not null)
 );
 
 create table if not exists public.match_stats (
@@ -98,6 +103,9 @@ create table if not exists public.match_stats (
 
 create index if not exists idx_players_team_id on public.players (team_id);
 create index if not exists idx_matches_status on public.matches (status);
+create unique index if not exists idx_matches_stat_tracker_token
+  on public.matches (stat_tracker_token)
+  where stat_tracker_token is not null;
 create index if not exists idx_match_events_match_id on public.match_events (match_id);
 create index if not exists idx_match_events_assist_player_id on public.match_events (assist_player_id);
 create index if not exists idx_match_stats_match_id on public.match_stats (match_id);
@@ -128,6 +136,18 @@ create table if not exists public.lineup_presets (
 
 create index if not exists idx_lineup_presets_team_id on public.lineup_presets (team_id);
 
+create table if not exists public.match_stat_trackers (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null references public.matches (id) on delete cascade,
+  token text not null unique,
+  created_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  unique (match_id)
+);
+
+create index if not exists idx_match_stat_trackers_match_id on public.match_stat_trackers (match_id);
+create index if not exists idx_match_stat_trackers_token on public.match_stat_trackers (token);
+
 -- ---------------------------------------------------------------------------
 -- Row Level Security (MVP: open read/write for anon + authenticated)
 -- ---------------------------------------------------------------------------
@@ -140,6 +160,7 @@ alter table public.match_events enable row level security;
 alter table public.match_stats enable row level security;
 alter table public.match_reviews enable row level security;
 alter table public.lineup_presets enable row level security;
+alter table public.match_stat_trackers enable row level security;
 
 -- Teams
 create policy "teams_select_all" on public.teams for select to anon, authenticated using (true);
@@ -180,6 +201,13 @@ create policy "lineup_presets_select_all" on public.lineup_presets for select to
 create policy "lineup_presets_insert_all" on public.lineup_presets for insert to anon, authenticated with check (true);
 create policy "lineup_presets_update_all" on public.lineup_presets for update to anon, authenticated using (true) with check (true);
 create policy "lineup_presets_delete_all" on public.lineup_presets for delete to anon, authenticated using (true);
+
+-- Stat tracker tokens
+create policy "match_stat_trackers_select_all" on public.match_stat_trackers for select to anon, authenticated using (true);
+create policy "match_stat_trackers_insert_all" on public.match_stat_trackers for insert to anon, authenticated with check (true);
+create policy "match_stat_trackers_update_all" on public.match_stat_trackers for update to anon, authenticated using (true) with check (true);
+
+grant all on public.match_stat_trackers to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Table privileges (required — RLS alone is not enough)

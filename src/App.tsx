@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   CheckCircle2,
   Goal,
+  Share2,
   Shield,
   UserPlus,
   Users,
   X,
 } from 'lucide-react'
 import { GoalWizardModal } from '@/components/GoalWizardModal'
+import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { HomeScreen } from '@/components/HomeScreen'
 import { ReportingScreen } from '@/components/ReportingScreen'
 import { BackToHomeButton, ScreenHeader } from '@/components/AppNavigation'
@@ -46,6 +48,7 @@ import {
 import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS, tickCountdownClock, type QaSpeedMultiplier } from '@/lib/match-clock'
 import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
+import { buildStatTrackerUrl } from '@/lib/stat-tracker'
 import {
   syncMatchClock,
   syncMatchEvent,
@@ -53,6 +56,7 @@ import {
   syncMatchRecord,
   syncMatchStat,
   syncMatchStats,
+  ensureStatTrackerToken,
   upsertMatchStats,
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
@@ -2001,6 +2005,39 @@ export default function App() {
     ],
   )
 
+  const handleShareStatTracker = useCallback(async () => {
+    if (!matchId) return
+
+    try {
+      const token = await ensureStatTrackerToken(matchId)
+      const url = buildStatTrackerUrl(matchId, token)
+      const preferNativeShare =
+        typeof navigator.share === 'function' &&
+        (window.matchMedia('(pointer: coarse)').matches ||
+          /iPhone|iPad|iPod|Android/i.test(navigator.userAgent))
+
+      if (preferNativeShare) {
+        await navigator.share({
+          title: 'Sideline Stat Tracker',
+          text: 'Tap to log player stats during the match.',
+          url,
+        })
+        setToast(`Stat tracker link shared (${window.location.host})`)
+        return
+      }
+
+      await navigator.clipboard.writeText(url)
+      setToast(`Stat tracker link copied — open on ${window.location.host}`)
+
+      if (import.meta.env.DEV) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
+      setToast(err instanceof Error ? err.message : 'Failed to create stat tracker link')
+    }
+  }, [matchId, setToast])
+
   if (loading) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background px-4">
@@ -2297,6 +2334,19 @@ export default function App() {
             </button>
           </div>
         )}
+
+        {matchId ? (
+          <button
+            type="button"
+            onClick={() => void handleShareStatTracker()}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-athletic/30 bg-athletic/10 py-3 text-sm font-bold uppercase tracking-wide text-athletic transition-transform active:scale-[0.98]"
+          >
+            <Share2 className="size-4" />
+            Share Stat Tracker
+          </button>
+        ) : null}
+
+        {matchId ? <SidelineStatsPanel matchId={matchId} players={players} /> : null}
 
         <LiveTacticalPitch
           ref={livePitchRef}

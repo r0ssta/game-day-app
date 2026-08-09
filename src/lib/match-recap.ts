@@ -35,6 +35,7 @@ export type PlayerRecapReview = {
   assists: number
   overallReview: PositionRecapReview
   positionReviews: PositionRecapReview[]
+  sidelineStatsSummary?: string | null
 }
 
 export type SavedPositionReview = {
@@ -326,6 +327,7 @@ export function buildRecapSummaryText(input: {
         `${row.number !== null ? `#${row.number}` : '—'} ${row.name}`,
         `  ${formatRecapMinutes(row.totalSeconds)} · ${positions}`,
         `  G:${row.goals} A:${row.assists}`,
+        ...(row.sidelineStatsSummary ? [`  Sideline: ${row.sidelineStatsSummary}`] : []),
         ...ratingLines,
       ].join('\n')
     }),

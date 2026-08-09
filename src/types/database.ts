@@ -48,6 +48,7 @@ export type DbMatch = {
   status: 'active' | 'pending_review' | 'completed'
   period_clock_started: boolean
   coach_summary_notes: string | null
+  stat_tracker_token?: string | null
   created_at: string
 }
 
@@ -55,12 +56,37 @@ export type DbMatchEvent = {
   id: string
   match_id: string
   player_id: string | null
-  event_type: 'goal' | 'assist' | 'sub_in' | 'sub_out' | 'position_change' | 'opponent_goal' | 'formation_change'
+  event_type:
+    | 'goal'
+    | 'assist'
+    | 'sub_in'
+    | 'sub_out'
+    | 'position_change'
+    | 'opponent_goal'
+    | 'formation_change'
+    | 'stat_shot_on_target'
+    | 'stat_shot_off_target'
+    | 'stat_goal'
+    | 'stat_assist'
+    | 'stat_dribble'
+    | 'stat_tackle'
+    | 'stat_save'
+    | 'stat_pass'
+    | 'stat_key_pass'
+    | 'stat_team_log'
   timestamp: number
   event_notes: string | null
   formation: string | null
   assist_player_id: string | null
   created_at: string
+}
+
+export type DbMatchStatTracker = {
+  id: string
+  match_id: string
+  token: string
+  created_at: string
+  revoked_at: string | null
 }
 
 export type DbMatchStat = {
@@ -110,6 +136,7 @@ export type Database = {
       match_events: { Row: DbMatchEvent; Insert: Omit<DbMatchEvent, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchEvent> }
       match_stats: { Row: DbMatchStat; Insert: Omit<DbMatchStat, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStat> }
       match_reviews: { Row: DbMatchReview; Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbMatchReview> }
+      match_stat_trackers: { Row: DbMatchStatTracker; Insert: Omit<DbMatchStatTracker, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStatTracker> }
       lineup_presets: { Row: DbLineupPreset; Insert: Omit<DbLineupPreset, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbLineupPreset> }
     }
   }
