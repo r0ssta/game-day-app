@@ -1,0 +1,26 @@
+{
+  "description": "Ordered incremental migrations. Add new supabase-*-migration.sql files to the end.",
+  "migrations": [
+    "supabase-match-date-time-migration.sql",
+    "supabase-match-reviews-migration.sql",
+    "supabase-match-events-formation-migration.sql",
+    "supabase-match-events-position-migration.sql",
+    "supabase-match-events-assist-player-migration.sql",
+    "supabase-players-contact-migration.sql",
+    "supabase-lineup-presets-migration.sql",
+    "supabase-players-positions-migration.sql",
+    "supabase-match-coach-summary-migration.sql",
+    "supabase-team-format-migration.sql",
+    "supabase-opponent-goal-migration.sql",
+    "supabase-players-name-migration.sql",
+    "supabase-players-team-migration.sql",
+    "supabase-team-primary-coach-migration.sql",
+    "supabase-match-location-type-migration.sql",
+    "supabase-match-pending-review-migration.sql",
+    "supabase-match-formation-change-migration.sql",
+    "supabase-match-reviews-position-migration.sql",
+    "supabase-match-plus-minus-migration.sql",
+    "supabase-match-stat-tracker-migration.sql",
+    "supabase-grants-fix.sql"
+  ]
+}

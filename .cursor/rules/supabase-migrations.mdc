@@ -1,0 +1,45 @@
+---
+description: Apply Supabase schema changes automatically via npm migration scripts
+globs: supabase*.sql,supabase/**/*
+alwaysApply: false
+---
+
+# Supabase migrations
+
+Use the **supabase** agent skill (`.agents/skills/supabase`) for Supabase-specific guidance.
+
+Do **not** ask the user to paste SQL into the Supabase dashboard unless `npm run db:migrate` fails or `SUPABASE_DB_URL` is missing/invalid in `.env`.
+
+## When adding or changing schema
+
+1. Add or update a root-level `supabase-*-migration.sql` file (idempotent: use `if not exists`, `drop constraint if exists`, etc.).
+2. Append the filename to `supabase/migrations.manifest.json` (end of list).
+3. Mirror the change in `supabase-schema.sql` and `supabase-run-all-migrations.sql` when appropriate.
+4. Update `src/types/database.ts` if types change.
+5. Run migrations yourself:
+   ```bash
+   npm run db:migrate:status
+   npm run db:migrate
+   ```
+
+## Connection string
+
+Project uses direct Postgres (`SUPABASE_DB_URL` in `.env`):
+`postgresql://postgres:[password]@db.ilclznhrlrirgmvwmunl.supabase.co:5432/postgres`
+
+Percent-encode special characters in the password.
+
+## One-time setup (user)
+
+If the database already has all manifest migrations applied manually:
+```bash
+npm run db:migrate:baseline
+```
+
+## Commands
+
+| Script | Purpose |
+|--------|---------|
+| `npm run db:migrate` | Apply pending migrations + `NOTIFY pgrst, 'reload schema'` |
+| `npm run db:migrate:status` | Show applied vs pending |
+| `npm run db:migrate:baseline` | Mark manifest migrations as applied without running SQL |
