@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { BarChart3 } from 'lucide-react'
+import { BarChart3, ClipboardList } from 'lucide-react'
 import { LineupCombinationsDashboard } from '@/components/reporting/LineupCombinationsDashboard'
 import { PlusMinusDashboard } from '@/components/reporting/PlusMinusDashboard'
 import { PlayerDevelopmentDashboard } from '@/components/reporting/PlayerDevelopmentDashboard'
@@ -16,6 +16,7 @@ type SeasonDetailsTabProps = {
   activeTeamName: string
   roster: RosterPlayer[]
   data: SeasonReportData
+  onViewRecaps?: () => void
 }
 
 function StatCard({
@@ -47,7 +48,12 @@ function recordGoalDiff(goalsFor: number, goalsAgainst: number): string {
   return diff > 0 ? `+${diff}` : String(diff)
 }
 
-export function SeasonDetailsTab({ activeTeamName, roster, data }: SeasonDetailsTabProps) {
+export function SeasonDetailsTab({
+  activeTeamName,
+  roster,
+  data,
+  onViewRecaps,
+}: SeasonDetailsTabProps) {
   const { seasonRecord } = data
   const analytics = useMemo(() => buildSeasonAnalytics(data, roster), [data, roster])
 
@@ -62,6 +68,26 @@ export function SeasonDetailsTab({ activeTeamName, roster, data }: SeasonDetails
           Analytics for {activeTeamName || 'your team'} from completed matches and post-game reviews.
         </p>
       </div>
+
+      {onViewRecaps ? (
+        <button
+          type="button"
+          onClick={onViewRecaps}
+          className="flex w-full items-center gap-3 rounded-xl border-2 border-neon bg-neon/10 px-4 py-4 text-left active:scale-[0.98]"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-neon/20">
+            <ClipboardList className="size-5 text-neon" strokeWidth={2.5} />
+          </span>
+          <span>
+            <span className="block font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              View Match Recaps
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Open any completed match recap for review or quick edits.
+            </span>
+          </span>
+        </button>
+      ) : null}
 
       {seasonRecord.matchesPlayed === 0 ? (
         <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">

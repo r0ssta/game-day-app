@@ -49,7 +49,18 @@ export type DbMatch = {
   period_clock_started: boolean
   coach_summary_notes: string | null
   stat_tracker_token?: string | null
+  qualitative_context?: QualitativeContextJson | null
   created_at: string
+}
+
+export type QualitativeContextJson = {
+  executionScore?: number | null
+  opponentTier?: string | null
+  /** @deprecated Legacy key — read-only */
+  oppositionStrength?: string | null
+  practiceTransfer?: string | null
+  sidelineEnvironment?: string | null
+  focusChips?: string[]
 }
 
 export type DbMatchEvent = {

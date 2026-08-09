@@ -612,6 +612,28 @@ export async function saveCoachMatchSummary(matchId: string, coachSummaryNotes: 
   throw error
 }
 
+export async function saveQualitativeContext(
+  matchId: string,
+  context: Record<string, unknown> | null,
+) {
+  const { error } = await supabase
+    .from('matches')
+    .update({ qualitative_context: context })
+    .eq('id', matchId)
+
+  if (!error) return
+
+  if (isMissingColumnError(error)) {
+    console.warn(
+      '[saveQualitativeContext] qualitative_context unavailable:',
+      formatSupabaseError(error),
+    )
+    return
+  }
+
+  throw error
+}
+
 export async function markMatchPendingReview(matchId: string) {
   const { error } = await supabase
     .from('matches')
@@ -697,6 +719,17 @@ export async function fetchMatchRecapBundle(matchId: string): Promise<ActiveMatc
   return { match, team, coach: coach ?? null, stats }
 }
 
+export async function fetchRecapEligibleMatchesByTeamId(teamId: string): Promise<DbMatch[]> {
+  const { data, error } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('team_id', teamId)
+    .in('status', ['pending_review', 'completed'])
+    .order('date', { ascending: false })
+  if (error) throw error
+  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
+}
+
 export async function fetchCompletedMatchesByTeamId(teamId: string): Promise<DbMatch[]> {
   const { data, error } = await supabase
     .from('matches')
@@ -751,8 +784,10 @@ export async function savePostGameReview(
   matchId: string,
   reviews: PostGameReviewInput[],
   coachSummaryNotes?: string,
+  qualitativeContext?: Record<string, unknown> | null,
 ) {
   await saveCoachMatchSummary(matchId, coachSummaryNotes ?? '')
+  await saveQualitativeContext(matchId, qualitativeContext ?? null)
 
   if (reviews.length === 0) return
 

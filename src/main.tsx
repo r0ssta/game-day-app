@@ -3,7 +3,12 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { StatTrackerScreen } from '@/components/StatTrackerScreen'
+import { SunlightModeToggle } from '@/components/SunlightModeToggle'
+import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
+import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
+
+applySunlightMode(readSunlightMode())
 
 function Root() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
@@ -19,13 +24,16 @@ function Root() {
     }
   }, [])
 
-  if (trackerRoute) {
-    return (
-      <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
-    )
-  }
-
-  return <App />
+  return (
+    <SunlightModeProvider>
+      <SunlightModeToggle floating />
+      {trackerRoute ? (
+        <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
+      ) : (
+        <App />
+      )}
+    </SunlightModeProvider>
+  )
 }
 
 createRoot(document.getElementById('root')!).render(

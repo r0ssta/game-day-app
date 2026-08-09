@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { MatchRecapDetailView } from '@/components/MatchRecapDetailView'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { PlayerBreakdownsTab } from '@/components/reporting/PlayerBreakdownsTab'
 import { PlayerSeasonProfileView } from '@/components/reporting/PlayerSeasonProfileView'
@@ -26,6 +25,8 @@ type ReportingScreenProps = {
   teamRoster: RosterPlayer[]
   pendingReviewMatches: DbMatch[]
   onOpenPendingReview: (matchId: string) => void
+  onOpenMatchRecap: (matchId: string) => void
+  onViewRecaps: () => void
   onRefreshRoster: () => Promise<void>
   onBackToHome: () => void
 }
@@ -36,11 +37,12 @@ export function ReportingScreen({
   teamRoster,
   pendingReviewMatches,
   onOpenPendingReview,
+  onOpenMatchRecap,
+  onViewRecaps,
   onRefreshRoster,
   onBackToHome,
 }: ReportingScreenProps) {
   const [activeTab, setActiveTab] = useState<ReportingTab>('matches')
-  const [selectedMatch, setSelectedMatch] = useState<DbMatch | null>(null)
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -52,7 +54,6 @@ export function ReportingScreen({
 
   useEffect(() => {
     setActiveTab('matches')
-    setSelectedMatch(null)
     setSelectedPlayerId(null)
   }, [activeTeamId])
 
@@ -85,18 +86,6 @@ export function ReportingScreen({
       cancelled = true
     }
   }, [activeTeamId, teamRoster])
-
-  if (selectedMatch) {
-    return (
-      <MatchRecapDetailView
-        match={selectedMatch}
-        teamName={activeTeamName}
-        roster={teamRoster}
-        onBack={() => setSelectedMatch(null)}
-        onHome={onBackToHome}
-      />
-    )
-  }
 
   const selectedPlayer = selectedPlayerId
     ? getPlayerFromRoster(teamRoster, selectedPlayerId)
@@ -153,7 +142,7 @@ export function ReportingScreen({
                 data={reportData}
                 pendingReviewMatches={pendingReviewMatches}
                 onOpenPendingReview={onOpenPendingReview}
-                onViewRecap={setSelectedMatch}
+                onOpenMatchRecap={onOpenMatchRecap}
               />
             ) : null}
 
@@ -170,6 +159,7 @@ export function ReportingScreen({
                 activeTeamName={activeTeamName}
                 roster={teamRoster}
                 data={reportData}
+                onViewRecaps={onViewRecaps}
               />
             ) : null}
           </>

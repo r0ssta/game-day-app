@@ -39,6 +39,66 @@
     color: var(--color-foreground);
     overflow-x: hidden;
   }
+
+  /* High-luminance outdoor palette — overrides semantic theme tokens app-wide */
+  html.sunlight-mode {
+    color-scheme: light;
+
+    --color-background: oklch(0.99 0.004 95);
+    --color-foreground: oklch(0.12 0 0);
+    --color-card: oklch(1 0 0);
+    --color-card-foreground: oklch(0.12 0 0);
+    --color-popover: oklch(1 0 0);
+    --color-secondary: oklch(0.94 0.008 95);
+    --color-muted-foreground: oklch(0.36 0.02 260);
+    --color-border: oklch(0.22 0.02 260);
+
+    --color-neon: oklch(0.48 0.19 145);
+    --color-neon-foreground: oklch(0.99 0 0);
+
+    --color-athletic: oklch(0.42 0.17 250);
+    --color-athletic-foreground: oklch(0.99 0 0);
+
+    --color-danger: oklch(0.46 0.22 25);
+    --color-danger-foreground: oklch(0.99 0 0);
+
+    --color-field: oklch(0.44 0.14 145);
+  }
+
+  html.sunlight-mode body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  /* Solid borders instead of glow/shadow accents */
+  html.sunlight-mode :where(.shadow-neon, [class*='shadow-neon']) {
+    box-shadow: 0 0 0 2px var(--color-neon) !important;
+  }
+
+  html.sunlight-mode :where(.shadow-xl, .shadow-2xl, .shadow-lg) {
+    box-shadow:
+      0 0 0 1px var(--color-border),
+      0 2px 8px rgb(0 0 0 / 0.08) !important;
+  }
+
+  html.sunlight-mode :where(header, [role='dialog']) {
+    backdrop-filter: none;
+  }
+
+  html.sunlight-mode :where(input, select, textarea) {
+    background-color: var(--color-card);
+    color: var(--color-foreground);
+    border-color: var(--color-border);
+  }
+
+  html.sunlight-mode :where(input, select, textarea)::placeholder {
+    color: var(--color-muted-foreground);
+  }
+
+  html.sunlight-mode .soccer-pitch-surface {
+    border-color: oklch(0.28 0.06 145);
+    box-shadow: inset 0 0 0 1px oklch(0.28 0.06 145);
+  }
 }
 
 @keyframes marquee {

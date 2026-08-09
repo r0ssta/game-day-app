@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardCopy, Mail } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
+import { QualitativeContextFields } from '@/components/QualitativeContextFields'
 import {
   aggregatePlayerRecaps,
   buildRecapRows,
@@ -13,6 +14,13 @@ import {
   type PlayerRecapStats,
   type SavedPositionReview,
 } from '@/lib/match-recap'
+import {
+  EMPTY_QUALITATIVE_CONTEXT,
+  formatQualitativeContextSummary,
+  hasQualitativeContext,
+  parseQualitativeContext,
+  type QualitativeContext,
+} from '@/lib/qualitative-context'
 import {
   aggregateMicroStats,
   formatMicroStatsSummary,
@@ -49,9 +57,11 @@ const IMPACT_RING: Record<Impact, string> = {
 function ImpactToggleGroup({
   impact,
   onSetImpact,
+  disabled = false,
 }: {
   impact: Impact
   onSetImpact: (impact: Impact) => void
+  disabled?: boolean
 }) {
   return (
     <div className="flex shrink-0 gap-1">
@@ -60,9 +70,11 @@ function ImpactToggleGroup({
           key={value}
           type="button"
           aria-label={`${value} rating`}
+          disabled={disabled}
           onClick={() => onSetImpact(value)}
           className={cn(
             'flex size-11 min-h-11 min-w-11 touch-manipulation items-center justify-center rounded-md text-sm font-bold active:scale-90',
+            disabled && 'cursor-default opacity-70 active:scale-100',
             impact === value
               ? value === 'positive'
                 ? 'bg-neon text-neon-foreground'
@@ -89,6 +101,7 @@ type PostGameRecapProps = {
   awayScore: number
   halfLengthMinutes: number
   players: MatchPlayer[]
+  isCompletedMatch?: boolean
   onFinalize: () => void
   onToast: (message: string) => void
   onHome?: () => void
@@ -104,10 +117,12 @@ export function PostGameRecap({
   awayScore,
   halfLengthMinutes,
   players,
+  isCompletedMatch = false,
   onFinalize,
   onToast,
   onHome,
 }: PostGameRecapProps) {
+  const [readOnly, setReadOnly] = useState(isCompletedMatch)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -116,6 +131,9 @@ export function PostGameRecap({
   const [reviews, setReviews] = useState<Record<string, SavedPositionReview>>({})
   const [touchedPositionReviews, setTouchedPositionReviews] = useState<Set<string>>(() => new Set())
   const [coachSummary, setCoachSummary] = useState('')
+  const [qualitativeContext, setQualitativeContext] = useState<QualitativeContext>(
+    EMPTY_QUALITATIVE_CONTEXT,
+  )
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const saveDraftRef = useRef<() => Promise<void>>(async () => {})
 
@@ -134,6 +152,9 @@ export function PostGameRecap({
 
         if (matchRecord?.coach_summary_notes) {
           setCoachSummary(matchRecord.coach_summary_notes)
+        }
+        if (matchRecord?.qualitative_context) {
+          setQualitativeContext(parseQualitativeContext(matchRecord.qualitative_context))
         }
 
         let existingReviews: Awaited<ReturnType<typeof fetchMatchReviews>> = []
@@ -273,24 +294,38 @@ export function PostGameRecap({
     [recapRows, reviews, touchedPositionReviews],
   )
 
+  const qualitativePayload = useMemo(
+    () => (hasQualitativeContext(qualitativeContext) ? qualitativeContext : null),
+    [qualitativeContext],
+  )
+
+  const qualitativeContextLines = useMemo(
+    () => formatQualitativeContextSummary(qualitativeContext),
+    [qualitativeContext],
+  )
+
   const saveDraft = useCallback(async () => {
-    await savePostGameReview(matchId, reviewPayload, coachSummary)
+    await savePostGameReview(matchId, reviewPayload, coachSummary, qualitativePayload)
     setDraftSavedAt(Date.now())
-  }, [matchId, reviewPayload, coachSummary])
+  }, [matchId, reviewPayload, coachSummary, qualitativePayload])
 
   useEffect(() => {
     saveDraftRef.current = saveDraft
   }, [saveDraft])
 
   useEffect(() => {
-    if (loading) return
+    setReadOnly(isCompletedMatch)
+  }, [matchId, isCompletedMatch])
+
+  useEffect(() => {
+    if (loading || readOnly) return
     const id = setTimeout(() => {
       void saveDraft().catch((err) => {
         console.warn('[PostGameRecap] draft auto-save failed', err)
       })
     }, 1200)
     return () => clearTimeout(id)
-  }, [loading, saveDraft])
+  }, [loading, readOnly, saveDraft])
 
   useEffect(() => {
     return () => {
@@ -301,11 +336,28 @@ export function PostGameRecap({
   }, [])
 
   const handleExit = async () => {
+    if (readOnly) {
+      onHome?.()
+      return
+    }
     try {
       await saveDraft()
       onHome?.()
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to save draft')
+    }
+  }
+
+  const handleSaveChanges = async () => {
+    setSaving(true)
+    try {
+      await savePostGameReview(matchId, reviewPayload, coachSummary, qualitativePayload)
+      onToast('Recap updated')
+      setReadOnly(true)
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Failed to save recap')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -339,7 +391,7 @@ export function PostGameRecap({
   const handleFinalize = async () => {
     setSaving(true)
     try {
-      await savePostGameReview(matchId, reviewPayload, coachSummary)
+      await savePostGameReview(matchId, reviewPayload, coachSummary, qualitativePayload)
       await finalizeMatchReview(matchId)
 
       const summary = buildRecapSummaryText({
@@ -350,6 +402,7 @@ export function PostGameRecap({
         awayScore,
         coachName,
         coachSummary,
+        qualitativeContextLines,
         rows: buildSummaryRows(),
       })
 
@@ -372,6 +425,7 @@ export function PostGameRecap({
       awayScore,
       coachName,
       coachSummary,
+      qualitativeContextLines,
       rows: buildSummaryRows(),
     })
     const subject = encodeURIComponent(
@@ -390,6 +444,7 @@ export function PostGameRecap({
       awayScore,
       coachName,
       coachSummary,
+      qualitativeContextLines,
       rows: buildSummaryRows(),
     })
     void navigator.clipboard.writeText(summary).then(() => onToast('Summary copied'))
@@ -417,11 +472,16 @@ export function PostGameRecap({
   return (
     <main className={`${APP_SHELL} pb-28 md:pb-32`}>
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
-        <header className="flex items-start justify-between gap-3">
+        <header className="flex items-start justify-between gap-3 pl-14 sm:pl-0">
           <div className="min-w-0 flex-1 text-center">
             <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
               Post-Game Recap
             </h1>
+            {isCompletedMatch ? (
+              <p className="mt-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                {readOnly ? 'Viewing saved recap' : 'Editing saved recap'}
+              </p>
+            ) : null}
             <p className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
               <span>
                 {teamName} {homeScore} – {awayScore} {formatOpponentPrefix(locationType)}{' '}
@@ -447,7 +507,19 @@ export function PostGameRecap({
           {onHome ? <BackToHomeButton onClick={() => void handleExit()} /> : null}
         </header>
 
-        {draftSavedAt ? (
+        {isCompletedMatch ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setReadOnly((value) => !value)}
+              className="min-h-11 touch-manipulation rounded-xl border-2 border-border bg-card px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
+            >
+              {readOnly ? 'Edit Recap' : 'Switch to View Only'}
+            </button>
+          </div>
+        ) : null}
+
+        {!readOnly && draftSavedAt ? (
           <p className="text-center text-xs font-semibold text-muted-foreground">
             Draft saved — finalize when your review is complete.
           </p>
@@ -467,11 +539,21 @@ export function PostGameRecap({
             id="coach-match-summary"
             value={coachSummary}
             onChange={(e) => setCoachSummary(e.target.value)}
+            readOnly={readOnly}
             rows={5}
             placeholder="How did we play? What worked well? What should we focus on in training?"
-            className="w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            className={cn(
+              'w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
+              readOnly && 'cursor-default bg-secondary/30',
+            )}
           />
         </section>
+
+        <QualitativeContextFields
+          value={qualitativeContext}
+          onChange={setQualitativeContext}
+          readOnly={readOnly}
+        />
 
         <section className="overflow-hidden rounded-xl border border-border bg-card">
           <div className="border-b border-border bg-secondary/40 px-4 py-3">
@@ -538,6 +620,7 @@ export function PostGameRecap({
                       <div className="flex flex-wrap items-center gap-3">
                         <ImpactToggleGroup
                           impact={overall.impact}
+                          disabled={readOnly}
                           onSetImpact={(impact) =>
                             updateReview(row.playerId, OVERALL_REVIEW_POSITION, { impact })
                           }
@@ -545,13 +628,17 @@ export function PostGameRecap({
                         <input
                           type="text"
                           value={overall.notes}
+                          readOnly={readOnly}
                           onChange={(e) =>
                             updateReview(row.playerId, OVERALL_REVIEW_POSITION, {
                               notes: e.target.value,
                             })
                           }
                           placeholder="Overall notes / comments"
-                          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                          className={cn(
+                            'min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
+                            readOnly && 'cursor-default bg-secondary/30',
+                          )}
                         />
                       </div>
                     </div>
@@ -588,6 +675,7 @@ export function PostGameRecap({
                                 </span>
                                 <ImpactToggleGroup
                                   impact={saved.impact}
+                                  disabled={readOnly}
                                   onSetImpact={(impact) =>
                                     updateReview(row.playerId, review.position, { impact }, {
                                       markPositionTouched: true,
@@ -598,6 +686,7 @@ export function PostGameRecap({
                               <input
                                 type="text"
                                 value={saved.notes}
+                                readOnly={readOnly}
                                 onChange={(e) =>
                                   updateReview(
                                     row.playerId,
@@ -607,7 +696,10 @@ export function PostGameRecap({
                                   )
                                 }
                                 placeholder={`Optional notes for ${review.position}`}
-                                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                                className={cn(
+                                  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
+                                  readOnly && 'cursor-default bg-secondary/30',
+                                )}
                               />
                             </div>
                           )
@@ -623,14 +715,35 @@ export function PostGameRecap({
 
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur">
           <div className={`${APP_CONTAINER} flex flex-col gap-2`}>
-            <button
-              type="button"
-              onClick={() => void handleFinalize()}
-              disabled={saving}
-              className="w-full rounded-xl bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98] disabled:opacity-50"
-            >
-              {saving ? 'Finalizing…' : 'Finalize & Save'}
-            </button>
+            {readOnly ? (
+              isCompletedMatch ? (
+                <button
+                  type="button"
+                  onClick={() => setReadOnly(false)}
+                  className="w-full rounded-xl border-2 border-neon bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98]"
+                >
+                  Edit Recap
+                </button>
+              ) : null
+            ) : isCompletedMatch ? (
+              <button
+                type="button"
+                onClick={() => void handleSaveChanges()}
+                disabled={saving}
+                className="w-full rounded-xl bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98] disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleFinalize()}
+                disabled={saving}
+                className="w-full rounded-xl bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98] disabled:opacity-50"
+              >
+                {saving ? 'Finalizing…' : 'Finalize & Save'}
+              </button>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BarChart3, ClipboardList, Users } from 'lucide-react'
+import { BarChart3, ClipboardList, FileText, Users } from 'lucide-react'
 import { TeamSelector } from '@/components/AppNavigation'
 import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
@@ -22,6 +22,7 @@ type HomeScreenProps = {
   onNewGame: () => void
   onTeamManagement: () => void
   onReporting: () => void
+  onViewRecaps: () => void
   onResumeMatch: () => void
 }
 
@@ -40,6 +41,7 @@ export function HomeScreen({
   onNewGame,
   onTeamManagement,
   onReporting,
+  onViewRecaps,
   onResumeMatch,
 }: HomeScreenProps) {
   const teamReady = Boolean(activeTeamId)
@@ -47,7 +49,7 @@ export function HomeScreen({
   return (
     <main className={APP_SHELL}>
       <div className={`${APP_CONTAINER} flex min-h-dvh flex-col pb-10 pt-8 md:pb-12 md:pt-10`}>
-        <header className="mb-6 text-center">
+        <header className="mb-6 pl-14 text-center sm:pl-0">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-athletic">Game Day App</p>
           <h1 className="mt-2 font-display text-4xl font-black uppercase tracking-wide text-foreground">
             Home
@@ -120,6 +122,14 @@ export function HomeScreen({
             description="Roster and preset lineups"
             disabled={!teamReady}
             onClick={onTeamManagement}
+          />
+
+          <HomeActionButton
+            icon={<FileText className="size-7 text-athletic" strokeWidth={2.5} />}
+            title="View Recaps"
+            description="Open any finished match recap for review or edits"
+            disabled={!teamReady}
+            onClick={onViewRecaps}
           />
 
           <HomeActionButton

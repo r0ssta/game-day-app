@@ -20,6 +20,7 @@ import {
   type PositionReassignUpdate,
 } from '@/components/LiveTacticalPitch'
 import { PostGameRecap } from '@/components/PostGameRecap'
+import { MatchRecapHistoryScreen } from '@/components/MatchRecapHistoryScreen'
 import {
   DEFAULT_PRIMARY_POSITION,
   DEFAULT_SECONDARY_POSITION,
@@ -268,7 +269,7 @@ function MatchHeader({
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className={`${APP_CONTAINER} pb-4 pt-3`}>
+      <div className={`${APP_CONTAINER} pb-4 pt-3 pl-14 sm:pl-0`}>
         <div className="mb-2 flex justify-end">
           <BackToHomeButton onClick={onHome} />
         </div>
@@ -1316,7 +1317,8 @@ export default function App() {
     beginSecondHalf,
     finishGame,
     returnToHome,
-    openPendingReviewRecap,
+    openMatchRecap,
+    matchStatus,
     hasLiveMatch,
     hasPendingRecap,
     createTeam,
@@ -1338,6 +1340,9 @@ export default function App() {
 
   const [toast, setToast] = useState<string | null>(null)
   const [pendingReviewMatches, setPendingReviewMatches] = useState<DbMatch[]>([])
+  const [recapReturnMode, setRecapReturnMode] = useState<
+    'home' | 'recap_history' | 'reporting' | null
+  >(null)
   const [goalWizardOpen, setGoalWizardOpen] = useState(false)
   const [goalWizardStep, setGoalWizardStep] = useState<'scorer' | 'assist'>('scorer')
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
@@ -1394,18 +1399,42 @@ export default function App() {
   const handleOpenPendingReview = useCallback(
     async (targetMatchId: string) => {
       try {
-        await openPendingReviewRecap(targetMatchId)
+        setRecapReturnMode('home')
+        await openMatchRecap(targetMatchId)
       } catch (err) {
         setToast(err instanceof Error ? err.message : 'Failed to open recap')
       }
     },
-    [openPendingReviewRecap],
+    [openMatchRecap],
   )
 
+  const handleOpenMatchRecap = useCallback(
+    async (targetMatchId: string, returnTo: 'home' | 'recap_history' | 'reporting') => {
+      try {
+        setRecapReturnMode(returnTo)
+        await openMatchRecap(targetMatchId)
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : 'Failed to open recap')
+      }
+    },
+    [openMatchRecap],
+  )
+
+  const handleExitRecap = useCallback(() => {
+    if (recapReturnMode === 'recap_history') {
+      setAppMode('recap_history')
+    } else if (recapReturnMode === 'reporting') {
+      setAppMode('reporting')
+    } else {
+      returnToHome()
+      void refreshPendingReviewMatches()
+    }
+    setRecapReturnMode(null)
+  }, [recapReturnMode, returnToHome, refreshPendingReviewMatches, setAppMode])
+
   const handleFinalizeRecap = useCallback(async () => {
-    returnToHome()
-    await refreshPendingReviewMatches()
-  }, [returnToHome, refreshPendingReviewMatches])
+    handleExitRecap()
+  }, [handleExitRecap])
 
   const attendingCount = getAttendingIds(setupLineup).length
   const activeTeamName =
@@ -1454,7 +1483,10 @@ export default function App() {
 
   useEffect(() => {
     const needsTeam =
-      appMode === 'match_setup' || appMode === 'team' || appMode === 'reporting'
+      appMode === 'match_setup' ||
+      appMode === 'team' ||
+      appMode === 'reporting' ||
+      appMode === 'recap_history'
     if (needsTeam && !activeTeamId) {
       setAppMode('home')
     }
@@ -2082,6 +2114,7 @@ export default function App() {
         onTeamManagement={() => setAppMode('team')}
         onNewGame={() => setAppMode('match_setup')}
         onReporting={() => setAppMode('reporting')}
+        onViewRecaps={() => setAppMode('recap_history')}
         onResumeMatch={() => setAppMode('match')}
       />
     )
@@ -2191,6 +2224,29 @@ export default function App() {
     )
   }
 
+  if (appMode === 'recap_history') {
+    if (!activeTeamId) return null
+
+    return (
+      <>
+        <MatchRecapHistoryScreen
+          activeTeamId={activeTeamId}
+          activeTeamName={activeTeamName}
+          onOpenRecap={(id) => void handleOpenMatchRecap(id, 'recap_history')}
+          onBackToHome={() => setAppMode('home')}
+        />
+        {toast && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
+              <CheckCircle2 className="size-5" strokeWidth={2.5} />
+              {toast}
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
   if (appMode === 'reporting') {
     if (!activeTeamId) return null
 
@@ -2201,6 +2257,8 @@ export default function App() {
         teamRoster={teamRoster}
         pendingReviewMatches={pendingReviewMatches}
         onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
+        onOpenMatchRecap={(id) => void handleOpenMatchRecap(id, 'reporting')}
+        onViewRecaps={() => setAppMode('recap_history')}
         onRefreshRoster={loadFullTeamRoster}
         onBackToHome={() => setAppMode('home')}
       />
@@ -2264,11 +2322,9 @@ export default function App() {
           awayScore={awayScore}
           halfLengthMinutes={halfLengthMinutes}
           players={players}
+          isCompletedMatch={matchStatus === 'completed'}
           onFinalize={() => void handleFinalizeRecap()}
-          onHome={() => {
-            setAppMode('home')
-            void refreshPendingReviewMatches()
-          }}
+          onHome={handleExitRecap}
           onToast={setToast}
         />
         {toast && (

@@ -1,7 +1,7 @@
 export type Impact = 'neutral' | 'positive' | 'negative'
 
-/** Top-level app views: home → team | match_setup | reporting → match | halftime → recap → home */
-export type AppMode = 'home' | 'team' | 'match_setup' | 'reporting' | 'match' | 'halftime' | 'recap'
+/** Top-level app views: home → team | match_setup | reporting | recap_history → match | halftime → recap → home */
+export type AppMode = 'home' | 'team' | 'match_setup' | 'reporting' | 'recap_history' | 'match' | 'halftime' | 'recap'
 
 export type ActionType = 'GOAL' | 'ASSIST'
 

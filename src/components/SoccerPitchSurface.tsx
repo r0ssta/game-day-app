@@ -11,7 +11,7 @@ export function SoccerPitchSurface({
   return (
     <div
       className={cn(
-        'relative aspect-[3/4] w-full max-w-full overflow-hidden rounded-xl border-2 border-white/30 bg-gradient-to-b from-emerald-600 to-emerald-700 shadow-inner md:aspect-[4/5] lg:aspect-[3/4] lg:max-h-[min(72vh,720px)] lg:justify-self-center',
+        'relative aspect-[3/4] w-full max-w-full overflow-hidden rounded-xl border-2 border-white/30 bg-gradient-to-b from-emerald-600 to-emerald-700 shadow-inner soccer-pitch-surface md:aspect-[4/5] lg:aspect-[3/4] lg:max-h-[min(72vh,720px)] lg:justify-self-center',
         className,
       )}
     >

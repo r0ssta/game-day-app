@@ -891,11 +891,15 @@ export function useGameDayApp() {
     setMatchStatus(null)
   }, [activeTeamFormat])
 
-  const openPendingReviewRecap = useCallback(async (targetMatchId: string) => {
+  const openMatchRecap = useCallback(async (targetMatchId: string) => {
     const bundle = await fetchMatchRecapBundle(targetMatchId)
     if (!bundle) throw new Error('Match not found')
 
     const { match, team, coach, stats } = bundle
+    if (match.status !== 'pending_review' && match.status !== 'completed') {
+      throw new Error('Recap is only available for finished matches')
+    }
+
     const teamPlayers = await fetchPlayersByTeamId(match.team_id)
     const roster = teamPlayers.map(dbPlayerToRoster)
     const matchPlayers = rebuildMatchPlayers(roster, stats)
@@ -903,7 +907,7 @@ export function useGameDayApp() {
     setSelectedTeamId(match.team_id)
     setMasterRoster(roster)
     setMatchId(match.id)
-    setMatchStatus('pending_review')
+    setMatchStatus(match.status)
     setPlayers(matchPlayers)
     setHomeScore(match.home_score)
     setAwayScore(match.away_score)
@@ -920,6 +924,9 @@ export function useGameDayApp() {
     setSecondHalfStarterIds(stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id))
     setAppMode('recap')
   }, [])
+
+  /** @deprecated Use openMatchRecap */
+  const openPendingReviewRecap = openMatchRecap
 
   const endMatch = useCallback(async () => {
     if (matchId) {
@@ -980,6 +987,7 @@ export function useGameDayApp() {
     beginSecondHalf,
     finishGame,
     returnToHome,
+    openMatchRecap,
     openPendingReviewRecap,
     matchStatus,
     hasLiveMatch: matchStatus === 'active' && Boolean(matchId),

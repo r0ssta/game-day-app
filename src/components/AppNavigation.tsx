@@ -28,7 +28,7 @@ export function ScreenHeader({
   onHome: () => void
 }) {
   return (
-    <header className="flex items-start justify-between gap-3">
+    <header className="flex items-start justify-between gap-3 pl-14 sm:pl-0">
       <div className="min-w-0 flex-1">
         <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
           {title}

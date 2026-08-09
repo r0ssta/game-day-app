@@ -6,6 +6,11 @@ import {
   loadHistoricalRecapRows,
   type PlayerRecapReview,
 } from '@/lib/match-recap'
+import {
+  formatQualitativeContextSummary,
+  hasQualitativeContext,
+  parseQualitativeContext,
+} from '@/lib/qualitative-context'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { resolveMatchCoachName } from '@/lib/supabase-api'
 import {
@@ -51,6 +56,8 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
   const headCoach = resolveMatchCoachName(match, null)
   const locationType = resolveMatchLocationType(match)
   const opponentLabel = match.opponent.trim() || 'Opponent'
+  const qualitativeContext = parseQualitativeContext(match.qualitative_context)
+  const qualitativeLines = formatQualitativeContextSummary(qualitativeContext)
 
   useEffect(() => {
     let cancelled = false
@@ -172,6 +179,19 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
             </p>
           )}
         </section>
+
+        {hasQualitativeContext(qualitativeContext) ? (
+          <section className="rounded-xl border-2 border-border bg-card p-4">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              Qualitative Context
+            </h2>
+            <ul className="mt-3 space-y-1.5 text-sm text-foreground">
+              {qualitativeLines.slice(2).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {loading && (
           <p className="py-8 text-center text-sm font-semibold text-muted-foreground">Loading recap…</p>

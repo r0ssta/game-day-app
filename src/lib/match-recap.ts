@@ -294,11 +294,13 @@ export function buildRecapSummaryText(input: {
   awayScore: number
   coachName?: string
   coachSummary?: string
+  qualitativeContextLines?: string[]
   rows: PlayerRecapReview[]
 }): string {
   const coachSummary = input.coachSummary?.trim()
   const coachName = input.coachName?.trim()
   const venueLine = formatOpponentWithVenue(input.opponent, input.locationType ?? 'home')
+  const qualitativeLines = input.qualitativeContextLines ?? []
   const lines = [
     'POST-GAME RECAP',
     '===============',
@@ -306,7 +308,11 @@ export function buildRecapSummaryText(input: {
     `Final Score: ${input.homeScore} – ${input.awayScore}`,
     ...(coachName ? [`Head Coach: ${coachName}`, ''] : []),
     ...(coachSummary
-      ? ['COACH SUMMARY', '--------------', coachSummary, '', 'PLAYER STATS', '------------']
+      ? ['COACH SUMMARY', '--------------', coachSummary, '']
+      : []),
+    ...(qualitativeLines.length > 0 ? [...qualitativeLines, ''] : []),
+    ...(coachSummary || qualitativeLines.length > 0
+      ? ['PLAYER STATS', '------------']
       : ['PLAYER STATS', '------------']),
     ...input.rows.flatMap((row) => {
       const positions = row.positions.length > 0 ? row.positions.join(', ') : '—'

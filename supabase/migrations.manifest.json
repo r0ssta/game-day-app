@@ -21,6 +21,7 @@
     "supabase-match-reviews-position-migration.sql",
     "supabase-match-plus-minus-migration.sql",
     "supabase-match-stat-tracker-migration.sql",
+    "supabase-match-qualitative-context-migration.sql",
     "supabase-grants-fix.sql"
   ]
 }
