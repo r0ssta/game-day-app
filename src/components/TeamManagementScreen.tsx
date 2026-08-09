@@ -66,6 +66,7 @@ type TeamManagementScreenProps = {
   activeTeamId: string | null
   activeTeamName: string
   activeTeamFormat: TeamFormat
+  teamSwitcher?: ReactNode
   rosterLoading: boolean
   teamRoster: RosterPlayer[]
   suggestedJersey: number
@@ -747,7 +748,7 @@ function TeamLineupsTab({
 }
 
 export function TeamManagementScreen(props: TeamManagementScreenProps) {
-  const { activeTeamId, activeTeamName, onBackToHome } = props
+  const { activeTeamId, activeTeamName, teamSwitcher, onBackToHome } = props
   const [tab, setTab] = useState<TeamTab>('roster')
 
   useEffect(() => {
@@ -761,6 +762,7 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
           title="Team Management"
           subtitle={`Roster and preset lineups for ${activeTeamName || 'your team'}.`}
           onHome={onBackToHome}
+          teamSwitcher={teamSwitcher}
         />
 
         <div className="flex gap-1 rounded-xl border border-border bg-card p-1">

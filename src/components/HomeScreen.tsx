@@ -49,7 +49,7 @@ export function HomeScreen({
   return (
     <main className={APP_SHELL}>
       <div className={`${APP_CONTAINER} flex min-h-dvh flex-col pb-10 pt-8 md:pb-12 md:pt-10`}>
-        <header className="mb-6 pl-14 text-center sm:pl-0">
+        <header className="mb-6 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-athletic">Game Day App</p>
           <h1 className="mt-2 font-display text-4xl font-black uppercase tracking-wide text-foreground">
             Home

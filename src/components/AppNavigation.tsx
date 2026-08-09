@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Home } from 'lucide-react'
 import { ADD_NEW_OPTION } from '@/lib/named-entities'
 import { TOUCH_ICON_BUTTON } from '@/lib/layout'
@@ -22,20 +23,28 @@ export function ScreenHeader({
   title,
   subtitle,
   onHome,
+  teamSwitcher,
 }: {
   title: string
   subtitle?: string
   onHome: () => void
+  /** Optional active-team control shown under the title (Roster, Analytics, etc.). */
+  teamSwitcher?: ReactNode
 }) {
   return (
-    <header className="flex items-start justify-between gap-3 pl-14 sm:pl-0">
-      <div className="min-w-0 flex-1">
-        <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
-          {title}
-        </h1>
-        {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
+    <header className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
+            {title}
+          </h1>
+          {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
+        </div>
+        <BackToHomeButton onClick={onHome} />
       </div>
-      <BackToHomeButton onClick={onHome} />
+      {teamSwitcher ? (
+        <div className="rounded-xl border-2 border-border bg-card p-3 shadow-sm">{teamSwitcher}</div>
+      ) : null}
     </header>
   )
 }
@@ -71,13 +80,14 @@ export function TeamSelector({
       </label>
       <select
         id="active-team-select"
+        data-global-team-select="home"
         value={activeTeamId ?? ''}
         onChange={(e) => {
           const value = e.target.value
           if (value === ADD_NEW_OPTION) return
           if (value) onTeamChange(value)
         }}
-        className="w-full rounded-xl border border-border bg-background px-4 py-3.5 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+        className="w-full min-h-12 touch-manipulation rounded-xl border-2 border-border bg-background px-4 py-3.5 text-lg font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
       >
         {teams.length === 0 ? (
           <option value="">No teams yet — add one below</option>

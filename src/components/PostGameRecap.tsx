@@ -472,7 +472,7 @@ export function PostGameRecap({
   return (
     <main className={`${APP_SHELL} pb-28 md:pb-32`}>
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
-        <header className="flex items-start justify-between gap-3 pl-14 sm:pl-0">
+        <header className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 text-center">
             <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
               Post-Game Recap

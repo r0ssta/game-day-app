@@ -67,6 +67,12 @@ import type {
   RosterPlayer,
   SetupLineup,
 } from '@/types/match'
+import {
+  persistActiveTeamId,
+  readPersistedActiveTeamId,
+  resolveTeamScope,
+  type TeamScope,
+} from '@/lib/team-context'
 
 const DEFAULT_HALF_LENGTH = 30
 
@@ -246,8 +252,13 @@ export function useGameDayApp() {
             stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id),
           )
         } else if (teamsData.length > 0) {
-          resolvedTeamId = teamsData[0].id
-          setSelectedTeamId(teamsData[0].id)
+          const persistedTeamId = readPersistedActiveTeamId()
+          const persistedTeam = persistedTeamId
+            ? teamsData.find((team) => team.id === persistedTeamId)
+            : null
+          resolvedTeamId = persistedTeam?.id ?? teamsData[0].id
+          setSelectedTeamId(resolvedTeamId)
+          if (resolvedTeamId) persistActiveTeamId(resolvedTeamId)
         }
 
         if (resolvedTeamId) {
@@ -316,7 +327,7 @@ export function useGameDayApp() {
   }, [masterRoster])
 
   useEffect(() => {
-    if (!selectedTeamId || (appMode !== 'match_setup' && appMode !== 'team' && appMode !== 'reporting' && appMode !== 'halftime' && appMode !== 'match')) return
+    if (!selectedTeamId || (appMode !== 'match_setup' && appMode !== 'team' && appMode !== 'reporting' && appMode !== 'recap_history' && appMode !== 'halftime' && appMode !== 'match')) return
 
     let cancelled = false
     void (async () => {
@@ -431,6 +442,7 @@ export function useGameDayApp() {
   const setActiveTeamId = useCallback(
     (teamId: string) => {
       setSelectedTeamId(teamId)
+      persistActiveTeamId(teamId)
       setMasterRoster([])
       setSetupLineup({ attending: {}, startFirstHalf: {} })
       setMatchPositions({})
@@ -469,6 +481,15 @@ export function useGameDayApp() {
     const team = teams.find((t) => t.id === selectedTeamId)
     return normalizeTeamFormat(team?.format)
   }, [teams, selectedTeamId])
+
+  const activeTeamScope = useMemo(
+    (): TeamScope | null =>
+      resolveTeamScope(
+        selectedTeamId,
+        teams.map((team) => ({ id: team.id, name: team.name })),
+      ),
+    [selectedTeamId, teams],
+  )
 
   const updateTeamPrimaryCoach = useCallback(
     async (primaryCoachName: string) => {
@@ -994,6 +1015,7 @@ export function useGameDayApp() {
     hasPendingRecap: matchStatus === 'pending_review' && Boolean(matchId),
     selectedTeamId,
     activeTeamId: selectedTeamId,
+    activeTeamScope,
     activeTeamFormat,
     selectTeam,
     setActiveTeamId,

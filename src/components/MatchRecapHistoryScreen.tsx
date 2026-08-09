@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
@@ -15,6 +15,7 @@ import type { DbMatch } from '@/types/database'
 type MatchRecapHistoryScreenProps = {
   activeTeamId: string
   activeTeamName: string
+  teamSwitcher?: ReactNode
   onOpenRecap: (matchId: string) => void
   onBackToHome: () => void
 }
@@ -35,6 +36,7 @@ function statusBadge(status: DbMatch['status']) {
 export function MatchRecapHistoryScreen({
   activeTeamId,
   activeTeamName,
+  teamSwitcher,
   onOpenRecap,
   onBackToHome,
 }: MatchRecapHistoryScreenProps) {
@@ -72,6 +74,7 @@ export function MatchRecapHistoryScreen({
           title="Match Recaps"
           subtitle={`Review or update post-game notes for ${activeTeamName || 'your team'}.`}
           onHome={onBackToHome}
+          teamSwitcher={teamSwitcher}
         />
 
         <section className="rounded-xl border-2 border-border bg-card p-4">

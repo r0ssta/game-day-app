@@ -1,5 +1,7 @@
 /** Shared responsive layout classes for app screens and modals. */
 
+export const APP_TOP_OFFSET = 'pt-14'
+
 export const APP_SHELL = 'min-h-dvh overflow-x-hidden bg-background'
 
 export const APP_CONTAINER =

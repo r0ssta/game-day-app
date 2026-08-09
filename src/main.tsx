@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { StatTrackerScreen } from '@/components/StatTrackerScreen'
-import { SunlightModeToggle } from '@/components/SunlightModeToggle'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
@@ -26,9 +25,11 @@ function Root() {
 
   return (
     <SunlightModeProvider>
-      <SunlightModeToggle floating />
       {trackerRoute ? (
-        <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
+        <>
+          {/* Stat tracker is a standalone mobile view — no main app chrome */}
+          <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
+        </>
       ) : (
         <App />
       )}

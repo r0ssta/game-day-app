@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { PlayerBreakdownsTab } from '@/components/reporting/PlayerBreakdownsTab'
 import { PlayerSeasonProfileView } from '@/components/reporting/PlayerSeasonProfileView'
@@ -22,8 +22,10 @@ import type { RosterPlayer } from '@/types/match'
 type ReportingScreenProps = {
   activeTeamId: string | null
   activeTeamName: string
+  teamSwitcher?: ReactNode
   teamRoster: RosterPlayer[]
   pendingReviewMatches: DbMatch[]
+  initialTab?: ReportingTab
   onOpenPendingReview: (matchId: string) => void
   onOpenMatchRecap: (matchId: string) => void
   onViewRecaps: () => void
@@ -34,19 +36,25 @@ type ReportingScreenProps = {
 export function ReportingScreen({
   activeTeamId,
   activeTeamName,
+  teamSwitcher,
   teamRoster,
   pendingReviewMatches,
+  initialTab = 'matches',
   onOpenPendingReview,
   onOpenMatchRecap,
   onViewRecaps,
   onRefreshRoster,
   onBackToHome,
 }: ReportingScreenProps) {
-  const [activeTab, setActiveTab] = useState<ReportingTab>('matches')
+  const [activeTab, setActiveTab] = useState<ReportingTab>(initialTab)
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reportData, setReportData] = useState<SeasonReportData>(emptySeasonReportData())
+
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
 
   useEffect(() => {
     void onRefreshRoster()
@@ -118,11 +126,12 @@ export function ReportingScreen({
           title="Reporting"
           subtitle={subtitleByTab[activeTab]}
           onHome={onBackToHome}
+          teamSwitcher={teamSwitcher}
         />
 
         {!activeTeamId ? (
           <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-            Select an active team on the Home screen to view reports.
+            Select an active team above to view reports.
           </p>
         ) : loading ? (
           <p className="py-8 text-center text-sm font-semibold text-muted-foreground">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type ReactNode } from 'react'
 import {
   CheckCircle2,
   Goal,
@@ -13,6 +13,16 @@ import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { HomeScreen } from '@/components/HomeScreen'
 import { ReportingScreen } from '@/components/ReportingScreen'
 import { BackToHomeButton, ScreenHeader } from '@/components/AppNavigation'
+import {
+  AppNavDrawer,
+  AppNavShell,
+  buildAppNavItems,
+  resolveActiveNavSection,
+  type AppNavSection,
+} from '@/components/AppNavDrawer'
+import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
+import { teamsForSelector } from '@/lib/team-context'
+import type { ReportingTab } from '@/components/reporting/ReportingTabBar'
 import { TeamManagementScreen } from '@/components/TeamManagementScreen'
 import {
   LiveTacticalPitch,
@@ -268,8 +278,8 @@ function MatchHeader({
   const waitingToStart = !periodClockStarted
 
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className={`${APP_CONTAINER} pb-4 pt-3 pl-14 sm:pl-0`}>
+    <header className="sticky top-14 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className={`${APP_CONTAINER} pb-4 pt-3`}>
         <div className="mb-2 flex justify-end">
           <BackToHomeButton onClick={onHome} />
         </div>
@@ -570,8 +580,10 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
 }
 
 type SetupScreenProps = {
+  activeTeamId: string | null
   activeTeamName: string
   activeTeamFormat: TeamFormat
+  teamSwitcher: ReactNode
   coachName: string
   onCoachNameChange: (value: string) => void
   coachSuggestions: string[]
@@ -618,8 +630,10 @@ type SetupScreenProps = {
 }
 
 function SetupScreen({
+  activeTeamId,
   activeTeamName,
   activeTeamFormat,
+  teamSwitcher,
   coachName,
   onCoachNameChange,
   coachSuggestions,
@@ -656,8 +670,7 @@ function SetupScreen({
   setupSlotAssignments,
   setupPitchKey,
   setupAssignmentsRef,
-  activeTeamId,
-}: SetupScreenProps & { activeTeamId: string | null }) {
+}: SetupScreenProps) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
 
@@ -677,20 +690,13 @@ function SetupScreen({
           title="Game Day Setup"
           subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
           onHome={onBackToHome}
+          teamSwitcher={teamSwitcher}
         />
 
         <section className="space-y-4">
-          <div className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Active Team
-            </p>
-            <p className="mt-1 font-display text-xl font-bold uppercase tracking-wide text-foreground">
-              {activeTeamName}
-            </p>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {activeTeamFormat} format · {maxFieldPlayers} on field
-            </p>
-          </div>
+          <p className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {activeTeamFormat} format · {maxFieldPlayers} on field
+          </p>
 
           <CoachNameField
             id="head-coach"
@@ -1349,6 +1355,110 @@ export default function App() {
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
+  const [navOpen, setNavOpen] = useState(false)
+  const [reportingTab, setReportingTab] = useState<ReportingTab>('matches')
+
+  const teamOptions = useMemo(
+    () => teamsForSelector(teams.map((team) => ({ id: team.id, name: team.name }))),
+    [teams],
+  )
+
+  const teamSwitchDisabled =
+    hasLiveMatch || appMode === 'match' || appMode === 'halftime'
+
+  const navItems = useMemo(
+    () =>
+      buildAppNavItems({
+        activeSection: resolveActiveNavSection(appMode, reportingTab),
+        teamReady: Boolean(activeTeamId),
+        hasLiveMatch,
+      }),
+    [appMode, reportingTab, activeTeamId, hasLiveMatch],
+  )
+
+  const screenTeamSwitcher = (
+    <GlobalTeamSelector
+      variant="panel"
+      teams={teamOptions}
+      activeTeamId={activeTeamId}
+      onTeamChange={setActiveTeamId}
+      disabled={teamSwitchDisabled}
+      disabledReason={teamSwitchDisabled ? 'Team locked during live match' : undefined}
+    />
+  )
+
+  const handleNavNavigate = useCallback(
+    (section: AppNavSection) => {
+      switch (section) {
+        case 'home':
+          setAppMode('home')
+          break
+        case 'active_match':
+          if (!activeTeamId) {
+            setToast('Select a team on Home first')
+            setAppMode('home')
+            break
+          }
+          if (hasLiveMatch) {
+            const inHalftimeSetup =
+              Object.keys(halftimeSecondHalf).length > 0 &&
+              period === '1st' &&
+              !periodClockStarted
+            setAppMode(inHalftimeSetup ? 'halftime' : 'match')
+          } else if (hasPendingRecap && matchId) {
+            setRecapReturnMode('home')
+            setAppMode('recap')
+          } else {
+            setAppMode('match_setup')
+          }
+          break
+        case 'season':
+          if (!activeTeamId) {
+            setToast('Select a team on Home first')
+            setAppMode('home')
+            break
+          }
+          setReportingTab('season')
+          setAppMode('reporting')
+          break
+        case 'recaps':
+          if (!activeTeamId) {
+            setToast('Select a team on Home first')
+            setAppMode('home')
+            break
+          }
+          setAppMode('recap_history')
+          break
+        case 'roster':
+          if (!activeTeamId) {
+            setToast('Select a team on Home first')
+            setAppMode('home')
+            break
+          }
+          setAppMode('team')
+          break
+      }
+    },
+    [
+      activeTeamId,
+      hasLiveMatch,
+      hasPendingRecap,
+      matchId,
+      halftimeSecondHalf,
+      period,
+      periodClockStarted,
+      setAppMode,
+    ],
+  )
+
+  const toastOverlay = toast ? (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[90] flex justify-center px-4">
+      <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
+        <CheckCircle2 className="size-5" strokeWidth={2.5} />
+        {toast}
+      </div>
+    </div>
+  ) : null
 
   const livePitchRef = useRef<LiveTacticalPitchHandle>(null)
   const setupAssignmentsRef = useRef<Record<string, string | null> | null>(null)
@@ -2070,6 +2180,7 @@ export default function App() {
     }
   }, [matchId, setToast])
 
+  function renderScreen(): ReactNode {
   if (loading) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background px-4">
@@ -2113,7 +2224,10 @@ export default function App() {
         onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
         onTeamManagement={() => setAppMode('team')}
         onNewGame={() => setAppMode('match_setup')}
-        onReporting={() => setAppMode('reporting')}
+        onReporting={() => {
+          setReportingTab('matches')
+          setAppMode('reporting')
+        }}
         onViewRecaps={() => setAppMode('recap_history')}
         onResumeMatch={() => setAppMode('match')}
       />
@@ -2129,6 +2243,7 @@ export default function App() {
           activeTeamId={activeTeamId}
           activeTeamName={activeTeamName}
           activeTeamFormat={activeTeamFormat}
+          teamSwitcher={screenTeamSwitcher}
           coachName={setupCoachName}
           onCoachNameChange={setSetupCoachName}
           coachSuggestions={coachSuggestions}
@@ -2172,14 +2287,6 @@ export default function App() {
           onSave={() => void savePlayerDraft()}
           onClose={() => setEditDraft(null)}
         />
-        {toast && (
-          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-              <CheckCircle2 className="size-5" strokeWidth={2.5} />
-              {toast}
-            </div>
-          </div>
-        )}
       </>
     )
   }
@@ -2193,6 +2300,7 @@ export default function App() {
           activeTeamId={activeTeamId}
           activeTeamName={activeTeamName}
           activeTeamFormat={activeTeamFormat}
+          teamSwitcher={screenTeamSwitcher}
           rosterLoading={rosterLoading}
           teamRoster={teamRoster}
           suggestedJersey={suggestedJersey}
@@ -2212,14 +2320,6 @@ export default function App() {
           onBackToHome={() => setAppMode('home')}
           onToast={setToast}
         />
-        {toast && (
-          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-              <CheckCircle2 className="size-5" strokeWidth={2.5} />
-              {toast}
-            </div>
-          </div>
-        )}
       </>
     )
   }
@@ -2232,17 +2332,10 @@ export default function App() {
         <MatchRecapHistoryScreen
           activeTeamId={activeTeamId}
           activeTeamName={activeTeamName}
+          teamSwitcher={screenTeamSwitcher}
           onOpenRecap={(id) => void handleOpenMatchRecap(id, 'recap_history')}
           onBackToHome={() => setAppMode('home')}
         />
-        {toast && (
-          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-              <CheckCircle2 className="size-5" strokeWidth={2.5} />
-              {toast}
-            </div>
-          </div>
-        )}
       </>
     )
   }
@@ -2254,8 +2347,10 @@ export default function App() {
       <ReportingScreen
         activeTeamId={activeTeamId}
         activeTeamName={activeTeamName}
+        teamSwitcher={screenTeamSwitcher}
         teamRoster={teamRoster}
         pendingReviewMatches={pendingReviewMatches}
+        initialTab={reportingTab}
         onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
         onOpenMatchRecap={(id) => void handleOpenMatchRecap(id, 'reporting')}
         onViewRecaps={() => setAppMode('recap_history')}
@@ -2297,14 +2392,6 @@ export default function App() {
           onBackToHome={() => setAppMode('home')}
           activeTeamFormat={activeTeamFormat}
         />
-        {toast && (
-          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-              <CheckCircle2 className="size-5" strokeWidth={2.5} />
-              {toast}
-            </div>
-          </div>
-        )}
       </>
     )
   }
@@ -2327,14 +2414,6 @@ export default function App() {
           onHome={handleExitRecap}
           onToast={setToast}
         />
-        {toast && (
-          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-            <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-              <CheckCircle2 className="size-5" strokeWidth={2.5} />
-              {toast}
-            </div>
-          </div>
-        )}
       </>
     )
   }
@@ -2441,15 +2520,25 @@ export default function App() {
         onSelectAssist={handleCompleteGoal}
         onClose={closeGoalWizard}
       />
-
-      {toast && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-          <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-            <CheckCircle2 className="size-5" strokeWidth={2.5} />
-            {toast}
-          </div>
-        </div>
-      )}
     </main>
+  )
+  }
+
+  return (
+    <>
+      <AppNavDrawer
+        open={navOpen}
+        onOpenChange={setNavOpen}
+        items={navItems}
+        onNavigate={handleNavNavigate}
+        teams={teamOptions}
+        activeTeamId={activeTeamId}
+        onTeamChange={setActiveTeamId}
+        teamSwitchDisabled={teamSwitchDisabled}
+        teamLabel={activeTeamName || undefined}
+      />
+      <AppNavShell>{renderScreen()}</AppNavShell>
+      {toastOverlay}
+    </>
   )
 }
