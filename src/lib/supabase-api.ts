@@ -394,6 +394,7 @@ export async function createMatchRecord(input: {
   halfLength: number
   matchDate: string
   matchTime: string
+  status?: DbMatch['status']
 }): Promise<DbMatch> {
   const coachName = input.coachName.trim() || null
   const matchDate = input.matchDate.trim() || null
@@ -401,6 +402,7 @@ export async function createMatchRecord(input: {
     input.matchTime.trim().length === 5
       ? `${input.matchTime.trim()}:00`
       : input.matchTime.trim() || null
+  const status = input.status ?? 'active'
 
   const minimalPayload = {
     team_id: input.teamId,
@@ -411,7 +413,7 @@ export async function createMatchRecord(input: {
     half_length: input.halfLength,
     clock_seconds: input.halfLength * 60,
     date: matchDateTimeIso(input.matchDate, input.matchTime),
-    status: 'active' as const,
+    status,
   }
 
   const optionalFields: Record<string, unknown> = {
@@ -459,9 +461,72 @@ function countOptionalFields(
   return keys.filter((key) => key in payload).length
 }
 
+/**
+ * Deletes a match and all associated child rows.
+ * Child tables use ON DELETE CASCADE; we still clear them explicitly first so
+ * environments with partial schema still leave no orphans.
+ */
 export async function deleteMatchRecord(matchId: string) {
+  const childTables = [
+    'match_events',
+    'match_stats',
+    'match_reviews',
+    'match_stat_trackers',
+  ] as const
+
+  for (const table of childTables) {
+    const { error } = await supabase.from(table).delete().eq('match_id', matchId)
+    if (error && !isMissingRelationError(error)) throw error
+  }
+
   const { error } = await supabase.from('matches').delete().eq('id', matchId)
   if (error) throw error
+}
+
+function isMissingRelationError(error: { code?: string; message?: string }): boolean {
+  const code = error.code ?? ''
+  const message = (error.message ?? '').toLowerCase()
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('does not exist') ||
+    message.includes('could not find the table')
+  )
+}
+
+export async function createScheduledMatchRecord(input: {
+  teamId: string
+  coachId: string | null
+  coachName: string
+  opponent: string
+  locationType: LocationType
+  halfLength?: number
+  matchDate: string
+  matchTime: string
+}): Promise<DbMatch> {
+  return createMatchRecord({
+    teamId: input.teamId,
+    coachId: input.coachId,
+    coachName: input.coachName,
+    opponent: input.opponent.trim() || 'Opponent',
+    locationType: input.locationType,
+    tournamentGame: false,
+    halfLength: input.halfLength ?? 30,
+    matchDate: input.matchDate,
+    matchTime: input.matchTime,
+    status: 'scheduled',
+  })
+}
+
+export async function fetchScheduledMatchesByTeamId(teamId: string): Promise<DbMatch[]> {
+  const { data, error } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('team_id', teamId)
+    .eq('status', 'scheduled')
+    .order('date', { ascending: true })
+  if (error) throw error
+  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b))
 }
 
 export async function createMatchStats(

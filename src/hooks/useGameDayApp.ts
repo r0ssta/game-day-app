@@ -33,6 +33,7 @@ import {
   completeMatch,
   createMatchRecord,
   createMatchStats,
+  createScheduledMatchRecord,
   deleteMatchRecord,
   deleteLineupPreset,
   dbPlayerToRoster,
@@ -41,6 +42,7 @@ import {
   fetchLineupPresetsByTeamId,
   fetchMatchRecapBundle,
   fetchPlayersByTeamId,
+  fetchScheduledMatchesByTeamId,
   fetchTeams,
   insertCoach,
   insertLineupPreset,
@@ -106,6 +108,8 @@ export function useGameDayApp() {
   >({})
   const [carriedFromFirstHalf, setCarriedFromFirstHalf] = useState<Record<string, boolean>>({})
   const [lineupPresets, setLineupPresets] = useState<DbLineupPreset[]>([])
+  const [scheduledMatches, setScheduledMatches] = useState<DbMatch[]>([])
+  const [scheduledLoading, setScheduledLoading] = useState(false)
   const [teamRoster, setTeamRoster] = useState<RosterPlayer[]>([])
   const [setupSlotAssignments, setSetupSlotAssignments] = useState<
     Record<string, string | null> | undefined
@@ -366,6 +370,75 @@ export function useGameDayApp() {
     const presets = await fetchLineupPresetsByTeamId(selectedTeamId)
     setLineupPresets(presets)
   }, [selectedTeamId])
+
+  const refreshScheduledMatches = useCallback(async () => {
+    if (!selectedTeamId) {
+      setScheduledMatches([])
+      return
+    }
+    setScheduledLoading(true)
+    try {
+      const matches = await fetchScheduledMatchesByTeamId(selectedTeamId)
+      setScheduledMatches(matches)
+    } finally {
+      setScheduledLoading(false)
+    }
+  }, [selectedTeamId])
+
+  const createScheduledMatch = useCallback(
+    async (input: {
+      opponent: string
+      locationType: LocationType
+      matchDate: string
+      matchTime: string
+    }) => {
+      if (!selectedTeamId) throw new Error('Select a team before importing matches')
+      const coachName =
+        teams.find((entry) => entry.id === selectedTeamId)?.primary_coach_name?.trim() || ''
+      const coachId = coachName ? await resolveCoachIdForName(coachName) : null
+      const created = await createScheduledMatchRecord({
+        teamId: selectedTeamId,
+        coachId,
+        coachName,
+        opponent: input.opponent,
+        locationType: input.locationType,
+        matchDate: input.matchDate,
+        matchTime: input.matchTime,
+      })
+      setScheduledMatches((prev) =>
+        [...prev, created].sort((a, b) => {
+          const aKey = `${a.match_date ?? a.date.slice(0, 10)}T${normalizeMatchTimeForInput(a.match_time)}`
+          const bKey = `${b.match_date ?? b.date.slice(0, 10)}T${normalizeMatchTimeForInput(b.match_time)}`
+          return aKey.localeCompare(bKey)
+        }),
+      )
+      return created
+    },
+    [selectedTeamId, teams],
+  )
+
+  const removeScheduledMatch = useCallback(async (matchId: string) => {
+    await deleteMatchRecord(matchId)
+    setScheduledMatches((prev) => prev.filter((match) => match.id !== matchId))
+  }, [])
+
+  const loadScheduledMatchIntoSetup = useCallback(
+    (match: DbMatch) => {
+      setOpponent(match.opponent)
+      setLocationType(resolveMatchLocationType(match))
+      setTournamentGame(Boolean(match.tournament_game))
+      setHalfLengthMinutes(match.half_length > 0 ? match.half_length : DEFAULT_HALF_LENGTH)
+      setMatchDate(match.match_date ?? match.date.slice(0, 10))
+      setMatchTime(normalizeMatchTimeForInput(match.match_time))
+      const coach =
+        match.coach_name?.trim() ||
+        teams.find((entry) => entry.id === selectedTeamId)?.primary_coach_name?.trim() ||
+        ''
+      if (coach) setSetupCoachName(coach)
+      setAppMode('match_setup')
+    },
+    [selectedTeamId, teams],
+  )
 
   const applyLineupPreset = useCallback(
     (preset: DbLineupPreset) => {
@@ -912,6 +985,18 @@ export function useGameDayApp() {
     setMatchStatus(null)
   }, [activeTeamFormat])
 
+  /** Permanently delete a match (+ cascaded child rows) and clear local state if active. */
+  const deleteMatch = useCallback(
+    async (targetMatchId: string) => {
+      await deleteMatchRecord(targetMatchId)
+      setScheduledMatches((prev) => prev.filter((match) => match.id !== targetMatchId))
+      if (matchId === targetMatchId) {
+        returnToHome()
+      }
+    },
+    [matchId, returnToHome],
+  )
+
   const openMatchRecap = useCallback(async (targetMatchId: string) => {
     const bundle = await fetchMatchRecapBundle(targetMatchId)
     if (!bundle) throw new Error('Match not found')
@@ -1057,5 +1142,12 @@ export function useGameDayApp() {
     beginMatch,
     endMatch,
     setSetupMatchPosition,
+    scheduledMatches,
+    scheduledLoading,
+    refreshScheduledMatches,
+    createScheduledMatch,
+    removeScheduledMatch,
+    loadScheduledMatchIntoSetup,
+    deleteMatch,
   }
 }

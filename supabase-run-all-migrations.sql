@@ -299,3 +299,11 @@ alter table public.match_events
 alter table public.match_events
   add constraint match_events_player_required_check
   check (event_type in ('opponent_goal', 'formation_change', 'stat_team_log') or player_id is not null);
+
+-- Pre-game schedule imports (Sprocket ICS, etc.)
+alter table public.matches
+  drop constraint if exists matches_status_check;
+
+alter table public.matches
+  add constraint matches_status_check
+  check (status in ('active', 'scheduled', 'pending_review', 'completed'));

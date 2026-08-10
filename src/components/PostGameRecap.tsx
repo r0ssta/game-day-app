@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ClipboardCopy, Mail } from 'lucide-react'
+import { ClipboardCopy, Mail, Trash2 } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
+import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { QualitativeContextFields } from '@/components/QualitativeContextFields'
 import {
   aggregatePlayerRecaps,
@@ -103,6 +104,7 @@ type PostGameRecapProps = {
   players: MatchPlayer[]
   isCompletedMatch?: boolean
   onFinalize: () => void
+  onDeleteMatch: (matchId: string) => Promise<void>
   onToast: (message: string) => void
   onHome?: () => void
 }
@@ -119,12 +121,15 @@ export function PostGameRecap({
   players,
   isCompletedMatch = false,
   onFinalize,
+  onDeleteMatch,
   onToast,
   onHome,
 }: PostGameRecapProps) {
   const [readOnly, setReadOnly] = useState(isCompletedMatch)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [eventStats, setEventStats] = useState<Map<string, PlayerRecapStats>>(new Map())
   const [microStats, setMicroStats] = useState<Map<string, PlayerMicroStats>>(new Map())
@@ -450,6 +455,22 @@ export function PostGameRecap({
     void navigator.clipboard.writeText(summary).then(() => onToast('Summary copied'))
   }
 
+  const handleConfirmDelete = async () => {
+    setDeleting(true)
+    try {
+      await onDeleteMatch(matchId)
+      onToast('Match deleted')
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Failed to delete match')
+      setDeleting(false)
+      return
+    }
+    setDeleteConfirmOpen(false)
+    setDeleting(false)
+  }
+
+  const deleteMatchLabel = `${teamName} ${homeScore}–${awayScore} ${formatOpponentPrefix(locationType)} ${opponent.trim() || 'Opponent'}`
+
   if (loading) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background px-4">
@@ -762,9 +783,28 @@ export function PostGameRecap({
                 Copy
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={deleting}
+              className="delete-match-action flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-danger/70 bg-danger/10 py-3 text-sm font-bold uppercase tracking-wide text-danger active:scale-[0.98] disabled:opacity-50"
+            >
+              <Trash2 className="size-4" strokeWidth={2.5} />
+              Clear Match Data
+            </button>
           </div>
         </div>
       </div>
+
+      <DeleteMatchConfirmModal
+        open={deleteConfirmOpen}
+        matchLabel={deleteMatchLabel}
+        busy={deleting}
+        onCancel={() => {
+          if (!deleting) setDeleteConfirmOpen(false)
+        }}
+        onConfirm={() => void handleConfirmDelete()}
+      />
     </main>
   )
 }

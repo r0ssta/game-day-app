@@ -15,8 +15,10 @@ import {
   DEFAULT_SECONDARY_POSITION,
   RosterPositionFields,
 } from '@/components/RosterPositionFields'
+import { SprocketImportSection } from '@/components/SprocketImportSection'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { parseFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
+import type { LocationType } from '@/lib/match-location'
 import { getDefaultFormationId, isFormationValidForFormat } from '@/lib/formations'
 import { getMaxFieldPlayers } from '@/lib/lineup'
 import { formatPlayerFullName, buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
@@ -28,7 +30,7 @@ import {
 } from '@/lib/team-format'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
-import type { DbLineupPreset } from '@/types/database'
+import type { DbLineupPreset, DbMatch } from '@/types/database'
 import type { RosterProfilePosition } from '@/lib/positions'
 
 import type { RosterPlayer } from '@/types/match'
@@ -103,6 +105,17 @@ type TeamManagementScreenProps = {
   onUpdateTeamFormat: (format: TeamFormat) => Promise<void>
   primaryCoachName: string
   onUpdatePrimaryCoach: (name: string) => Promise<void>
+  scheduledMatches: DbMatch[]
+  scheduledLoading: boolean
+  onRefreshScheduledMatches: () => Promise<void>
+  onCreateScheduledMatch: (input: {
+    opponent: string
+    locationType: LocationType
+    matchDate: string
+    matchTime: string
+  }) => Promise<unknown>
+  onDeleteScheduledMatch: (matchId: string) => Promise<void>
+  onUseScheduledMatch: (match: DbMatch) => void
   onBackToHome: () => void
   onToast: (message: string) => void
 }
@@ -442,14 +455,36 @@ function TeamRosterTab({
 }
 
 function TeamSettingsTab({
+  activeTeamId,
+  activeTeamName,
   activeTeamFormat,
   primaryCoachName,
   onUpdateTeamFormat,
   onUpdatePrimaryCoach,
+  scheduledMatches,
+  scheduledLoading,
+  onRefreshScheduledMatches,
+  onAddPlayer,
+  onCreateScheduledMatch,
+  onDeleteScheduledMatch,
+  onUseScheduledMatch,
   onToast,
 }: Pick<
   TeamManagementScreenProps,
-  'activeTeamFormat' | 'primaryCoachName' | 'onUpdateTeamFormat' | 'onUpdatePrimaryCoach' | 'onToast'
+  | 'activeTeamId'
+  | 'activeTeamName'
+  | 'activeTeamFormat'
+  | 'primaryCoachName'
+  | 'onUpdateTeamFormat'
+  | 'onUpdatePrimaryCoach'
+  | 'scheduledMatches'
+  | 'scheduledLoading'
+  | 'onRefreshScheduledMatches'
+  | 'onAddPlayer'
+  | 'onCreateScheduledMatch'
+  | 'onDeleteScheduledMatch'
+  | 'onUseScheduledMatch'
+  | 'onToast'
 >) {
   const [format, setFormat] = useState<TeamFormat>(activeTeamFormat)
   const [coachName, setCoachName] = useState(primaryCoachName)
@@ -484,66 +519,81 @@ function TeamSettingsTab({
   }
 
   return (
-    <section className="space-y-4 rounded-xl border border-border bg-card p-4">
-      <h2 className="flex items-center gap-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
-        <Settings className="size-5 text-athletic" />
-        Team Settings
-      </h2>
+    <div className="space-y-4">
+      <section className="space-y-4 rounded-xl border border-border bg-card p-4">
+        <h2 className="flex items-center gap-2 font-display text-lg font-bold uppercase tracking-wide text-foreground">
+          <Settings className="size-5 text-athletic" />
+          Team Settings
+        </h2>
 
-      <div>
-        <label
-          htmlFor="team-format"
-          className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-        >
-          Match Format
-        </label>
-        <select
-          id="team-format"
-          value={format}
-          onChange={(e) => setFormat(e.target.value as TeamFormat)}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-        >
-          {TEAM_FORMATS.map((entry) => (
-            <option key={entry} value={entry}>
-              {teamFormatLabel(entry)}
-            </option>
-          ))}
-        </select>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Sets the pitch layout and lineup limits for this team (
-          {getMaxFieldPlayersForFormat(format)} players on field).
-        </p>
-      </div>
+        <div>
+          <label
+            htmlFor="team-format"
+            className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+          >
+            Match Format
+          </label>
+          <select
+            id="team-format"
+            value={format}
+            onChange={(e) => setFormat(e.target.value as TeamFormat)}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+          >
+            {TEAM_FORMATS.map((entry) => (
+              <option key={entry} value={entry}>
+                {teamFormatLabel(entry)}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sets the pitch layout and lineup limits for this team (
+            {getMaxFieldPlayersForFormat(format)} players on field).
+          </p>
+        </div>
 
-      <div>
-        <label
-          htmlFor="primary-coach-name"
-          className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-        >
-          Primary Coach
-        </label>
-        <input
-          id="primary-coach-name"
-          type="text"
-          value={coachName}
-          onChange={(e) => setCoachName(e.target.value)}
-          placeholder="e.g. Coach Smith"
-          className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-        />
-        <p className="mt-2 text-sm text-muted-foreground">
-          Default head coach for new games with this team. You can override it on game day.
-        </p>
-      </div>
+        <div>
+          <label
+            htmlFor="primary-coach-name"
+            className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+          >
+            Primary Coach
+          </label>
+          <input
+            id="primary-coach-name"
+            type="text"
+            value={coachName}
+            onChange={(e) => setCoachName(e.target.value)}
+            placeholder="e.g. Coach Smith"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+          />
+          <p className="mt-2 text-sm text-muted-foreground">
+            Default head coach for new games with this team. You can override it on game day.
+          </p>
+        </div>
 
-      <button
-        type="button"
-        onClick={() => void handleSave()}
-        disabled={!canSave}
-        className="w-full rounded-xl bg-athletic py-3 text-sm font-bold uppercase tracking-wide text-athletic-foreground disabled:opacity-40"
-      >
-        {saving ? 'Saving…' : 'Save Settings'}
-      </button>
-    </section>
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={!canSave}
+          className="w-full rounded-xl bg-athletic py-3 text-sm font-bold uppercase tracking-wide text-athletic-foreground disabled:opacity-40"
+        >
+          {saving ? 'Saving…' : 'Save Settings'}
+        </button>
+      </section>
+
+      <SprocketImportSection
+        activeTeamId={activeTeamId}
+        activeTeamName={activeTeamName}
+        scheduledMatches={scheduledMatches}
+        scheduledLoading={scheduledLoading}
+        onRefreshScheduledMatches={onRefreshScheduledMatches}
+        onAddPlayer={onAddPlayer}
+        onCreateScheduledMatch={onCreateScheduledMatch}
+        onDeleteScheduledMatch={onDeleteScheduledMatch}
+        onUseScheduledMatch={onUseScheduledMatch}
+        onToast={onToast}
+      />
+    </div>
   )
 }
 
@@ -812,10 +862,19 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
         )}
         {tab === 'settings' && (
           <TeamSettingsTab
+            activeTeamId={props.activeTeamId}
+            activeTeamName={props.activeTeamName}
             activeTeamFormat={props.activeTeamFormat}
             primaryCoachName={props.primaryCoachName}
             onUpdateTeamFormat={props.onUpdateTeamFormat}
             onUpdatePrimaryCoach={props.onUpdatePrimaryCoach}
+            scheduledMatches={props.scheduledMatches}
+            scheduledLoading={props.scheduledLoading}
+            onRefreshScheduledMatches={props.onRefreshScheduledMatches}
+            onAddPlayer={props.onAddPlayer}
+            onCreateScheduledMatch={props.onCreateScheduledMatch}
+            onDeleteScheduledMatch={props.onDeleteScheduledMatch}
+            onUseScheduledMatch={props.onUseScheduledMatch}
             onToast={props.onToast}
           />
         )}

@@ -107,6 +107,53 @@
     border-color: oklch(0.28 0.06 145);
     box-shadow: inset 0 0 0 1px oklch(0.28 0.06 145);
   }
+
+  /* Sprocket import status — max outdoor contrast */
+  html.sunlight-mode .sprocket-import-status {
+    color: oklch(0.12 0 0);
+    border-width: 2px;
+    font-weight: 800;
+  }
+
+  html.sunlight-mode .sprocket-import-status--success {
+    background-color: oklch(0.94 0.06 145);
+    border-color: oklch(0.38 0.14 145);
+  }
+
+  html.sunlight-mode .sprocket-import-status--partial {
+    background-color: oklch(0.94 0.05 250);
+    border-color: oklch(0.36 0.14 250);
+  }
+
+  html.sunlight-mode .sprocket-import-status--error {
+    background-color: oklch(0.94 0.05 25);
+    border-color: oklch(0.4 0.18 25);
+  }
+
+  html.sunlight-mode .sprocket-import-status--info {
+    background-color: oklch(1 0 0);
+    border-color: oklch(0.22 0.02 260);
+  }
+
+  /* Delete-match destructive controls — outdoor warning contrast */
+  html.sunlight-mode .delete-match-action {
+    border-color: oklch(0.4 0.18 25);
+    background-color: oklch(0.94 0.05 25);
+    color: oklch(0.28 0.16 25);
+    font-weight: 800;
+  }
+
+  html.sunlight-mode .delete-match-confirm {
+    border-color: oklch(0.32 0.18 25);
+    background-color: oklch(0.42 0.2 25);
+    color: oklch(0.99 0 0);
+    font-weight: 800;
+  }
+
+  html.sunlight-mode .delete-match-dialog {
+    border-color: oklch(0.4 0.18 25);
+    background-color: oklch(1 0 0);
+  }
 }
 
 @keyframes marquee {

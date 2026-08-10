@@ -8,6 +8,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { GoalWizardModal } from '@/components/GoalWizardModal'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { HomeScreen } from '@/components/HomeScreen'
@@ -68,7 +69,6 @@ import {
   syncMatchStat,
   syncMatchStats,
   ensureStatTrackerToken,
-  upsertMatchStats,
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
@@ -1331,10 +1331,16 @@ export default function App() {
     addPlayer,
     updatePlayer,
     beginMatch,
-    endMatch,
     setPlayerAttending,
     setStartFirstHalf,
     setSetupMatchPosition,
+    scheduledMatches,
+    scheduledLoading,
+    refreshScheduledMatches,
+    createScheduledMatch,
+    removeScheduledMatch,
+    loadScheduledMatchIntoSetup,
+    deleteMatch,
   } = useGameDayApp()
 
   const coachSuggestions = useMemo(
@@ -1352,6 +1358,8 @@ export default function App() {
   const [goalWizardOpen, setGoalWizardOpen] = useState(false)
   const [goalWizardStep, setGoalWizardStep] = useState<'scorer' | 'assist'>('scorer')
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
+  const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
+  const [liveDeleting, setLiveDeleting] = useState(false)
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
@@ -1546,6 +1554,24 @@ export default function App() {
     handleExitRecap()
   }, [handleExitRecap])
 
+  const handleDeleteMatch = useCallback(
+    async (targetMatchId: string) => {
+      await deleteMatch(targetMatchId)
+      void refreshPendingReviewMatches()
+      setGoalWizardOpen(false)
+      setGoalWizardStep('scorer')
+      setGoalScorerId(null)
+      setQaSpeedMultiplier(1)
+      if (recapReturnMode === 'recap_history') {
+        setAppMode('recap_history')
+      } else if (recapReturnMode === 'reporting') {
+        setAppMode('reporting')
+      }
+      setRecapReturnMode(null)
+    },
+    [deleteMatch, refreshPendingReviewMatches, recapReturnMode, setAppMode],
+  )
+
   const attendingCount = getAttendingIds(setupLineup).length
   const activeTeamName =
     teams.find((team) => team.id === activeTeamId)?.name ?? 'Team'
@@ -1673,21 +1699,19 @@ export default function App() {
     beginMatch,
   ])
 
-  const handleResetMatch = useCallback(async () => {
-    if (matchId) {
-      try {
-        await upsertMatchStats(matchId, players)
-      } catch (err) {
-        console.error('[reset] failed to flush match stats', err)
-      }
+  const handleConfirmLiveDeleteMatch = useCallback(async () => {
+    if (!matchId) return
+    setLiveDeleting(true)
+    try {
+      await handleDeleteMatch(matchId)
+      setLiveDeleteConfirmOpen(false)
+      setToast('Match deleted')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Failed to delete match')
+    } finally {
+      setLiveDeleting(false)
     }
-    await endMatch()
-    setGoalWizardOpen(false)
-    setGoalWizardStep('scorer')
-    setGoalScorerId(null)
-    setQaSpeedMultiplier(1)
-    setToast(null)
-  }, [matchId, players, endMatch])
+  }, [matchId, handleDeleteMatch])
 
   const handleEndGame = useCallback(async () => {
     setRunning(false)
@@ -2317,6 +2341,12 @@ export default function App() {
           onUpdatePrimaryCoach={async (name) => {
             await updateTeamPrimaryCoach(name)
           }}
+          scheduledMatches={scheduledMatches}
+          scheduledLoading={scheduledLoading}
+          onRefreshScheduledMatches={refreshScheduledMatches}
+          onCreateScheduledMatch={createScheduledMatch}
+          onDeleteScheduledMatch={removeScheduledMatch}
+          onUseScheduledMatch={loadScheduledMatchIntoSetup}
           onBackToHome={() => setAppMode('home')}
           onToast={setToast}
         />
@@ -2334,7 +2364,9 @@ export default function App() {
           activeTeamName={activeTeamName}
           teamSwitcher={screenTeamSwitcher}
           onOpenRecap={(id) => void handleOpenMatchRecap(id, 'recap_history')}
+          onDeleteMatch={handleDeleteMatch}
           onBackToHome={() => setAppMode('home')}
+          onToast={setToast}
         />
       </>
     )
@@ -2411,6 +2443,7 @@ export default function App() {
           players={players}
           isCompletedMatch={matchStatus === 'completed'}
           onFinalize={() => void handleFinalizeRecap()}
+          onDeleteMatch={handleDeleteMatch}
           onHome={handleExitRecap}
           onToast={setToast}
         />
@@ -2503,10 +2536,10 @@ export default function App() {
         <div className="pt-2">
           <button
             type="button"
-            onClick={() => void handleResetMatch()}
-            className="w-full py-3 text-sm font-bold uppercase tracking-widest text-danger transition-opacity active:opacity-70"
+            onClick={() => setLiveDeleteConfirmOpen(true)}
+            className="delete-match-action min-h-12 w-full touch-manipulation rounded-xl border-2 border-danger/70 bg-danger/10 py-3 text-sm font-bold uppercase tracking-widest text-danger active:scale-[0.98]"
           >
-            Reset Match
+            Delete Game / Clear Match Data
           </button>
         </div>
       </div>
@@ -2519,6 +2552,20 @@ export default function App() {
         onSelectScorer={handleSelectGoalScorer}
         onSelectAssist={handleCompleteGoal}
         onClose={closeGoalWizard}
+      />
+
+      <DeleteMatchConfirmModal
+        open={liveDeleteConfirmOpen}
+        matchLabel={
+          matchId
+            ? `${matchTeamName || 'Team'} vs ${matchOpponent.trim() || 'Opponent'}`
+            : undefined
+        }
+        busy={liveDeleting}
+        onCancel={() => {
+          if (!liveDeleting) setLiveDeleteConfirmOpen(false)
+        }}
+        onConfirm={() => void handleConfirmLiveDeleteMatch()}
       />
     </main>
   )

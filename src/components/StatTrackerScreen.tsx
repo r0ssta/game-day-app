@@ -167,7 +167,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
   const [awayScore, setAwayScore] = useState(0)
   const [clockSeconds, setClockSeconds] = useState(0)
   const [period, setPeriod] = useState<'1st' | '2nd'>('1st')
-  const [matchStatus, setMatchStatus] = useState<'active' | 'pending_review' | 'completed'>('active')
+  const [matchStatus, setMatchStatus] = useState<'active' | 'scheduled' | 'pending_review' | 'completed'>('active')
   const [roster, setRoster] = useState<StatTrackerRosterPlayer[]>([])
   const [pendingAction, setPendingAction] = useState<StatTrackerEventType | null>(null)
   const [logging, setLogging] = useState(false)

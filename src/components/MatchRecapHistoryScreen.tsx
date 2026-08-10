@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { ClipboardList } from 'lucide-react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { ClipboardList, Trash2 } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
+import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import {
   formatOpponentPrefix,
@@ -17,7 +18,9 @@ type MatchRecapHistoryScreenProps = {
   activeTeamName: string
   teamSwitcher?: ReactNode
   onOpenRecap: (matchId: string) => void
+  onDeleteMatch: (matchId: string) => Promise<void>
   onBackToHome: () => void
+  onToast?: (message: string) => void
 }
 
 function statusBadge(status: DbMatch['status']) {
@@ -33,16 +36,27 @@ function statusBadge(status: DbMatch['status']) {
   }
 }
 
+function matchDeleteLabel(match: DbMatch) {
+  const { dateLabel } = formatMatchDisplayDateTime(match)
+  const locationType = resolveMatchLocationType(match)
+  const opponent = match.opponent.trim() || 'Opponent'
+  return `${dateLabel} · ${formatOpponentPrefix(locationType)} ${opponent} (${match.home_score}–${match.away_score})`
+}
+
 export function MatchRecapHistoryScreen({
   activeTeamId,
   activeTeamName,
   teamSwitcher,
   onOpenRecap,
+  onDeleteMatch,
   onBackToHome,
+  onToast,
 }: MatchRecapHistoryScreenProps) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [matches, setMatches] = useState<DbMatch[]>([])
+  const [pendingDelete, setPendingDelete] = useState<DbMatch | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -67,6 +81,21 @@ export function MatchRecapHistoryScreen({
     }
   }, [activeTeamId])
 
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    try {
+      await onDeleteMatch(pendingDelete.id)
+      setMatches((prev) => prev.filter((match) => match.id !== pendingDelete.id))
+      setPendingDelete(null)
+      onToast?.('Match deleted')
+    } catch (err) {
+      onToast?.(err instanceof Error ? err.message : 'Failed to delete match')
+    } finally {
+      setDeleting(false)
+    }
+  }, [pendingDelete, onDeleteMatch, onToast])
+
   return (
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
@@ -88,7 +117,8 @@ export function MatchRecapHistoryScreen({
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Open any finished match to view ratings, sideline stats, and qualitative context.
-                Completed recaps open in read-only mode — tap Edit to update notes anytime.
+                Completed recaps open in read-only mode — tap Edit to update notes anytime. Use
+                Delete Game to wipe a match and all linked events for testing.
               </p>
             </div>
           </div>
@@ -169,13 +199,25 @@ export function MatchRecapHistoryScreen({
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onOpenRecap(match.id)}
-                      className="min-h-11 shrink-0 touch-manipulation rounded-xl border-2 border-neon bg-neon px-4 py-3 text-xs font-bold uppercase tracking-wide text-neon-foreground active:scale-[0.98]"
-                    >
-                      View Recap
-                    </button>
+                    <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => onOpenRecap(match.id)}
+                        className="min-h-11 touch-manipulation rounded-xl border-2 border-neon bg-neon px-4 py-3 text-xs font-bold uppercase tracking-wide text-neon-foreground active:scale-[0.98]"
+                      >
+                        View Recap
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingDelete(match)}
+                        className="delete-match-action min-h-11 touch-manipulation rounded-xl border-2 border-danger/70 bg-danger/10 px-4 py-3 text-xs font-bold uppercase tracking-wide text-danger active:scale-[0.98]"
+                      >
+                        <span className="inline-flex items-center justify-center gap-1.5">
+                          <Trash2 className="size-3.5" strokeWidth={2.5} />
+                          Delete Game
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </li>
               )
@@ -183,6 +225,16 @@ export function MatchRecapHistoryScreen({
           </ul>
         )}
       </div>
+
+      <DeleteMatchConfirmModal
+        open={Boolean(pendingDelete)}
+        matchLabel={pendingDelete ? matchDeleteLabel(pendingDelete) : undefined}
+        busy={deleting}
+        onCancel={() => {
+          if (!deleting) setPendingDelete(null)
+        }}
+        onConfirm={() => void handleConfirmDelete()}
+      />
     </main>
   )
 }
