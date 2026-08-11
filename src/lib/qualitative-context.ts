@@ -12,6 +12,10 @@ export type QualitativeContext = {
   practiceTransfer: PracticeTransfer | null
   sidelineEnvironment: SidelineEnvironment | null
   focusChips: string[]
+  /** Match finished within regulation (End Game confirmation). */
+  endedOnTime: boolean | null
+  /** Seconds past regulation when the period/match was last synced or finished. */
+  addedTimeSeconds: number
 }
 
 export const EMPTY_QUALITATIVE_CONTEXT: QualitativeContext = {
@@ -20,6 +24,8 @@ export const EMPTY_QUALITATIVE_CONTEXT: QualitativeContext = {
   practiceTransfer: null,
   sidelineEnvironment: null,
   focusChips: [],
+  endedOnTime: null,
+  addedTimeSeconds: 0,
 }
 
 export const EXECUTION_SCORE_OPTIONS: Array<{
@@ -140,6 +146,13 @@ export function parseQualitativeContext(raw: unknown): QualitativeContext {
       )
     : []
 
+  const addedTimeSeconds =
+    typeof record.addedTimeSeconds === 'number' &&
+    Number.isFinite(record.addedTimeSeconds) &&
+    record.addedTimeSeconds > 0
+      ? Math.floor(record.addedTimeSeconds)
+      : 0
+
   return {
     executionScore: isExecutionScore(record.executionScore) ? record.executionScore : null,
     opponentTier: parseOpponentTier(record.opponentTier ?? record.oppositionStrength),
@@ -148,9 +161,12 @@ export function parseQualitativeContext(raw: unknown): QualitativeContext {
       ? record.sidelineEnvironment
       : null,
     focusChips,
+    endedOnTime: typeof record.endedOnTime === 'boolean' ? record.endedOnTime : null,
+    addedTimeSeconds,
   }
 }
 
+/** Coaching fields only — timing metadata is separate for UI gating. */
 export function hasQualitativeContext(context: QualitativeContext): boolean {
   return (
     context.executionScore !== null ||
@@ -159,6 +175,31 @@ export function hasQualitativeContext(context: QualitativeContext): boolean {
     context.sidelineEnvironment !== null ||
     context.focusChips.length > 0
   )
+}
+
+export function hasMatchTimingContext(context: QualitativeContext): boolean {
+  return context.endedOnTime !== null || context.addedTimeSeconds > 0
+}
+
+/** Serialize coaching + timing fields for DB persistence without dropping OT metadata. */
+export function serializeQualitativeContext(
+  context: QualitativeContext,
+): Record<string, unknown> | null {
+  const hasCoaching = hasQualitativeContext(context)
+  const hasTiming = hasMatchTimingContext(context)
+  if (!hasCoaching && !hasTiming) return null
+
+  const payload: Record<string, unknown> = {}
+  if (hasCoaching) {
+    payload.executionScore = context.executionScore
+    payload.opponentTier = context.opponentTier
+    payload.practiceTransfer = context.practiceTransfer
+    payload.sidelineEnvironment = context.sidelineEnvironment
+    payload.focusChips = context.focusChips
+  }
+  if (context.endedOnTime !== null) payload.endedOnTime = context.endedOnTime
+  if (context.addedTimeSeconds > 0) payload.addedTimeSeconds = context.addedTimeSeconds
+  return payload
 }
 
 export function formatExecutionScoreSummary(score: ExecutionScore): string {
@@ -182,9 +223,19 @@ function labelForSideline(id: SidelineEnvironment): string {
 }
 
 export function formatQualitativeContextSummary(context: QualitativeContext): string[] {
-  if (!hasQualitativeContext(context)) return []
+  if (!hasQualitativeContext(context) && !hasMatchTimingContext(context)) return []
 
   const lines: string[] = ['QUALITATIVE CONTEXT', '--------------------']
+
+  if (context.endedOnTime !== null) {
+    lines.push(
+      context.endedOnTime
+        ? 'Full Time: Ended on time'
+        : `Full Time: Added time ${formatAddedTimeLabel(context.addedTimeSeconds)}`,
+    )
+  } else if (context.addedTimeSeconds > 0) {
+    lines.push(`Added time recorded: ${formatAddedTimeLabel(context.addedTimeSeconds)}`)
+  }
 
   if (context.executionScore !== null) {
     lines.push(`Team Execution Score: ${formatExecutionScoreSummary(context.executionScore)}`)
@@ -203,4 +254,11 @@ export function formatQualitativeContextSummary(context: QualitativeContext): st
   }
 
   return lines
+}
+
+function formatAddedTimeLabel(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds))
+  const m = Math.floor(safe / 60)
+  const s = safe % 60
+  return `+${m}:${String(s).padStart(2, '0')}`
 }

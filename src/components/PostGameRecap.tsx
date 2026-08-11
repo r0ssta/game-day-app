@@ -18,8 +18,9 @@ import {
 import {
   EMPTY_QUALITATIVE_CONTEXT,
   formatQualitativeContextSummary,
-  hasQualitativeContext,
+  hasMatchTimingContext,
   parseQualitativeContext,
+  serializeQualitativeContext,
   type QualitativeContext,
 } from '@/lib/qualitative-context'
 import {
@@ -300,7 +301,7 @@ export function PostGameRecap({
   )
 
   const qualitativePayload = useMemo(
-    () => (hasQualitativeContext(qualitativeContext) ? qualitativeContext : null),
+    () => serializeQualitativeContext(qualitativeContext),
     [qualitativeContext],
   )
 
@@ -308,6 +309,24 @@ export function PostGameRecap({
     () => formatQualitativeContextSummary(qualitativeContext),
     [qualitativeContext],
   )
+
+  const matchTimingLabel = useMemo(() => {
+    if (!hasMatchTimingContext(qualitativeContext)) return null
+    if (qualitativeContext.endedOnTime === true) return 'Ended on time'
+    if (qualitativeContext.endedOnTime === false) {
+      const added = qualitativeContext.addedTimeSeconds
+      const m = Math.floor(added / 60)
+      const s = added % 60
+      return `Added time +${m}:${String(s).padStart(2, '0')}`
+    }
+    if (qualitativeContext.addedTimeSeconds > 0) {
+      const added = qualitativeContext.addedTimeSeconds
+      const m = Math.floor(added / 60)
+      const s = added % 60
+      return `Added time +${m}:${String(s).padStart(2, '0')}`
+    }
+    return null
+  }, [qualitativeContext])
 
   const saveDraft = useCallback(async () => {
     await savePostGameReview(matchId, reviewPayload, coachSummary, qualitativePayload)
@@ -522,6 +541,11 @@ export function PostGameRecap({
             {coachName.trim() ? (
               <p className="mt-1 text-xs font-semibold text-muted-foreground">
                 Head Coach: {coachName.trim()}
+              </p>
+            ) : null}
+            {matchTimingLabel ? (
+              <p className="mt-2 text-xs font-bold uppercase tracking-wide text-athletic">
+                {matchTimingLabel}
               </p>
             ) : null}
           </div>

@@ -13,6 +13,15 @@ import { createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
+import {
+  addedTimeSeconds,
+  persistableClockSeconds,
+} from '@/lib/match-clock'
+import {
+  parseQualitativeContext,
+  serializeQualitativeContext,
+  type QualitativeContext,
+} from '@/lib/qualitative-context'
 import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEventType, type StatTrackerRosterPlayer, rosterPlayerFromDb } from '@/lib/stat-tracker'
 import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
@@ -699,6 +708,25 @@ export async function saveQualitativeContext(
   throw error
 }
 
+/** Merge timing fields into existing qualitative_context without wiping coaching answers. */
+export async function mergeMatchTimingContext(
+  matchId: string,
+  timing: { addedTimeSeconds?: number; endedOnTime?: boolean | null },
+) {
+  const existing = await fetchMatchById(matchId)
+  const current = parseQualitativeContext(existing?.qualitative_context)
+  const next: QualitativeContext = {
+    ...current,
+    addedTimeSeconds:
+      timing.addedTimeSeconds !== undefined
+        ? Math.max(0, Math.floor(timing.addedTimeSeconds))
+        : current.addedTimeSeconds,
+    endedOnTime:
+      timing.endedOnTime !== undefined ? timing.endedOnTime : current.endedOnTime,
+  }
+  await saveQualitativeContext(matchId, serializeQualitativeContext(next))
+}
+
 export async function markMatchPendingReview(matchId: string) {
   const { error } = await supabase
     .from('matches')
@@ -966,13 +994,19 @@ export type MatchClockPatch = {
 }
 
 export function syncMatchClock(matchId: string, clock: MatchClockPatch) {
+  const clockSeconds = persistableClockSeconds(clock.seconds)
+  const added = addedTimeSeconds(clock.seconds)
   syncMatchRecord(matchId, {
     home_score: clock.homeScore,
     away_score: clock.awayScore,
-    clock_seconds: clock.seconds,
+    clock_seconds: clockSeconds,
     period: clock.period,
     period_clock_started: clock.periodClockStarted,
   })
+  // Persist OT separately so resume can rebuild negative remaining without schema change.
+  void mergeMatchTimingContext(matchId, { addedTimeSeconds: added }).catch((e) =>
+    logSyncError('mergeMatchTimingContext', e),
+  )
 }
 
 function isOptionalLineupPresetsError(err: unknown): boolean {

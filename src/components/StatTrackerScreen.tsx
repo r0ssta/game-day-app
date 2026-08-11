@@ -10,6 +10,11 @@ import {
   type StatTrackerRosterPlayer,
 } from '@/lib/stat-tracker'
 import {
+  formatMatchClockParts,
+  restoreMatchClockSeconds,
+} from '@/lib/match-clock'
+import { parseQualitativeContext } from '@/lib/qualitative-context'
+import {
   fetchMatchById,
   fetchMatchEvents,
   fetchStatTrackerContext,
@@ -27,8 +32,9 @@ function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-function formatClock(seconds: number) {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+function formatTrackerClock(remainingSeconds: number) {
+  const parts = formatMatchClockParts(remainingSeconds)
+  return parts.addedLabel ? `${parts.regulation} ${parts.addedLabel}` : parts.regulation
 }
 
 function actionToneClass(tone: (typeof STAT_TRACKER_ACTIONS)[number]['tone']) {
@@ -199,7 +205,12 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
     setOpponent(context.match.opponent)
     setHomeScore(context.match.home_score)
     setAwayScore(context.match.away_score)
-    setClockSeconds(context.match.clock_seconds)
+    setClockSeconds(
+      restoreMatchClockSeconds(
+        context.match.clock_seconds,
+        parseQualitativeContext(context.match.qualitative_context).addedTimeSeconds,
+      ),
+    )
     setPeriod(context.match.period)
     setMatchStatus(context.match.status)
     setRoster(context.roster)
@@ -243,7 +254,12 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
           if (!match) return
           setHomeScore(match.home_score)
           setAwayScore(match.away_score)
-          setClockSeconds(match.clock_seconds)
+          setClockSeconds(
+            restoreMatchClockSeconds(
+              match.clock_seconds,
+              parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
+            ),
+          )
           setPeriod(match.period)
           setMatchStatus(match.status)
         })
@@ -336,7 +352,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
             {teamName}
           </h1>
           <p className="mt-1 text-sm font-semibold text-muted-foreground">
-            vs {opponent.trim() || 'Opponent'} · {period} half · {formatClock(clockSeconds)}
+            vs {opponent.trim() || 'Opponent'} · {period} half · {formatTrackerClock(clockSeconds)}
           </p>
           <p className="mt-2 font-display text-3xl font-black tabular-nums text-foreground">
             {homeScore} – {awayScore}

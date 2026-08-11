@@ -61,6 +61,8 @@ export type QualitativeContextJson = {
   practiceTransfer?: string | null
   sidelineEnvironment?: string | null
   focusChips?: string[]
+  endedOnTime?: boolean | null
+  addedTimeSeconds?: number
 }
 
 export type DbMatchEvent = {

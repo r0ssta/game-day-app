@@ -154,6 +154,25 @@
     border-color: oklch(0.4 0.18 25);
     background-color: oklch(1 0 0);
   }
+
+  html.sunlight-mode .end-match-timing-dialog {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+  }
+
+  html.sunlight-mode .end-match-timing-on-time {
+    border-color: oklch(0.32 0.14 145);
+    background-color: oklch(0.42 0.16 145);
+    color: oklch(0.99 0 0);
+    font-weight: 800;
+  }
+
+  html.sunlight-mode .end-match-timing-added {
+    border-color: oklch(0.36 0.14 250);
+    background-color: oklch(0.94 0.05 250);
+    color: oklch(0.22 0.12 250);
+    font-weight: 800;
+  }
 }
 
 @keyframes marquee {

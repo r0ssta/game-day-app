@@ -18,7 +18,13 @@ import {
 } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
 import { resolveMatchLocationType } from '@/lib/match-location'
-import { elapsedInHalf, initialHalfClock } from '@/lib/match-clock'
+import {
+  addedTimeSeconds,
+  elapsedInHalf,
+  initialHalfClock,
+  restoreMatchClockSeconds,
+} from '@/lib/match-clock'
+import { parseQualitativeContext } from '@/lib/qualitative-context'
 import {
   DEFAULT_FORMATION_ID,
   getDefaultFormationId,
@@ -48,6 +54,7 @@ import {
   insertLineupPreset,
   insertTeam,
   insertMatchEvent,
+  mergeMatchTimingContext,
   markMatchPendingReview,
   rebuildMatchPlayers,
   resolveCoachIdForName,
@@ -236,7 +243,12 @@ export function useGameDayApp() {
           setPlayers(matchPlayers)
           setHomeScore(match.home_score)
           setAwayScore(match.away_score)
-          setSeconds(match.clock_seconds)
+          setSeconds(
+            restoreMatchClockSeconds(
+              match.clock_seconds,
+              parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
+            ),
+          )
           setPeriod(match.period)
           setPeriodClockStarted(match.period_clock_started)
           setHalfLengthMinutes(match.half_length)
@@ -804,6 +816,12 @@ export function useGameDayApp() {
     async (clockSeconds: number, slotAssignments?: Record<string, string | null>) => {
       setRunning(false)
 
+      if (matchId) {
+        void mergeMatchTimingContext(matchId, {
+          addedTimeSeconds: addedTimeSeconds(clockSeconds),
+        })
+      }
+
       let nextPlayers: MatchPlayer[] = []
       let toggles: Record<string, boolean> = {}
       let carried: Record<string, boolean> = {}
@@ -906,14 +924,27 @@ export function useGameDayApp() {
       setSeconds(newClock)
       setRunning(true)
       setPeriodClockStarted(true)
+      if (matchId) {
+        void mergeMatchTimingContext(matchId, { addedTimeSeconds: 0 })
+      }
       setAppMode('match')
     },
     [halftimeSecondHalf, halfLengthMinutes, matchId, setPeriod, setSeconds, setRunning, setPeriodClockStarted],
   )
 
   const finishGame = useCallback(
-    async (clockSeconds: number) => {
+    async (
+      clockSeconds: number,
+      timing?: { endedOnTime: boolean },
+    ) => {
       setRunning(false)
+
+      if (matchId) {
+        void mergeMatchTimingContext(matchId, {
+          addedTimeSeconds: addedTimeSeconds(clockSeconds),
+          endedOnTime: timing?.endedOnTime ?? null,
+        })
+      }
 
       setPlayers((prev) => {
         if (matchId) {
@@ -1017,7 +1048,12 @@ export function useGameDayApp() {
     setPlayers(matchPlayers)
     setHomeScore(match.home_score)
     setAwayScore(match.away_score)
-    setSeconds(match.clock_seconds)
+    setSeconds(
+      restoreMatchClockSeconds(
+        match.clock_seconds,
+        parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
+      ),
+    )
     setPeriod(match.period)
     setPeriodClockStarted(match.period_clock_started)
     setHalfLengthMinutes(match.half_length)

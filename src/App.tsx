@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
+import { EndMatchTimingModal } from '@/components/EndMatchTimingModal'
 import { GoalWizardModal } from '@/components/GoalWizardModal'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { HomeScreen } from '@/components/HomeScreen'
@@ -57,7 +58,18 @@ import {
   formatPlayingTimeBadge,
   stampAllOnField,
 } from '@/lib/play-time'
-import { elapsedInHalf, halfDurationSeconds, isHalfExpired, QA_SPEED_MULTIPLIERS, tickCountdownClock, type QaSpeedMultiplier } from '@/lib/match-clock'
+import {
+  elapsedInHalf,
+  formatClock,
+  formatMatchClockParts,
+  halfDurationSeconds,
+  isHalfExpired,
+  isInAddedTime,
+  persistableClockSeconds,
+  QA_SPEED_MULTIPLIERS,
+  tickCountdownClock,
+  type QaSpeedMultiplier,
+} from '@/lib/match-clock'
 import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
@@ -190,12 +202,6 @@ function HomeAwayToggle({
 /* MatchHeader                                                         */
 /* ------------------------------------------------------------------ */
 
-function formatClock(totalSeconds: number) {
-  const m = Math.floor(totalSeconds / 60)
-  const s = totalSeconds % 60
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
-
 type MatchHeaderProps = {
   teamName: string
   coachName: string
@@ -274,8 +280,10 @@ function MatchHeader({
   const awayName = opponent.trim() || 'Opponent'
   const halfReference = formatClock(halfDurationSeconds(halfLengthMinutes))
   const coachLine = coachName.trim() ? `Coach: ${coachName.trim()}` : null
-  const halfEnded = periodClockStarted && isHalfExpired(seconds)
+  const regulationElapsed = periodClockStarted && isHalfExpired(seconds)
+  const inAddedTime = periodClockStarted && isInAddedTime(seconds)
   const waitingToStart = !periodClockStarted
+  const clockParts = formatMatchClockParts(seconds)
 
   return (
     <header className="sticky top-14 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -324,19 +332,32 @@ function MatchHeader({
                 <span className="size-2 animate-pulse rounded-full bg-neon" />
               </span>
             )}
-            {halfEnded && (
-              <span className="rounded bg-orange-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white animate-pulse">
-                Half Ended
+            {inAddedTime ? (
+              <span className="rounded bg-athletic px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white animate-pulse">
+                Added Time
               </span>
-            )}
+            ) : regulationElapsed ? (
+              <span className="rounded bg-orange-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">
+                Regulation
+              </span>
+            ) : null}
             <span
               className={cn(
                 'font-display text-4xl font-bold tabular-nums tracking-wider',
-                halfEnded ? 'text-orange-500' : waitingToStart ? 'text-muted-foreground' : 'text-neon',
+                inAddedTime
+                  ? 'text-athletic'
+                  : waitingToStart
+                    ? 'text-muted-foreground'
+                    : 'text-neon',
               )}
             >
-              {formatClock(seconds)}
+              {clockParts.regulation}
             </span>
+            {clockParts.addedLabel ? (
+              <span className="font-display text-2xl font-black tabular-nums text-athletic">
+                {clockParts.addedLabel}
+              </span>
+            ) : null}
             <span className="rounded bg-secondary px-2 py-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
               {periodLabel(period)}
             </span>
@@ -344,9 +365,11 @@ function MatchHeader({
           <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             {waitingToStart
               ? `Ready · ${halfReference} countdown`
-              : halfEnded
-                ? 'Clock stopped · confirm below'
-                : `Countdown · ${halfReference} half`}
+              : inAddedTime
+                ? 'Added time · still tracking'
+                : regulationElapsed
+                  ? 'Regulation elapsed · still tracking'
+                  : `Countdown · ${halfReference} half`}
           </span>
           <QaSpeedControls speed={qaSpeed} onSpeedChange={onQaSpeedChange} />
         </div>
@@ -971,13 +994,17 @@ function HalftimeSetupScreen({
     () => buildSidelineNameMap(attendingPlayers),
     [attendingPlayers],
   )
+  const firstHalfClock = formatMatchClockParts(seconds)
+  const firstHalfEndedLabel = firstHalfClock.addedLabel
+    ? `${firstHalfClock.regulation} ${firstHalfClock.addedLabel}`
+    : firstHalfClock.regulation
 
   return (
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
       <div className={`${APP_CONTAINER} space-y-6 pt-6 md:space-y-8 md:pt-8`}>
         <ScreenHeader
           title="Halftime Setup"
-          subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${formatClock(seconds)} / ${formatClock(halfLengthMinutes * 60)}`}
+          subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
           onHome={onBackToHome}
         />
 
@@ -1360,6 +1387,8 @@ export default function App() {
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
   const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
   const [liveDeleting, setLiveDeleting] = useState(false)
+  const [endTimingOpen, setEndTimingOpen] = useState(false)
+  const [endingMatch, setEndingMatch] = useState(false)
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
@@ -1584,17 +1613,10 @@ export default function App() {
   useEffect(() => {
     if (appMode !== 'match' || !running || !matchId) return
     const id = setInterval(() => {
-      setSeconds((s) => {
-        const next = tickCountdownClock(s, qaSpeedMultiplier)
-        if (next <= 0) {
-          setRunning(false)
-          return 0
-        }
-        return next
-      })
+      setSeconds((s) => tickCountdownClock(s, qaSpeedMultiplier))
     }, 1000)
     return () => clearInterval(id)
-  }, [appMode, running, matchId, qaSpeedMultiplier, setSeconds, setRunning])
+  }, [appMode, running, matchId, qaSpeedMultiplier, setSeconds])
 
   useEffect(() => {
     if (appMode !== 'match' || !matchId) return
@@ -1713,17 +1735,36 @@ export default function App() {
     }
   }, [matchId, handleDeleteMatch])
 
-  const handleEndGame = useCallback(async () => {
+  const handleEndGame = useCallback(() => {
     setRunning(false)
-    await finishGame(seconds)
-    if (matchId) {
-      syncMatchRecord(matchId, {
-        period_clock_started: false,
-        clock_seconds: seconds,
-      })
-    }
-    setToast('Match complete — finish your post-game recap')
-  }, [seconds, matchId, finishGame, setRunning])
+    setEndTimingOpen(true)
+  }, [setRunning])
+
+  const handleConfirmEndGameTiming = useCallback(
+    async (endedOnTime: boolean) => {
+      setEndingMatch(true)
+      try {
+        await finishGame(seconds, { endedOnTime })
+        if (matchId) {
+          syncMatchRecord(matchId, {
+            period_clock_started: false,
+            clock_seconds: persistableClockSeconds(seconds),
+          })
+        }
+        setEndTimingOpen(false)
+        setToast(
+          endedOnTime
+            ? 'Match complete — ended on time'
+            : 'Match complete — added time recorded',
+        )
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : 'Failed to end match')
+      } finally {
+        setEndingMatch(false)
+      }
+    },
+    [seconds, matchId, finishGame],
+  )
 
   const handleStartFirstHalf = useCallback(() => {
     setPlayers((prev) => {
@@ -1749,7 +1790,7 @@ export default function App() {
     if (matchId) {
       syncMatchRecord(matchId, {
         period_clock_started: false,
-        clock_seconds: seconds,
+        clock_seconds: persistableClockSeconds(seconds),
       })
     }
     setToast('Halftime — 2nd half lineup carried over from the field')
@@ -2478,7 +2519,7 @@ export default function App() {
           <EndPeriodButton
             period={period}
             onEndFirstHalf={() => void handleEnterHalftime()}
-            onEndGame={() => void handleEndGame()}
+            onEndGame={handleEndGame}
           />
         )}
 
@@ -2566,6 +2607,17 @@ export default function App() {
           if (!liveDeleting) setLiveDeleteConfirmOpen(false)
         }}
         onConfirm={() => void handleConfirmLiveDeleteMatch()}
+      />
+
+      <EndMatchTimingModal
+        open={endTimingOpen}
+        remainingSeconds={seconds}
+        busy={endingMatch}
+        onCancel={() => {
+          if (!endingMatch) setEndTimingOpen(false)
+        }}
+        onEndedOnTime={() => void handleConfirmEndGameTiming(true)}
+        onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
       />
     </main>
   )
