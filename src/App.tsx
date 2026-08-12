@@ -213,8 +213,6 @@ type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
-  qaSpeed: QaSpeedMultiplier
-  onQaSpeedChange: (speed: QaSpeedMultiplier) => void
   onHome: () => void
 }
 
@@ -226,17 +224,17 @@ function QaSpeedControls({
   onSpeedChange: (speed: QaSpeedMultiplier) => void
 }) {
   return (
-    <div className="mt-3 w-full max-w-sm rounded-xl border-2 border-orange-500/40 bg-orange-600/10 px-3 py-3 shadow-inner">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] font-black uppercase tracking-widest text-orange-400">
+    <div className="w-full rounded-xl border border-orange-500/40 bg-orange-600/10 px-3 py-2">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">
           QA Test Speed
         </span>
         <span className="text-[10px] font-semibold text-orange-300/80">
-          {speed === 1 ? 'Normal' : `${speed} sec / real sec`}
+          {speed === 1 ? 'Normal' : `${speed}×`}
         </span>
       </div>
       <div
-        className="grid grid-cols-3 gap-2"
+        className="grid grid-cols-3 gap-1.5"
         role="group"
         aria-label="QA match clock speed"
       >
@@ -247,7 +245,7 @@ function QaSpeedControls({
             onClick={() => onSpeedChange(option)}
             aria-pressed={speed === option}
             className={cn(
-              'min-h-11 touch-manipulation rounded-lg px-3 py-2.5 text-sm font-black tabular-nums uppercase tracking-wide transition-all active:scale-[0.97]',
+              'min-h-10 touch-manipulation rounded-lg px-2 py-2 text-xs font-black tabular-nums uppercase tracking-wide transition-all active:scale-[0.97]',
               speed === option
                 ? 'bg-orange-600 text-white shadow-md shadow-orange-600/30 ring-2 ring-orange-400/60'
                 : 'border border-orange-500/30 bg-background/80 text-orange-200 hover:bg-orange-600/20',
@@ -272,8 +270,6 @@ function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
-  qaSpeed,
-  onQaSpeedChange,
   onHome,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
@@ -287,8 +283,8 @@ function MatchHeader({
 
   return (
     <header className="sticky top-14 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className={`${APP_CONTAINER} pb-4 pt-3`}>
-        <div className="mb-2 flex justify-end">
+      <div className={`${APP_CONTAINER} pb-3 pt-2`}>
+        <div className="mb-1 flex justify-end">
           <BackToHomeButton onClick={onHome} />
         </div>
         <div className="flex items-center justify-center gap-2 text-center text-sm font-semibold">
@@ -371,7 +367,6 @@ function MatchHeader({
                   ? 'Regulation elapsed · still tracking'
                   : `Countdown · ${halfReference} half`}
           </span>
-          <QaSpeedControls speed={qaSpeed} onSpeedChange={onQaSpeedChange} />
         </div>
       </div>
     </header>
@@ -1000,7 +995,7 @@ function HalftimeSetupScreen({
     : firstHalfClock.regulation
 
   return (
-    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+    <main className={`${APP_SHELL} pb-36 md:pb-40`}>
       <div className={`${APP_CONTAINER} space-y-6 pt-6 md:space-y-8 md:pt-8`}>
         <ScreenHeader
           title="Halftime Setup"
@@ -1066,17 +1061,21 @@ function HalftimeSetupScreen({
           onRemoveStarter={onRemoveSecondHalfStarter}
         />
 
+        <div className="h-24" aria-hidden />
+      </div>
+
+      <StickyMatchActionBar>
         <button
           type="button"
           onClick={onBeginSecondHalf}
           disabled={!canBeginSecondHalf}
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-neon py-8 text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex w-full min-h-14 touch-manipulation items-center justify-center gap-3 rounded-2xl bg-neon py-5 text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <span className="font-display text-4xl font-black uppercase tracking-wide">
+          <span className="font-display text-2xl font-black uppercase tracking-wide">
             Start 2nd Half
           </span>
         </button>
-      </div>
+      </StickyMatchActionBar>
     </main>
   )
 }
@@ -1241,10 +1240,18 @@ function PeriodStartButton({
     <button
       type="button"
       onClick={onStart}
-      className="w-full rounded-2xl bg-neon py-8 font-display text-4xl font-black uppercase tracking-wide text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95"
+      className="w-full min-h-14 touch-manipulation rounded-2xl bg-neon py-5 font-display text-2xl font-black uppercase tracking-wide text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95"
     >
       {label}
     </button>
+  )
+}
+
+function StickyMatchActionBar({ children }: { children: ReactNode }) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-border bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+      <div className={`${APP_CONTAINER} space-y-2`}>{children}</div>
+    </div>
   )
 }
 
@@ -1263,7 +1270,7 @@ function EndPeriodButton({
     <button
       type="button"
       onClick={isFirstHalf ? onEndFirstHalf : onEndGame}
-      className="w-full rounded-2xl bg-orange-600 py-7 font-display text-3xl font-black uppercase tracking-wider text-white shadow-xl shadow-orange-600/40 transition-transform active:scale-[0.98] active:brightness-95"
+      className="w-full min-h-14 touch-manipulation rounded-2xl bg-orange-600 py-5 font-display text-2xl font-black uppercase tracking-wider text-white shadow-xl shadow-orange-600/40 transition-transform active:scale-[0.98] active:brightness-95"
     >
       {isFirstHalf ? 'End 1st Half' : 'End of Game'}
     </button>
@@ -2493,7 +2500,7 @@ export default function App() {
   }
 
   return (
-    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
+    <main className={`${APP_SHELL} pb-36 md:pb-40`}>
       <MatchHeader
         teamName={matchTeamName}
         coachName={matchCoachName}
@@ -2505,24 +2512,10 @@ export default function App() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
-        qaSpeed={qaSpeedMultiplier}
-        onQaSpeedChange={setQaSpeedMultiplier}
         onHome={() => setAppMode('home')}
       />
 
       <div className={`${APP_CONTAINER} space-y-6 pt-5 md:space-y-8 md:pt-6`}>
-        {!periodClockStarted && period === '1st' && (
-          <PeriodStartButton label="Start 1st Half" onStart={handleStartFirstHalf} />
-        )}
-
-        {periodClockStarted && (
-          <EndPeriodButton
-            period={period}
-            onEndFirstHalf={() => void handleEnterHalftime()}
-            onEndGame={handleEndGame}
-          />
-        )}
-
         {periodClockStarted && (
           <div className="grid grid-cols-2 gap-3">
             <button
@@ -2543,6 +2536,8 @@ export default function App() {
             </button>
           </div>
         )}
+
+        <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
 
         {matchId ? (
           <button
@@ -2584,6 +2579,18 @@ export default function App() {
           </button>
         </div>
       </div>
+
+      <StickyMatchActionBar>
+        {!periodClockStarted && period === '1st' ? (
+          <PeriodStartButton label="Start 1st Half" onStart={handleStartFirstHalf} />
+        ) : periodClockStarted ? (
+          <EndPeriodButton
+            period={period}
+            onEndFirstHalf={() => void handleEnterHalftime()}
+            onEndGame={handleEndGame}
+          />
+        ) : null}
+      </StickyMatchActionBar>
 
       <GoalWizardModal
         open={goalWizardOpen}
