@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
+  Archive,
   LayoutGrid,
   Pencil,
   Save,
   Settings,
   Trash2,
-  UserMinus,
   UserPlus,
   Users,
 } from 'lucide-react'
@@ -23,17 +23,12 @@ import { getDefaultFormationId, isFormationValidForFormat } from '@/lib/formatio
 import { getMaxFieldPlayers } from '@/lib/lineup'
 import { formatPlayerFullName, buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
 import {
-  TEAM_FORMATS,
-  getMaxFieldPlayersForFormat,
   teamFormatLabel,
   type TeamFormat,
 } from '@/lib/team-format'
 import {
-  AGE_GROUPS,
   type AgeGroup,
   ageGroupFormatHint,
-  formatForAgeGroup,
-  isAgeGroup,
 } from '@/lib/age-groups'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
@@ -110,8 +105,6 @@ type TeamManagementScreenProps = {
     slotAssignments: Record<string, string | null>
   }) => Promise<void>
   onDeletePreset: (presetId: string) => Promise<void>
-  onUpdateTeamFormat: (format: TeamFormat) => Promise<void>
-  onUpdateTeamAgeGroup: (ageGroup: AgeGroup) => Promise<unknown>
   primaryCoachName: string
   onUpdatePrimaryCoach: (name: string) => Promise<void>
   scheduledMatches: DbMatch[]
@@ -168,7 +161,7 @@ function TeamRosterTab({
   })
 
   const activePlayers = teamRoster.filter((p) => p.activeStatus)
-  const inactivePlayers = teamRoster.filter((p) => !p.activeStatus)
+  const archivedPlayers = teamRoster.filter((p) => !p.activeStatus)
 
   const resetAddForm = () => {
     setFirstName('')
@@ -252,7 +245,7 @@ function TeamRosterTab({
     }
   }
 
-  const renderPlayerRow = (player: RosterPlayer, inactive = false) => {
+  const renderPlayerRow = (player: RosterPlayer, archived = false) => {
     const isEditing = editId === player.id
 
     if (isEditing) {
@@ -317,7 +310,7 @@ function TeamRosterTab({
         key={player.id}
         className={cn(
           'flex items-center gap-3 rounded-xl border px-3 py-3',
-          inactive ? 'border-dashed border-border bg-card/40 opacity-70' : 'border-border bg-card',
+          archived ? 'border-dashed border-border bg-card/40 opacity-70' : 'border-border bg-card',
         )}
       >
         <span className="flex size-11 shrink-0 items-center justify-center rounded-full border-2 border-neon/40 bg-neon/10 font-display text-lg font-bold tabular-nums text-neon">
@@ -351,22 +344,22 @@ function TeamRosterTab({
           <button
             type="button"
             aria-label={
-              inactive
-                ? `Reactivate ${formatPlayerFullName(player.firstName, player.lastName)}`
-                : `Deactivate ${formatPlayerFullName(player.firstName, player.lastName)}`
+              archived
+                ? `Restore ${formatPlayerFullName(player.firstName, player.lastName)}`
+                : `Archive ${formatPlayerFullName(player.firstName, player.lastName)}`
             }
             onClick={() =>
-              void onSetPlayerActive(player.id, inactive).then(() =>
+              void onSetPlayerActive(player.id, archived).then(() =>
                 onToast(
-                  inactive
-                    ? `${formatPlayerFullName(player.firstName, player.lastName)} reactivated`
-                    : `${formatPlayerFullName(player.firstName, player.lastName)} deactivated`,
+                  archived
+                    ? `${formatPlayerFullName(player.firstName, player.lastName)} restored`
+                    : `${formatPlayerFullName(player.firstName, player.lastName)} archived`,
                 ),
               )
             }
-            className="flex size-9 items-center justify-center rounded-lg bg-secondary text-danger active:scale-90"
+            className="flex size-9 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-90"
           >
-            <UserMinus className="size-4" />
+            <Archive className="size-4" />
           </button>
         </div>
       </li>
@@ -440,21 +433,21 @@ function TeamRosterTab({
 
       {rosterLoading ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Loading roster…</p>
-      ) : activePlayers.length === 0 && inactivePlayers.length === 0 ? (
+      ) : activePlayers.length === 0 && archivedPlayers.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
           No players yet. Add your first player above.
         </p>
       ) : (
         <>
           <ul className="space-y-2">{activePlayers.map((p) => renderPlayerRow(p))}</ul>
-          {inactivePlayers.length > 0 && (
+          {archivedPlayers.length > 0 && (
             <div className="pt-2">
               <h3 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                Inactive ({inactivePlayers.length})
+                Archived ({archivedPlayers.length})
               </h3>
-              <ul className="space-y-2">{inactivePlayers.map((p) => renderPlayerRow(p, true))}</ul>
+              <ul className="space-y-2">{archivedPlayers.map((p) => renderPlayerRow(p, true))}</ul>
               <p className="mt-2 text-[10px] text-muted-foreground">
-                Tap the remove icon on an inactive player to reactivate them.
+                Archived players stay in history for stats. Tap archive again to restore them.
               </p>
             </div>
           )}
@@ -470,8 +463,6 @@ function TeamSettingsTab({
   activeTeamFormat,
   activeTeamAgeGroup,
   primaryCoachName,
-  onUpdateTeamFormat,
-  onUpdateTeamAgeGroup,
   onUpdatePrimaryCoach,
   scheduledMatches,
   scheduledLoading,
@@ -489,8 +480,6 @@ function TeamSettingsTab({
   | 'activeTeamFormat'
   | 'activeTeamAgeGroup'
   | 'primaryCoachName'
-  | 'onUpdateTeamFormat'
-  | 'onUpdateTeamAgeGroup'
   | 'onUpdatePrimaryCoach'
   | 'scheduledMatches'
   | 'scheduledLoading'
@@ -502,49 +491,24 @@ function TeamSettingsTab({
   | 'onToast'
   | 'canUseSprocketIntegration'
 >) {
-  const [ageGroup, setAgeGroup] = useState<AgeGroup | ''>(activeTeamAgeGroup ?? '')
-  const [format, setFormat] = useState<TeamFormat>(activeTeamFormat)
   const [coachName, setCoachName] = useState(primaryCoachName)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    setAgeGroup(activeTeamAgeGroup ?? '')
-  }, [activeTeamAgeGroup])
-
-  useEffect(() => {
-    setFormat(activeTeamFormat)
-  }, [activeTeamFormat])
 
   useEffect(() => {
     setCoachName(primaryCoachName)
   }, [primaryCoachName])
 
-  const ageChanged = (ageGroup || null) !== (activeTeamAgeGroup ?? null)
-  const formatChanged = format !== activeTeamFormat
   const coachChanged = coachName.trim() !== primaryCoachName.trim()
-  const canSave = (ageChanged || formatChanged || coachChanged) && !saving
-
-  const handleAgeGroupChange = (value: string) => {
-    if (!isAgeGroup(value)) return
-    setAgeGroup(value)
-    setFormat(formatForAgeGroup(value))
-  }
+  const canSave = coachChanged && !saving
 
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
     try {
-      if (ageChanged && isAgeGroup(ageGroup)) {
-        await onUpdateTeamAgeGroup(ageGroup)
-      } else if (formatChanged) {
-        await onUpdateTeamFormat(format)
-      }
-      if (coachChanged) await onUpdatePrimaryCoach(coachName.trim())
+      await onUpdatePrimaryCoach(coachName.trim())
       onToast('Team settings saved')
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to save team settings')
-      setAgeGroup(activeTeamAgeGroup ?? '')
-      setFormat(activeTeamFormat)
       setCoachName(primaryCoachName)
     } finally {
       setSaving(false)
@@ -559,55 +523,17 @@ function TeamSettingsTab({
           Team Settings
         </h2>
 
-        <div>
-          <label
-            htmlFor="team-age-group"
-            className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-          >
-            Age Group
-          </label>
-          <select
-            id="team-age-group"
-            value={ageGroup}
-            onChange={(e) => handleAgeGroupChange(e.target.value)}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-          >
-            <option value="" disabled>
-              Select age group
-            </option>
-            {AGE_GROUPS.map((group) => (
-              <option key={group} value={group}>
-                {ageGroupFormatHint(group)}
-              </option>
-            ))}
-          </select>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Virginia Velocity defaults: U13–U16 → 11v11, U11–U12 → 9v9, U9–U10 → 7v7.
+        <div className="rounded-xl border border-border bg-secondary/40 px-3 py-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Age group &amp; lineup
           </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="team-format"
-            className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-          >
-            Match Format
-          </label>
-          <select
-            id="team-format"
-            value={format}
-            onChange={(e) => setFormat(e.target.value as TeamFormat)}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-          >
-            {TEAM_FORMATS.map((entry) => (
-              <option key={entry} value={entry}>
-                {teamFormatLabel(entry)}
-              </option>
-            ))}
-          </select>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Sets the pitch layout and lineup limits (
-            {getMaxFieldPlayersForFormat(format)} players on field). Usually follows age group.
+          <p className="mt-1 text-sm font-bold text-foreground">
+            {activeTeamAgeGroup
+              ? ageGroupFormatHint(activeTeamAgeGroup)
+              : teamFormatLabel(activeTeamFormat)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Directors edit team name and age group in Club Admin.
           </p>
         </div>
 
@@ -933,8 +859,6 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
             activeTeamFormat={props.activeTeamFormat}
             activeTeamAgeGroup={props.activeTeamAgeGroup}
             primaryCoachName={props.primaryCoachName}
-            onUpdateTeamFormat={props.onUpdateTeamFormat}
-            onUpdateTeamAgeGroup={props.onUpdateTeamAgeGroup}
             onUpdatePrimaryCoach={props.onUpdatePrimaryCoach}
             scheduledMatches={props.scheduledMatches}
             scheduledLoading={props.scheduledLoading}

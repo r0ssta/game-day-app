@@ -218,6 +218,54 @@
     border-color: oklch(0.22 0.02 260);
     background-color: oklch(1 0 0);
   }
+
+  html.sunlight-mode .season-manager-panel {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+  }
+
+  html.sunlight-mode .season-manager-panel input,
+  html.sunlight-mode .guest-pool-dialog input[type='search'] {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+    color: oklch(0.12 0 0);
+    font-weight: 800;
+  }
+
+  html.sunlight-mode .guest-pool-dialog {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+  }
+
+  html.sunlight-mode .age-group-pool-panel {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+  }
+
+  html.sunlight-mode .age-group-pool-panel input,
+  html.sunlight-mode .age-group-pool-panel select {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+    color: oklch(0.12 0 0);
+    font-weight: 800;
+  }
+
+  html.sunlight-mode .player-directory-panel,
+  html.sunlight-mode .player-development-report,
+  html.sunlight-mode .club-admin-tabs {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+  }
+
+  html.sunlight-mode .player-directory-panel input,
+  html.sunlight-mode .player-directory-panel select,
+  html.sunlight-mode .player-development-report input,
+  html.sunlight-mode .player-development-report select {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+    color: oklch(0.12 0 0);
+    font-weight: 800;
+  }
 }
 
 @keyframes marquee {

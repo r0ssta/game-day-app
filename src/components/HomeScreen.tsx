@@ -1,6 +1,5 @@
-import type { ReactNode } from 'react'
 import { BarChart3, ClipboardList, FileText, Users } from 'lucide-react'
-import { TeamSelector, type CreateTeamInput } from '@/components/AppNavigation'
+import { TeamSelector } from '@/components/AppNavigation'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
@@ -12,7 +11,6 @@ type HomeScreenProps = {
   teams: NamedEntity[]
   activeTeamId: string | null
   onTeamChange: (teamId: string) => void
-  onAddTeam?: (input: CreateTeamInput) => Promise<string | void>
   hasActiveMatch: boolean
   activeMatchLabel?: string
   hasPendingRecap: boolean
@@ -31,7 +29,6 @@ export function HomeScreen({
   teams,
   activeTeamId,
   onTeamChange,
-  onAddTeam,
   hasActiveMatch,
   activeMatchLabel,
   hasPendingRecap,
@@ -60,7 +57,6 @@ export function HomeScreen({
           teams={teams}
           activeTeamId={activeTeamId}
           onTeamChange={onTeamChange}
-          onAddTeam={onAddTeam}
         />
 
         <div className="mt-6 flex flex-1 flex-col justify-center gap-4">

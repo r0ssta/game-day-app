@@ -3,12 +3,8 @@ import {
   EMPTY_QUALITATIVE_CONTEXT,
   EXECUTION_SCORE_OPTIONS,
   OPPONENT_TIER_OPTIONS,
-  FOCUS_CHIP_OPTIONS,
-  formatFocusChipLabel,
   formatQualitativeContextSummary,
   hasQualitativeContext,
-  PRACTICE_TRANSFER_OPTIONS,
-  SIDELINE_ENVIRONMENT_OPTIONS,
   type ExecutionScore,
   type OpponentTier,
   type QualitativeContext,
@@ -27,27 +23,9 @@ function SectionLabel({ children }: { children: ReactNode }) {
   )
 }
 
-function optionButtonClass(selected: boolean) {
-  return cn(
-    'min-h-11 touch-manipulation rounded-xl border-2 px-3 py-2.5 text-left text-sm font-semibold transition-transform active:scale-[0.98]',
-    selected
-      ? 'border-neon bg-neon/15 text-foreground ring-1 ring-neon/40'
-      : 'border-border bg-card text-foreground',
-  )
-}
-
 function tierChipClass(selected: boolean) {
   return cn(
     'flex min-h-[4.5rem] touch-manipulation flex-col items-start justify-center gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left transition-transform active:scale-[0.98]',
-    selected
-      ? 'border-neon bg-neon/15 text-foreground ring-1 ring-neon/40'
-      : 'border-border bg-card text-foreground',
-  )
-}
-
-function chipButtonClass(selected: boolean) {
-  return cn(
-    'min-h-10 touch-manipulation rounded-full border-2 px-3 py-2 text-xs font-bold transition-transform active:scale-[0.98]',
     selected
       ? 'border-neon bg-neon/15 text-foreground ring-1 ring-neon/40'
       : 'border-border bg-card text-foreground',
@@ -95,13 +73,6 @@ export function QualitativeContextFields({
 
   const patch = (partial: Partial<QualitativeContext>) => {
     onChange({ ...context, ...partial })
-  }
-
-  const toggleChip = (chip: string) => {
-    const selected = new Set(context.focusChips)
-    if (selected.has(chip)) selected.delete(chip)
-    else selected.add(chip)
-    patch({ focusChips: FOCUS_CHIP_OPTIONS.filter((option) => selected.has(option)) })
   }
 
   return (
@@ -215,69 +186,6 @@ export function QualitativeContextFields({
                   {option.title}
                 </span>
                 <span className="text-xs font-medium text-muted-foreground">{option.subtitle}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <SectionLabel>Did we execute our training focus?</SectionLabel>
-        <div className="grid grid-cols-3 gap-2">
-          {PRACTICE_TRANSFER_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              aria-pressed={context.practiceTransfer === option.id}
-              onClick={() =>
-                patch({
-                  practiceTransfer: context.practiceTransfer === option.id ? null : option.id,
-                })
-              }
-              className={cn(optionButtonClass(context.practiceTransfer === option.id), 'text-center')}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <SectionLabel>Sideline Environment</SectionLabel>
-        <div className="grid gap-2">
-          {SIDELINE_ENVIRONMENT_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              aria-pressed={context.sidelineEnvironment === option.id}
-              onClick={() =>
-                patch({
-                  sidelineEnvironment:
-                    context.sidelineEnvironment === option.id ? null : option.id,
-                })
-              }
-              className={optionButtonClass(context.sidelineEnvironment === option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <SectionLabel>One-Word Focus Chips</SectionLabel>
-        <div className="flex flex-wrap gap-2">
-          {FOCUS_CHIP_OPTIONS.map((chip) => {
-            const selected = context.focusChips.includes(chip)
-            return (
-              <button
-                key={chip}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => toggleChip(chip)}
-                className={chipButtonClass(selected)}
-              >
-                {formatFocusChipLabel(chip)}
               </button>
             )
           })}

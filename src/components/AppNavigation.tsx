@@ -1,15 +1,6 @@
 import type { ReactNode } from 'react'
 import { Home } from 'lucide-react'
 import { TOUCH_ICON_BUTTON } from '@/lib/layout'
-import {
-  AGE_GROUPS,
-  type AgeGroup,
-  ageGroupFormatHint,
-  defaultTeamNameForAgeGroup,
-  isAgeGroup,
-} from '@/lib/age-groups'
-import { CLUB_NAME } from '@/lib/branding'
-import { useState } from 'react'
 
 type NamedEntity = { id: string; name: string }
 
@@ -57,16 +48,10 @@ export function ScreenHeader({
   )
 }
 
-export type CreateTeamInput = {
-  name?: string
-  ageGroup: AgeGroup
-}
-
 type TeamSelectorProps = {
   teams: NamedEntity[]
   activeTeamId: string | null
   onTeamChange: (teamId: string) => void
-  onAddTeam?: (input: CreateTeamInput) => Promise<string | void>
   prominent?: boolean
 }
 
@@ -74,7 +59,6 @@ export function TeamSelector({
   teams,
   activeTeamId,
   onTeamChange,
-  onAddTeam,
   prominent = false,
 }: TeamSelectorProps) {
   return (
@@ -110,67 +94,6 @@ export function TeamSelector({
           </option>
         ))}
       </select>
-      {onAddTeam && (
-        <AddTeamInline onAddTeam={onAddTeam} onCreated={onTeamChange} />
-      )}
     </div>
-  )
-}
-
-function AddTeamInline({
-  onAddTeam,
-  onCreated,
-}: {
-  onAddTeam: (input: CreateTeamInput) => Promise<string | void>
-  onCreated: (teamId: string) => void
-}) {
-  const [ageGroup, setAgeGroup] = useState<AgeGroup>('U13')
-  const [name, setName] = useState('')
-
-  return (
-    <form
-      className="mt-3 space-y-2"
-      onSubmit={(e) => {
-        e.preventDefault()
-        void onAddTeam({
-          name: name.trim() || undefined,
-          ageGroup,
-        }).then((id) => {
-          if (id) onCreated(id)
-          setName('')
-        })
-      }}
-    >
-      <select
-        value={ageGroup}
-        onChange={(event) => {
-          if (isAgeGroup(event.target.value)) setAgeGroup(event.target.value)
-        }}
-        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-bold text-foreground"
-        aria-label="Age group"
-      >
-        {AGE_GROUPS.map((group) => (
-          <option key={group} value={group}>
-            {ageGroupFormatHint(group)}
-          </option>
-        ))}
-      </select>
-      <div className="flex gap-2">
-        <input
-          name="team-name"
-          type="text"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={`Name (default ${defaultTeamNameForAgeGroup(ageGroup, CLUB_NAME)})`}
-          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
-        />
-        <button
-          type="submit"
-          className="shrink-0 rounded-lg bg-athletic px-3 py-2 text-xs font-bold uppercase text-athletic-foreground"
-        >
-          Add
-        </button>
-      </div>
-    </form>
   )
 }

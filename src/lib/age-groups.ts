@@ -1,4 +1,5 @@
 import type { TeamFormat } from '@/lib/team-format'
+import { CLUB_NAME } from '@/lib/branding'
 
 /** Club age groups with default match formats. */
 export const AGE_GROUPS = ['U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16'] as const
@@ -40,6 +41,39 @@ export function ageGroupFormatHint(ageGroup: AgeGroup): string {
   return `${ageGroup} · ${formatForAgeGroup(ageGroup)}`
 }
 
-export function defaultTeamNameForAgeGroup(ageGroup: AgeGroup, clubName = 'Virginia Velocity'): string {
-  return `${clubName} ${ageGroup}`
+/** Stored team name default — age group is shown as a prefix in the UI, not in the DB name. */
+export function defaultTeamNameForAgeGroup(
+  _ageGroup?: AgeGroup,
+  clubName = CLUB_NAME,
+): string {
+  return clubName
+}
+
+/** Strip a leading/trailing age-group token from a stored team name. */
+export function stripAgeGroupFromTeamName(
+  name: string,
+  ageGroup?: AgeGroup | null,
+): string {
+  let base = name.trim()
+  if (!base) return ''
+
+  const groups = ageGroup ? [ageGroup] : [...AGE_GROUPS]
+  for (const group of groups) {
+    const leading = new RegExp(`^${group}\\s+`, 'i')
+    const trailing = new RegExp(`\\s+${group}$`, 'i')
+    base = base.replace(leading, '').replace(trailing, '').trim()
+  }
+  return base
+}
+
+/** Display label: age group in front of the team name everywhere in the UI. */
+export function formatTeamDisplayName(
+  name: string,
+  ageGroup: string | null | undefined,
+): string {
+  const group = normalizeAgeGroup(ageGroup)
+  const base = stripAgeGroupFromTeamName(name, group) || name.trim() || 'Team'
+  if (!group) return base
+  if (new RegExp(`^${group}\\b`, 'i').test(base)) return base
+  return `${group} ${base}`
 }

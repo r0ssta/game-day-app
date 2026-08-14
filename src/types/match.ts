@@ -7,9 +7,10 @@ export type ActionType = 'GOAL' | 'ASSIST'
 
 export type MatchPeriod = '1st' | '2nd'
 
-/** Permanent roster entry — no match-specific fields */
+/** Permanent club-pool player — season team assignment is via season_rosters. */
 export type RosterPlayer = {
   id: string
+  /** Team this player is rostered for in the active season (empty for unassigned pool). */
   teamId: string
   number: number | null
   firstName: string
@@ -17,6 +18,8 @@ export type RosterPlayer = {
   position: string
   primaryPosition: string
   secondaryPosition: string
+  ageGroup: string | null
+  /** True when attending this match as a guest (not on the team's season roster). */
   isGuest: boolean
   activeStatus: boolean
 }

@@ -24,6 +24,8 @@ import {
 } from '@/components/AppNavDrawer'
 import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
 import { teamsForSelector } from '@/lib/team-context'
+import { formatTeamDisplayName } from '@/lib/age-groups'
+import { resolveTeamAgeGroup } from '@/lib/season-roster'
 import type { ReportingTab } from '@/components/reporting/ReportingTabBar'
 import { TeamManagementScreen } from '@/components/TeamManagementScreen'
 import {
@@ -415,6 +417,12 @@ type PlayerEditDraft = {
 
 type AddPlayerToRosterProps = {
   selectedTeamId: string | null
+  ageGroup: import('@/lib/age-groups').AgeGroup
+  excludePlayerIds: string[]
+  loadAgeGroupPool: (
+    ageGroup: import('@/lib/age-groups').AgeGroup,
+  ) => Promise<import('@/types/database').DbPlayer[]>
+  onAddFromPool: (playerId: string) => Promise<void>
   suggestedJersey: number
   onAdd: (input: {
     firstName: string
@@ -426,8 +434,20 @@ type AddPlayerToRosterProps = {
   }) => Promise<void>
 }
 
-function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayerToRosterProps) {
+function AddPlayerToRoster({
+  selectedTeamId,
+  ageGroup,
+  excludePlayerIds,
+  loadAgeGroupPool,
+  onAddFromPool,
+  suggestedJersey,
+  onAdd,
+}: AddPlayerToRosterProps) {
   const [expanded, setExpanded] = useState(false)
+  const [mode, setMode] = useState<'pool' | 'create'>('pool')
+  const [pool, setPool] = useState<import('@/types/database').DbPlayer[]>([])
+  const [poolLoading, setPoolLoading] = useState(false)
+  const [selectedPoolPlayerId, setSelectedPoolPlayerId] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [number, setNumber] = useState('')
@@ -438,21 +458,61 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
   const [saving, setSaving] = useState(false)
 
   const teamSelected = Boolean(selectedTeamId)
-  const canSubmit =
+  const excluded = useMemo(() => new Set(excludePlayerIds), [excludePlayerIds])
+  const availablePool = useMemo(
+    () => pool.filter((player) => !excluded.has(player.id)),
+    [pool, excluded],
+  )
+  const canAddFromPool = teamSelected && selectedPoolPlayerId !== '' && !saving
+  const canSubmitCreate =
     teamSelected && firstName.trim().length > 0 && lastName.trim().length > 0 && !saving
 
+  useEffect(() => {
+    if (!expanded || !teamSelected) return
+    let cancelled = false
+    setPoolLoading(true)
+    void loadAgeGroupPool(ageGroup)
+      .then((rows) => {
+        if (!cancelled) setPool(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setPool([])
+      })
+      .finally(() => {
+        if (!cancelled) setPoolLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [expanded, teamSelected, ageGroup, loadAgeGroupPool])
+
   const resetForm = () => {
+    setSelectedPoolPlayerId('')
     setFirstName('')
     setLastName('')
     setIsGuest(false)
     setNumber('')
     setPrimaryPosition(DEFAULT_PRIMARY_POSITION)
     setSecondaryPosition(DEFAULT_SECONDARY_POSITION)
+    setMode('pool')
   }
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleAddFromPool = async (e: FormEvent) => {
     e.preventDefault()
-    if (!canSubmit || !selectedTeamId) return
+    if (!canAddFromPool) return
+    setSaving(true)
+    try {
+      await onAddFromPool(selectedPoolPlayerId)
+      resetForm()
+      setExpanded(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSubmitCreate = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!canSubmitCreate || !selectedTeamId) return
 
     const trimmedFirst = firstName.trim()
     const trimmedLast = lastName.trim()
@@ -490,7 +550,7 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
         className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-athletic/50 bg-athletic/5 py-3.5 text-sm font-bold uppercase tracking-wide text-athletic transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
       >
         <UserPlus className="size-4" strokeWidth={2.5} />
-        + Add Guest/New Player
+        + Add Player
       </button>
     )
   }
@@ -503,7 +563,7 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
       <div className="mb-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 font-display text-sm font-bold uppercase tracking-wide text-foreground">
           <UserPlus className="size-4 text-athletic" />
-          New Player
+          Add Player
         </h3>
         <button
           type="button"
@@ -522,7 +582,74 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
         <p className="mb-3 text-sm text-muted-foreground">Select a team above to add players.</p>
       )}
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setMode('pool')}
+          className={cn(
+            'rounded-lg border-2 px-3 py-2 text-xs font-bold uppercase tracking-wide',
+            mode === 'pool'
+              ? 'border-athletic bg-athletic/15 text-foreground'
+              : 'border-border bg-background text-muted-foreground',
+          )}
+        >
+          From {ageGroup} Pool
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('create')}
+          className={cn(
+            'rounded-lg border-2 px-3 py-2 text-xs font-bold uppercase tracking-wide',
+            mode === 'create'
+              ? 'border-athletic bg-athletic/15 text-foreground'
+              : 'border-border bg-background text-muted-foreground',
+          )}
+        >
+          Create New
+        </button>
+      </div>
+
+      {mode === 'pool' ? (
+        <form onSubmit={(e) => void handleAddFromPool(e)} className="space-y-3">
+          <div>
+            <label
+              htmlFor="setup-pool-player"
+              className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Existing {ageGroup} player
+            </label>
+            <select
+              id="setup-pool-player"
+              value={selectedPoolPlayerId}
+              onChange={(e) => setSelectedPoolPlayerId(e.target.value)}
+              disabled={!teamSelected || poolLoading || saving}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30 disabled:opacity-40"
+            >
+              <option value="">
+                {poolLoading
+                  ? 'Loading pool…'
+                  : availablePool.length === 0
+                    ? `No available ${ageGroup} players`
+                    : 'Select a player…'}
+              </option>
+              {availablePool.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {player.jersey != null ? `#${player.jersey} ` : ''}
+                  {formatPlayerFullName(player.first_name, player.last_name)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={!canAddFromPool}
+            className="w-full rounded-lg bg-athletic py-3 text-sm font-bold uppercase tracking-wide text-athletic-foreground active:scale-[0.98] disabled:opacity-40"
+          >
+            {saving ? 'Adding…' : 'Add From Pool'}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={(e) => void handleSubmitCreate(e)} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label
@@ -613,12 +740,13 @@ function AddPlayerToRoster({ selectedTeamId, suggestedJersey, onAdd }: AddPlayer
 
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={!canSubmitCreate}
             className="w-full rounded-lg bg-athletic py-3 text-sm font-bold uppercase tracking-wide text-athletic-foreground active:scale-[0.98] disabled:opacity-40"
           >
             {saving ? 'Adding…' : 'Add Player'}
           </button>
         </form>
+      )}
     </section>
   )
 }
@@ -671,6 +799,9 @@ type SetupScreenProps = {
   setupSlotAssignments?: Record<string, string | null>
   setupPitchKey: number
   setupAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
+  guestAgeGroup: import('@/lib/age-groups').AgeGroup
+  onAddGuestFromPool: (playerId: string) => Promise<void>
+  loadAgeGroupPool: (ageGroup: import('@/lib/age-groups').AgeGroup) => Promise<import('@/types/database').DbPlayer[]>
 }
 
 function SetupScreen({
@@ -714,6 +845,9 @@ function SetupScreen({
   setupSlotAssignments,
   setupPitchKey,
   setupAssignmentsRef,
+  guestAgeGroup,
+  onAddGuestFromPool,
+  loadAgeGroupPool,
 }: SetupScreenProps) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
@@ -867,6 +1001,10 @@ function SetupScreen({
               </p>
               <AddPlayerToRoster
                 selectedTeamId={activeTeamId}
+                ageGroup={guestAgeGroup}
+                excludePlayerIds={masterRoster.map((player) => player.id)}
+                loadAgeGroupPool={loadAgeGroupPool}
+                onAddFromPool={onAddGuestFromPool}
                 suggestedJersey={suggestedJersey}
                 onAdd={onAddPlayer}
               />
@@ -936,6 +1074,10 @@ function SetupScreen({
 
               <AddPlayerToRoster
                 selectedTeamId={activeTeamId}
+                ageGroup={guestAgeGroup}
+                excludePlayerIds={masterRoster.map((player) => player.id)}
+                loadAgeGroupPool={loadAgeGroupPool}
+                onAddFromPool={onAddGuestFromPool}
                 suggestedJersey={suggestedJersey}
                 onAdd={onAddPlayer}
               />
@@ -1345,8 +1487,6 @@ export default function App() {
     setActiveTeamId,
     activeTeamFormat,
     activeTeamAgeGroup,
-    updateTeamFormat,
-    updateTeamAgeGroup,
     updateTeamPrimaryCoach,
     activeTeamPrimaryCoachName,
     setupCoachName,
@@ -1399,7 +1539,19 @@ export default function App() {
     hasLiveMatch,
     hasPendingRecap,
     createTeam,
+    updateTeamProfile,
+    setTeamActive,
+    seasons,
+    activeSeason,
+    createSeasonRecord,
+    updateSeasonRecord,
+    activateSeason,
+    archiveSeasonRecord,
     addPlayer,
+    addGuestFromPool,
+    fetchAgeGroupPoolPlayers,
+    createPoolPlayer,
+    assignPlayerToSeasonRoster,
     updatePlayer,
     beginMatch,
     setPlayerAttending,
@@ -1440,7 +1592,14 @@ export default function App() {
   const [reportingTab, setReportingTab] = useState<ReportingTab>('matches')
 
   const teamOptions = useMemo(
-    () => teamsForSelector(teams.map((team) => ({ id: team.id, name: team.name }))),
+    () =>
+      teamsForSelector(
+        teams.map((team) => ({
+          id: team.id,
+          name: formatTeamDisplayName(team.name, team.age_group),
+          activeStatus: team.active_status !== false,
+        })),
+      ),
     [teams],
   )
 
@@ -1656,8 +1815,11 @@ export default function App() {
   )
 
   const attendingCount = getAttendingIds(setupLineup).length
-  const activeTeamName =
-    teams.find((team) => team.id === activeTeamId)?.name ?? 'Team'
+  const activeTeamName = (() => {
+    const team = teams.find((entry) => entry.id === activeTeamId)
+    if (!team) return 'Team'
+    return formatTeamDisplayName(team.name, team.age_group)
+  })()
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const startMatchBlockReason = getSetupLineupBlockReason(setupLineup, maxFieldPlayers)
   const canStartMatch = startMatchBlockReason === null && Boolean(activeTeamId)
@@ -1740,7 +1902,7 @@ export default function App() {
 
       await beginMatch({
         teamId: activeTeamId,
-        teamName: team.name,
+        teamName: formatTeamDisplayName(team.name, team.age_group),
         coachName: setupCoachName.trim(),
         opponent,
         locationType,
@@ -2336,14 +2498,12 @@ export default function App() {
 
     return (
       <HomeScreen
-        teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+        teams={teams.map((team) => ({
+          id: team.id,
+          name: formatTeamDisplayName(team.name, team.age_group),
+        }))}
         activeTeamId={activeTeamId}
         onTeamChange={setActiveTeamId}
-        onAddTeam={
-          canAccessClubAdmin
-            ? async (input) => createTeam(input)
-            : undefined
-        }
         hasActiveMatch={hasLiveMatch}
         activeMatchLabel={matchLabel}
         hasPendingRecap={hasPendingRecap}
@@ -2370,9 +2530,35 @@ export default function App() {
 
     return (
       <ClubAdminScreen
-        teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+        teams={teams.map((team) => ({
+          id: team.id,
+          name: team.name,
+          ageGroup: team.age_group,
+          activeStatus: team.active_status !== false,
+        }))}
+        reportTeams={teams}
+        seasons={seasons}
+        activeSeasonId={activeSeason?.id ?? null}
+        activeSeason={activeSeason}
         currentUserId={user?.id ?? null}
         onCreateTeam={async (input) => createTeam(input)}
+        onUpdateTeam={async (teamId, input) => updateTeamProfile(teamId, input)}
+        onArchiveTeam={async (teamId) => {
+          await setTeamActive(teamId, false)
+        }}
+        onRestoreTeam={async (teamId) => {
+          await setTeamActive(teamId, true)
+        }}
+        onCreateSeason={async (input) => createSeasonRecord(input)}
+        onUpdateSeason={async (seasonId, input) => updateSeasonRecord(seasonId, input)}
+        onActivateSeason={async (seasonId) => activateSeason(seasonId)}
+        onArchiveSeason={async (seasonId) => archiveSeasonRecord(seasonId)}
+        onCreatePoolPlayer={async (input) => createPoolPlayer(input)}
+        onAssignPoolPlayer={async (input) => assignPlayerToSeasonRoster(input)}
+        loadAgeGroupPool={fetchAgeGroupPoolPlayers}
+        onSetPlayerActive={async (playerId, active) => {
+          await setPlayerActive(playerId, active)
+        }}
         onBackToHome={() => setAppMode('home')}
         onToast={setToast}
       />
@@ -2425,6 +2611,14 @@ export default function App() {
           setupSlotAssignments={setupSlotAssignments}
           setupPitchKey={setupPitchKey}
           setupAssignmentsRef={setupAssignmentsRef}
+          guestAgeGroup={resolveTeamAgeGroup(
+            teams.find((team) => team.id === activeTeamId)?.age_group,
+          )}
+          onAddGuestFromPool={async (playerId) => {
+            await addGuestFromPool(playerId)
+            setToast('Guest player added to this match')
+          }}
+          loadAgeGroupPool={fetchAgeGroupPoolPlayers}
         />
         <PlayerEditModal
           draft={editDraft}
@@ -2458,8 +2652,6 @@ export default function App() {
           onSetPlayerActive={setPlayerActive}
           onSavePreset={saveLineupPreset}
           onDeletePreset={removeLineupPreset}
-          onUpdateTeamFormat={updateTeamFormat}
-          onUpdateTeamAgeGroup={updateTeamAgeGroup}
           primaryCoachName={activeTeamPrimaryCoachName}
           onUpdatePrimaryCoach={async (name) => {
             await updateTeamPrimaryCoach(name)

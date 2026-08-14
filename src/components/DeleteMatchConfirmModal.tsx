@@ -7,6 +7,10 @@ type DeleteMatchConfirmModalProps = {
   open: boolean
   matchLabel?: string
   busy?: boolean
+  title?: string
+  description?: string
+  detail?: string
+  confirmLabel?: string
   onConfirm: () => void
   onCancel: () => void
 }
@@ -15,6 +19,10 @@ export function DeleteMatchConfirmModal({
   open,
   matchLabel,
   busy = false,
+  title = 'Delete Game?',
+  description = 'Are you sure you want to delete this match and all associated events?',
+  detail = 'This permanently removes the match record, live tracking logs, events, stats, and post-game recaps. This cannot be undone.',
+  confirmLabel = 'Delete Game',
   onConfirm,
   onCancel,
 }: DeleteMatchConfirmModalProps) {
@@ -54,7 +62,7 @@ export function DeleteMatchConfirmModal({
               id="delete-match-title"
               className="mt-1 font-display text-2xl font-black uppercase tracking-wide text-foreground"
             >
-              Delete Game?
+              {title}
             </h2>
           </div>
           <button
@@ -73,17 +81,14 @@ export function DeleteMatchConfirmModal({
 
         <div className="space-y-3 px-5 py-4">
           <p id="delete-match-description" className="text-sm font-semibold leading-relaxed text-foreground">
-            Are you sure you want to delete this match and all associated events?
+            {description}
           </p>
           {matchLabel ? (
             <p className="rounded-xl border-2 border-border bg-secondary/40 px-3 py-2 text-sm font-bold text-foreground">
               {matchLabel}
             </p>
           ) : null}
-          <p className="text-xs font-semibold leading-relaxed text-muted-foreground">
-            This permanently removes the match record, live tracking logs, events, stats, and
-            post-game recaps. This cannot be undone.
-          </p>
+          <p className="text-xs font-semibold leading-relaxed text-muted-foreground">{detail}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-2 border-t-2 border-border px-5 py-4">
@@ -101,7 +106,7 @@ export function DeleteMatchConfirmModal({
             disabled={busy}
             className="delete-match-confirm min-h-12 touch-manipulation rounded-xl border-2 border-danger bg-danger px-4 py-3 text-sm font-bold uppercase tracking-wide text-danger-foreground shadow-lg shadow-danger/20 active:scale-[0.98] disabled:opacity-50"
           >
-            {busy ? 'Deleting…' : 'Delete Game'}
+            {busy ? 'Deleting…' : confirmLabel}
           </button>
         </div>
       </div>

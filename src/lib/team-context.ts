@@ -55,13 +55,14 @@ export function resolveTeamScope(
 
 /**
  * Teams available in the global switcher.
- * Filter/sort hooks for club membership and role-based access later.
+ * Archived teams are excluded; filter/sort hooks for club membership later.
  */
 export function teamsForSelector(
-  teams: Array<{ id: string; name: string }>,
+  teams: Array<{ id: string; name: string; activeStatus?: boolean }>,
   _access?: { clubId?: string | null; roles?: string[] },
 ): TeamSelectorOption[] {
   return teams
+    .filter((team) => team.activeStatus !== false)
     .map((team) => ({
       id: team.id,
       name: team.name,

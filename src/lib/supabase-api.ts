@@ -23,7 +23,19 @@ import {
   type QualitativeContext,
 } from '@/lib/qualitative-context'
 import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEventType, type StatTrackerRosterPlayer, rosterPlayerFromDb } from '@/lib/stat-tracker'
-import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
+import type {
+  DbCoach,
+  DbLineupPreset,
+  DbMatch,
+  DbMatchEvent,
+  DbMatchReview,
+  DbMatchStat,
+  DbPlayer,
+  DbSeason,
+  DbSeasonRoster,
+  DbTeam,
+  SeasonStatus,
+} from '@/types/database'
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
 import {
@@ -148,21 +160,29 @@ export function scoreToImpact(score: number): Impact {
   return 'neutral'
 }
 
-export function dbPlayerToRoster(player: DbPlayer): RosterPlayer {
+export function dbPlayerToRoster(
+  player: DbPlayer,
+  options?: {
+    teamId?: string | null
+    jersey?: number | null
+    isGuest?: boolean
+  },
+): RosterPlayer {
   const primaryPosition = player.primary_position ?? legacyPositionToProfile(player.position)
   const secondaryPosition = player.secondary_position ?? primaryPosition
   const { firstName, lastName } = resolvePlayerNameFields(player)
 
   return {
     id: player.id,
-    teamId: player.team_id,
-    number: player.jersey,
+    teamId: options?.teamId ?? '',
+    number: options?.jersey !== undefined ? options.jersey : player.jersey,
     firstName,
     lastName,
     position: player.position,
     primaryPosition,
     secondaryPosition,
-    isGuest: player.is_guest,
+    ageGroup: player.age_group ?? null,
+    isGuest: options?.isGuest ?? false,
     activeStatus: player.active_status,
   }
 }
@@ -170,6 +190,7 @@ export function dbPlayerToRoster(player: DbPlayer): RosterPlayer {
 export function statToMatchPlayer(roster: RosterPlayer, stat: DbMatchStat): MatchPlayer {
   return {
     ...roster,
+    isGuest: Boolean(stat.is_match_guest) || roster.isGuest,
     impact: scoreToImpact(stat.impact_score),
     attending: stat.attending,
     isFirstHalfStarter: stat.is_first_half_starter,
@@ -202,6 +223,7 @@ export function matchPlayerToStatPayload(matchId: string, player: MatchPlayer) {
     is_second_half_starter: player.isSecondHalfStarter,
     attending: player.attending,
     plus_minus: player.plusMinus,
+    is_match_guest: player.isGuest,
   }
 }
 
@@ -209,8 +231,20 @@ function logSyncError(label: string, error: unknown) {
   console.error(`[supabase] ${label}`, error)
 }
 
-export async function fetchTeams(): Promise<DbTeam[]> {
-  const { data, error } = await supabase.from('teams').select('*').order('name')
+export async function fetchTeams(options?: {
+  includeArchived?: boolean
+}): Promise<DbTeam[]> {
+  let query = supabase.from('teams').select('*').order('name')
+  if (!options?.includeArchived) query = query.eq('active_status', true)
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchTeamsByIds(teamIds: string[]): Promise<DbTeam[]> {
+  const unique = [...new Set(teamIds.filter(Boolean))]
+  if (unique.length === 0) return []
+  const { data, error } = await supabase.from('teams').select('*').in('id', unique)
   if (error) throw error
   return data ?? []
 }
@@ -223,15 +257,291 @@ export async function fetchCoaches(): Promise<DbCoach[]> {
 
 export async function fetchPlayersByTeamId(
   teamId: string,
-  options?: { includeInactive?: boolean },
+  options?: { includeInactive?: boolean; seasonId?: string },
 ): Promise<DbPlayer[]> {
-  let query = supabase.from('players').select('*').eq('team_id', teamId)
-  if (!options?.includeInactive) {
-    query = query.eq('active_status', true)
+  // Prefer season roster when seasonId provided; fall back to empty if none.
+  if (options?.seasonId) {
+    const roster = await fetchSeasonRosterPlayers(options.seasonId, teamId, options)
+    return roster.map((entry) => entry.player)
   }
-  const { data, error } = await query.order('jersey')
+  // Legacy callers without season: return empty — players are no longer team-scoped.
+  void teamId
+  return []
+}
+
+export type SeasonRosterEntry = {
+  roster: DbSeasonRoster
+  player: DbPlayer
+}
+
+/** Primary team roster for a season (joined player rows). */
+export async function fetchSeasonRosterPlayers(
+  seasonId: string,
+  teamId: string,
+  options?: { includeInactive?: boolean },
+): Promise<SeasonRosterEntry[]> {
+  const { data, error } = await supabase
+    .from('season_rosters')
+    .select('*, players(*)')
+    .eq('season_id', seasonId)
+    .eq('team_id', teamId)
+  if (error) throw error
+
+  const rows = (data ?? []) as Array<DbSeasonRoster & { players: DbPlayer | DbPlayer[] | null }>
+  return rows
+    .map((row) => {
+      const player = Array.isArray(row.players) ? row.players[0] : row.players
+      if (!player) return null
+      if (!options?.includeInactive && !player.active_status) return null
+      const { players: _players, ...roster } = row
+      return { roster, player }
+    })
+    .filter((entry): entry is SeasonRosterEntry => entry !== null)
+    .sort((a, b) => {
+      const ja = a.roster.primary_jersey_number ?? a.player.jersey ?? 9999
+      const jb = b.roster.primary_jersey_number ?? b.player.jersey ?? 9999
+      return ja - jb
+    })
+}
+
+export async function fetchPlayersByIds(playerIds: string[]): Promise<DbPlayer[]> {
+  const unique = [...new Set(playerIds.filter(Boolean))]
+  if (unique.length === 0) return []
+  const { data, error } = await supabase.from('players').select('*').in('id', unique)
   if (error) throw error
   return data ?? []
+}
+
+export async function fetchAgeGroupPoolPlayers(
+  ageGroup: AgeGroup,
+  options?: { includeInactive?: boolean },
+): Promise<DbPlayer[]> {
+  let query = supabase.from('players').select('*').eq('age_group', ageGroup)
+  if (!options?.includeInactive) query = query.eq('active_status', true)
+  const { data, error } = await query
+    .order('last_name')
+    .order('first_name')
+  if (error) throw error
+  return data ?? []
+}
+
+/** Club-wide player directory (Director). */
+export async function fetchClubPlayers(options?: {
+  includeInactive?: boolean
+  ageGroup?: AgeGroup | null
+}): Promise<DbPlayer[]> {
+  let query = supabase.from('players').select('*')
+  if (!options?.includeInactive) query = query.eq('active_status', true)
+  if (options?.ageGroup) query = query.eq('age_group', options.ageGroup)
+  const { data, error } = await query.order('last_name').order('first_name')
+  if (error) throw error
+  return data ?? []
+}
+
+export type SeasonRosterHistoryRow = {
+  roster: DbSeasonRoster
+  team: DbTeam
+  season: DbSeason
+}
+
+/** Primary roster assignments for a player across seasons. */
+export async function fetchSeasonRosterHistoryForPlayer(
+  playerId: string,
+): Promise<SeasonRosterHistoryRow[]> {
+  const { data, error } = await supabase
+    .from('season_rosters')
+    .select('*, teams(*), seasons(*)')
+    .eq('player_id', playerId)
+  if (error) throw error
+
+  const rows: SeasonRosterHistoryRow[] = []
+  for (const raw of data ?? []) {
+    const row = raw as DbSeasonRoster & {
+      teams: DbTeam | DbTeam[] | null
+      seasons: DbSeason | DbSeason[] | null
+    }
+    const team = Array.isArray(row.teams) ? row.teams[0] : row.teams
+    const season = Array.isArray(row.seasons) ? row.seasons[0] : row.seasons
+    if (!team || !season) continue
+    rows.push({
+      roster: {
+        id: row.id,
+        season_id: row.season_id,
+        team_id: row.team_id,
+        player_id: row.player_id,
+        primary_jersey_number: row.primary_jersey_number,
+        created_at: row.created_at,
+      },
+      team,
+      season,
+    })
+  }
+
+  return rows.sort((a, b) => {
+    const aStart = a.season.starts_on ?? a.season.created_at
+    const bStart = b.season.starts_on ?? b.season.created_at
+    return bStart.localeCompare(aStart)
+  })
+}
+
+export type PlayerMatchAppearanceRow = {
+  stat: DbMatchStat
+  match: DbMatch
+}
+
+/** Completed matches where the player was marked attending. */
+export async function fetchPlayerMatchAppearances(
+  playerId: string,
+): Promise<PlayerMatchAppearanceRow[]> {
+  const { data, error } = await supabase
+    .from('match_stats')
+    .select('*, matches(*)')
+    .eq('player_id', playerId)
+    .eq('attending', true)
+  if (error) throw error
+
+  const rows: PlayerMatchAppearanceRow[] = []
+  for (const raw of data ?? []) {
+    const row = raw as DbMatchStat & { matches: DbMatch | DbMatch[] | null }
+    const match = Array.isArray(row.matches) ? row.matches[0] : row.matches
+    if (!match || match.status !== 'completed') continue
+    const { matches: _matches, ...stat } = row
+    rows.push({ stat, match })
+  }
+
+  return rows.sort(
+    (a, b) => getMatchSortTimestamp(b.match) - getMatchSortTimestamp(a.match),
+  )
+}
+
+export async function fetchSeasons(): Promise<DbSeason[]> {
+  const { data, error } = await supabase
+    .from('seasons')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
+export async function fetchActiveSeason(): Promise<DbSeason | null> {
+  const { data, error } = await supabase
+    .from('seasons')
+    .select('*')
+    .eq('status', 'active')
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function createSeason(input: {
+  name: string
+  startsOn?: string | null
+  endsOn?: string | null
+}): Promise<DbSeason> {
+  const trimmed = input.name.trim()
+  if (!trimmed) throw new Error('Season name is required')
+  const startsOn = input.startsOn ?? null
+  const endsOn = input.endsOn ?? null
+  if (startsOn && endsOn && endsOn < startsOn) {
+    throw new Error('End month must be on or after the start month')
+  }
+  const { data, error } = await supabase
+    .from('seasons')
+    .insert({
+      name: trimmed,
+      status: 'archived' satisfies SeasonStatus,
+      starts_on: startsOn,
+      ends_on: endsOn,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateSeason(
+  seasonId: string,
+  input: {
+    name: string
+    startsOn?: string | null
+    endsOn?: string | null
+  },
+): Promise<DbSeason> {
+  const trimmed = input.name.trim()
+  if (!trimmed) throw new Error('Season name is required')
+  const startsOn = input.startsOn ?? null
+  const endsOn = input.endsOn ?? null
+  if (startsOn && endsOn && endsOn < startsOn) {
+    throw new Error('End month must be on or after the start month')
+  }
+  const { data, error } = await supabase
+    .from('seasons')
+    .update({
+      name: trimmed,
+      starts_on: startsOn,
+      ends_on: endsOn,
+    })
+    .eq('id', seasonId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function setActiveSeason(seasonId: string): Promise<DbSeason> {
+  const { data, error } = await supabase.rpc('set_active_season', {
+    p_season_id: seasonId,
+  })
+  if (error) throw error
+  return data as DbSeason
+}
+
+export async function archiveSeason(seasonId: string): Promise<DbSeason> {
+  const { data, error } = await supabase
+    .from('seasons')
+    .update({ status: 'archived' satisfies SeasonStatus })
+    .eq('id', seasonId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function assignPlayerToSeasonRoster(input: {
+  seasonId: string
+  teamId: string
+  playerId: string
+  primaryJerseyNumber?: number | null
+}): Promise<DbSeasonRoster> {
+  const { data, error } = await supabase
+    .from('season_rosters')
+    .upsert(
+      {
+        season_id: input.seasonId,
+        team_id: input.teamId,
+        player_id: input.playerId,
+        primary_jersey_number: input.primaryJerseyNumber ?? null,
+      },
+      { onConflict: 'season_id,team_id,player_id' },
+    )
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function removePlayerFromSeasonRoster(
+  seasonId: string,
+  teamId: string,
+  playerId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('season_rosters')
+    .delete()
+    .eq('season_id', seasonId)
+    .eq('team_id', teamId)
+    .eq('player_id', playerId)
+  if (error) throw error
 }
 
 export async function setPlayerActiveStatus(playerId: string, active: boolean): Promise<DbPlayer> {
@@ -257,6 +567,7 @@ export async function insertTeam(input: {
       name: trimmed,
       format,
       age_group: input.ageGroup,
+      active_status: true,
     })
     .select()
     .single()
@@ -290,6 +601,47 @@ export async function updateTeamAgeGroup(
     .single()
   if (error) throw error
   return data
+}
+
+/** Director-only: update stored team name + age group (and derived format). */
+export async function updateTeamProfile(
+  teamId: string,
+  input: { name: string; ageGroup: AgeGroup },
+): Promise<DbTeam> {
+  const name = input.name.trim()
+  if (!name) throw new Error('Team name is required')
+  const { data, error } = await supabase
+    .from('teams')
+    .update({
+      name,
+      age_group: input.ageGroup,
+      format: formatForAgeGroup(input.ageGroup),
+    })
+    .eq('id', teamId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+/** Director-only: archive a team (soft-delete). Matches and stats are kept. */
+export async function setTeamActiveStatus(
+  teamId: string,
+  active: boolean,
+): Promise<DbTeam> {
+  const { data, error } = await supabase
+    .from('teams')
+    .update({ active_status: active })
+    .eq('id', teamId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+/** @deprecated Prefer setTeamActiveStatus(teamId, false). Hard delete is disabled. */
+export async function deleteTeam(teamId: string): Promise<void> {
+  await setTeamActiveStatus(teamId, false)
 }
 
 export async function updateTeamPrimaryCoachName(
@@ -349,7 +701,9 @@ export async function resolveCoachIdForName(name: string): Promise<string | null
 
 export async function upsertPlayer(input: {
   id?: string
-  teamId: string
+  teamId?: string
+  seasonId?: string
+  ageGroup: AgeGroup
   firstName: string
   lastName: string
   jersey: number | null
@@ -369,10 +723,13 @@ export async function upsertPlayer(input: {
     first_name: firstName,
     last_name: lastName,
     jersey: input.jersey,
+    age_group: input.ageGroup,
     is_guest: input.isGuest ?? false,
     position: legacyPosition,
     active_status: true,
   }
+
+  let player: DbPlayer
 
   if (input.id) {
     const withProfile = {
@@ -386,47 +743,34 @@ export async function upsertPlayer(input: {
       .eq('id', input.id)
       .select()
       .single()
-    if (!error) return data
-
-    if (isMissingColumnError(error)) {
-      const { data: legacyData, error: legacyError } = await supabase
-        .from('players')
-        .update(baseUpdate)
-        .eq('id', input.id)
-        .select()
-        .single()
-      if (legacyError) throw legacyError
-      return legacyData
+    if (error) throw error
+    player = data
+  } else {
+    const withProfile = {
+      ...baseUpdate,
+      primary_position: primaryPosition,
+      secondary_position: secondaryPosition,
     }
-    throw error
+    const { data, error } = await supabase.from('players').insert(withProfile).select().single()
+    if (error) throw error
+    player = data
   }
 
-  const withProfile = {
-    team_id: input.teamId,
-    ...baseUpdate,
-    primary_position: primaryPosition,
-    secondary_position: secondaryPosition,
+  if (input.seasonId && input.teamId) {
+    await assignPlayerToSeasonRoster({
+      seasonId: input.seasonId,
+      teamId: input.teamId,
+      playerId: player.id,
+      primaryJerseyNumber: input.jersey,
+    })
   }
-  const { data, error } = await supabase.from('players').insert(withProfile).select().single()
-  if (!error) return data
 
-  if (isMissingColumnError(error)) {
-    const { data: legacyData, error: legacyError } = await supabase
-      .from('players')
-      .insert({
-        team_id: input.teamId,
-        ...baseUpdate,
-      })
-      .select()
-      .single()
-    if (legacyError) throw legacyError
-    return legacyData
-  }
-  throw error
+  return player
 }
 
 export async function createMatchRecord(input: {
   teamId: string
+  seasonId: string
   coachId: string | null
   coachName: string
   opponent: string
@@ -447,6 +791,7 @@ export async function createMatchRecord(input: {
 
   const minimalPayload = {
     team_id: input.teamId,
+    season_id: input.seasonId,
     coach_id: input.coachId,
     opponent: input.opponent,
     location: input.locationType,
@@ -537,6 +882,7 @@ function isMissingRelationError(error: { code?: string; message?: string }): boo
 
 export async function createScheduledMatchRecord(input: {
   teamId: string
+  seasonId: string
   coachId: string | null
   coachName: string
   opponent: string
@@ -547,6 +893,7 @@ export async function createScheduledMatchRecord(input: {
 }): Promise<DbMatch> {
   return createMatchRecord({
     teamId: input.teamId,
+    seasonId: input.seasonId,
     coachId: input.coachId,
     coachName: input.coachName,
     opponent: input.opponent.trim() || 'Opponent',
@@ -1277,22 +1624,25 @@ export async function fetchStatTrackerContext(
     )
   }
 
-  const [{ data: team, error: teamError }, stats, { data: players, error: playersError }] =
-    await Promise.all([
-      supabase.from('teams').select('name').eq('id', match.team_id).maybeSingle(),
-      fetchMatchStatsByMatchId(matchId),
-      supabase.from('players').select('id, first_name, last_name, jersey').eq('team_id', match.team_id),
-    ])
+  const [{ data: team, error: teamError }, stats] = await Promise.all([
+    supabase.from('teams').select('name').eq('id', match.team_id).maybeSingle(),
+    fetchMatchStatsByMatchId(matchId),
+  ])
 
   if (teamError) throw teamError
-  if (playersError) throw playersError
 
-  const attendingIds = new Set(
-    stats.filter((row) => row.attending).map((row) => row.player_id),
-  )
+  const attendingIds = [...new Set(stats.filter((row) => row.attending).map((row) => row.player_id))]
+  let players: Array<Pick<DbPlayer, 'id' | 'first_name' | 'last_name' | 'jersey'>> = []
+  if (attendingIds.length > 0) {
+    const { data, error: playersError } = await supabase
+      .from('players')
+      .select('id, first_name, last_name, jersey')
+      .in('id', attendingIds)
+    if (playersError) throw playersError
+    players = data ?? []
+  }
 
-  const roster = (players ?? [])
-    .filter((player) => attendingIds.has(player.id))
+  const roster = players
     .map((player) => rosterPlayerFromDb(player))
     .sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
 

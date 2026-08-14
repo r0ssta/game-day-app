@@ -29,6 +29,11 @@
     "supabase-profiles-team-members-migration.sql",
     "supabase-bootstrap-director-migration.sql",
     "supabase-staff-invites-migration.sql",
-    "supabase-team-age-group-migration.sql"
+    "supabase-team-age-group-migration.sql",
+    "supabase-team-profile-director-migration.sql",
+    "supabase-team-delete-cascade-migration.sql",
+    "supabase-seasons-player-pool-migration.sql",
+    "supabase-seasons-dates-migration.sql",
+    "supabase-archive-teams-players-migration.sql"
   ]
 }

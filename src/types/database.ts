@@ -4,6 +4,8 @@ export type DbTeam = {
   format: string
   age_group?: string | null
   primary_coach_name?: string
+  /** false = archived; keep history, hide from selectors */
+  active_status: boolean
   created_at: string
 }
 
@@ -15,11 +17,13 @@ export type DbCoach = {
 
 export type DbPlayer = {
   id: string
-  team_id: string
   first_name: string
   last_name: string
+  /** Club pool jersey hint — season_rosters.primary_jersey_number is authoritative per team/season. */
   jersey: number | null
+  age_group: string
   active_status: boolean
+  /** @deprecated Prefer match_stats.is_match_guest for match-day guests. */
   is_guest: boolean
   position: string
   primary_position: string | null
@@ -29,9 +33,32 @@ export type DbPlayer = {
   name?: string
 }
 
+export type SeasonStatus = 'active' | 'archived'
+
+export type DbSeason = {
+  id: string
+  name: string
+  status: SeasonStatus
+  /** First day of start month (YYYY-MM-01), or null if unset */
+  starts_on: string | null
+  /** First day of end month (YYYY-MM-01), or null if unset */
+  ends_on: string | null
+  created_at: string
+}
+
+export type DbSeasonRoster = {
+  id: string
+  season_id: string
+  team_id: string
+  player_id: string
+  primary_jersey_number: number | null
+  created_at: string
+}
+
 export type DbMatch = {
   id: string
   team_id: string
+  season_id: string
   coach_id: string | null
   coach_name: string | null
   opponent: string
@@ -59,9 +86,6 @@ export type QualitativeContextJson = {
   opponentTier?: string | null
   /** @deprecated Legacy key — read-only */
   oppositionStrength?: string | null
-  practiceTransfer?: string | null
-  sidelineEnvironment?: string | null
-  focusChips?: string[]
   endedOnTime?: boolean | null
   addedTimeSeconds?: number
 }
@@ -117,6 +141,7 @@ export type DbMatchStat = {
   is_second_half_starter: boolean
   attending: boolean
   plus_minus?: number
+  is_match_guest?: boolean
   created_at: string
 }
 

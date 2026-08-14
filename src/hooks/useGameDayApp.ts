@@ -39,7 +39,9 @@ import {
   type AgeGroup,
   defaultTeamNameForAgeGroup,
   formatForAgeGroup,
+  formatTeamDisplayName,
   normalizeAgeGroup,
+  stripAgeGroupFromTeamName,
 } from '@/lib/age-groups'
 import {
   completeMatch,
@@ -50,11 +52,16 @@ import {
   deleteLineupPreset,
   dbPlayerToRoster,
   fetchActiveMatch,
+  fetchActiveSeason,
+  fetchAgeGroupPoolPlayers,
+  fetchPlayersByIds,
   fetchCoaches,
   fetchLineupPresetsByTeamId,
   fetchMatchRecapBundle,
   fetchPlayersByTeamId,
   fetchScheduledMatchesByTeamId,
+  fetchSeasonRosterPlayers,
+  fetchSeasons,
   fetchTeams,
   insertCoach,
   insertLineupPreset,
@@ -70,10 +77,18 @@ import {
   updateTeamFormat as updateTeamFormatApi,
   updateTeamAgeGroup as updateTeamAgeGroupApi,
   updateTeamPrimaryCoachName as updateTeamPrimaryCoachNameApi,
+  updateTeamProfile as updateTeamProfileApi,
+  setTeamActiveStatus,
   upsertPlayer,
   setPlayerActiveStatus,
+  createSeason,
+  updateSeason,
+  setActiveSeason,
+  archiveSeason,
+  assignPlayerToSeasonRoster,
+  removePlayerFromSeasonRoster,
 } from '@/lib/supabase-api'
-import type { DbCoach, DbLineupPreset, DbMatch, DbTeam } from '@/types/database'
+import type { DbCoach, DbLineupPreset, DbMatch, DbSeason, DbTeam } from '@/types/database'
 import type {
   AppMode,
   MatchPeriod,
@@ -89,6 +104,11 @@ import {
   resolveTeamScope,
   type TeamScope,
 } from '@/lib/team-context'
+import {
+  poolPlayerToGuestRoster,
+  resolveTeamAgeGroup,
+  seasonRosterToPlayers,
+} from '@/lib/season-roster'
 
 const DEFAULT_HALF_LENGTH = 30
 
@@ -99,6 +119,8 @@ export function useGameDayApp() {
 
   const [teams, setTeams] = useState<DbTeam[]>([])
   const [coaches, setCoaches] = useState<DbCoach[]>([])
+  const [seasons, setSeasons] = useState<DbSeason[]>([])
+  const [activeSeason, setActiveSeasonState] = useState<DbSeason | null>(null)
   const [masterRoster, setMasterRoster] = useState<RosterPlayer[]>([])
 
   const [appMode, setAppMode] = useState<AppMode>('home')
@@ -196,11 +218,16 @@ export function useGameDayApp() {
   }, [])
 
   const loadTeamRoster = useCallback(
-    async (teamId: string) => {
+    async (teamId: string, seasonId?: string | null) => {
       setRosterLoading(true)
       try {
-        const playersData = await fetchPlayersByTeamId(teamId)
-        applyRoster(playersData.map(dbPlayerToRoster))
+        const resolvedSeasonId = seasonId ?? activeSeason?.id
+        if (!resolvedSeasonId) {
+          applyRoster([])
+          return
+        }
+        const entries = await fetchSeasonRosterPlayers(resolvedSeasonId, teamId)
+        applyRoster(seasonRosterToPlayers(entries, teamId))
       } catch (err) {
         const message =
           err && typeof err === 'object' && 'message' in err
@@ -211,7 +238,7 @@ export function useGameDayApp() {
         setRosterLoading(false)
       }
     },
-    [applyRoster],
+    [applyRoster, activeSeason?.id],
   )
 
   useEffect(() => {
@@ -221,24 +248,49 @@ export function useGameDayApp() {
       setLoading(true)
       setLoadError(null)
       try {
-        const [teamsData, coachesData] = await Promise.all([fetchTeams(), fetchCoaches()])
+        const [teamsData, coachesData, seasonsData, activeSeasonData] = await Promise.all([
+          fetchTeams({ includeArchived: true }),
+          fetchCoaches(),
+          fetchSeasons(),
+          fetchActiveSeason(),
+        ])
 
         if (cancelled) return
 
         setTeams(teamsData)
         setCoaches(coachesData)
+        setSeasons(seasonsData)
+        setActiveSeasonState(activeSeasonData)
 
         const active = await fetchActiveMatch()
         if (cancelled) return
 
         let resolvedTeamId: string | null = null
+        const seasonIdForRoster =
+          active?.match.season_id ?? activeSeasonData?.id ?? null
 
         if (active) {
           const { match, team, coach, stats } = active
-          const teamPlayers = await fetchPlayersByTeamId(match.team_id)
+          const entries = seasonIdForRoster
+            ? await fetchSeasonRosterPlayers(seasonIdForRoster, match.team_id, {
+                includeInactive: true,
+              })
+            : []
           if (cancelled) return
 
-          const roster = teamPlayers.map(dbPlayerToRoster)
+          const roster = seasonRosterToPlayers(entries, match.team_id)
+          const rosterIds = new Set(roster.map((p) => p.id))
+          const missingIds = stats
+            .map((s) => s.player_id)
+            .filter((id) => id && !rosterIds.has(id))
+          if (missingIds.length > 0) {
+            const guests = await fetchPlayersByIds(missingIds)
+            for (const guest of guests) {
+              roster.push(
+                poolPlayerToGuestRoster(guest, match.team_id),
+              )
+            }
+          }
           const matchPlayers = rebuildMatchPlayers(roster, stats)
 
           setSelectedTeamId(match.team_id)
@@ -259,7 +311,7 @@ export function useGameDayApp() {
           setPeriod(match.period)
           setPeriodClockStarted(match.period_clock_started)
           setHalfLengthMinutes(match.half_length)
-          setMatchTeamName(team.name)
+          setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
           setMatchCoachName(resolveMatchCoachName(match, coach))
           setSetupCoachName(resolveMatchCoachName(match, coach))
           setMatchOpponent(match.opponent)
@@ -275,19 +327,25 @@ export function useGameDayApp() {
             stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id),
           )
         } else if (teamsData.length > 0) {
+          const activeTeams = teamsData.filter((team) => team.active_status !== false)
+          const selectable = activeTeams.length > 0 ? activeTeams : teamsData
           const persistedTeamId = readPersistedActiveTeamId()
           const persistedTeam = persistedTeamId
-            ? teamsData.find((team) => team.id === persistedTeamId)
+            ? selectable.find((team) => team.id === persistedTeamId)
             : null
-          resolvedTeamId = persistedTeam?.id ?? teamsData[0].id
+          resolvedTeamId = persistedTeam?.id ?? selectable[0]?.id ?? null
           setSelectedTeamId(resolvedTeamId)
           if (resolvedTeamId) persistActiveTeamId(resolvedTeamId)
         }
 
         if (resolvedTeamId) {
-          const playersData = await fetchPlayersByTeamId(resolvedTeamId)
-          if (!cancelled) {
-            applyRoster(playersData.map(dbPlayerToRoster))
+          if (seasonIdForRoster) {
+            const entries = await fetchSeasonRosterPlayers(seasonIdForRoster, resolvedTeamId)
+            if (!cancelled) {
+              applyRoster(seasonRosterToPlayers(entries, resolvedTeamId))
+            }
+          } else if (!cancelled) {
+            applyRoster([])
           }
         }
       } catch (err) {
@@ -368,18 +426,20 @@ export function useGameDayApp() {
   }, [selectedTeamId, appMode])
 
   const loadFullTeamRoster = useCallback(async () => {
-    if (!selectedTeamId) {
+    if (!selectedTeamId || !activeSeason) {
       setTeamRoster([])
       return
     }
     setRosterLoading(true)
     try {
-      const playersData = await fetchPlayersByTeamId(selectedTeamId, { includeInactive: true })
-      setTeamRoster(playersData.map(dbPlayerToRoster))
+      const entries = await fetchSeasonRosterPlayers(activeSeason.id, selectedTeamId, {
+        includeInactive: true,
+      })
+      setTeamRoster(seasonRosterToPlayers(entries, selectedTeamId))
     } finally {
       setRosterLoading(false)
     }
-  }, [selectedTeamId])
+  }, [selectedTeamId, activeSeason])
 
   const refreshLineupPresets = useCallback(async () => {
     if (!selectedTeamId) {
@@ -415,8 +475,10 @@ export function useGameDayApp() {
       const coachName =
         teams.find((entry) => entry.id === selectedTeamId)?.primary_coach_name?.trim() || ''
       const coachId = coachName ? await resolveCoachIdForName(coachName) : null
+      if (!activeSeason) throw new Error('No active season — create one in Club Admin')
       const created = await createScheduledMatchRecord({
         teamId: selectedTeamId,
+        seasonId: activeSeason.id,
         coachId,
         coachName,
         opponent: input.opponent,
@@ -433,7 +495,7 @@ export function useGameDayApp() {
       )
       return created
     },
-    [selectedTeamId, teams],
+    [selectedTeamId, teams, activeSeason],
   )
 
   const removeScheduledMatch = useCallback(async (matchId: string) => {
@@ -552,10 +614,19 @@ export function useGameDayApp() {
   const selectTeam = setActiveTeamId
 
   const createTeam = useCallback(async (input: { name?: string; ageGroup: AgeGroup }) => {
-    const name =
+    const rawName =
       input.name?.trim() || defaultTeamNameForAgeGroup(input.ageGroup)
+    const name =
+      stripAgeGroupFromTeamName(rawName, input.ageGroup) ||
+      defaultTeamNameForAgeGroup(input.ageGroup)
     const team = await insertTeam({ name, ageGroup: input.ageGroup })
-    setTeams((prev) => [...prev, team].sort((a, b) => a.name.localeCompare(b.name)))
+    setTeams((prev) =>
+      [...prev, team].sort((a, b) =>
+        formatTeamDisplayName(a.name, a.age_group).localeCompare(
+          formatTeamDisplayName(b.name, b.age_group),
+        ),
+      ),
+    )
     selectTeam(team.id)
     return team.id
   }, [selectTeam])
@@ -583,6 +654,67 @@ export function useGameDayApp() {
     [selectedTeamId],
   )
 
+  const updateTeamProfile = useCallback(
+    async (teamId: string, input: { name: string; ageGroup: AgeGroup }) => {
+      const rawName = input.name.trim()
+      const name =
+        stripAgeGroupFromTeamName(rawName, input.ageGroup) || rawName
+      if (!name) throw new Error('Team name is required')
+      const updated = await updateTeamProfileApi(teamId, {
+        name,
+        ageGroup: input.ageGroup,
+      })
+      setTeams((prev) =>
+        prev
+          .map((team) => (team.id === updated.id ? updated : team))
+          .sort((a, b) =>
+            formatTeamDisplayName(a.name, a.age_group).localeCompare(
+              formatTeamDisplayName(b.name, b.age_group),
+            ),
+          ),
+      )
+      if (teamId === selectedTeamId) {
+        const format = formatForAgeGroup(input.ageGroup)
+        const defaultFormation = getDefaultFormationId(format)
+        setMatchFormations((prev) => ({
+          first: isFormationValidForFormat(prev.first, format) ? prev.first : defaultFormation,
+          second: isFormationValidForFormat(prev.second, format) ? prev.second : defaultFormation,
+        }))
+        setSetupSlotAssignments(undefined)
+        setSetupPitchKey((k) => k + 1)
+      }
+      return updated
+    },
+    [selectedTeamId],
+  )
+
+  const setTeamActive = useCallback(
+    async (teamId: string, active: boolean) => {
+      const updated = await setTeamActiveStatus(teamId, active)
+      setTeams((prev) =>
+        prev
+          .map((team) => (team.id === teamId ? updated : team))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      )
+      if (!active && selectedTeamId === teamId) {
+        setSelectedTeamId(null)
+        setMasterRoster([])
+        setLineupPresets([])
+        setScheduledMatches([])
+      }
+      return updated
+    },
+    [selectedTeamId],
+  )
+
+  /** @deprecated Prefer setTeamActive(teamId, false) */
+  const removeTeam = useCallback(
+    async (teamId: string) => {
+      await setTeamActive(teamId, false)
+    },
+    [setTeamActive],
+  )
+
   const createCoach = useCallback(async (name: string) => {
     const coach = await insertCoach(name)
     setCoaches((prev) => [...prev, coach].sort((a, b) => a.name.localeCompare(b.name)))
@@ -603,7 +735,10 @@ export function useGameDayApp() {
     (): TeamScope | null =>
       resolveTeamScope(
         selectedTeamId,
-        teams.map((team) => ({ id: team.id, name: team.name })),
+        teams.map((team) => ({
+          id: team.id,
+          name: formatTeamDisplayName(team.name, team.age_group),
+        })),
       ),
     [selectedTeamId, teams],
   )
@@ -658,20 +793,31 @@ export function useGameDayApp() {
       position?: string
       primaryPosition?: string
       secondaryPosition?: string
+      ageGroup?: AgeGroup
     }) => {
       if (!selectedTeamId) throw new Error('Select a team before adding players')
+      if (!activeSeason) throw new Error('No active season — create one in Club Admin')
+
+      const team = teams.find((entry) => entry.id === selectedTeamId)
+      const ageGroup = input.ageGroup ?? resolveTeamAgeGroup(team?.age_group)
 
       const created = await upsertPlayer({
         teamId: selectedTeamId,
+        seasonId: activeSeason.id,
+        ageGroup,
         firstName: input.firstName,
         lastName: input.lastName,
         jersey: input.jersey,
-        isGuest: input.isGuest,
+        isGuest: false,
         position: input.position,
         primaryPosition: input.primaryPosition,
         secondaryPosition: input.secondaryPosition,
       })
-      const rosterPlayer = dbPlayerToRoster(created)
+      const rosterPlayer = dbPlayerToRoster(created, {
+        teamId: selectedTeamId,
+        jersey: input.jersey,
+        isGuest: false,
+      })
       setMasterRoster((prev) =>
         [...prev, rosterPlayer].sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
       )
@@ -688,7 +834,37 @@ export function useGameDayApp() {
       }))
       return rosterPlayer
     },
-    [selectedTeamId],
+    [selectedTeamId, activeSeason, teams],
+  )
+
+  const addGuestFromPool = useCallback(
+    async (playerId: string) => {
+      if (!selectedTeamId) throw new Error('Select a team first')
+      const existing = masterRoster.find((p) => p.id === playerId)
+      if (existing) {
+        setSetupLineup((prev) => ({
+          ...prev,
+          attending: { ...prev.attending, [playerId]: true },
+        }))
+        return existing
+      }
+      const [player] = await fetchPlayersByIds([playerId])
+      if (!player) throw new Error('Player not found in pool')
+      const rosterPlayer = poolPlayerToGuestRoster(player, selectedTeamId)
+      setMasterRoster((prev) =>
+        [...prev, rosterPlayer].sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
+      )
+      setSetupLineup((prev) => ({
+        attending: { ...prev.attending, [player.id]: true },
+        startFirstHalf: { ...prev.startFirstHalf, [player.id]: false },
+      }))
+      setMatchPositions((prev) => ({
+        ...prev,
+        [player.id]: ensureMatchPositions([rosterPlayer])[player.id],
+      }))
+      return rosterPlayer
+    },
+    [selectedTeamId, masterRoster],
   )
 
   const updatePlayer = useCallback(
@@ -701,22 +877,30 @@ export function useGameDayApp() {
         isGuest: boolean
         primaryPosition?: string
         secondaryPosition?: string
+        ageGroup?: AgeGroup
       },
     ) => {
       const existing = masterRoster.find((p) => p.id === id) ?? teamRoster.find((p) => p.id === id)
       if (!existing) throw new Error('Player not found')
 
+      const ageGroup = updates.ageGroup ?? resolveTeamAgeGroup(existing.ageGroup)
       const updated = await upsertPlayer({
         id,
-        teamId: existing.teamId,
+        teamId: selectedTeamId || existing.teamId || undefined,
+        seasonId: activeSeason?.id,
+        ageGroup,
         firstName: updates.firstName,
         lastName: updates.lastName,
         jersey: updates.jersey,
-        isGuest: updates.isGuest,
+        isGuest: existing.isGuest,
         primaryPosition: updates.primaryPosition ?? existing.primaryPosition,
         secondaryPosition: updates.secondaryPosition ?? existing.secondaryPosition,
       })
-      const rosterPlayer = dbPlayerToRoster(updated)
+      const rosterPlayer = dbPlayerToRoster(updated, {
+        teamId: selectedTeamId ?? existing.teamId,
+        jersey: updates.jersey,
+        isGuest: existing.isGuest,
+      })
       setMasterRoster((prev) =>
         prev
           .map((p) => (p.id === id ? rosterPlayer : p))
@@ -730,13 +914,17 @@ export function useGameDayApp() {
       )
       return rosterPlayer
     },
-    [masterRoster, teamRoster],
+    [masterRoster, teamRoster, selectedTeamId, activeSeason?.id],
   )
 
   const setPlayerActive = useCallback(
     async (id: string, active: boolean) => {
       const updated = await setPlayerActiveStatus(id, active)
-      const rosterPlayer = dbPlayerToRoster(updated)
+      const rosterPlayer = dbPlayerToRoster(updated, {
+        teamId: selectedTeamId ?? '',
+        jersey: updated.jersey,
+        isGuest: false,
+      })
       setTeamRoster((prev) =>
         prev
           .map((p) => (p.id === id ? rosterPlayer : p))
@@ -784,8 +972,10 @@ export function useGameDayApp() {
 
       try {
         const coachId = await resolveCoachIdForName(input.coachName)
+        if (!activeSeason) throw new Error('No active season — create one in Club Admin')
         const match = await createMatchRecord({
           teamId: input.teamId,
+          seasonId: activeSeason.id,
           coachId,
           coachName: input.coachName,
           opponent: input.opponent,
@@ -841,7 +1031,7 @@ export function useGameDayApp() {
         throw err
       }
     },
-    [],
+    [activeSeason],
   )
 
   const enterHalftime = useCallback(
@@ -1069,8 +1259,19 @@ export function useGameDayApp() {
       throw new Error('Recap is only available for finished matches')
     }
 
-    const teamPlayers = await fetchPlayersByTeamId(match.team_id)
-    const roster = teamPlayers.map(dbPlayerToRoster)
+    const seasonId = match.season_id || activeSeason?.id
+    const entries = seasonId
+      ? await fetchSeasonRosterPlayers(seasonId, match.team_id, { includeInactive: true })
+      : []
+    const roster = seasonRosterToPlayers(entries, match.team_id)
+    const rosterIds = new Set(roster.map((p) => p.id))
+    const missingIds = stats.map((s) => s.player_id).filter((id) => id && !rosterIds.has(id))
+    if (missingIds.length > 0) {
+      const guests = await fetchPlayersByIds(missingIds)
+      for (const guest of guests) {
+        roster.push(poolPlayerToGuestRoster(guest, match.team_id))
+      }
+    }
     const matchPlayers = rebuildMatchPlayers(roster, stats)
 
     setSelectedTeamId(match.team_id)
@@ -1089,7 +1290,7 @@ export function useGameDayApp() {
     setPeriod(match.period)
     setPeriodClockStarted(match.period_clock_started)
     setHalfLengthMinutes(match.half_length)
-    setMatchTeamName(team.name)
+    setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
     setMatchCoachName(resolveMatchCoachName(match, coach))
     setMatchOpponent(match.opponent)
     setMatchLocationType(resolveMatchLocationType(match))
@@ -1109,9 +1310,90 @@ export function useGameDayApp() {
     returnToHome()
   }, [matchId, returnToHome])
 
+  const createPoolPlayer = useCallback(
+    async (input: {
+      firstName: string
+      lastName: string
+      jersey: number | null
+      ageGroup: AgeGroup
+      primaryPosition?: string
+      secondaryPosition?: string
+    }) => {
+      return upsertPlayer({
+        ageGroup: input.ageGroup,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        jersey: input.jersey,
+        isGuest: false,
+        primaryPosition: input.primaryPosition,
+        secondaryPosition: input.secondaryPosition,
+      })
+    },
+    [],
+  )
+
   const setSetupMatchPosition = useCallback((id: string, matchPosition: string) => {
     setMatchPositions((prev) => ({ ...prev, [id]: normalizeRecapPosition(matchPosition) }))
   }, [])
+
+  const createSeasonRecord = useCallback(
+    async (input: { name: string; startsOn?: string | null; endsOn?: string | null }) => {
+      const created = await createSeason({
+        name: input.name,
+        startsOn: input.startsOn ?? null,
+        endsOn: input.endsOn ?? null,
+      })
+      setSeasons((prev) => [created, ...prev])
+      return created
+    },
+    [],
+  )
+
+  const updateSeasonRecord = useCallback(
+    async (
+      seasonId: string,
+      input: { name: string; startsOn?: string | null; endsOn?: string | null },
+    ) => {
+      const updated = await updateSeason(seasonId, {
+        name: input.name,
+        startsOn: input.startsOn ?? null,
+        endsOn: input.endsOn ?? null,
+      })
+      setSeasons((prev) => prev.map((season) => (season.id === updated.id ? updated : season)))
+      if (activeSeason?.id === updated.id) {
+        setActiveSeasonState(updated)
+      }
+      return updated
+    },
+    [activeSeason?.id],
+  )
+
+  const activateSeason = useCallback(async (seasonId: string) => {
+    const activated = await setActiveSeason(seasonId)
+    setActiveSeasonState(activated)
+    setSeasons((prev) =>
+      prev.map((season) =>
+        season.id === activated.id
+          ? activated
+          : season.status === 'active'
+            ? { ...season, status: 'archived' }
+            : season,
+      ),
+    )
+    if (selectedTeamId) {
+      await loadTeamRoster(selectedTeamId, activated.id)
+    }
+    return activated
+  }, [selectedTeamId, loadTeamRoster])
+
+  const archiveSeasonRecord = useCallback(async (seasonId: string) => {
+    const archived = await archiveSeason(seasonId)
+    setSeasons((prev) => prev.map((season) => (season.id === archived.id ? archived : season)))
+    if (activeSeason?.id === seasonId) {
+      setActiveSeasonState(null)
+    }
+    return archived
+  }, [activeSeason?.id])
 
   return {
     loading,
@@ -1119,6 +1401,8 @@ export function useGameDayApp() {
     rosterLoading,
     teams,
     coaches,
+    seasons,
+    activeSeason,
     masterRoster,
     appMode,
     setAppMode,
@@ -1206,12 +1490,24 @@ export function useGameDayApp() {
     setPlayerAttending,
     setStartFirstHalf,
     createTeam,
+    updateTeamProfile,
+    setTeamActive,
+    removeTeam,
     createCoach,
     addPlayer,
+    addGuestFromPool,
     updatePlayer,
     beginMatch,
     endMatch,
     setSetupMatchPosition,
+    createSeasonRecord,
+    updateSeasonRecord,
+    activateSeason,
+    archiveSeasonRecord,
+    createPoolPlayer,
+    fetchAgeGroupPoolPlayers,
+    assignPlayerToSeasonRoster,
+    removePlayerFromSeasonRoster,
     scheduledMatches,
     scheduledLoading,
     refreshScheduledMatches,
