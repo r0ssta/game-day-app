@@ -29,8 +29,10 @@ import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/mat
 import {
   type AssignableStaffRole,
   type StaffRole,
+  isAssignableStaffRole,
   isStaffRole,
 } from '@/lib/staff-roles'
+import { type AgeGroup, formatForAgeGroup } from '@/lib/age-groups'
 
 export type MatchEventInput = {
   matchId: string
@@ -243,11 +245,19 @@ export async function setPlayerActiveStatus(playerId: string, active: boolean): 
   return data
 }
 
-export async function insertTeam(name: string): Promise<DbTeam> {
-  const trimmed = name.trim()
+export async function insertTeam(input: {
+  name: string
+  ageGroup: AgeGroup
+}): Promise<DbTeam> {
+  const trimmed = input.name.trim()
+  const format = formatForAgeGroup(input.ageGroup)
   const { data, error } = await supabase
     .from('teams')
-    .insert({ name: trimmed, format: '9v9' })
+    .insert({
+      name: trimmed,
+      format,
+      age_group: input.ageGroup,
+    })
     .select()
     .single()
   if (error) throw error
@@ -258,6 +268,23 @@ export async function updateTeamFormat(teamId: string, format: string): Promise<
   const { data, error } = await supabase
     .from('teams')
     .update({ format })
+    .eq('id', teamId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateTeamAgeGroup(
+  teamId: string,
+  ageGroup: AgeGroup,
+): Promise<DbTeam> {
+  const { data, error } = await supabase
+    .from('teams')
+    .update({
+      age_group: ageGroup,
+      format: formatForAgeGroup(ageGroup),
+    })
     .eq('id', teamId)
     .select()
     .single()
@@ -1380,3 +1407,103 @@ export async function revokeClubUserAccess(userId: string): Promise<void> {
   await replaceClubUserTeams(userId, [])
   await updateClubUserRole(userId, 'pending')
 }
+
+export type StaffInviteRow = {
+  id: string
+  email: string
+  displayName: string | null
+  role: AssignableStaffRole
+  teamIds: string[]
+  status: 'pending' | 'accepted' | 'cancelled'
+  createdAt: string
+}
+
+export type CreateStaffInviteResult = {
+  status: 'invited' | 'updated_existing'
+  inviteId: string
+  email: string
+  userId?: string
+}
+
+export async function fetchPendingStaffInvites(): Promise<StaffInviteRow[]> {
+  const { data, error } = await supabase
+    .from('staff_invites')
+    .select('id, email, display_name, role, team_ids, status, created_at')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  return (data ?? []).flatMap((row) => {
+    if (!isAssignableStaffRole(row.role)) return []
+    return [
+      {
+        id: row.id,
+        email: row.email,
+        displayName: row.display_name,
+        role: row.role,
+        teamIds: row.team_ids ?? [],
+        status: 'pending' as const,
+        createdAt: row.created_at,
+      },
+    ]
+  })
+}
+
+export async function createStaffInvite(input: {
+  email: string
+  role: AssignableStaffRole
+  teamIds: string[]
+  displayName?: string
+}): Promise<CreateStaffInviteResult> {
+  const email = input.email.trim().toLowerCase()
+  const displayName = input.displayName?.trim() || undefined
+
+  const { data, error } = await supabase.rpc('create_staff_invite', {
+    p_email: email,
+    p_role: input.role,
+    p_team_ids: input.teamIds,
+    p_display_name: displayName ?? null,
+  })
+  if (error) throw error
+
+  const payload = data as {
+    status?: string
+    invite_id?: string
+    email?: string
+    user_id?: string
+  } | null
+
+  if (!payload?.invite_id || !payload.email) {
+    throw new Error('Invite did not return expected data')
+  }
+
+  // Send magic link so new coaches can finish account creation / sign in.
+  const { error: otpError } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+      emailRedirectTo: window.location.origin,
+      data: displayName ? { display_name: displayName } : undefined,
+    },
+  })
+  if (otpError) {
+    throw new Error(
+      `Invite saved, but the login email failed to send: ${otpError.message}`,
+    )
+  }
+
+  return {
+    status: payload.status === 'updated_existing' ? 'updated_existing' : 'invited',
+    inviteId: payload.invite_id,
+    email: payload.email,
+    userId: payload.user_id,
+  }
+}
+
+export async function cancelStaffInvite(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_staff_invite', {
+    p_invite_id: inviteId,
+  })
+  if (error) throw error
+}
+

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { BarChart3, ClipboardList, FileText, Users } from 'lucide-react'
-import { TeamSelector } from '@/components/AppNavigation'
+import { TeamSelector, type CreateTeamInput } from '@/components/AppNavigation'
+import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import type { DbMatch } from '@/types/database'
@@ -11,7 +12,7 @@ type HomeScreenProps = {
   teams: NamedEntity[]
   activeTeamId: string | null
   onTeamChange: (teamId: string) => void
-  onAddTeam: (name: string) => Promise<string | void>
+  onAddTeam?: (input: CreateTeamInput) => Promise<string | void>
   hasActiveMatch: boolean
   activeMatchLabel?: string
   hasPendingRecap: boolean
@@ -49,11 +50,9 @@ export function HomeScreen({
   return (
     <main className={APP_SHELL}>
       <div className={`${APP_CONTAINER} flex min-h-dvh flex-col pb-10 pt-8 md:pb-12 md:pt-10`}>
-        <header className="mb-6 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-athletic">Game Day App</p>
-          <h1 className="mt-2 font-display text-4xl font-black uppercase tracking-wide text-foreground">
-            Home
-          </h1>
+        <header className="mb-6 flex flex-col items-center gap-2 text-center">
+          <h1 className="sr-only">Home</h1>
+          <ClubBrandMark size="lg" align="center" />
         </header>
 
         <TeamSelector

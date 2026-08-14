@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Mail, SunMedium, UserPlus } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSunlightMode } from '@/contexts/SunlightModeContext'
+import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
@@ -35,17 +36,7 @@ export function AuthScreen() {
     <main className={`${APP_SHELL} flex min-h-dvh items-center justify-center px-4 py-10`}>
       <div className={`${APP_CONTAINER} w-full max-w-md`}>
         <div className="mb-6 flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-athletic">Game Day App</p>
-            <h1 className="mt-2 font-display text-4xl font-black uppercase tracking-wide text-foreground">
-              {mode === 'register' ? 'Create Account' : 'Staff Login'}
-            </h1>
-            <p className="mt-2 text-sm font-semibold text-muted-foreground">
-              {mode === 'register'
-                ? 'Enter your email to register. We will create your account and send a magic link — no password.'
-                : 'Enter your email and we will send a one-time magic link. No password needed.'}
-            </p>
-          </div>
+          <ClubBrandMark size="lg" />
           <button
             type="button"
             onClick={toggleSunlightMode}
@@ -60,6 +51,16 @@ export function AuthScreen() {
           >
             <SunMedium className="size-5" strokeWidth={2.5} />
           </button>
+        </div>
+        <div className="mb-6">
+          <h1 className="font-display text-4xl font-black uppercase tracking-wide text-foreground">
+            {mode === 'register' ? 'Create Account' : 'Staff Login'}
+          </h1>
+          <p className="mt-2 text-sm font-semibold text-muted-foreground">
+            {mode === 'register'
+              ? 'Register for Virginia Velocity Game Day. We will create your account and send a magic link — no password.'
+              : 'Sign in to Virginia Velocity Game Day with a one-time magic link. No password needed.'}
+          </p>
         </div>
 
         <form

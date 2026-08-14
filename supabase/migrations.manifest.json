@@ -27,6 +27,8 @@
     "supabase-auth-rls-migration.sql",
     "supabase-staff-role-pending-enum-migration.sql",
     "supabase-profiles-team-members-migration.sql",
-    "supabase-bootstrap-director-migration.sql"
+    "supabase-bootstrap-director-migration.sql",
+    "supabase-staff-invites-migration.sql",
+    "supabase-team-age-group-migration.sql"
   ]
 }

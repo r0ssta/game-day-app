@@ -36,6 +36,12 @@ import {
   type TeamFormat,
 } from '@/lib/team-format'
 import {
+  type AgeGroup,
+  defaultTeamNameForAgeGroup,
+  formatForAgeGroup,
+  normalizeAgeGroup,
+} from '@/lib/age-groups'
+import {
   completeMatch,
   createMatchRecord,
   createMatchStats,
@@ -62,6 +68,7 @@ import {
   syncMatchStats,
   updateLineupPreset,
   updateTeamFormat as updateTeamFormatApi,
+  updateTeamAgeGroup as updateTeamAgeGroupApi,
   updateTeamPrimaryCoachName as updateTeamPrimaryCoachNameApi,
   upsertPlayer,
   setPlayerActiveStatus,
@@ -544,12 +551,37 @@ export function useGameDayApp() {
 
   const selectTeam = setActiveTeamId
 
-  const createTeam = useCallback(async (name: string) => {
-    const team = await insertTeam(name)
+  const createTeam = useCallback(async (input: { name?: string; ageGroup: AgeGroup }) => {
+    const name =
+      input.name?.trim() || defaultTeamNameForAgeGroup(input.ageGroup)
+    const team = await insertTeam({ name, ageGroup: input.ageGroup })
     setTeams((prev) => [...prev, team].sort((a, b) => a.name.localeCompare(b.name)))
     selectTeam(team.id)
     return team.id
   }, [selectTeam])
+
+  const activeTeamAgeGroup = useMemo(() => {
+    const team = teams.find((entry) => entry.id === selectedTeamId)
+    return normalizeAgeGroup(team?.age_group)
+  }, [teams, selectedTeamId])
+
+  const updateTeamAgeGroup = useCallback(
+    async (ageGroup: AgeGroup) => {
+      if (!selectedTeamId) throw new Error('Select a team first')
+      const updated = await updateTeamAgeGroupApi(selectedTeamId, ageGroup)
+      setTeams((prev) => prev.map((team) => (team.id === updated.id ? updated : team)))
+      const format = formatForAgeGroup(ageGroup)
+      const defaultFormation = getDefaultFormationId(format)
+      setMatchFormations((prev) => ({
+        first: isFormationValidForFormat(prev.first, format) ? prev.first : defaultFormation,
+        second: isFormationValidForFormat(prev.second, format) ? prev.second : defaultFormation,
+      }))
+      setSetupSlotAssignments(undefined)
+      setSetupPitchKey((k) => k + 1)
+      return updated
+    },
+    [selectedTeamId],
+  )
 
   const createCoach = useCallback(async (name: string) => {
     const coach = await insertCoach(name)
@@ -1138,9 +1170,11 @@ export function useGameDayApp() {
     activeTeamId: selectedTeamId,
     activeTeamScope,
     activeTeamFormat,
+    activeTeamAgeGroup,
     selectTeam,
     setActiveTeamId,
     updateTeamFormat,
+    updateTeamAgeGroup,
     updateTeamPrimaryCoach,
     activeTeamPrimaryCoachName,
     setupCoachName,

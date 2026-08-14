@@ -28,6 +28,13 @@ import {
   teamFormatLabel,
   type TeamFormat,
 } from '@/lib/team-format'
+import {
+  AGE_GROUPS,
+  type AgeGroup,
+  ageGroupFormatHint,
+  formatForAgeGroup,
+  isAgeGroup,
+} from '@/lib/age-groups'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import type { DbLineupPreset, DbMatch } from '@/types/database'
@@ -68,6 +75,7 @@ type TeamManagementScreenProps = {
   activeTeamId: string | null
   activeTeamName: string
   activeTeamFormat: TeamFormat
+  activeTeamAgeGroup: AgeGroup | null
   teamSwitcher?: ReactNode
   rosterLoading: boolean
   teamRoster: RosterPlayer[]
@@ -103,6 +111,7 @@ type TeamManagementScreenProps = {
   }) => Promise<void>
   onDeletePreset: (presetId: string) => Promise<void>
   onUpdateTeamFormat: (format: TeamFormat) => Promise<void>
+  onUpdateTeamAgeGroup: (ageGroup: AgeGroup) => Promise<unknown>
   primaryCoachName: string
   onUpdatePrimaryCoach: (name: string) => Promise<void>
   scheduledMatches: DbMatch[]
@@ -459,8 +468,10 @@ function TeamSettingsTab({
   activeTeamId,
   activeTeamName,
   activeTeamFormat,
+  activeTeamAgeGroup,
   primaryCoachName,
   onUpdateTeamFormat,
+  onUpdateTeamAgeGroup,
   onUpdatePrimaryCoach,
   scheduledMatches,
   scheduledLoading,
@@ -476,8 +487,10 @@ function TeamSettingsTab({
   | 'activeTeamId'
   | 'activeTeamName'
   | 'activeTeamFormat'
+  | 'activeTeamAgeGroup'
   | 'primaryCoachName'
   | 'onUpdateTeamFormat'
+  | 'onUpdateTeamAgeGroup'
   | 'onUpdatePrimaryCoach'
   | 'scheduledMatches'
   | 'scheduledLoading'
@@ -489,9 +502,14 @@ function TeamSettingsTab({
   | 'onToast'
   | 'canUseSprocketIntegration'
 >) {
+  const [ageGroup, setAgeGroup] = useState<AgeGroup | ''>(activeTeamAgeGroup ?? '')
   const [format, setFormat] = useState<TeamFormat>(activeTeamFormat)
   const [coachName, setCoachName] = useState(primaryCoachName)
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setAgeGroup(activeTeamAgeGroup ?? '')
+  }, [activeTeamAgeGroup])
 
   useEffect(() => {
     setFormat(activeTeamFormat)
@@ -501,19 +519,31 @@ function TeamSettingsTab({
     setCoachName(primaryCoachName)
   }, [primaryCoachName])
 
+  const ageChanged = (ageGroup || null) !== (activeTeamAgeGroup ?? null)
   const formatChanged = format !== activeTeamFormat
   const coachChanged = coachName.trim() !== primaryCoachName.trim()
-  const canSave = (formatChanged || coachChanged) && !saving
+  const canSave = (ageChanged || formatChanged || coachChanged) && !saving
+
+  const handleAgeGroupChange = (value: string) => {
+    if (!isAgeGroup(value)) return
+    setAgeGroup(value)
+    setFormat(formatForAgeGroup(value))
+  }
 
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
     try {
-      if (formatChanged) await onUpdateTeamFormat(format)
+      if (ageChanged && isAgeGroup(ageGroup)) {
+        await onUpdateTeamAgeGroup(ageGroup)
+      } else if (formatChanged) {
+        await onUpdateTeamFormat(format)
+      }
       if (coachChanged) await onUpdatePrimaryCoach(coachName.trim())
       onToast('Team settings saved')
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to save team settings')
+      setAgeGroup(activeTeamAgeGroup ?? '')
       setFormat(activeTeamFormat)
       setCoachName(primaryCoachName)
     } finally {
@@ -528,6 +558,33 @@ function TeamSettingsTab({
           <Settings className="size-5 text-athletic" />
           Team Settings
         </h2>
+
+        <div>
+          <label
+            htmlFor="team-age-group"
+            className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+          >
+            Age Group
+          </label>
+          <select
+            id="team-age-group"
+            value={ageGroup}
+            onChange={(e) => handleAgeGroupChange(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+          >
+            <option value="" disabled>
+              Select age group
+            </option>
+            {AGE_GROUPS.map((group) => (
+              <option key={group} value={group}>
+                {ageGroupFormatHint(group)}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Virginia Velocity defaults: U13–U16 → 11v11, U11–U12 → 9v9, U9–U10 → 7v7.
+          </p>
+        </div>
 
         <div>
           <label
@@ -549,8 +606,8 @@ function TeamSettingsTab({
             ))}
           </select>
           <p className="mt-2 text-sm text-muted-foreground">
-            Sets the pitch layout and lineup limits for this team (
-            {getMaxFieldPlayersForFormat(format)} players on field).
+            Sets the pitch layout and lineup limits (
+            {getMaxFieldPlayersForFormat(format)} players on field). Usually follows age group.
           </p>
         </div>
 
@@ -874,8 +931,10 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
             activeTeamId={props.activeTeamId}
             activeTeamName={props.activeTeamName}
             activeTeamFormat={props.activeTeamFormat}
+            activeTeamAgeGroup={props.activeTeamAgeGroup}
             primaryCoachName={props.primaryCoachName}
             onUpdateTeamFormat={props.onUpdateTeamFormat}
+            onUpdateTeamAgeGroup={props.onUpdateTeamAgeGroup}
             onUpdatePrimaryCoach={props.onUpdatePrimaryCoach}
             scheduledMatches={props.scheduledMatches}
             scheduledLoading={props.scheduledLoading}

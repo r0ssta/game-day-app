@@ -2,6 +2,7 @@ export type DbTeam = {
   id: string
   name: string
   format: string
+  age_group?: string | null
   primary_coach_name?: string
   created_at: string
 }
@@ -162,6 +163,19 @@ export type DbTeamMember = {
   created_at: string
 }
 
+export type DbStaffInvite = {
+  id: string
+  email: string
+  display_name: string | null
+  role: 'director' | 'head_coach' | 'assistant_coach'
+  team_ids: string[]
+  invited_by: string | null
+  status: 'pending' | 'accepted' | 'cancelled'
+  created_at: string
+  accepted_at: string | null
+  accepted_user_id: string | null
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -177,6 +191,7 @@ export type Database = {
       user_roles: { Row: DbUserRole; Insert: Omit<DbUserRole, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbUserRole> }
       profiles: { Row: DbProfile; Insert: Omit<DbProfile, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbProfile> }
       team_members: { Row: DbTeamMember; Insert: Omit<DbTeamMember, 'created_at'> & { created_at?: string }; Update: Partial<DbTeamMember> }
+      staff_invites: { Row: DbStaffInvite; Insert: Omit<DbStaffInvite, 'id' | 'created_at' | 'accepted_at' | 'accepted_user_id' | 'status'> & { id?: string; created_at?: string; status?: DbStaffInvite['status']; accepted_at?: string | null; accepted_user_id?: string | null }; Update: Partial<DbStaffInvite> }
     }
   }
 }

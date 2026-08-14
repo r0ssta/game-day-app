@@ -217,6 +217,8 @@ type MatchHeaderProps = {
   running: boolean
   periodClockStarted: boolean
   onHome: () => void
+  onLogGoal?: () => void
+  onOpponentGoal?: () => void
 }
 
 function QaSpeedControls({
@@ -274,6 +276,8 @@ function MatchHeader({
   running,
   periodClockStarted,
   onHome,
+  onLogGoal,
+  onOpponentGoal,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
   const awayName = opponent.trim() || 'Opponent'
@@ -283,94 +287,113 @@ function MatchHeader({
   const inAddedTime = periodClockStarted && isInAddedTime(seconds)
   const waitingToStart = !periodClockStarted
   const clockParts = formatMatchClockParts(seconds)
+  const showGoalActions = Boolean(periodClockStarted && onLogGoal && onOpponentGoal)
 
   return (
     <header className="sticky top-14 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className={`${APP_CONTAINER} pb-3 pt-2`}>
-        <div className="mb-1 flex justify-end">
+      <div className={`${APP_CONTAINER} space-y-2 py-2`}>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-center text-xs font-bold text-foreground sm:text-sm">
+              <span>{homeLabel}</span>
+              <span className="mx-1 text-muted-foreground">vs</span>
+              <span>{awayName}</span>
+            </p>
+            {coachLine ? (
+              <p className="truncate text-center text-[10px] font-semibold text-muted-foreground">
+                {coachLine}
+              </p>
+            ) : null}
+          </div>
           <BackToHomeButton onClick={onHome} />
         </div>
-        <div className="flex items-center justify-center gap-2 text-center text-sm font-semibold">
-          <span className="text-foreground">{homeLabel}</span>
-          <span className="rounded bg-neon px-1.5 py-0.5 text-[10px] font-bold text-neon-foreground">
-            H
-          </span>
-          <span className="text-muted-foreground">vs.</span>
-          <span className="text-foreground">{awayName}</span>
-          <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
-            A
-          </span>
-        </div>
 
-        <p className="mt-1 text-center text-xs font-semibold text-muted-foreground">
-          {coachLine ?? `${homeLabel} vs ${awayName}`}
-        </p>
-
-        <div className="mt-3 flex items-center justify-center gap-5">
-          <div className="min-w-[4.5rem] text-center">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-neon">{homeLabel}</p>
-            <p className="font-display text-4xl font-black tabular-nums leading-none text-neon">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1 text-center">
+            <p className="truncate text-[9px] font-bold uppercase tracking-widest text-neon">
+              {homeLabel}
+            </p>
+            <p className="font-display text-3xl font-black tabular-nums leading-none text-neon">
               {homeScore}
             </p>
           </div>
-          <span className="font-display text-2xl font-bold text-muted-foreground">–</span>
-          <div className="min-w-[4.5rem] text-center">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+
+          <div className="flex shrink-0 flex-col items-center gap-0.5">
+            <div className="flex items-center gap-1.5">
+              {running ? (
+                <span className="size-1.5 animate-pulse rounded-full bg-neon" />
+              ) : null}
+              {inAddedTime ? (
+                <span className="rounded bg-athletic px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
+                  +Time
+                </span>
+              ) : regulationElapsed ? (
+                <span className="rounded bg-orange-600 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
+                  Reg
+                </span>
+              ) : null}
+              <span
+                className={cn(
+                  'font-display text-2xl font-bold tabular-nums tracking-wider sm:text-3xl',
+                  inAddedTime
+                    ? 'text-athletic'
+                    : waitingToStart
+                      ? 'text-muted-foreground'
+                      : 'text-neon',
+                )}
+              >
+                {clockParts.regulation}
+              </span>
+              {clockParts.addedLabel ? (
+                <span className="font-display text-lg font-black tabular-nums text-athletic">
+                  {clockParts.addedLabel}
+                </span>
+              ) : null}
+              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                {periodLabel(period)}
+              </span>
+            </div>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+              {waitingToStart
+                ? `Ready · ${halfReference}`
+                : inAddedTime
+                  ? 'Added time'
+                  : regulationElapsed
+                    ? 'Regulation done'
+                    : `${halfReference} half`}
+            </span>
+          </div>
+
+          <div className="min-w-0 flex-1 text-center">
+            <p className="truncate text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
               {awayName}
             </p>
-            <p className="font-display text-4xl font-black tabular-nums leading-none text-foreground">
+            <p className="font-display text-3xl font-black tabular-nums leading-none text-foreground">
               {awayScore}
             </p>
           </div>
         </div>
 
-        <div className="mt-2 flex flex-col items-center gap-1">
-          <div className="flex items-center justify-center gap-2">
-            {running && (
-              <span className="flex size-2 items-center justify-center">
-                <span className="size-2 animate-pulse rounded-full bg-neon" />
-              </span>
-            )}
-            {inAddedTime ? (
-              <span className="rounded bg-athletic px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white animate-pulse">
-                Added Time
-              </span>
-            ) : regulationElapsed ? (
-              <span className="rounded bg-orange-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">
-                Regulation
-              </span>
-            ) : null}
-            <span
-              className={cn(
-                'font-display text-4xl font-bold tabular-nums tracking-wider',
-                inAddedTime
-                  ? 'text-athletic'
-                  : waitingToStart
-                    ? 'text-muted-foreground'
-                    : 'text-neon',
-              )}
+        {showGoalActions ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onLogGoal}
+              className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl bg-neon px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-neon-foreground shadow-md shadow-neon/25 active:scale-[0.98]"
             >
-              {clockParts.regulation}
-            </span>
-            {clockParts.addedLabel ? (
-              <span className="font-display text-2xl font-black tabular-nums text-athletic">
-                {clockParts.addedLabel}
-              </span>
-            ) : null}
-            <span className="rounded bg-secondary px-2 py-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              {periodLabel(period)}
-            </span>
+              <Goal className="size-4" strokeWidth={2.5} />
+              Goal
+            </button>
+            <button
+              type="button"
+              onClick={onOpponentGoal}
+              className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
+            >
+              <Shield className="size-4" strokeWidth={2.5} />
+              Opp. Goal
+            </button>
           </div>
-          <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-            {waitingToStart
-              ? `Ready · ${halfReference} countdown`
-              : inAddedTime
-                ? 'Added time · still tracking'
-                : regulationElapsed
-                  ? 'Regulation elapsed · still tracking'
-                  : `Countdown · ${halfReference} half`}
-          </span>
-        </div>
+        ) : null}
       </div>
     </header>
   )
@@ -1321,7 +1344,9 @@ export default function App() {
     activeTeamId,
     setActiveTeamId,
     activeTeamFormat,
+    activeTeamAgeGroup,
     updateTeamFormat,
+    updateTeamAgeGroup,
     updateTeamPrimaryCoach,
     activeTeamPrimaryCoachName,
     setupCoachName,
@@ -2316,7 +2341,7 @@ export default function App() {
         onTeamChange={setActiveTeamId}
         onAddTeam={
           canAccessClubAdmin
-            ? async (name) => createTeam(name)
+            ? async (input) => createTeam(input)
             : undefined
         }
         hasActiveMatch={hasLiveMatch}
@@ -2347,6 +2372,7 @@ export default function App() {
       <ClubAdminScreen
         teams={teams.map((team) => ({ id: team.id, name: team.name }))}
         currentUserId={user?.id ?? null}
+        onCreateTeam={async (input) => createTeam(input)}
         onBackToHome={() => setAppMode('home')}
         onToast={setToast}
       />
@@ -2419,6 +2445,7 @@ export default function App() {
           activeTeamId={activeTeamId}
           activeTeamName={activeTeamName}
           activeTeamFormat={activeTeamFormat}
+          activeTeamAgeGroup={activeTeamAgeGroup}
           teamSwitcher={screenTeamSwitcher}
           rosterLoading={rosterLoading}
           teamRoster={teamRoster}
@@ -2432,6 +2459,7 @@ export default function App() {
           onSavePreset={saveLineupPreset}
           onDeletePreset={removeLineupPreset}
           onUpdateTeamFormat={updateTeamFormat}
+          onUpdateTeamAgeGroup={updateTeamAgeGroup}
           primaryCoachName={activeTeamPrimaryCoachName}
           onUpdatePrimaryCoach={async (name) => {
             await updateTeamPrimaryCoach(name)
@@ -2563,30 +2591,11 @@ export default function App() {
         running={running}
         periodClockStarted={periodClockStarted}
         onHome={() => setAppMode('home')}
+        onLogGoal={() => setGoalWizardOpen(true)}
+        onOpponentGoal={handleOpponentGoal}
       />
 
-      <div className={`${APP_CONTAINER} space-y-6 pt-5 md:space-y-8 md:pt-6`}>
-        {periodClockStarted && (
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setGoalWizardOpen(true)}
-              className="flex items-center justify-center gap-2 rounded-2xl bg-neon py-6 font-display text-2xl font-black uppercase tracking-wide text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95"
-            >
-              <Goal className="size-8" strokeWidth={2.5} />
-              Goal
-            </button>
-            <button
-              type="button"
-              onClick={handleOpponentGoal}
-              className="flex items-center justify-center gap-2 rounded-2xl border-2 border-border bg-secondary py-6 font-display text-xl font-black uppercase tracking-wide text-muted-foreground shadow-md transition-transform active:scale-[0.98] active:bg-secondary/80"
-            >
-              <Shield className="size-7" strokeWidth={2.5} />
-              Opp. Goal
-            </button>
-          </div>
-        )}
-
+      <div className={`${APP_CONTAINER} space-y-5 pt-4 md:space-y-6 md:pt-5`}>
         <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
 
         {matchId ? (

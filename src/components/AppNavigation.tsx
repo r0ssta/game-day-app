@@ -1,7 +1,15 @@
 import type { ReactNode } from 'react'
 import { Home } from 'lucide-react'
-import { ADD_NEW_OPTION } from '@/lib/named-entities'
 import { TOUCH_ICON_BUTTON } from '@/lib/layout'
+import {
+  AGE_GROUPS,
+  type AgeGroup,
+  ageGroupFormatHint,
+  defaultTeamNameForAgeGroup,
+  isAgeGroup,
+} from '@/lib/age-groups'
+import { CLUB_NAME } from '@/lib/branding'
+import { useState } from 'react'
 
 type NamedEntity = { id: string; name: string }
 
@@ -49,11 +57,16 @@ export function ScreenHeader({
   )
 }
 
+export type CreateTeamInput = {
+  name?: string
+  ageGroup: AgeGroup
+}
+
 type TeamSelectorProps = {
   teams: NamedEntity[]
   activeTeamId: string | null
   onTeamChange: (teamId: string) => void
-  onAddTeam?: (name: string) => Promise<string | void>
+  onAddTeam?: (input: CreateTeamInput) => Promise<string | void>
   prominent?: boolean
 }
 
@@ -80,22 +93,17 @@ export function TeamSelector({
       </label>
       <select
         id="active-team-select"
-        data-global-team-select="home"
         value={activeTeamId ?? ''}
         onChange={(e) => {
           const value = e.target.value
-          if (value === ADD_NEW_OPTION) return
-          if (value) onTeamChange(value)
+          if (!value) return
+          onTeamChange(value)
         }}
-        className="w-full min-h-12 touch-manipulation rounded-xl border-2 border-border bg-background px-4 py-3.5 text-lg font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+        className="w-full rounded-xl border-2 border-border bg-background px-3 py-3 text-sm font-bold text-foreground"
       >
-        {teams.length === 0 ? (
-          <option value="">No teams yet — add one below</option>
-        ) : !activeTeamId ? (
-          <option value="" disabled>
-            Select a team…
-          </option>
-        ) : null}
+        <option value="" disabled>
+          Select a team
+        </option>
         {teams.map((team) => (
           <option key={team.id} value={team.id}>
             {team.name}
@@ -113,36 +121,56 @@ function AddTeamInline({
   onAddTeam,
   onCreated,
 }: {
-  onAddTeam: (name: string) => Promise<string | void>
+  onAddTeam: (input: CreateTeamInput) => Promise<string | void>
   onCreated: (teamId: string) => void
 }) {
+  const [ageGroup, setAgeGroup] = useState<AgeGroup>('U13')
+  const [name, setName] = useState('')
+
   return (
     <form
-      className="mt-3 flex gap-2"
+      className="mt-3 space-y-2"
       onSubmit={(e) => {
         e.preventDefault()
-        const form = e.currentTarget
-        const input = form.elements.namedItem('team-name') as HTMLInputElement
-        const trimmed = input.value.trim()
-        if (!trimmed) return
-        void onAddTeam(trimmed).then((id) => {
+        void onAddTeam({
+          name: name.trim() || undefined,
+          ageGroup,
+        }).then((id) => {
           if (id) onCreated(id)
-          input.value = ''
+          setName('')
         })
       }}
     >
-      <input
-        name="team-name"
-        type="text"
-        placeholder="New team name"
-        className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
-      />
-      <button
-        type="submit"
-        className="shrink-0 rounded-lg bg-athletic px-3 py-2 text-xs font-bold uppercase text-athletic-foreground"
+      <select
+        value={ageGroup}
+        onChange={(event) => {
+          if (isAgeGroup(event.target.value)) setAgeGroup(event.target.value)
+        }}
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-bold text-foreground"
+        aria-label="Age group"
       >
-        Add
-      </button>
+        {AGE_GROUPS.map((group) => (
+          <option key={group} value={group}>
+            {ageGroupFormatHint(group)}
+          </option>
+        ))}
+      </select>
+      <div className="flex gap-2">
+        <input
+          name="team-name"
+          type="text"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder={`Name (default ${defaultTeamNameForAgeGroup(ageGroup, CLUB_NAME)})`}
+          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-lg bg-athletic px-3 py-2 text-xs font-bold uppercase text-athletic-foreground"
+        >
+          Add
+        </button>
+      </div>
     </form>
   )
 }
