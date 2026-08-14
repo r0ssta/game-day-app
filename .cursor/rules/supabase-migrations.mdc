@@ -24,8 +24,13 @@ Do **not** ask the user to paste SQL into the Supabase dashboard unless `npm run
 
 ## Connection string
 
-Project uses direct Postgres (`SUPABASE_DB_URL` in `.env`):
-`postgresql://postgres:[password]@db.ilclznhrlrirgmvwmunl.supabase.co:5432/postgres`
+Project uses Postgres via `SUPABASE_DB_URL` in `.env`.
+
+Direct `db.<ref>.supabase.co` hosts are often IPv6-only. `npm run db:migrate` automatically falls back to the Session pooler (IPv4). Optional:
+
+```bash
+SUPABASE_POOLER_REGION=us-east-2
+```
 
 Percent-encode special characters in the password.
 

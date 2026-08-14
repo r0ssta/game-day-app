@@ -1,5 +1,7 @@
 -- Profiles, team memberships, pending role, and team-scoped RLS (idempotent)
 --
+-- Requires: supabase-staff-role-pending-enum-migration.sql (pending enum value)
+--
 -- Bootstrap first Director after you sign in via magic link:
 --   update public.user_roles
 --   set role = 'director'
@@ -10,29 +12,7 @@
 
 create schema if not exists private;
 
--- Extend staff_role with pending (revoked / awaiting director approval)
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_enum e
-    join pg_type t on t.oid = e.enumtypid
-    join pg_namespace n on n.oid = t.typnamespace
-    where n.nspname = 'public'
-      and t.typname = 'staff_role'
-      and e.enumlabel = 'pending'
-  ) then
-    alter type public.staff_role add value 'pending';
-  end if;
-exception
-  when undefined_object then
-    create type public.staff_role as enum (
-      'director',
-      'head_coach',
-      'assistant_coach',
-      'pending'
-    );
-end $$;
+-- staff_role.pending is added in supabase-staff-role-pending-enum-migration.sql
 
 -- ---------------------------------------------------------------------------
 -- Profiles (synced from auth.users)

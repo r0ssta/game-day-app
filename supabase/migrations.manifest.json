@@ -25,6 +25,7 @@
     "supabase-match-scheduled-migration.sql",
     "supabase-grants-fix.sql",
     "supabase-auth-rls-migration.sql",
+    "supabase-staff-role-pending-enum-migration.sql",
     "supabase-profiles-team-members-migration.sql"
   ]
 }

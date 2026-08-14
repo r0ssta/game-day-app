@@ -783,19 +783,11 @@ create policy "match_stat_trackers_select_anon_active"
 
 notify pgrst, 'reload schema';
 
--- Profiles, team memberships, pending role, and team-scoped RLS (idempotent)
---
--- Bootstrap first Director after you sign in via magic link:
---   update public.user_roles
---   set role = 'director'
---   where user_id = '<auth-user-uuid>';
---
--- Also add http://localhost:5173 (and production URL) under
--- Authentication → URL Configuration → Redirect URLs.
+-- Add staff_role.pending in its own transaction.
+-- Postgres forbids using a newly added enum value in the same transaction
+-- that created it, so this file must stay separate from migrations that
+-- insert/default to 'pending'.
 
-create schema if not exists private;
-
--- Extend staff_role with pending (revoked / awaiting director approval)
 do $$
 begin
   if not exists (
@@ -818,6 +810,22 @@ exception
       'pending'
     );
 end $$;
+
+-- Profiles, team memberships, pending role, and team-scoped RLS (idempotent)
+--
+-- Requires: supabase-staff-role-pending-enum-migration.sql (pending enum value)
+--
+-- Bootstrap first Director after you sign in via magic link:
+--   update public.user_roles
+--   set role = 'director'
+--   where user_id = '<auth-user-uuid>';
+--
+-- Also add http://localhost:5173 (and production URL) under
+-- Authentication → URL Configuration → Redirect URLs.
+
+create schema if not exists private;
+
+-- staff_role.pending is added in supabase-staff-role-pending-enum-migration.sql
 
 -- ---------------------------------------------------------------------------
 -- Profiles (synced from auth.users)

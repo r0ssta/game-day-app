@@ -44,6 +44,121 @@ function getDatabaseUrl() {
   return process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || null
 }
 
+/**
+ * Direct db.<ref>.supabase.co hosts are often IPv6-only. Many local networks
+ * cannot reach them, so also try the Supabase session pooler (IPv4).
+ */
+function buildPoolerFallbackUrls(databaseUrl) {
+  let parsed
+  try {
+    parsed = new URL(databaseUrl)
+  } catch {
+    return []
+  }
+
+  const hostMatch = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i)
+  if (!hostMatch) return []
+
+  const projectRef = hostMatch[1]
+  const password = decodeURIComponent(parsed.password || '')
+  const database = parsed.pathname.replace(/^\//, '') || 'postgres'
+  const preferred = process.env.SUPABASE_POOLER_REGION || 'us-east-1'
+  const regions = [
+    preferred,
+    'us-east-1',
+    'us-east-2',
+    'us-west-1',
+    'us-west-2',
+    'eu-west-1',
+    'eu-west-2',
+    'eu-central-1',
+    'ap-southeast-1',
+    'ap-northeast-1',
+    'ca-central-1',
+    'sa-east-1',
+  ].filter((region, index, all) => all.indexOf(region) === index)
+
+  return regions.flatMap((region) => {
+    const session = new URL(`postgresql://aws-0-${region}.pooler.supabase.com:5432/${database}`)
+    session.username = `postgres.${projectRef}`
+    session.password = password
+    if (parsed.search) session.search = parsed.search
+
+    const txn = new URL(`postgresql://aws-0-${region}.pooler.supabase.com:6543/${database}`)
+    txn.username = `postgres.${projectRef}`
+    txn.password = password
+    if (parsed.search) txn.search = parsed.search
+
+    return [session.toString(), txn.toString()]
+  })
+}
+
+function connectionCandidates(databaseUrl) {
+  const urls = [databaseUrl]
+  for (const pooler of buildPoolerFallbackUrls(databaseUrl)) {
+    if (!urls.includes(pooler)) urls.push(pooler)
+  }
+  return urls
+}
+
+function redactDatabaseUrl(databaseUrl) {
+  try {
+    const parsed = new URL(databaseUrl)
+    if (parsed.password) parsed.password = '***'
+    return parsed.toString()
+  } catch {
+    return '(invalid database url)'
+  }
+}
+
+function isRetryableConnectionError(error) {
+  const code = typeof error?.code === 'string' ? error.code : ''
+  const message = error instanceof Error ? error.message : String(error)
+  return (
+    code === 'ENOTFOUND' ||
+    code === 'ENETUNREACH' ||
+    code === 'EHOSTUNREACH' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ETIMEDOUT' ||
+    /tenant\/user .* not found/i.test(message) ||
+    /no route to host/i.test(message) ||
+    /getaddrinfo/i.test(message)
+  )
+}
+
+async function connectWithFallback(databaseUrl) {
+  const candidates = connectionCandidates(databaseUrl)
+  let lastError = null
+
+  for (const [index, candidate] of candidates.entries()) {
+    const client = new pg.Client({
+      connectionString: candidate,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 10_000,
+    })
+
+    try {
+      await client.connect()
+      if (index > 0) {
+        console.log(
+          `Direct DB host unreachable; connected via pooler fallback (${redactDatabaseUrl(candidate)}).`,
+        )
+      }
+      return client
+    } catch (error) {
+      lastError = error
+      try {
+        await client.end()
+      } catch {
+        // ignore cleanup errors
+      }
+      if (!isRetryableConnectionError(error)) break
+    }
+  }
+
+  throw lastError ?? new Error('Unable to connect to Postgres')
+}
+
 function loadManifest() {
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'))
   if (!Array.isArray(manifest.migrations) || manifest.migrations.length === 0) {
@@ -77,7 +192,10 @@ Add this to .env (not committed to git):
   SUPABASE_DB_URL=postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
 
 Find it in Supabase Dashboard:
-  Project Settings → Database → Connection string → URI → Direct connection
+  Project Settings → Database → Connection string → URI
+
+Prefer the Session pooler URI if the direct db.* host fails (IPv6-only networks):
+  postgresql://postgres.[project-ref]:[password]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
 
 Then run:
   npm run db:migrate:baseline   # once, if your DB already has these changes
@@ -99,12 +217,7 @@ async function main() {
   }
 
   const migrations = loadManifest()
-  const client = new pg.Client({
-    connectionString: databaseUrl,
-    ssl: { rejectUnauthorized: false },
-  })
-
-  await client.connect()
+  const client = await connectWithFallback(databaseUrl)
 
   try {
     await ensureMigrationTable(client)
@@ -166,7 +279,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('\nMigration failed:', error instanceof Error ? error.message : error)
-  process.exit(1)
-})
+const isDirectRun =
+  process.argv[1] != null &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error('\nMigration failed:', error instanceof Error ? error.message : error)
+    process.exit(1)
+  })
+}
