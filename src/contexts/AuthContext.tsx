@@ -50,6 +50,24 @@ async function fetchUserRole(userId: string): Promise<StaffRole | null> {
   return isStaffRole(data?.role) ? data.role : null
 }
 
+async function resolveStaffRole(userId: string): Promise<StaffRole | null> {
+  let role = await fetchUserRole(userId)
+
+  // First club user (or pre-bootstrap pending user) can claim Director.
+  if (!isActiveStaffRole(role)) {
+    const { data, error } = await supabase.rpc('claim_bootstrap_director')
+    if (error) {
+      console.warn('[auth] bootstrap director claim skipped', error.message)
+    } else if (isStaffRole(data)) {
+      role = data
+    } else {
+      role = await fetchUserRole(userId)
+    }
+  }
+
+  return role
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -62,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole(null)
       return
     }
-    setRole(await fetchUserRole(userId))
+    setRole(await resolveStaffRole(userId))
   }, [])
 
   useEffect(() => {
@@ -77,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const nextUser = nextSession?.user ?? null
       setSession(nextSession)
       setUser(nextUser)
-      setRole(nextUser ? await fetchUserRole(nextUser.id) : null)
+      setRole(nextUser ? await resolveStaffRole(nextUser.id) : null)
       if (!cancelled) setLoading(false)
     })()
 
@@ -88,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(nextSession)
         const nextUser = nextSession?.user ?? null
         setUser(nextUser)
-        setRole(nextUser ? await fetchUserRole(nextUser.id) : null)
+        setRole(nextUser ? await resolveStaffRole(nextUser.id) : null)
         setLoading(false)
       })()
     })

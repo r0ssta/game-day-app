@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { SunMedium } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSunlightMode } from '@/contexts/SunlightModeContext'
@@ -6,8 +7,9 @@ import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
 export function PendingAccessScreen() {
-  const { user, role, signOut } = useAuth()
+  const { user, role, signOut, refreshRole } = useAuth()
   const { sunlightMode, toggleSunlightMode } = useSunlightMode()
+  const [busy, setBusy] = useState(false)
 
   return (
     <main className={`${APP_SHELL} flex min-h-dvh items-center justify-center px-4 py-10`}>
@@ -48,8 +50,20 @@ export function PendingAccessScreen() {
             .
           </p>
           <p className="text-sm font-semibold text-muted-foreground">
-            A Director must assign your club role and team access before you can manage matches.
+            If you&apos;re the first club account, tap Check Access again after setup finishes.
+            Otherwise a Director must assign your role and teams in Club Admin.
           </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true)
+              void refreshRole().finally(() => setBusy(false))
+            }}
+            className="min-h-12 w-full touch-manipulation rounded-xl border-2 border-neon bg-neon px-4 text-sm font-bold uppercase tracking-wide text-neon-foreground disabled:opacity-50"
+          >
+            {busy ? 'Checking…' : 'Check Access'}
+          </button>
           <button
             type="button"
             onClick={() => void signOut()}
