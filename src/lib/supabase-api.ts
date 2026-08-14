@@ -1279,37 +1279,14 @@ export async function insertStatTrackerEvent(input: {
   timestamp: number
   anonymous?: boolean
 }) {
-  const valid = await validateStatTrackerToken(input.matchId, input.token)
-  if (!valid) {
-    throw new Error('Invalid or expired stat tracker link.')
-  }
-
-  const match = await fetchMatchById(input.matchId)
-  if (!match) {
-    throw new Error('Match not found.')
-  }
-  if (match.status !== 'active') {
-    throw new Error('This match is no longer accepting sideline stats.')
-  }
-
-  if (input.anonymous || !input.playerId) {
-    await insertMatchEvent({
-      matchId: input.matchId,
-      playerId: null,
-      eventType: 'stat_team_log',
-      timestamp: input.timestamp,
-      formation: '',
-      eventNotes: input.eventType,
-    })
-    return
-  }
-
-  await insertMatchEvent({
-    matchId: input.matchId,
-    playerId: input.playerId,
-    eventType: input.eventType,
-    timestamp: input.timestamp,
-    formation: '',
-    eventNotes: 'stat_tracker',
+  const isTeamLog = Boolean(input.anonymous || !input.playerId)
+  const { error } = await supabase.rpc('log_stat_tracker_event', {
+    p_match_id: input.matchId,
+    p_token: input.token,
+    p_event_type: isTeamLog ? 'stat_team_log' : input.eventType,
+    p_timestamp: input.timestamp,
+    p_player_id: isTeamLog ? null : input.playerId,
+    p_event_notes: isTeamLog ? input.eventType : 'stat_tracker',
   })
+  if (error) throw error
 }

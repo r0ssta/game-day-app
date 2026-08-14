@@ -35,6 +35,9 @@ type AppNavDrawerProps = {
   onTeamChange: (teamId: string) => void
   teamSwitchDisabled?: boolean
   teamLabel?: string
+  staffRoleLabel?: string | null
+  userEmail?: string | null
+  onSignOut?: () => void
 }
 
 export function buildAppNavItems(input: {
@@ -153,6 +156,9 @@ export function AppNavDrawer({
   onTeamChange,
   teamSwitchDisabled = false,
   teamLabel,
+  staffRoleLabel,
+  userEmail,
+  onSignOut,
 }: AppNavDrawerProps) {
   useEffect(() => {
     if (!open) return
@@ -267,6 +273,33 @@ export function AppNavDrawer({
             ))}
           </ul>
         </nav>
+
+        <div className="space-y-2 border-t border-border p-4">
+          {staffRoleLabel || userEmail ? (
+            <div className="rounded-xl border border-border bg-secondary/40 px-3 py-2">
+              {staffRoleLabel ? (
+                <p className="text-[10px] font-bold uppercase tracking-widest text-athletic">
+                  {staffRoleLabel}
+                </p>
+              ) : null}
+              {userEmail ? (
+                <p className="truncate text-xs font-semibold text-muted-foreground">{userEmail}</p>
+              ) : null}
+            </div>
+          ) : null}
+          {onSignOut ? (
+            <button
+              type="button"
+              onClick={() => {
+                onSignOut()
+                onOpenChange(false)
+              }}
+              className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-card px-4 text-xs font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
+            >
+              Sign Out
+            </button>
+          ) : null}
+        </div>
       </aside>
     </>
   )

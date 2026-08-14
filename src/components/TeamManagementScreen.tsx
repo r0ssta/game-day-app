@@ -118,6 +118,7 @@ type TeamManagementScreenProps = {
   onUseScheduledMatch: (match: DbMatch) => void
   onBackToHome: () => void
   onToast: (message: string) => void
+  canUseSprocketIntegration?: boolean
 }
 
 function TeamRosterTab({
@@ -469,6 +470,7 @@ function TeamSettingsTab({
   onDeleteScheduledMatch,
   onUseScheduledMatch,
   onToast,
+  canUseSprocketIntegration = false,
 }: Pick<
   TeamManagementScreenProps,
   | 'activeTeamId'
@@ -485,6 +487,7 @@ function TeamSettingsTab({
   | 'onDeleteScheduledMatch'
   | 'onUseScheduledMatch'
   | 'onToast'
+  | 'canUseSprocketIntegration'
 >) {
   const [format, setFormat] = useState<TeamFormat>(activeTeamFormat)
   const [coachName, setCoachName] = useState(primaryCoachName)
@@ -581,18 +584,24 @@ function TeamSettingsTab({
         </button>
       </section>
 
-      <SprocketImportSection
-        activeTeamId={activeTeamId}
-        activeTeamName={activeTeamName}
-        scheduledMatches={scheduledMatches}
-        scheduledLoading={scheduledLoading}
-        onRefreshScheduledMatches={onRefreshScheduledMatches}
-        onAddPlayer={onAddPlayer}
-        onCreateScheduledMatch={onCreateScheduledMatch}
-        onDeleteScheduledMatch={onDeleteScheduledMatch}
-        onUseScheduledMatch={onUseScheduledMatch}
-        onToast={onToast}
-      />
+      {canUseSprocketIntegration ? (
+        <SprocketImportSection
+          activeTeamId={activeTeamId}
+          activeTeamName={activeTeamName}
+          scheduledMatches={scheduledMatches}
+          scheduledLoading={scheduledLoading}
+          onRefreshScheduledMatches={onRefreshScheduledMatches}
+          onAddPlayer={onAddPlayer}
+          onCreateScheduledMatch={onCreateScheduledMatch}
+          onDeleteScheduledMatch={onDeleteScheduledMatch}
+          onUseScheduledMatch={onUseScheduledMatch}
+          onToast={onToast}
+        />
+      ) : (
+        <p className="rounded-xl border-2 border-border bg-secondary/30 px-4 py-3 text-xs font-semibold text-muted-foreground">
+          Sprocket Sports import is available to Directors and Head Coaches.
+        </p>
+      )}
     </div>
   )
 }
@@ -876,6 +885,7 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
             onDeleteScheduledMatch={props.onDeleteScheduledMatch}
             onUseScheduledMatch={props.onUseScheduledMatch}
             onToast={props.onToast}
+            canUseSprocketIntegration={props.canUseSprocketIntegration}
           />
         )}
       </div>

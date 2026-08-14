@@ -2,12 +2,32 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { AuthScreen } from '@/components/AuthScreen'
 import { StatTrackerScreen } from '@/components/StatTrackerScreen'
+import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 
 applySunlightMode(readSunlightMode())
+
+function AuthenticatedApp() {
+  const { loading, isAuthenticated } = useAuth()
+
+  if (loading) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background px-4">
+        <p className="text-sm font-semibold text-muted-foreground">Checking session…</p>
+      </main>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <AuthScreen />
+  }
+
+  return <App />
+}
 
 function Root() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
@@ -26,12 +46,11 @@ function Root() {
   return (
     <SunlightModeProvider>
       {trackerRoute ? (
-        <>
-          {/* Stat tracker is a standalone mobile view — no main app chrome */}
-          <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
-        </>
+        <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
       ) : (
-        <App />
+        <AuthProvider>
+          <AuthenticatedApp />
+        </AuthProvider>
       )}
     </SunlightModeProvider>
   )

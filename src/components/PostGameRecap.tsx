@@ -105,7 +105,8 @@ type PostGameRecapProps = {
   players: MatchPlayer[]
   isCompletedMatch?: boolean
   onFinalize: () => void
-  onDeleteMatch: (matchId: string) => Promise<void>
+  onDeleteMatch?: (matchId: string) => Promise<void>
+  canDeleteMatches?: boolean
   onToast: (message: string) => void
   onHome?: () => void
 }
@@ -123,6 +124,7 @@ export function PostGameRecap({
   isCompletedMatch = false,
   onFinalize,
   onDeleteMatch,
+  canDeleteMatches = false,
   onToast,
   onHome,
 }: PostGameRecapProps) {
@@ -475,6 +477,7 @@ export function PostGameRecap({
   }
 
   const handleConfirmDelete = async () => {
+    if (!onDeleteMatch) return
     setDeleting(true)
     try {
       await onDeleteMatch(matchId)
@@ -798,37 +801,41 @@ export function PostGameRecap({
                 <Mail className="size-4" />
                 Email
               </button>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
-              >
-                <ClipboardCopy className="size-4" />
-                Copy
-              </button>
-            </div>
             <button
               type="button"
-              onClick={() => setDeleteConfirmOpen(true)}
-              disabled={deleting}
-              className="delete-match-action flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-danger/70 bg-danger/10 py-3 text-sm font-bold uppercase tracking-wide text-danger active:scale-[0.98] disabled:opacity-50"
+              onClick={handleCopy}
+              className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
             >
-              <Trash2 className="size-4" strokeWidth={2.5} />
-              Clear Match Data
+              <ClipboardCopy className="size-4" />
+              Copy
             </button>
+            </div>
+            {canDeleteMatches && onDeleteMatch ? (
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={deleting}
+                className="delete-match-action flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-danger/70 bg-danger/10 py-3 text-sm font-bold uppercase tracking-wide text-danger active:scale-[0.98] disabled:opacity-50"
+              >
+                <Trash2 className="size-4" strokeWidth={2.5} />
+                Clear Match Data
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <DeleteMatchConfirmModal
-        open={deleteConfirmOpen}
-        matchLabel={deleteMatchLabel}
-        busy={deleting}
-        onCancel={() => {
-          if (!deleting) setDeleteConfirmOpen(false)
-        }}
-        onConfirm={() => void handleConfirmDelete()}
-      />
+      {canDeleteMatches && onDeleteMatch ? (
+        <DeleteMatchConfirmModal
+          open={deleteConfirmOpen}
+          matchLabel={deleteMatchLabel}
+          busy={deleting}
+          onCancel={() => {
+            if (!deleting) setDeleteConfirmOpen(false)
+          }}
+          onConfirm={() => void handleConfirmDelete()}
+        />
+      ) : null}
     </main>
   )
 }

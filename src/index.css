@@ -173,6 +173,25 @@
     color: oklch(0.22 0.12 250);
     font-weight: 800;
   }
+
+  /* Auth entry panel — high contrast for outdoor sideline use */
+  html.sunlight-mode .auth-panel {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+    box-shadow: none;
+  }
+
+  html.sunlight-mode .auth-panel input {
+    border-color: oklch(0.22 0.02 260);
+    background-color: oklch(1 0 0);
+    color: oklch(0.16 0.02 260);
+    font-weight: 700;
+  }
+
+  html.sunlight-mode .auth-panel button[type='submit'] {
+    border-color: oklch(0.22 0.02 260);
+    font-weight: 800;
+  }
 }
 
 @keyframes marquee {

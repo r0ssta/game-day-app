@@ -23,6 +23,7 @@
     "supabase-match-stat-tracker-migration.sql",
     "supabase-match-qualitative-context-migration.sql",
     "supabase-match-scheduled-migration.sql",
-    "supabase-grants-fix.sql"
+    "supabase-grants-fix.sql",
+    "supabase-auth-rls-migration.sql"
   ]
 }

@@ -139,6 +139,14 @@ export type DbLineupPreset = {
   updated_at: string
 }
 
+export type DbUserRole = {
+  user_id: string
+  role: 'director' | 'head_coach' | 'assistant_coach'
+  display_name: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -148,9 +156,10 @@ export type Database = {
       matches: { Row: DbMatch; Insert: Partial<DbMatch> & Pick<DbMatch, 'team_id'>; Update: Partial<DbMatch> }
       match_events: { Row: DbMatchEvent; Insert: Omit<DbMatchEvent, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchEvent> }
       match_stats: { Row: DbMatchStat; Insert: Omit<DbMatchStat, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStat> }
-      match_reviews: { Row: DbMatchReview; Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbMatchReview> }
+      match_reviews: { Row: DbMatchReview; Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchReview> }
       match_stat_trackers: { Row: DbMatchStatTracker; Insert: Omit<DbMatchStatTracker, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStatTracker> }
       lineup_presets: { Row: DbLineupPreset; Insert: Omit<DbLineupPreset, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbLineupPreset> }
+      user_roles: { Row: DbUserRole; Insert: Omit<DbUserRole, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbUserRole> }
     }
   }
 }

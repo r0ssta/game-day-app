@@ -40,6 +40,8 @@ import {
 } from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
+import { useAuth } from '@/contexts/AuthContext'
+import { formatStaffRoleLabel } from '@/lib/staff-roles'
 import type { FormationRole, FormationRemapResult } from '@/lib/formations'
 import { getFormationLabel, matchPositionsFromSlotAssignments } from '@/lib/formations'
 import {
@@ -1284,6 +1286,14 @@ function EndPeriodButton({
 
 export default function App() {
   const {
+    canDeleteMatches,
+    canUseSprocketIntegration,
+    role,
+    user,
+    signOut,
+  } = useAuth()
+
+  const {
     loading,
     loadError,
     teams,
@@ -2397,6 +2407,7 @@ export default function App() {
           onUseScheduledMatch={loadScheduledMatchIntoSetup}
           onBackToHome={() => setAppMode('home')}
           onToast={setToast}
+          canUseSprocketIntegration={canUseSprocketIntegration}
         />
       </>
     )
@@ -2413,6 +2424,7 @@ export default function App() {
           teamSwitcher={screenTeamSwitcher}
           onOpenRecap={(id) => void handleOpenMatchRecap(id, 'recap_history')}
           onDeleteMatch={handleDeleteMatch}
+          canDeleteMatches={canDeleteMatches}
           onBackToHome={() => setAppMode('home')}
           onToast={setToast}
         />
@@ -2492,6 +2504,7 @@ export default function App() {
           isCompletedMatch={matchStatus === 'completed'}
           onFinalize={() => void handleFinalizeRecap()}
           onDeleteMatch={handleDeleteMatch}
+          canDeleteMatches={canDeleteMatches}
           onHome={handleExitRecap}
           onToast={setToast}
         />
@@ -2570,13 +2583,15 @@ export default function App() {
         />
 
         <div className="pt-2">
-          <button
-            type="button"
-            onClick={() => setLiveDeleteConfirmOpen(true)}
-            className="delete-match-action min-h-12 w-full touch-manipulation rounded-xl border-2 border-danger/70 bg-danger/10 py-3 text-sm font-bold uppercase tracking-widest text-danger active:scale-[0.98]"
-          >
-            Delete Game / Clear Match Data
-          </button>
+          {canDeleteMatches ? (
+            <button
+              type="button"
+              onClick={() => setLiveDeleteConfirmOpen(true)}
+              className="delete-match-action min-h-12 w-full touch-manipulation rounded-xl border-2 border-danger/70 bg-danger/10 py-3 text-sm font-bold uppercase tracking-widest text-danger active:scale-[0.98]"
+            >
+              Delete Game / Clear Match Data
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -2603,7 +2618,7 @@ export default function App() {
       />
 
       <DeleteMatchConfirmModal
-        open={liveDeleteConfirmOpen}
+        open={liveDeleteConfirmOpen && canDeleteMatches}
         matchLabel={
           matchId
             ? `${matchTeamName || 'Team'} vs ${matchOpponent.trim() || 'Opponent'}`
@@ -2642,6 +2657,9 @@ export default function App() {
         onTeamChange={setActiveTeamId}
         teamSwitchDisabled={teamSwitchDisabled}
         teamLabel={activeTeamName || undefined}
+        staffRoleLabel={role ? formatStaffRoleLabel(role) : null}
+        userEmail={user?.email ?? null}
+        onSignOut={() => void signOut()}
       />
       <AppNavShell>{renderScreen()}</AppNavShell>
       {toastOverlay}
