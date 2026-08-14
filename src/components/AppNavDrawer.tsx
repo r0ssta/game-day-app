@@ -5,6 +5,7 @@ import {
   Home,
   Menu,
   Play,
+  Shield,
   Users,
   X,
   type LucideIcon,
@@ -14,7 +15,7 @@ import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
 import { APP_CONTAINER, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
-export type AppNavSection = 'home' | 'active_match' | 'season' | 'recaps' | 'roster'
+export type AppNavSection = 'home' | 'active_match' | 'season' | 'recaps' | 'roster' | 'club_admin'
 
 export type AppNavItem = {
   id: AppNavSection
@@ -44,10 +45,11 @@ export function buildAppNavItems(input: {
   activeSection: AppNavSection | null
   teamReady: boolean
   hasLiveMatch: boolean
+  showClubAdmin?: boolean
 }): AppNavItem[] {
   const teamDisabled = !input.teamReady
 
-  return [
+  const items: AppNavItem[] = [
     {
       id: 'home',
       label: 'Home / Dashboard',
@@ -90,6 +92,18 @@ export function buildAppNavItems(input: {
       active: input.activeSection === 'roster',
     },
   ]
+
+  if (input.showClubAdmin) {
+    items.push({
+      id: 'club_admin',
+      label: 'Club Admin',
+      description: 'Roles, team assignments, and access',
+      icon: Shield,
+      active: input.activeSection === 'club_admin',
+    })
+  }
+
+  return items
 }
 
 export function resolveActiveNavSection(appMode: string, reportingTab?: string): AppNavSection | null {
@@ -98,6 +112,7 @@ export function resolveActiveNavSection(appMode: string, reportingTab?: string):
   if (appMode === 'reporting' && reportingTab === 'season') return 'season'
   if (appMode === 'recap_history' || appMode === 'recap') return 'recaps'
   if (appMode === 'team') return 'roster'
+  if (appMode === 'club_admin') return 'club_admin'
   if (appMode === 'reporting') return 'recaps'
   return null
 }

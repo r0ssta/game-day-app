@@ -33,6 +33,7 @@ import {
 } from '@/components/LiveTacticalPitch'
 import { PostGameRecap } from '@/components/PostGameRecap'
 import { MatchRecapHistoryScreen } from '@/components/MatchRecapHistoryScreen'
+import { ClubAdminScreen } from '@/components/ClubAdminScreen'
 import {
   DEFAULT_PRIMARY_POSITION,
   DEFAULT_SECONDARY_POSITION,
@@ -1288,6 +1289,7 @@ export default function App() {
   const {
     canDeleteMatches,
     canUseSprocketIntegration,
+    canAccessClubAdmin,
     role,
     user,
     signOut,
@@ -1426,8 +1428,9 @@ export default function App() {
         activeSection: resolveActiveNavSection(appMode, reportingTab),
         teamReady: Boolean(activeTeamId),
         hasLiveMatch,
+        showClubAdmin: canAccessClubAdmin,
       }),
-    [appMode, reportingTab, activeTeamId, hasLiveMatch],
+    [appMode, reportingTab, activeTeamId, hasLiveMatch, canAccessClubAdmin],
   )
 
   const screenTeamSwitcher = (
@@ -1491,10 +1494,19 @@ export default function App() {
           }
           setAppMode('team')
           break
+        case 'club_admin':
+          if (!canAccessClubAdmin) {
+            setToast('Club Admin is available to Directors only')
+            setAppMode('home')
+            break
+          }
+          setAppMode('club_admin')
+          break
       }
     },
     [
       activeTeamId,
+      canAccessClubAdmin,
       hasLiveMatch,
       hasPendingRecap,
       matchId,
@@ -1655,6 +1667,12 @@ export default function App() {
     const id = setTimeout(() => setToast(null), 2200)
     return () => clearTimeout(id)
   }, [toast])
+
+  useEffect(() => {
+    if (appMode === 'club_admin' && !canAccessClubAdmin) {
+      setAppMode('home')
+    }
+  }, [appMode, canAccessClubAdmin, setAppMode])
 
   useEffect(() => {
     const needsTeam =
@@ -2296,7 +2314,11 @@ export default function App() {
         teams={teams.map((team) => ({ id: team.id, name: team.name }))}
         activeTeamId={activeTeamId}
         onTeamChange={setActiveTeamId}
-        onAddTeam={async (name) => createTeam(name)}
+        onAddTeam={
+          canAccessClubAdmin
+            ? async (name) => createTeam(name)
+            : undefined
+        }
         hasActiveMatch={hasLiveMatch}
         activeMatchLabel={matchLabel}
         hasPendingRecap={hasPendingRecap}
@@ -2312,6 +2334,21 @@ export default function App() {
         }}
         onViewRecaps={() => setAppMode('recap_history')}
         onResumeMatch={() => setAppMode('match')}
+      />
+    )
+  }
+
+  if (appMode === 'club_admin') {
+    if (!canAccessClubAdmin) {
+      return null
+    }
+
+    return (
+      <ClubAdminScreen
+        teams={teams.map((team) => ({ id: team.id, name: team.name }))}
+        currentUserId={user?.id ?? null}
+        onBackToHome={() => setAppMode('home')}
+        onToast={setToast}
       />
     )
   }

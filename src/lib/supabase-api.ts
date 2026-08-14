@@ -26,6 +26,11 @@ import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEv
 import type { DbCoach, DbLineupPreset, DbMatch, DbMatchEvent, DbMatchReview, DbMatchStat, DbPlayer, DbTeam } from '@/types/database'
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
+import {
+  type AssignableStaffRole,
+  type StaffRole,
+  isStaffRole,
+} from '@/lib/staff-roles'
 
 export type MatchEventInput = {
   matchId: string
@@ -1289,4 +1294,89 @@ export async function insertStatTrackerEvent(input: {
     p_event_notes: isTeamLog ? input.eventType : 'stat_tracker',
   })
   if (error) throw error
+}
+
+export type ClubAdminUserRow = {
+  id: string
+  email: string | null
+  displayName: string | null
+  role: StaffRole
+  teamIds: string[]
+}
+
+export async function fetchClubAdminUsers(): Promise<ClubAdminUserRow[]> {
+  const [profilesRes, rolesRes, membersRes] = await Promise.all([
+    supabase.from('profiles').select('id, email, display_name').order('email'),
+    supabase.from('user_roles').select('user_id, role, display_name'),
+    supabase.from('team_members').select('user_id, team_id'),
+  ])
+
+  if (profilesRes.error) throw profilesRes.error
+  if (rolesRes.error) throw rolesRes.error
+  if (membersRes.error) throw membersRes.error
+
+  const roleByUser = new Map(
+    (rolesRes.data ?? []).map((row) => [row.user_id, row] as const),
+  )
+  const teamsByUser = new Map<string, string[]>()
+  for (const row of membersRes.data ?? []) {
+    const list = teamsByUser.get(row.user_id) ?? []
+    list.push(row.team_id)
+    teamsByUser.set(row.user_id, list)
+  }
+
+  return (profilesRes.data ?? []).map((profile) => {
+    const roleRow = roleByUser.get(profile.id)
+    const roleValue = roleRow?.role
+    return {
+      id: profile.id,
+      email: profile.email,
+      displayName: profile.display_name ?? roleRow?.display_name ?? null,
+      role: isStaffRole(roleValue) ? roleValue : 'pending',
+      teamIds: teamsByUser.get(profile.id) ?? [],
+    }
+  })
+}
+
+export async function updateClubUserRole(
+  userId: string,
+  role: AssignableStaffRole | 'pending',
+): Promise<void> {
+  const { error } = await supabase
+    .from('user_roles')
+    .update({ role, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function replaceClubUserTeams(
+  userId: string,
+  teamIds: string[],
+  membershipRole: AssignableStaffRole = 'assistant_coach',
+): Promise<void> {
+  const { error: deleteError } = await supabase
+    .from('team_members')
+    .delete()
+    .eq('user_id', userId)
+  if (deleteError) throw deleteError
+
+  const uniqueTeamIds = [...new Set(teamIds.filter(Boolean))]
+  if (uniqueTeamIds.length === 0) return
+
+  const teamRole: AssignableStaffRole =
+    membershipRole === 'director' ? 'head_coach' : membershipRole
+
+  const { error: insertError } = await supabase.from('team_members').insert(
+    uniqueTeamIds.map((teamId) => ({
+      user_id: userId,
+      team_id: teamId,
+      role: teamRole,
+    })),
+  )
+  if (insertError) throw insertError
+}
+
+export async function revokeClubUserAccess(userId: string): Promise<void> {
+  await replaceClubUserTeams(userId, [])
+  await updateClubUserRole(userId, 'pending')
 }

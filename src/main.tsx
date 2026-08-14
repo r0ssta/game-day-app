@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { AuthScreen } from '@/components/AuthScreen'
+import { PendingAccessScreen } from '@/components/PendingAccessScreen'
 import { StatTrackerScreen } from '@/components/StatTrackerScreen'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
@@ -12,7 +13,7 @@ import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 applySunlightMode(readSunlightMode())
 
 function AuthenticatedApp() {
-  const { loading, isAuthenticated } = useAuth()
+  const { loading, isAuthenticated, isActiveStaff } = useAuth()
 
   if (loading) {
     return (
@@ -24,6 +25,10 @@ function AuthenticatedApp() {
 
   if (!isAuthenticated) {
     return <AuthScreen />
+  }
+
+  if (!isActiveStaff) {
+    return <PendingAccessScreen />
   }
 
   return <App />

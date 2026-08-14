@@ -11,8 +11,10 @@ import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/supabaseClient'
 import {
   type StaffRole,
+  canAccessClubAdmin,
   canDeleteMatches,
   canUseSprocketIntegration,
+  isActiveStaffRole,
   isStaffRole,
 } from '@/lib/staff-roles'
 
@@ -22,10 +24,11 @@ type AuthContextValue = {
   role: StaffRole | null
   loading: boolean
   isAuthenticated: boolean
+  isActiveStaff: boolean
   canDeleteMatches: boolean
   canUseSprocketIntegration: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, displayName?: string) => Promise<void>
+  canAccessClubAdmin: boolean
+  signInWithMagicLink: (email: string) => Promise<void>
   signOut: () => Promise<void>
   refreshRole: () => Promise<void>
 }
@@ -96,37 +99,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+  const signInWithMagicLink = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      password,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin,
+      },
     })
     if (error) throw error
-  }, [])
-
-  const signUp = useCallback(async (email: string, password: string, displayName?: string) => {
-    const trimmedName = displayName?.trim() || undefined
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: trimmedName
-        ? {
-            data: { display_name: trimmedName },
-          }
-        : undefined,
-    })
-    if (error) throw error
-
-    // Role row is created by DB trigger; refresh if session is already active.
-    if (data.user && data.session) {
-      if (trimmedName) {
-        await supabase
-          .from('user_roles')
-          .update({ display_name: trimmedName })
-          .eq('user_id', data.user.id)
-      }
-      setRole(await fetchUserRole(data.user.id))
-    }
   }, [])
 
   const signOut = useCallback(async () => {
@@ -142,14 +123,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       loading,
       isAuthenticated: Boolean(session?.user),
+      isActiveStaff: isActiveStaffRole(role),
       canDeleteMatches: canDeleteMatches(role),
       canUseSprocketIntegration: canUseSprocketIntegration(role),
-      signIn,
-      signUp,
+      canAccessClubAdmin: canAccessClubAdmin(role),
+      signInWithMagicLink,
       signOut,
       refreshRole,
     }),
-    [session, user, role, loading, signIn, signUp, signOut, refreshRole],
+    [session, user, role, loading, signInWithMagicLink, signOut, refreshRole],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

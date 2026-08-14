@@ -141,10 +141,25 @@ export type DbLineupPreset = {
 
 export type DbUserRole = {
   user_id: string
-  role: 'director' | 'head_coach' | 'assistant_coach'
+  role: 'director' | 'head_coach' | 'assistant_coach' | 'pending'
   display_name: string | null
   created_at: string
   updated_at: string
+}
+
+export type DbProfile = {
+  id: string
+  email: string | null
+  display_name: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type DbTeamMember = {
+  user_id: string
+  team_id: string
+  role: 'director' | 'head_coach' | 'assistant_coach'
+  created_at: string
 }
 
 export type Database = {
@@ -160,6 +175,8 @@ export type Database = {
       match_stat_trackers: { Row: DbMatchStatTracker; Insert: Omit<DbMatchStatTracker, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStatTracker> }
       lineup_presets: { Row: DbLineupPreset; Insert: Omit<DbLineupPreset, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbLineupPreset> }
       user_roles: { Row: DbUserRole; Insert: Omit<DbUserRole, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbUserRole> }
+      profiles: { Row: DbProfile; Insert: Omit<DbProfile, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbProfile> }
+      team_members: { Row: DbTeamMember; Insert: Omit<DbTeamMember, 'created_at'> & { created_at?: string }; Update: Partial<DbTeamMember> }
     }
   }
 }
