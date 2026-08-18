@@ -34,6 +34,7 @@
     "supabase-team-delete-cascade-migration.sql",
     "supabase-seasons-player-pool-migration.sql",
     "supabase-seasons-dates-migration.sql",
-    "supabase-archive-teams-players-migration.sql"
+    "supabase-archive-teams-players-migration.sql",
+    "supabase-preserve-director-on-coach-assign-migration.sql"
   ]
 }

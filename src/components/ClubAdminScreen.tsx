@@ -17,9 +17,11 @@ import { AgeGroupPoolPanel } from '@/components/AgeGroupPoolPanel'
 import { PlayerDirectoryPanel } from '@/components/PlayerDirectoryPanel'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import {
+  type ActiveStaffRole,
   ASSIGNABLE_STAFF_ROLES,
   type AssignableStaffRole,
   formatStaffRoleLabel,
+  isActiveStaffRole,
   isAssignableStaffRole,
 } from '@/lib/staff-roles'
 import {
@@ -48,7 +50,27 @@ import {
 import type { DbSeason, DbTeam } from '@/types/database'
 import { cn } from '@/lib/utils'
 
-type ClubAdminTab = 'setup' | 'players'
+type ClubAdminTab = 'setup' | 'staff' | 'players'
+
+const STAFF_ROSTER_ROLE_ORDER: ActiveStaffRole[] = [
+  'director',
+  'head_coach',
+  'assistant_coach',
+]
+
+function staffDisplayName(user: ClubAdminUserRow): string {
+  return user.displayName?.trim() || user.email?.trim() || 'Unnamed staff'
+}
+
+function compareStaffUsers(a: ClubAdminUserRow, b: ClubAdminUserRow): number {
+  const roleRank =
+    STAFF_ROSTER_ROLE_ORDER.indexOf(a.role as ActiveStaffRole) -
+    STAFF_ROSTER_ROLE_ORDER.indexOf(b.role as ActiveStaffRole)
+  if (roleRank !== 0) return roleRank
+  return staffDisplayName(a).localeCompare(staffDisplayName(b), undefined, {
+    sensitivity: 'base',
+  })
+}
 
 type ClubAdminTeam = {
   id: string
@@ -254,6 +276,30 @@ export function ClubAdminScreen({
     [teams],
   )
 
+  const teamNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const team of teams) {
+      map.set(team.id, formatTeamDisplayName(team.name, team.ageGroup))
+    }
+    return map
+  }, [teams])
+
+  const staffRoster = useMemo(() => {
+    return users.filter((user) => isActiveStaffRole(user.role)).sort(compareStaffUsers)
+  }, [users])
+
+  const staffRosterByRole = useMemo(() => {
+    return STAFF_ROSTER_ROLE_ORDER.map((role) => ({
+      role,
+      members: staffRoster.filter((user) => user.role === role),
+    })).filter((group) => group.members.length > 0)
+  }, [staffRoster])
+
+  const pendingUsers = useMemo(
+    () => users.filter((user) => user.role === 'pending'),
+    [users],
+  )
+
   const handleCreateInvite = async (event: FormEvent) => {
     event.preventDefault()
     const email = inviteEmail.trim()
@@ -410,7 +456,7 @@ export function ClubAdminScreen({
         <div
           role="tablist"
           aria-label="Club admin sections"
-          className="club-admin-tabs mt-4 grid grid-cols-2 gap-2 rounded-xl border-2 border-border bg-card p-1"
+          className="club-admin-tabs mt-4 grid grid-cols-3 gap-1 rounded-xl border-2 border-border bg-card p-1 sm:gap-2"
         >
           <button
             type="button"
@@ -418,14 +464,29 @@ export function ClubAdminScreen({
             aria-selected={adminTab === 'setup'}
             onClick={() => setAdminTab('setup')}
             className={cn(
-              'inline-flex min-h-12 touch-manipulation items-center justify-center gap-2 rounded-lg px-3 text-xs font-extrabold uppercase tracking-wide',
+              'inline-flex min-h-12 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-[10px] font-extrabold uppercase tracking-wide sm:gap-2 sm:px-3 sm:text-xs',
               adminTab === 'setup'
                 ? 'bg-neon text-neon-foreground'
                 : 'bg-transparent text-muted-foreground',
             )}
           >
-            <ClipboardList className="size-4" strokeWidth={2.5} />
-            Club Setup
+            <ClipboardList className="size-4 shrink-0" strokeWidth={2.5} />
+            <span className="truncate">Club Setup</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={adminTab === 'staff'}
+            onClick={() => setAdminTab('staff')}
+            className={cn(
+              'inline-flex min-h-12 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-[10px] font-extrabold uppercase tracking-wide sm:gap-2 sm:px-3 sm:text-xs',
+              adminTab === 'staff'
+                ? 'bg-neon text-neon-foreground'
+                : 'bg-transparent text-muted-foreground',
+            )}
+          >
+            <Shield className="size-4 shrink-0" strokeWidth={2.5} />
+            <span className="truncate">Staff</span>
           </button>
           <button
             type="button"
@@ -433,14 +494,14 @@ export function ClubAdminScreen({
             aria-selected={adminTab === 'players'}
             onClick={() => setAdminTab('players')}
             className={cn(
-              'inline-flex min-h-12 touch-manipulation items-center justify-center gap-2 rounded-lg px-3 text-xs font-extrabold uppercase tracking-wide',
+              'inline-flex min-h-12 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-2 text-[10px] font-extrabold uppercase tracking-wide sm:gap-2 sm:px-3 sm:text-xs',
               adminTab === 'players'
                 ? 'bg-neon text-neon-foreground'
                 : 'bg-transparent text-muted-foreground',
             )}
           >
-            <Users className="size-4" strokeWidth={2.5} />
-            Player Directory
+            <Users className="size-4 shrink-0" strokeWidth={2.5} />
+            <span className="truncate">Players</span>
           </button>
         </div>
 
@@ -456,7 +517,9 @@ export function ClubAdminScreen({
             activeSeason={activeSeason}
             onToast={onToast}
           />
-        ) : (
+        ) : null}
+
+        {adminTab === 'setup' ? (
           <>
         <SeasonManagerPanel
           seasons={seasons}
@@ -695,6 +758,92 @@ export function ClubAdminScreen({
             </div>
           </form>
         </section>
+          </>
+        ) : null}
+
+        {adminTab === 'staff' ? (
+          <>
+        <section className="mt-6 space-y-4 rounded-2xl border-2 border-border bg-card p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <Shield className="size-5 shrink-0 text-athletic" strokeWidth={2.5} />
+              <div className="min-w-0">
+                <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+                  Staff Roster
+                </h2>
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Directors, Head Coaches, and Assistant Coaches
+                  {staffRoster.length > 0 ? ` · ${staffRoster.length}` : ''}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {loading && users.length === 0 ? (
+            <p className="text-sm font-semibold text-muted-foreground">Loading staff…</p>
+          ) : staffRoster.length === 0 ? (
+            <p className="text-sm font-semibold text-muted-foreground">
+              No active staff yet. Invite a Director, Head Coach, or Assistant Coach below.
+            </p>
+          ) : (
+            <div className="space-y-5">
+              {staffRosterByRole.map((group) => (
+                <div key={group.role} className="space-y-2">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    {formatStaffRoleLabel(group.role)}
+                    <span className="ml-1 text-foreground/70">({group.members.length})</span>
+                  </h3>
+                  <ul className="space-y-2">
+                    {group.members.map((user) => {
+                      const teamLabels = user.teamIds
+                        .map((teamId) => teamNameById.get(teamId))
+                        .filter((name): name is string => Boolean(name))
+                      return (
+                        <li
+                          key={user.id}
+                          className="rounded-xl border-2 border-border bg-background px-3 py-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-black text-foreground">
+                                {staffDisplayName(user)}
+                              </p>
+                              {user.email ? (
+                                <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
+                                  {user.email}
+                                </p>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 rounded-lg border-2 border-athletic/40 bg-athletic/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground">
+                              {formatStaffRoleLabel(user.role)}
+                            </span>
+                          </div>
+                          {user.id === currentUserId ? (
+                            <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-athletic">
+                              You
+                            </p>
+                          ) : null}
+                          <p className="mt-2 text-xs font-semibold text-muted-foreground">
+                            {teamLabels.length > 0
+                              ? teamLabels.join(' · ')
+                              : 'No teams assigned'}
+                          </p>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {pendingUsers.length > 0 ? (
+            <p className="border-t-2 border-border pt-3 text-xs font-semibold text-muted-foreground">
+              {pendingUsers.length} pending user
+              {pendingUsers.length === 1 ? '' : 's'} awaiting role assignment — manage below.
+            </p>
+          ) : null}
+        </section>
 
         <form
           onSubmit={(event) => void handleCreateInvite(event)}
@@ -765,7 +914,7 @@ export function ClubAdminScreen({
             </span>
             {activeTeams.length === 0 ? (
               <p className="text-xs font-semibold text-muted-foreground">
-                Create teams on Home first, then assign them here.
+                Create teams in Club Setup first, then assign them here.
               </p>
             ) : (
               <div className="grid gap-1.5 sm:grid-cols-2">
@@ -839,14 +988,19 @@ export function ClubAdminScreen({
           </section>
         ) : null}
 
-        {loading && users.length === 0 ? (
-          <p className="mt-6 text-sm font-semibold text-muted-foreground">Loading staff…</p>
-        ) : users.length === 0 ? (
+        {loading && users.length === 0 ? null : users.length === 0 ? (
           <p className="mt-6 text-sm font-semibold text-muted-foreground">
             No registered users yet. Create a staff account above to get started.
           </p>
         ) : (
-          <div className="club-admin-table mt-6 overflow-x-auto rounded-2xl border-2 border-border bg-card">
+          <section className="mt-6 space-y-3">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              Manage Access
+            </h2>
+            <p className="text-xs font-semibold text-muted-foreground">
+              Change roles, team assignments, or revoke access for registered users.
+            </p>
+          <div className="club-admin-table overflow-x-auto rounded-2xl border-2 border-border bg-card">
             <table className="w-full min-w-[42rem] border-collapse text-left">
               <thead>
                 <tr className="border-b-2 border-border bg-secondary/40">
@@ -916,7 +1070,7 @@ export function ClubAdminScreen({
                       <td className="px-3 py-3">
                         {activeTeams.length === 0 ? (
                           <p className="text-xs font-semibold text-muted-foreground">
-                            Create teams on Home first.
+                            Create teams in Club Setup first.
                           </p>
                         ) : (
                           <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto pr-1">
@@ -970,9 +1124,10 @@ export function ClubAdminScreen({
               </tbody>
             </table>
           </div>
+          </section>
         )}
           </>
-        )}
+        ) : null}
       </div>
 
       <DeleteMatchConfirmModal

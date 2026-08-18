@@ -1265,7 +1265,15 @@ begin
   insert into public.user_roles (user_id, role, display_name)
   values (p_user_id, p_role, nullif(trim(coalesce(p_display_name, '')), ''))
   on conflict (user_id) do update
-    set role = excluded.role,
+    set role = case
+          when public.user_roles.role = 'director'::public.staff_role
+           and excluded.role in (
+             'head_coach'::public.staff_role,
+             'assistant_coach'::public.staff_role
+           )
+          then public.user_roles.role
+          else excluded.role
+        end,
         display_name = coalesce(excluded.display_name, public.user_roles.display_name),
         updated_at = now();
 
@@ -1277,6 +1285,7 @@ begin
 
   delete from public.team_members where user_id = p_user_id;
 
+  -- Team membership role follows the coaching assignment, not club director.
   v_member_role := case
     when p_role = 'director' then 'head_coach'::public.staff_role
     else p_role
