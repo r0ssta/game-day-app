@@ -107,6 +107,8 @@ type TeamManagementScreenProps = {
   onDeletePreset: (presetId: string) => Promise<void>
   primaryCoachName: string
   onUpdatePrimaryCoach: (name: string) => Promise<void>
+  /** Known Directors / Staff / coach-directory names for the primary coach dropdown. */
+  coachOptions: string[]
   scheduledMatches: DbMatch[]
   scheduledLoading: boolean
   onRefreshScheduledMatches: () => Promise<void>
@@ -464,6 +466,7 @@ function TeamSettingsTab({
   activeTeamAgeGroup,
   primaryCoachName,
   onUpdatePrimaryCoach,
+  coachOptions,
   scheduledMatches,
   scheduledLoading,
   onRefreshScheduledMatches,
@@ -481,6 +484,7 @@ function TeamSettingsTab({
   | 'activeTeamAgeGroup'
   | 'primaryCoachName'
   | 'onUpdatePrimaryCoach'
+  | 'coachOptions'
   | 'scheduledMatches'
   | 'scheduledLoading'
   | 'onRefreshScheduledMatches'
@@ -498,14 +502,29 @@ function TeamSettingsTab({
     setCoachName(primaryCoachName)
   }, [primaryCoachName])
 
-  const coachChanged = coachName.trim() !== primaryCoachName.trim()
-  const canSave = coachChanged && !saving
+  const knownOptions = useMemo(() => {
+    const names = new Set<string>()
+    for (const name of coachOptions) {
+      const trimmed = name.trim()
+      if (trimmed) names.add(trimmed)
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [coachOptions])
+
+  const selectedCoach = useMemo(() => {
+    const needle = coachName.trim().toLowerCase()
+    if (!needle) return ''
+    return knownOptions.find((name) => name.toLowerCase() === needle) ?? ''
+  }, [coachName, knownOptions])
+
+  const coachChanged = selectedCoach !== primaryCoachName.trim()
+  const canSave = Boolean(selectedCoach) && coachChanged && !saving
 
   const handleSave = async () => {
-    if (!canSave) return
+    if (!canSave || !selectedCoach) return
     setSaving(true)
     try {
-      await onUpdatePrimaryCoach(coachName.trim())
+      await onUpdatePrimaryCoach(selectedCoach)
       onToast('Team settings saved')
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to save team settings')
@@ -544,16 +563,24 @@ function TeamSettingsTab({
           >
             Primary Coach
           </label>
-          <input
+          <select
             id="primary-coach-name"
-            type="text"
-            value={coachName}
+            value={selectedCoach}
             onChange={(e) => setCoachName(e.target.value)}
-            placeholder="e.g. Coach Smith"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-          />
+            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+          >
+            <option value="" disabled>
+              Select a coach…
+            </option>
+            {knownOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
           <p className="mt-2 text-sm text-muted-foreground">
-            Default head coach for new games with this team. You can override it on game day.
+            Default head coach for new games with this team. Choose from club Directors and coaches
+            only — you can still override on game day.
           </p>
         </div>
 
@@ -860,6 +887,7 @@ export function TeamManagementScreen(props: TeamManagementScreenProps) {
             activeTeamAgeGroup={props.activeTeamAgeGroup}
             primaryCoachName={props.primaryCoachName}
             onUpdatePrimaryCoach={props.onUpdatePrimaryCoach}
+            coachOptions={props.coachOptions}
             scheduledMatches={props.scheduledMatches}
             scheduledLoading={props.scheduledLoading}
             onRefreshScheduledMatches={props.onRefreshScheduledMatches}

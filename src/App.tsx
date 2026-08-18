@@ -165,11 +165,14 @@ function MatchCoachSelect({
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
   }, [allCoachNames, teamNames])
 
-  const valueInOptions =
-    Boolean(value.trim()) &&
-    [...teamNames.map((entry) => entry.name), ...otherCoaches].some(
-      (name) => name.toLowerCase() === value.trim().toLowerCase(),
-    )
+  const selectedValue = useMemo(() => {
+    const needle = value.trim().toLowerCase()
+    if (!needle) return ''
+    const fromTeam = teamNames.find((entry) => entry.name.toLowerCase() === needle)
+    if (fromTeam) return fromTeam.name
+    const fromClub = otherCoaches.find((name) => name.toLowerCase() === needle)
+    return fromClub ?? ''
+  }, [value, teamNames, otherCoaches])
 
   return (
     <div>
@@ -181,16 +184,13 @@ function MatchCoachSelect({
       </label>
       <select
         id={id}
-        value={valueInOptions ? value : value.trim() ? value : ''}
+        value={selectedValue}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
       >
         <option value="" disabled>
           Select a coach…
         </option>
-        {!valueInOptions && value.trim() ? (
-          <option value={value}>{value}</option>
-        ) : null}
         {teamNames.length > 0 ? (
           <optgroup label="This team">
             {teamNames.map((entry) => (
@@ -1600,7 +1600,6 @@ export default function App() {
     loading,
     loadError,
     teams,
-    coaches,
     masterRoster,
     appMode,
     setAppMode,
@@ -1710,12 +1709,10 @@ export default function App() {
   const canDeleteMatches = canDeleteMatchesForTeam(activeTeamId)
   const canUseSprocketIntegration = canUseSprocketForTeam(activeTeamId)
 
+  // Club Directors/Staff + this team's assigned coaches only — never free-typed
+  // coaches-table orphans (e.g. accidental "Tisan").
   const allCoachNames = useMemo(() => {
     const names = new Set<string>()
-    for (const coach of coaches) {
-      const name = coach.name.trim()
-      if (name) names.add(name)
-    }
     for (const name of clubStaffCoachNames) {
       const trimmed = name.trim()
       if (trimmed) names.add(trimmed)
@@ -1723,7 +1720,7 @@ export default function App() {
     for (const name of teamCoachingStaff.headCoaches) names.add(name)
     for (const name of teamCoachingStaff.assistants) names.add(name)
     return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-  }, [coaches, clubStaffCoachNames, teamCoachingStaff])
+  }, [clubStaffCoachNames, teamCoachingStaff])
 
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
@@ -1975,7 +1972,12 @@ export default function App() {
     return formatTeamDisplayName(team.name, team.age_group)
   })()
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
-  const startMatchBlockReason = getSetupLineupBlockReason(setupLineup, maxFieldPlayers)
+  const startMatchBlockReason =
+    getSetupLineupBlockReason(setupLineup, maxFieldPlayers) ??
+    (!setupCoachName.trim() ||
+    !allCoachNames.some((name) => name.toLowerCase() === setupCoachName.trim().toLowerCase())
+      ? 'Select a head coach'
+      : null)
   const canStartMatch = startMatchBlockReason === null && Boolean(activeTeamId)
   const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf, maxFieldPlayers)
   const activeFormation = period === '1st' ? matchFormations.first : matchFormations.second
@@ -2824,6 +2826,7 @@ export default function App() {
           onSavePreset={saveLineupPreset}
           onDeletePreset={removeLineupPreset}
           primaryCoachName={activeTeamPrimaryCoachName}
+          coachOptions={allCoachNames}
           onUpdatePrimaryCoach={async (name) => {
             await updateTeamPrimaryCoach(name)
           }}

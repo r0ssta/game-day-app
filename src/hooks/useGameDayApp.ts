@@ -65,7 +65,6 @@ import {
   fetchSeasonRosterPlayers,
   fetchSeasons,
   fetchTeams,
-  insertCoach,
   insertLineupPreset,
   insertTeam,
   insertMatchEvent,
@@ -403,18 +402,33 @@ export function useGameDayApp() {
         if (cancelled) return
         setTeamCoachingStaff(staff)
         const preferred = staff.headCoaches[0] ?? staff.assistants[0] ?? fallback
-        setSetupCoachName(preferred)
+        const known = new Set(
+          [...staff.headCoaches, ...staff.assistants, ...clubStaffCoachNames].map((n) =>
+            n.toLowerCase(),
+          ),
+        )
+        // Never keep a free-typed / unknown name (e.g. accidental "Tisan") as the default.
+        const preferredOk =
+          preferred && known.has(preferred.toLowerCase())
+            ? preferred
+            : (staff.headCoaches[0] ?? '')
+        setSetupCoachName(preferredOk)
       } catch {
         if (cancelled) return
         setTeamCoachingStaff({ headCoaches: [], assistants: [] })
-        setSetupCoachName(fallback)
+        const fallbackOk =
+          fallback &&
+          clubStaffCoachNames.some((n) => n.toLowerCase() === fallback.toLowerCase())
+            ? fallback
+            : ''
+        setSetupCoachName(fallbackOk)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [appMode, selectedTeamId, teams])
+  }, [appMode, selectedTeamId, teams, clubStaffCoachNames])
 
   useEffect(() => {
     if (appMode !== 'match_setup' || !selectedTeamId) return
@@ -749,12 +763,6 @@ export function useGameDayApp() {
     },
     [setTeamActive],
   )
-
-  const createCoach = useCallback(async (name: string) => {
-    const coach = await insertCoach(name)
-    setCoaches((prev) => [...prev, coach].sort((a, b) => a.name.localeCompare(b.name)))
-    return coach
-  }, [])
 
   const activeTeamPrimaryCoachName = useMemo(() => {
     const team = teams.find((entry) => entry.id === selectedTeamId)
@@ -1543,7 +1551,6 @@ export function useGameDayApp() {
     updateTeamProfile,
     setTeamActive,
     removeTeam,
-    createCoach,
     addPlayer,
     addGuestFromPool,
     updatePlayer,

@@ -819,15 +819,7 @@ export async function resolveCoachIdForName(name: string): Promise<string | null
   if (!trimmed) return null
 
   const existing = await findCoachByName(trimmed)
-  if (existing) return existing.id
-
-  try {
-    const created = await insertCoach(trimmed)
-    return created.id
-  } catch {
-    const retry = await findCoachByName(trimmed)
-    return retry?.id ?? null
-  }
+  return existing?.id ?? null
 }
 
 export async function upsertPlayer(input: {
