@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { BarChart3, ClipboardList, FileText, Users } from 'lucide-react'
 import { TeamSelector } from '@/components/AppNavigation'
 import { ClubBrandMark } from '@/components/ClubBrandMark'

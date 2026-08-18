@@ -58,7 +58,6 @@ import {
   fetchCoaches,
   fetchLineupPresetsByTeamId,
   fetchMatchRecapBundle,
-  fetchPlayersByTeamId,
   fetchScheduledMatchesByTeamId,
   fetchSeasonRosterPlayers,
   fetchSeasons,
