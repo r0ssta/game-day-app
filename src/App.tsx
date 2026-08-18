@@ -201,7 +201,7 @@ function MatchCoachSelect({
           </optgroup>
         ) : null}
         {otherCoaches.length > 0 ? (
-          <optgroup label="All Velocity coaches">
+          <optgroup label="Club directors & coaches">
             {otherCoaches.map((name) => (
               <option key={name} value={name}>
                 {name}
@@ -1628,6 +1628,7 @@ export default function App() {
     setupCoachName,
     setSetupCoachName,
     teamCoachingStaff,
+    clubStaffCoachNames,
     matchTeamName,
     matchCoachName,
     matchOpponent,
@@ -1715,10 +1716,14 @@ export default function App() {
       const name = coach.name.trim()
       if (name) names.add(name)
     }
+    for (const name of clubStaffCoachNames) {
+      const trimmed = name.trim()
+      if (trimmed) names.add(trimmed)
+    }
     for (const name of teamCoachingStaff.headCoaches) names.add(name)
     for (const name of teamCoachingStaff.assistants) names.add(name)
     return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-  }, [coaches, teamCoachingStaff])
+  }, [coaches, clubStaffCoachNames, teamCoachingStaff])
 
   const suggestedJersey = nextJerseyNumber(masterRoster)
 

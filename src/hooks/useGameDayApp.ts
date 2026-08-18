@@ -57,6 +57,7 @@ import {
   fetchPlayersByIds,
   fetchCoaches,
   fetchTeamCoachingStaff,
+  fetchClubStaffCoachNames,
   type TeamCoachingStaff,
   fetchLineupPresetsByTeamId,
   fetchMatchRecapBundle,
@@ -160,6 +161,7 @@ export function useGameDayApp() {
     headCoaches: [],
     assistants: [],
   })
+  const [clubStaffCoachNames, setClubStaffCoachNames] = useState<string[]>([])
   const [matchTeamName, setMatchTeamName] = useState('')
   const [matchCoachName, setMatchCoachName] = useState('')
   const [matchOpponent, setMatchOpponent] = useState('')
@@ -255,12 +257,14 @@ export function useGameDayApp() {
       setLoading(true)
       setLoadError(null)
       try {
-        const [teamsData, coachesData, seasonsData, activeSeasonData] = await Promise.all([
-          fetchTeams({ includeArchived: true }),
-          fetchCoaches(),
-          fetchSeasons(),
-          fetchActiveSeason(),
-        ])
+        const [teamsData, coachesData, seasonsData, activeSeasonData, clubStaffNames] =
+          await Promise.all([
+            fetchTeams({ includeArchived: true }),
+            fetchCoaches(),
+            fetchSeasons(),
+            fetchActiveSeason(),
+            fetchClubStaffCoachNames().catch(() => [] as string[]),
+          ])
 
         if (cancelled) return
 
@@ -268,6 +272,7 @@ export function useGameDayApp() {
         setCoaches(coachesData)
         setSeasons(seasonsData)
         setActiveSeasonState(activeSeasonData)
+        setClubStaffCoachNames(clubStaffNames)
 
         const active = await fetchActiveMatch()
         if (cancelled) return
@@ -1504,6 +1509,7 @@ export function useGameDayApp() {
     setupCoachName,
     setSetupCoachName,
     teamCoachingStaff,
+    clubStaffCoachNames,
     matchTeamName,
     matchCoachName,
     matchOpponent,

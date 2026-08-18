@@ -761,6 +761,59 @@ export async function fetchTeamCoachingStaff(teamId: string): Promise<TeamCoachi
   return { headCoaches, assistants }
 }
 
+/**
+ * Display names for Directors and Staff who coach any team — used in the Game Day
+ * coach picker so you can cover for another age group.
+ */
+export async function fetchClubStaffCoachNames(): Promise<string[]> {
+  const [rolesRes, profilesRes, membersRes] = await Promise.all([
+    supabase
+      .from('user_roles')
+      .select('user_id, app_role, display_name')
+      .in('app_role', ['director', 'coach']),
+    supabase.from('profiles').select('id, email, display_name'),
+    supabase.from('team_members').select('user_id'),
+  ])
+
+  if (rolesRes.error) throw rolesRes.error
+  if (profilesRes.error) throw profilesRes.error
+  if (membersRes.error) throw membersRes.error
+
+  const profileById = new Map((profilesRes.data ?? []).map((row) => [row.id, row] as const))
+  const memberIds = new Set((membersRes.data ?? []).map((row) => row.user_id))
+
+  const resolveName = (
+    userId: string,
+    roleDisplayName: string | null | undefined,
+  ): string | null => {
+    const profile = profileById.get(userId)
+    const fromProfile = profile?.display_name?.trim()
+    if (fromProfile) return fromProfile
+    const fromRole = roleDisplayName?.trim()
+    if (fromRole) return fromRole
+    const email = profile?.email?.trim()
+    if (email) return email.split('@')[0] || email
+    return null
+  }
+
+  const names = new Set<string>()
+  for (const row of rolesRes.data ?? []) {
+    const isDirector = row.app_role === 'director'
+    const isAssignedCoach = row.app_role === 'coach' && memberIds.has(row.user_id)
+    if (!isDirector && !isAssignedCoach) continue
+    const name = resolveName(row.user_id, row.display_name)
+    if (name) names.add(name)
+  }
+
+  // Team members without a coach/director app_role still appear if they have a profile name.
+  for (const userId of memberIds) {
+    const name = resolveName(userId, null)
+    if (name) names.add(name)
+  }
+
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+}
+
 export async function resolveCoachIdForName(name: string): Promise<string | null> {
   const trimmed = name.trim()
   if (!trimmed) return null
