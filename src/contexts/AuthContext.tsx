@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/supabaseClient'
+import { getAuthRedirectUrl } from '@/lib/auth-redirect'
 import {
   type StaffRole,
   canAccessClubAdmin,
@@ -122,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: email.trim(),
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: getAuthRedirectUrl(),
       },
     })
     if (error) throw error
