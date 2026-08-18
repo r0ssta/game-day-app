@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Mail } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
+import { ParentRecapEmailModal, playersFromRoster } from '@/components/ParentRecapEmailModal'
 import {
   formatRecapMinutes,
   loadHistoricalRecapRows,
@@ -12,7 +13,7 @@ import {
   parseQualitativeContext,
 } from '@/lib/qualitative-context'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
-import { resolveMatchCoachName } from '@/lib/supabase-api'
+import { fetchMatchEvents, resolveMatchCoachName } from '@/lib/supabase-api'
 import {
   formatOpponentPrefix,
   formatVenueLabel,
@@ -20,7 +21,7 @@ import {
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
-import type { DbMatch } from '@/types/database'
+import type { DbMatch, DbMatchEvent } from '@/types/database'
 import type { Impact, RosterPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -45,19 +46,34 @@ type MatchRecapDetailViewProps = {
   roster: RosterPlayer[]
   onBack: () => void
   onHome?: () => void
+  onToast?: (message: string) => void
 }
 
-export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }: MatchRecapDetailViewProps) {
+export function MatchRecapDetailView({
+  match,
+  teamName,
+  roster,
+  onBack,
+  onHome,
+  onToast,
+}: MatchRecapDetailViewProps) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [rows, setRows] = useState<PlayerRecapReview[]>([])
+  const [events, setEvents] = useState<DbMatchEvent[]>([])
+  const [parentRecapOpen, setParentRecapOpen] = useState(false)
+  const [matchState, setMatchState] = useState(match)
 
-  const { dateLabel, timeLabel } = formatMatchDisplayDateTime(match)
-  const headCoach = resolveMatchCoachName(match, null)
-  const locationType = resolveMatchLocationType(match)
-  const opponentLabel = match.opponent.trim() || 'Opponent'
-  const qualitativeContext = parseQualitativeContext(match.qualitative_context)
+  const { dateLabel, timeLabel } = formatMatchDisplayDateTime(matchState)
+  const headCoach = resolveMatchCoachName(matchState, null)
+  const locationType = resolveMatchLocationType(matchState)
+  const opponentLabel = matchState.opponent.trim() || 'Opponent'
+  const qualitativeContext = parseQualitativeContext(matchState.qualitative_context)
   const qualitativeLines = formatQualitativeContextSummary(qualitativeContext)
+
+  useEffect(() => {
+    setMatchState(match)
+  }, [match])
 
   useEffect(() => {
     let cancelled = false
@@ -66,8 +82,14 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
       setLoading(true)
       setLoadError(null)
       try {
-        const recapRows = await loadHistoricalRecapRows(match.id, match.half_length, roster)
-        if (!cancelled) setRows(recapRows)
+        const [recapRows, matchEvents] = await Promise.all([
+          loadHistoricalRecapRows(match.id, match.half_length, roster),
+          fetchMatchEvents(match.id),
+        ])
+        if (!cancelled) {
+          setRows(recapRows)
+          setEvents(matchEvents)
+        }
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : 'Failed to load match recap')
@@ -82,7 +104,10 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
     }
   }, [match.id, match.half_length, roster])
 
+  const toast = onToast ?? (() => {})
+
   return (
+    <>
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <header className="flex items-start justify-between gap-3">
@@ -101,7 +126,7 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
               </h1>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <span>
-                  {teamName} {match.home_score} – {match.away_score}{' '}
+                  {teamName} {matchState.home_score} – {matchState.away_score}{' '}
                   {formatOpponentPrefix(locationType)} {opponentLabel}
                 </span>
                 <span
@@ -119,6 +144,15 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
           </div>
           {onHome ? <BackToHomeButton onClick={onHome} /> : null}
         </header>
+
+        <button
+          type="button"
+          onClick={() => setParentRecapOpen(true)}
+          className="flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-2xl border-2 border-neon bg-neon px-4 text-sm font-black uppercase tracking-wide text-neon-foreground shadow-neon transition-transform active:scale-[0.99]"
+        >
+          <Mail className="size-5" strokeWidth={2.5} />
+          Generate Parent Recap Email
+        </button>
 
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -164,20 +198,30 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
 
         <section className="rounded-xl border border-neon/30 bg-neon/5 p-4">
           <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
-            Coach&apos;s Notes
+            Internal Coach Notes
           </h2>
           <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Post-Game Executive Summary
+            Staff only — not included in parent emails
           </p>
-          {match.coach_summary_notes?.trim() ? (
+          {matchState.internal_coach_notes?.trim() ? (
             <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-              {match.coach_summary_notes.trim()}
+              {matchState.internal_coach_notes.trim()}
             </p>
           ) : (
             <p className="mt-3 text-sm italic text-muted-foreground">
-              No coach summary recorded for this match.
+              No internal coach notes recorded for this match.
             </p>
           )}
+          {matchState.parent_facing_recap?.trim() ? (
+            <div className="mt-4 border-t-2 border-border pt-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Parent-facing recap
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                {matchState.parent_facing_recap.trim()}
+              </p>
+            </div>
+          ) : null}
         </section>
 
         {hasQualitativeContext(qualitativeContext) ? (
@@ -327,5 +371,19 @@ export function MatchRecapDetailView({ match, teamName, roster, onBack, onHome }
         )}
       </div>
     </main>
+
+    <ParentRecapEmailModal
+      open={parentRecapOpen}
+      match={matchState}
+      teamName={teamName}
+      events={events}
+      players={playersFromRoster(roster)}
+      onClose={() => setParentRecapOpen(false)}
+      onToast={toast}
+      onParentFacingRecapSaved={(value) =>
+        setMatchState((prev) => ({ ...prev, parent_facing_recap: value || null }))
+      }
+    />
+    </>
   )
 }

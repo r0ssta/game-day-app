@@ -1071,15 +1071,40 @@ export async function fetchMatchById(matchId: string): Promise<DbMatch | null> {
   return data
 }
 
-export async function saveCoachMatchSummary(matchId: string, coachSummaryNotes: string) {
-  const notes = coachSummaryNotes.trim() || null
+export async function saveInternalCoachNotes(matchId: string, internalCoachNotes: string) {
+  const notes = internalCoachNotes.trim() || null
   const { error } = await supabase
     .from('matches')
-    .update({ coach_summary_notes: notes })
+    .update({ internal_coach_notes: notes })
     .eq('id', matchId)
   if (!error) return
   if (isMissingColumnError(error)) {
-    console.warn('[saveCoachMatchSummary] coach_summary_notes unavailable:', formatSupabaseError(error))
+    console.warn(
+      '[saveInternalCoachNotes] internal_coach_notes unavailable:',
+      formatSupabaseError(error),
+    )
+    return
+  }
+  throw error
+}
+
+/** @deprecated Use saveInternalCoachNotes */
+export async function saveCoachMatchSummary(matchId: string, coachSummaryNotes: string) {
+  return saveInternalCoachNotes(matchId, coachSummaryNotes)
+}
+
+export async function saveParentFacingRecap(matchId: string, parentFacingRecap: string) {
+  const notes = parentFacingRecap.trim() || null
+  const { error } = await supabase
+    .from('matches')
+    .update({ parent_facing_recap: notes })
+    .eq('id', matchId)
+  if (!error) return
+  if (isMissingColumnError(error)) {
+    console.warn(
+      '[saveParentFacingRecap] parent_facing_recap unavailable:',
+      formatSupabaseError(error),
+    )
     return
   }
   throw error
@@ -1275,10 +1300,10 @@ export type PostGameReviewInput = {
 export async function savePostGameReview(
   matchId: string,
   reviews: PostGameReviewInput[],
-  coachSummaryNotes?: string,
+  internalCoachNotes?: string,
   qualitativeContext?: Record<string, unknown> | null,
 ) {
-  await saveCoachMatchSummary(matchId, coachSummaryNotes ?? '')
+  await saveInternalCoachNotes(matchId, internalCoachNotes ?? '')
   await saveQualitativeContext(matchId, qualitativeContext ?? null)
 
   if (reviews.length === 0) return

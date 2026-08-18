@@ -266,6 +266,27 @@
     color: oklch(0.12 0 0);
     font-weight: 800;
   }
+
+  /* Parent recap email modal — max outdoor contrast after the whistle */
+  html.sunlight-mode .parent-recap-dialog {
+    border-color: oklch(0.12 0 0);
+    background-color: oklch(1 0 0);
+    color: oklch(0.12 0 0);
+  }
+
+  html.sunlight-mode .parent-recap-dialog textarea,
+  html.sunlight-mode .parent-recap-dialog input,
+  html.sunlight-mode .parent-recap-preview {
+    border-color: oklch(0.12 0 0);
+    background-color: oklch(1 0 0);
+    color: oklch(0.12 0 0);
+    font-weight: 700;
+  }
+
+  html.sunlight-mode .parent-recap-preview {
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
 }
 
 @keyframes marquee {

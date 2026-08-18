@@ -148,7 +148,8 @@ export function MatchRecapHistoryScreen({
               const headCoach = resolveMatchCoachName(match, null)
               const locationType = resolveMatchLocationType(match)
               const opponentLabel = match.opponent.trim() || 'Opponent'
-              const summary = match.coach_summary_notes?.trim()
+              const summary =
+                match.parent_facing_recap?.trim() || match.internal_coach_notes?.trim()
               const badge = statusBadge(match.status)
 
               return (
@@ -199,7 +200,7 @@ export function MatchRecapHistoryScreen({
                         </p>
                       ) : (
                         <p className="mt-2 text-xs italic text-muted-foreground">
-                          No coach summary recorded
+                          No parent or coach summary recorded
                         </p>
                       )}
                     </div>

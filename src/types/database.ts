@@ -75,7 +75,10 @@ export type DbMatch = {
   period: '1st' | '2nd'
   status: 'active' | 'scheduled' | 'pending_review' | 'completed'
   period_clock_started: boolean
-  coach_summary_notes: string | null
+  /** Staff-only post-game notes — not for parent emails. */
+  internal_coach_notes: string | null
+  /** Parent-facing weekly recap summary used in email drafts. */
+  parent_facing_recap: string | null
   stat_tracker_token?: string | null
   qualitative_context?: QualitativeContextJson | null
   created_at: string

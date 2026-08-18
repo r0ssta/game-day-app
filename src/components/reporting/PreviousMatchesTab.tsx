@@ -57,7 +57,8 @@ export function PreviousMatchesTab({
           const headCoach = resolveMatchCoachName(match, null)
           const locationType = resolveMatchLocationType(match)
           const opponentLabel = match.opponent.trim() || 'Opponent'
-          const summary = match.coach_summary_notes?.trim()
+          const summary =
+            match.parent_facing_recap?.trim() || match.internal_coach_notes?.trim()
 
           return (
             <li key={match.id}>

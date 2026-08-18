@@ -37,6 +37,7 @@
     "supabase-archive-teams-players-migration.sql",
     "supabase-preserve-director-on-coach-assign-migration.sql",
     "supabase-app-team-roles-migration.sql",
-    "supabase-app-team-role-grants-migration.sql"
+    "supabase-app-team-role-grants-migration.sql",
+    "supabase-parent-recap-migration.sql"
   ]
 }

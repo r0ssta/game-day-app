@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardCopy, Mail, Trash2 } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
+import { ParentRecapEmailModal } from '@/components/ParentRecapEmailModal'
 import { QualitativeContextFields } from '@/components/QualitativeContextFields'
 import {
   aggregatePlayerRecaps,
@@ -45,6 +46,7 @@ import {
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
+import type { DbMatch, DbMatchEvent } from '@/types/database'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
@@ -139,6 +141,9 @@ export function PostGameRecap({
   const [reviews, setReviews] = useState<Record<string, SavedPositionReview>>({})
   const [touchedPositionReviews, setTouchedPositionReviews] = useState<Set<string>>(() => new Set())
   const [coachSummary, setCoachSummary] = useState('')
+  const [matchRecord, setMatchRecord] = useState<DbMatch | null>(null)
+  const [matchEvents, setMatchEvents] = useState<DbMatchEvent[]>([])
+  const [parentRecapOpen, setParentRecapOpen] = useState(false)
   const [qualitativeContext, setQualitativeContext] = useState<QualitativeContext>(
     EMPTY_QUALITATIVE_CONTEXT,
   )
@@ -152,17 +157,21 @@ export function PostGameRecap({
       setLoading(true)
       setLoadError(null)
       try {
-        const [events, matchRecord] = await Promise.all([
+        const [events, loadedMatch] = await Promise.all([
           fetchMatchEvents(matchId),
           fetchMatchById(matchId),
         ])
         if (cancelled) return
 
-        if (matchRecord?.coach_summary_notes) {
-          setCoachSummary(matchRecord.coach_summary_notes)
+        if (loadedMatch?.internal_coach_notes) {
+          setCoachSummary(loadedMatch.internal_coach_notes)
         }
-        if (matchRecord?.qualitative_context) {
-          setQualitativeContext(parseQualitativeContext(matchRecord.qualitative_context))
+        if (loadedMatch) {
+          setMatchRecord(loadedMatch)
+        }
+        setMatchEvents(events)
+        if (loadedMatch?.qualitative_context) {
+          setQualitativeContext(parseQualitativeContext(loadedMatch.qualitative_context))
         }
 
         let existingReviews: Awaited<ReturnType<typeof fetchMatchReviews>> = []
@@ -513,6 +522,7 @@ export function PostGameRecap({
   }
 
   return (
+    <>
     <main className={`${APP_SHELL} pb-28 md:pb-32`}>
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <header className="flex items-start justify-between gap-3">
@@ -555,6 +565,16 @@ export function PostGameRecap({
           {onHome ? <BackToHomeButton onClick={() => void handleExit()} /> : null}
         </header>
 
+        <button
+          type="button"
+          onClick={() => setParentRecapOpen(true)}
+          disabled={!matchRecord}
+          className="flex min-h-14 w-full touch-manipulation items-center justify-center gap-2 rounded-2xl border-2 border-neon bg-neon px-4 text-sm font-black uppercase tracking-wide text-neon-foreground shadow-neon transition-transform active:scale-[0.99] disabled:opacity-50"
+        >
+          <Mail className="size-5" strokeWidth={2.5} />
+          Generate Parent Recap Email
+        </button>
+
         {isCompletedMatch ? (
           <div className="flex justify-center">
             <button
@@ -575,16 +595,16 @@ export function PostGameRecap({
 
         <section className="rounded-xl border border-neon/30 bg-neon/5 p-4">
           <label
-            htmlFor="coach-match-summary"
+            htmlFor="internal-coach-notes"
             className="mb-2 block font-display text-sm font-bold uppercase tracking-wide text-foreground"
           >
-            Coach&apos;s Match Summary
+            Internal Coach Notes
           </label>
           <p className="mb-3 text-xs text-muted-foreground">
-            Overall game thoughts, tactical takeaways, and what to work on next.
+            Staff-only thoughts and developmental notes. These stay out of the parent email.
           </p>
           <textarea
-            id="coach-match-summary"
+            id="internal-coach-notes"
             value={coachSummary}
             onChange={(e) => setCoachSummary(e.target.value)}
             readOnly={readOnly}
@@ -836,6 +856,27 @@ export function PostGameRecap({
           onConfirm={() => void handleConfirmDelete()}
         />
       ) : null}
+
+      {matchRecord ? (
+        <ParentRecapEmailModal
+          open={parentRecapOpen}
+          match={{
+            ...matchRecord,
+            internal_coach_notes: coachSummary.trim() || null,
+          }}
+          teamName={teamName}
+          events={matchEvents}
+          players={players}
+          onClose={() => setParentRecapOpen(false)}
+          onToast={onToast}
+          onParentFacingRecapSaved={(value) =>
+            setMatchRecord((prev) =>
+              prev ? { ...prev, parent_facing_recap: value || null } : prev,
+            )
+          }
+        />
+      ) : null}
     </main>
+    </>
   )
 }
