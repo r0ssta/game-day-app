@@ -44,7 +44,7 @@ import {
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatStaffRoleLabel } from '@/lib/staff-roles'
+import { formatAppRoleLabel } from '@/lib/staff-roles'
 import type { FormationRole, FormationRemapResult } from '@/lib/formations'
 import { getFormationLabel, matchPositionsFromSlotAssignments } from '@/lib/formations'
 import {
@@ -1452,9 +1452,9 @@ function EndPeriodButton({
 
 export default function App() {
   const {
-    canDeleteMatches,
-    canUseSprocketIntegration,
     canAccessClubAdmin,
+    canDeleteMatchesForTeam,
+    canUseSprocketForTeam,
     role,
     user,
     signOut,
@@ -1565,6 +1565,9 @@ export default function App() {
     loadScheduledMatchIntoSetup,
     deleteMatch,
   } = useGameDayApp()
+
+  const canDeleteMatches = canDeleteMatchesForTeam(activeTeamId)
+  const canUseSprocketIntegration = canUseSprocketForTeam(activeTeamId)
 
   const coachSuggestions = useMemo(
     () => coaches.map((coach) => coach.name).sort((a, b) => a.localeCompare(b)),
@@ -2895,7 +2898,7 @@ export default function App() {
         onTeamChange={setActiveTeamId}
         teamSwitchDisabled={teamSwitchDisabled}
         teamLabel={activeTeamName || undefined}
-        staffRoleLabel={role ? formatStaffRoleLabel(role) : null}
+        staffRoleLabel={role ? formatAppRoleLabel(role) : null}
         userEmail={user?.email ?? null}
         onSignOut={() => void signOut()}
       />

@@ -11,24 +11,39 @@ import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/supabaseClient'
 import { getAuthRedirectUrl } from '@/lib/auth-redirect'
 import {
-  type StaffRole,
+  type AppRole,
+  type TeamRole,
   canAccessClubAdmin,
   canDeleteMatches,
   canUseSprocketIntegration,
-  isActiveStaffRole,
-  isStaffRole,
+  isActiveAppRole,
+  isAppRole,
+  isTeamRole,
 } from '@/lib/staff-roles'
+
+export type TeamMembership = {
+  teamId: string
+  teamRole: TeamRole
+}
 
 type AuthContextValue = {
   session: Session | null
   user: User | null
-  role: StaffRole | null
+  /** App-level role (director | coach | pending). */
+  role: AppRole | null
+  appRole: AppRole | null
+  teamMemberships: TeamMembership[]
   loading: boolean
   isAuthenticated: boolean
   isActiveStaff: boolean
-  canDeleteMatches: boolean
-  canUseSprocketIntegration: boolean
   canAccessClubAdmin: boolean
+  getTeamRole: (teamId: string | null | undefined) => TeamRole | null
+  canDeleteMatchesForTeam: (teamId: string | null | undefined) => boolean
+  canUseSprocketForTeam: (teamId: string | null | undefined) => boolean
+  /** @deprecated Prefer canDeleteMatchesForTeam(activeTeamId) */
+  canDeleteMatches: boolean
+  /** @deprecated Prefer canUseSprocketForTeam(activeTeamId) */
+  canUseSprocketIntegration: boolean
   signInWithMagicLink: (email: string) => Promise<void>
   signOut: () => Promise<void>
   refreshRole: () => Promise<void>
@@ -36,33 +51,49 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-async function fetchUserRole(userId: string): Promise<StaffRole | null> {
+async function fetchUserAppRole(userId: string): Promise<AppRole | null> {
   const { data, error } = await supabase
     .from('user_roles')
-    .select('role')
+    .select('app_role')
     .eq('user_id', userId)
     .maybeSingle()
 
   if (error) {
-    console.warn('[auth] failed to load user role', error.message)
+    console.warn('[auth] failed to load app role', error.message)
     return null
   }
 
-  return isStaffRole(data?.role) ? data.role : null
+  return isAppRole(data?.app_role) ? data.app_role : null
 }
 
-async function resolveStaffRole(userId: string): Promise<StaffRole | null> {
-  let role = await fetchUserRole(userId)
+async function fetchTeamMemberships(userId: string): Promise<TeamMembership[]> {
+  const { data, error } = await supabase
+    .from('team_members')
+    .select('team_id, team_role')
+    .eq('user_id', userId)
 
-  // First club user (or pre-bootstrap pending user) can claim Director.
-  if (!isActiveStaffRole(role)) {
+  if (error) {
+    console.warn('[auth] failed to load team memberships', error.message)
+    return []
+  }
+
+  return (data ?? []).flatMap((row) => {
+    if (!isTeamRole(row.team_role)) return []
+    return [{ teamId: row.team_id, teamRole: row.team_role }]
+  })
+}
+
+async function resolveAppRole(userId: string): Promise<AppRole | null> {
+  let role = await fetchUserAppRole(userId)
+
+  if (!isActiveAppRole(role)) {
     const { data, error } = await supabase.rpc('claim_bootstrap_director')
     if (error) {
       console.warn('[auth] bootstrap director claim skipped', error.message)
-    } else if (isStaffRole(data)) {
+    } else if (isAppRole(data)) {
       role = data
     } else {
-      role = await fetchUserRole(userId)
+      role = await fetchUserAppRole(userId)
     }
   }
 
@@ -72,17 +103,28 @@ async function resolveStaffRole(userId: string): Promise<StaffRole | null> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const [role, setRole] = useState<StaffRole | null>(null)
+  const [role, setRole] = useState<AppRole | null>(null)
+  const [teamMemberships, setTeamMemberships] = useState<TeamMembership[]>([])
   const [loading, setLoading] = useState(true)
+
+  const loadAccess = useCallback(async (userId: string | undefined | null) => {
+    if (!userId) {
+      setRole(null)
+      setTeamMemberships([])
+      return
+    }
+    const [nextRole, nextMemberships] = await Promise.all([
+      resolveAppRole(userId),
+      fetchTeamMemberships(userId),
+    ])
+    setRole(nextRole)
+    setTeamMemberships(nextMemberships)
+  }, [])
 
   const refreshRole = useCallback(async () => {
     const userId = (await supabase.auth.getUser()).data.user?.id
-    if (!userId) {
-      setRole(null)
-      return
-    }
-    setRole(await resolveStaffRole(userId))
-  }, [])
+    await loadAccess(userId)
+  }, [loadAccess])
 
   useEffect(() => {
     let cancelled = false
@@ -96,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const nextUser = nextSession?.user ?? null
       setSession(nextSession)
       setUser(nextUser)
-      setRole(nextUser ? await resolveStaffRole(nextUser.id) : null)
+      await loadAccess(nextUser?.id)
       if (!cancelled) setLoading(false)
     })()
 
@@ -107,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(nextSession)
         const nextUser = nextSession?.user ?? null
         setUser(nextUser)
-        setRole(nextUser ? await resolveStaffRole(nextUser.id) : null)
+        await loadAccess(nextUser?.id)
         setLoading(false)
       })()
     })
@@ -116,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
       subscription.unsubscribe()
     }
-  }, [])
+  }, [loadAccess])
 
   const signInWithMagicLink = useCallback(async (email: string) => {
     const { error } = await supabase.auth.signInWithOtp({
@@ -133,24 +175,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
     setRole(null)
+    setTeamMemberships([])
   }, [])
+
+  const getTeamRole = useCallback(
+    (teamId: string | null | undefined): TeamRole | null => {
+      if (!teamId) return null
+      return teamMemberships.find((m) => m.teamId === teamId)?.teamRole ?? null
+    },
+    [teamMemberships],
+  )
+
+  const canDeleteMatchesForTeam = useCallback(
+    (teamId: string | null | undefined) => canDeleteMatches(role, getTeamRole(teamId)),
+    [role, getTeamRole],
+  )
+
+  const canUseSprocketForTeam = useCallback(
+    (teamId: string | null | undefined) =>
+      canUseSprocketIntegration(role, getTeamRole(teamId)),
+    [role, getTeamRole],
+  )
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       user,
       role,
+      appRole: role,
+      teamMemberships,
       loading,
       isAuthenticated: Boolean(session?.user),
-      isActiveStaff: isActiveStaffRole(role),
-      canDeleteMatches: canDeleteMatches(role),
-      canUseSprocketIntegration: canUseSprocketIntegration(role),
+      isActiveStaff: isActiveAppRole(role),
       canAccessClubAdmin: canAccessClubAdmin(role),
+      getTeamRole,
+      canDeleteMatchesForTeam,
+      canUseSprocketForTeam,
+      // Legacy globals: directors only until caller passes a team id.
+      canDeleteMatches: canDeleteMatches(role, null),
+      canUseSprocketIntegration: canUseSprocketIntegration(role, null),
       signInWithMagicLink,
       signOut,
       refreshRole,
     }),
-    [session, user, role, loading, signInWithMagicLink, signOut, refreshRole],
+    [
+      session,
+      user,
+      role,
+      teamMemberships,
+      loading,
+      getTeamRole,
+      canDeleteMatchesForTeam,
+      canUseSprocketForTeam,
+      signInWithMagicLink,
+      signOut,
+      refreshRole,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

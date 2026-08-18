@@ -40,10 +40,12 @@ import type {
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
 import {
-  type AssignableStaffRole,
-  type StaffRole,
-  isAssignableStaffRole,
-  isStaffRole,
+  type AppRole,
+  type AssignableAppRole,
+  type TeamRole,
+  isAppRole,
+  isAssignableAppRole,
+  isTeamRole,
 } from '@/lib/staff-roles'
 import { type AgeGroup, formatForAgeGroup } from '@/lib/age-groups'
 
@@ -1674,19 +1676,24 @@ export async function insertStatTrackerEvent(input: {
   if (error) throw error
 }
 
+export type ClubAdminTeamAssignment = {
+  teamId: string
+  teamRole: TeamRole
+}
+
 export type ClubAdminUserRow = {
   id: string
   email: string | null
   displayName: string | null
-  role: StaffRole
-  teamIds: string[]
+  appRole: AppRole
+  teamAssignments: ClubAdminTeamAssignment[]
 }
 
 export async function fetchClubAdminUsers(): Promise<ClubAdminUserRow[]> {
   const [profilesRes, rolesRes, membersRes] = await Promise.all([
     supabase.from('profiles').select('id, email, display_name').order('email'),
-    supabase.from('user_roles').select('user_id, role, display_name'),
-    supabase.from('team_members').select('user_id, team_id'),
+    supabase.from('user_roles').select('user_id, app_role, display_name'),
+    supabase.from('team_members').select('user_id, team_id, team_role'),
   ])
 
   if (profilesRes.error) throw profilesRes.error
@@ -1696,41 +1703,49 @@ export async function fetchClubAdminUsers(): Promise<ClubAdminUserRow[]> {
   const roleByUser = new Map(
     (rolesRes.data ?? []).map((row) => [row.user_id, row] as const),
   )
-  const teamsByUser = new Map<string, string[]>()
+  const teamsByUser = new Map<string, ClubAdminTeamAssignment[]>()
   for (const row of membersRes.data ?? []) {
     const list = teamsByUser.get(row.user_id) ?? []
-    list.push(row.team_id)
+    const teamRole = isTeamRole(row.team_role) ? row.team_role : 'assistant_coach'
+    list.push({ teamId: row.team_id, teamRole })
     teamsByUser.set(row.user_id, list)
   }
 
   return (profilesRes.data ?? []).map((profile) => {
     const roleRow = roleByUser.get(profile.id)
-    const roleValue = roleRow?.role
+    const roleValue = roleRow?.app_role
     return {
       id: profile.id,
       email: profile.email,
       displayName: profile.display_name ?? roleRow?.display_name ?? null,
-      role: isStaffRole(roleValue) ? roleValue : 'pending',
-      teamIds: teamsByUser.get(profile.id) ?? [],
+      appRole: isAppRole(roleValue) ? roleValue : 'pending',
+      teamAssignments: teamsByUser.get(profile.id) ?? [],
     }
   })
 }
 
-export async function updateClubUserRole(
+export async function updateClubUserAppRole(
   userId: string,
-  role: AssignableStaffRole | 'pending',
+  appRole: AssignableAppRole | 'pending',
 ): Promise<void> {
   const { error } = await supabase
     .from('user_roles')
-    .update({ role, updated_at: new Date().toISOString() })
+    .update({ app_role: appRole, updated_at: new Date().toISOString() })
     .eq('user_id', userId)
   if (error) throw error
 }
 
+/** @deprecated Use updateClubUserAppRole */
+export async function updateClubUserRole(
+  userId: string,
+  role: AssignableAppRole | 'pending',
+): Promise<void> {
+  return updateClubUserAppRole(userId, role)
+}
+
 export async function replaceClubUserTeams(
   userId: string,
-  teamIds: string[],
-  membershipRole: AssignableStaffRole = 'assistant_coach',
+  assignments: ClubAdminTeamAssignment[],
 ): Promise<void> {
   const { error: deleteError } = await supabase
     .from('team_members')
@@ -1738,17 +1753,18 @@ export async function replaceClubUserTeams(
     .eq('user_id', userId)
   if (deleteError) throw deleteError
 
-  const uniqueTeamIds = [...new Set(teamIds.filter(Boolean))]
-  if (uniqueTeamIds.length === 0) return
-
-  const teamRole: AssignableStaffRole =
-    membershipRole === 'director' ? 'head_coach' : membershipRole
+  const unique = new Map<string, TeamRole>()
+  for (const row of assignments) {
+    if (!row.teamId || !isTeamRole(row.teamRole)) continue
+    unique.set(row.teamId, row.teamRole)
+  }
+  if (unique.size === 0) return
 
   const { error: insertError } = await supabase.from('team_members').insert(
-    uniqueTeamIds.map((teamId) => ({
+    [...unique.entries()].map(([teamId, teamRole]) => ({
       user_id: userId,
       team_id: teamId,
-      role: teamRole,
+      team_role: teamRole,
     })),
   )
   if (insertError) throw insertError
@@ -1756,15 +1772,15 @@ export async function replaceClubUserTeams(
 
 export async function revokeClubUserAccess(userId: string): Promise<void> {
   await replaceClubUserTeams(userId, [])
-  await updateClubUserRole(userId, 'pending')
+  await updateClubUserAppRole(userId, 'pending')
 }
 
 export type StaffInviteRow = {
   id: string
   email: string
   displayName: string | null
-  role: AssignableStaffRole
-  teamIds: string[]
+  appRole: AssignableAppRole
+  teamAssignments: ClubAdminTeamAssignment[]
   status: 'pending' | 'accepted' | 'cancelled'
   createdAt: string
 }
@@ -1779,20 +1795,33 @@ export type CreateStaffInviteResult = {
 export async function fetchPendingStaffInvites(): Promise<StaffInviteRow[]> {
   const { data, error } = await supabase
     .from('staff_invites')
-    .select('id, email, display_name, role, team_ids, status, created_at')
+    .select(
+      'id, email, display_name, app_role, team_ids, team_roles, default_team_role, status, created_at',
+    )
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
   if (error) throw error
 
   return (data ?? []).flatMap((row) => {
-    if (!isAssignableStaffRole(row.role)) return []
+    if (!isAssignableAppRole(row.app_role)) return []
+    const teamIds = row.team_ids ?? []
+    const teamRoles = row.team_roles ?? []
+    const fallback = isTeamRole(row.default_team_role)
+      ? row.default_team_role
+      : 'assistant_coach'
+    const teamAssignments: ClubAdminTeamAssignment[] = teamIds.map(
+      (teamId: string, index: number) => ({
+        teamId,
+        teamRole: isTeamRole(teamRoles[index]) ? teamRoles[index]! : fallback,
+      }),
+    )
     return [
       {
         id: row.id,
         email: row.email,
         displayName: row.display_name,
-        role: row.role,
-        teamIds: row.team_ids ?? [],
+        appRole: row.app_role,
+        teamAssignments,
         status: 'pending' as const,
         createdAt: row.created_at,
       },
@@ -1802,18 +1831,23 @@ export async function fetchPendingStaffInvites(): Promise<StaffInviteRow[]> {
 
 export async function createStaffInvite(input: {
   email: string
-  role: AssignableStaffRole
-  teamIds: string[]
+  appRole: AssignableAppRole
+  teamAssignments: ClubAdminTeamAssignment[]
   displayName?: string
 }): Promise<CreateStaffInviteResult> {
   const email = input.email.trim().toLowerCase()
   const displayName = input.displayName?.trim() || undefined
+  const teamIds = input.teamAssignments.map((a) => a.teamId)
+  const teamRoles = input.teamAssignments.map((a) => a.teamRole)
+  const defaultTeamRole = teamRoles[0] ?? 'assistant_coach'
 
   const { data, error } = await supabase.rpc('create_staff_invite', {
     p_email: email,
-    p_role: input.role,
-    p_team_ids: input.teamIds,
+    p_app_role: input.appRole,
+    p_team_ids: teamIds,
     p_display_name: displayName ?? null,
+    p_default_team_role: defaultTeamRole,
+    p_team_roles: teamRoles,
   })
   if (error) throw error
 
@@ -1828,7 +1862,6 @@ export async function createStaffInvite(input: {
     throw new Error('Invite did not return expected data')
   }
 
-  // Send magic link so new coaches can finish account creation / sign in.
   const { error: otpError } = await supabase.auth.signInWithOtp({
     email,
     options: {

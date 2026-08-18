@@ -167,7 +167,7 @@ export type DbLineupPreset = {
 
 export type DbUserRole = {
   user_id: string
-  role: 'director' | 'head_coach' | 'assistant_coach' | 'pending'
+  app_role: 'director' | 'coach' | 'pending'
   display_name: string | null
   created_at: string
   updated_at: string
@@ -184,7 +184,7 @@ export type DbProfile = {
 export type DbTeamMember = {
   user_id: string
   team_id: string
-  role: 'director' | 'head_coach' | 'assistant_coach'
+  team_role: 'head_coach' | 'assistant_coach'
   created_at: string
 }
 
@@ -192,8 +192,10 @@ export type DbStaffInvite = {
   id: string
   email: string
   display_name: string | null
-  role: 'director' | 'head_coach' | 'assistant_coach'
+  app_role: 'director' | 'coach'
   team_ids: string[]
+  team_roles: Array<'head_coach' | 'assistant_coach'>
+  default_team_role: 'head_coach' | 'assistant_coach'
   invited_by: string | null
   status: 'pending' | 'accepted' | 'cancelled'
   created_at: string

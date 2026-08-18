@@ -3,7 +3,7 @@ import { SunMedium } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSunlightMode } from '@/contexts/SunlightModeContext'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
-import { formatStaffRoleLabel } from '@/lib/staff-roles'
+import { formatAppRoleLabel } from '@/lib/staff-roles'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
@@ -43,7 +43,7 @@ export function PendingAccessScreen() {
             {role ? (
               <>
                 {' '}
-                ({formatStaffRoleLabel(role)})
+                ({formatAppRoleLabel(role)})
               </>
             ) : null}
             .

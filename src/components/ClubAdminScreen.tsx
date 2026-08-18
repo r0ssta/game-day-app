@@ -17,12 +17,16 @@ import { AgeGroupPoolPanel } from '@/components/AgeGroupPoolPanel'
 import { PlayerDirectoryPanel } from '@/components/PlayerDirectoryPanel'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import {
-  type ActiveStaffRole,
-  ASSIGNABLE_STAFF_ROLES,
-  type AssignableStaffRole,
-  formatStaffRoleLabel,
-  isActiveStaffRole,
-  isAssignableStaffRole,
+  type AssignableAppRole,
+  type ActiveAppRole,
+  type TeamRole,
+  ASSIGNABLE_APP_ROLES,
+  TEAM_ROLES,
+  formatAppRoleLabel,
+  formatTeamRoleLabel,
+  isActiveAppRole,
+  isAssignableAppRole,
+  isTeamRole,
 } from '@/lib/staff-roles'
 import {
   AGE_GROUPS,
@@ -43,7 +47,8 @@ import {
   fetchPendingStaffInvites,
   replaceClubUserTeams,
   revokeClubUserAccess,
-  updateClubUserRole,
+  updateClubUserAppRole,
+  type ClubAdminTeamAssignment,
   type ClubAdminUserRow,
   type StaffInviteRow,
 } from '@/lib/supabase-api'
@@ -52,11 +57,7 @@ import { cn } from '@/lib/utils'
 
 type ClubAdminTab = 'setup' | 'staff' | 'players'
 
-const STAFF_ROSTER_ROLE_ORDER: ActiveStaffRole[] = [
-  'director',
-  'head_coach',
-  'assistant_coach',
-]
+const STAFF_ROSTER_ROLE_ORDER: ActiveAppRole[] = ['director', 'coach']
 
 function staffDisplayName(user: ClubAdminUserRow): string {
   return user.displayName?.trim() || user.email?.trim() || 'Unnamed staff'
@@ -64,12 +65,52 @@ function staffDisplayName(user: ClubAdminUserRow): string {
 
 function compareStaffUsers(a: ClubAdminUserRow, b: ClubAdminUserRow): number {
   const roleRank =
-    STAFF_ROSTER_ROLE_ORDER.indexOf(a.role as ActiveStaffRole) -
-    STAFF_ROSTER_ROLE_ORDER.indexOf(b.role as ActiveStaffRole)
+    STAFF_ROSTER_ROLE_ORDER.indexOf(a.appRole as ActiveAppRole) -
+    STAFF_ROSTER_ROLE_ORDER.indexOf(b.appRole as ActiveAppRole)
   if (roleRank !== 0) return roleRank
   return staffDisplayName(a).localeCompare(staffDisplayName(b), undefined, {
     sensitivity: 'base',
   })
+}
+
+function assignmentsEqual(
+  a: ClubAdminTeamAssignment[],
+  b: ClubAdminTeamAssignment[],
+): boolean {
+  const norm = (rows: ClubAdminTeamAssignment[]) =>
+    [...rows]
+      .map((r) => `${r.teamId}:${r.teamRole}`)
+      .sort()
+      .join('|')
+  return norm(a) === norm(b)
+}
+
+function TeamRoleSelect({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: TeamRole
+  disabled?: boolean
+  onChange: (role: TeamRole) => void
+}) {
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(event) => {
+        if (isTeamRole(event.target.value)) onChange(event.target.value)
+      }}
+      aria-label="Team coaching role"
+      className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-2 text-xs font-bold text-foreground disabled:opacity-50"
+    >
+      {TEAM_ROLES.map((role) => (
+        <option key={role} value={role}>
+          {formatTeamRoleLabel(role)}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 type ClubAdminTeam = {
@@ -159,7 +200,9 @@ export function ClubAdminScreen({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyUserId, setBusyUserId] = useState<string | null>(null)
-  const [draftTeams, setDraftTeams] = useState<Record<string, string[]>>({})
+  const [draftAssignments, setDraftAssignments] = useState<
+    Record<string, ClubAdminTeamAssignment[]>
+  >({})
 
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamAgeGroup, setNewTeamAgeGroup] = useState<AgeGroup>('U13')
@@ -174,8 +217,8 @@ export function ClubAdminScreen({
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
-  const [inviteRole, setInviteRole] = useState<AssignableStaffRole>('assistant_coach')
-  const [inviteTeamIds, setInviteTeamIds] = useState<string[]>([])
+  const [inviteAppRole, setInviteAppRole] = useState<AssignableAppRole>('coach')
+  const [inviteAssignments, setInviteAssignments] = useState<ClubAdminTeamAssignment[]>([])
   const [inviteBusy, setInviteBusy] = useState(false)
   const [adminTab, setAdminTab] = useState<ClubAdminTab>('setup')
 
@@ -189,8 +232,8 @@ export function ClubAdminScreen({
       ])
       setUsers(rows)
       setInvites(pendingInvites)
-      setDraftTeams(
-        Object.fromEntries(rows.map((row) => [row.id, [...row.teamIds]])),
+      setDraftAssignments(
+        Object.fromEntries(rows.map((row) => [row.id, [...row.teamAssignments]])),
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load club users')
@@ -285,18 +328,18 @@ export function ClubAdminScreen({
   }, [teams])
 
   const staffRoster = useMemo(() => {
-    return users.filter((user) => isActiveStaffRole(user.role)).sort(compareStaffUsers)
+    return users.filter((user) => isActiveAppRole(user.appRole)).sort(compareStaffUsers)
   }, [users])
 
   const staffRosterByRole = useMemo(() => {
     return STAFF_ROSTER_ROLE_ORDER.map((role) => ({
       role,
-      members: staffRoster.filter((user) => user.role === role),
+      members: staffRoster.filter((user) => user.appRole === role),
     })).filter((group) => group.members.length > 0)
   }, [staffRoster])
 
   const pendingUsers = useMemo(
-    () => users.filter((user) => user.role === 'pending'),
+    () => users.filter((user) => user.appRole === 'pending'),
     [users],
   )
 
@@ -312,14 +355,14 @@ export function ClubAdminScreen({
     try {
       const result = await createStaffInvite({
         email,
-        role: inviteRole,
-        teamIds: inviteTeamIds,
+        appRole: inviteAppRole,
+        teamAssignments: inviteAssignments,
         displayName: inviteName,
       })
       setInviteEmail('')
       setInviteName('')
-      setInviteRole('assistant_coach')
-      setInviteTeamIds([])
+      setInviteAppRole('coach')
+      setInviteAssignments([])
       await loadUsers()
       onToast(
         result.status === 'updated_existing'
@@ -334,19 +377,27 @@ export function ClubAdminScreen({
   }
 
   const toggleInviteTeam = (teamId: string) => {
-    setInviteTeamIds((prev) =>
-      prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId],
+    setInviteAssignments((prev) => {
+      const exists = prev.find((row) => row.teamId === teamId)
+      if (exists) return prev.filter((row) => row.teamId !== teamId)
+      return [...prev, { teamId, teamRole: 'assistant_coach' }]
+    })
+  }
+
+  const setInviteTeamRole = (teamId: string, teamRole: TeamRole) => {
+    setInviteAssignments((prev) =>
+      prev.map((row) => (row.teamId === teamId ? { ...row, teamRole } : row)),
     )
   }
 
-  const handleRoleChange = async (userId: string, nextRole: AssignableStaffRole) => {
+  const handleRoleChange = async (userId: string, nextRole: AssignableAppRole) => {
     setBusyUserId(userId)
     try {
-      await updateClubUserRole(userId, nextRole)
+      await updateClubUserAppRole(userId, nextRole)
       setUsers((prev) =>
-        prev.map((row) => (row.id === userId ? { ...row, role: nextRole } : row)),
+        prev.map((row) => (row.id === userId ? { ...row, appRole: nextRole } : row)),
       )
-      onToast(`Updated role to ${formatStaffRoleLabel(nextRole)}`)
+      onToast(`Updated app role to ${formatAppRoleLabel(nextRole)}`)
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to update role')
     } finally {
@@ -355,29 +406,36 @@ export function ClubAdminScreen({
   }
 
   const toggleTeam = (userId: string, teamId: string) => {
-    setDraftTeams((prev) => {
+    setDraftAssignments((prev) => {
       const current = prev[userId] ?? []
-      const next = current.includes(teamId)
-        ? current.filter((id) => id !== teamId)
-        : [...current, teamId]
+      const exists = current.find((row) => row.teamId === teamId)
+      const next = exists
+        ? current.filter((row) => row.teamId !== teamId)
+        : [...current, { teamId, teamRole: 'assistant_coach' as TeamRole }]
       return { ...prev, [userId]: next }
     })
   }
 
+  const setDraftTeamRole = (userId: string, teamId: string, teamRole: TeamRole) => {
+    setDraftAssignments((prev) => {
+      const current = prev[userId] ?? []
+      return {
+        ...prev,
+        [userId]: current.map((row) =>
+          row.teamId === teamId ? { ...row, teamRole } : row,
+        ),
+      }
+    })
+  }
+
   const handleSaveTeams = async (user: ClubAdminUserRow) => {
-    const nextTeamIds = draftTeams[user.id] ?? []
+    const nextAssignments = draftAssignments[user.id] ?? []
     setBusyUserId(user.id)
     try {
-      const membershipRole: AssignableStaffRole =
-        user.role === 'pending'
-          ? 'assistant_coach'
-          : isAssignableStaffRole(user.role)
-            ? user.role
-            : 'assistant_coach'
-      await replaceClubUserTeams(user.id, nextTeamIds, membershipRole)
+      await replaceClubUserTeams(user.id, nextAssignments)
       setUsers((prev) =>
         prev.map((row) =>
-          row.id === user.id ? { ...row, teamIds: [...nextTeamIds] } : row,
+          row.id === user.id ? { ...row, teamAssignments: [...nextAssignments] } : row,
         ),
       )
       onToast('Team assignments saved')
@@ -403,10 +461,12 @@ export function ClubAdminScreen({
       await revokeClubUserAccess(user.id)
       setUsers((prev) =>
         prev.map((row) =>
-          row.id === user.id ? { ...row, role: 'pending', teamIds: [] } : row,
+          row.id === user.id
+            ? { ...row, appRole: 'pending', teamAssignments: [] }
+            : row,
         ),
       )
-      setDraftTeams((prev) => ({ ...prev, [user.id]: [] }))
+      setDraftAssignments((prev) => ({ ...prev, [user.id]: [] }))
       onToast('Access revoked')
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to revoke access')
@@ -772,7 +832,7 @@ export function ClubAdminScreen({
                   Staff Roster
                 </h2>
                 <p className="text-xs font-semibold text-muted-foreground">
-                  Directors, Head Coaches, and Assistant Coaches
+                  Directors and Staff (with per-team coaching roles)
                   {staffRoster.length > 0 ? ` · ${staffRoster.length}` : ''}
                 </p>
               </div>
@@ -783,21 +843,22 @@ export function ClubAdminScreen({
             <p className="text-sm font-semibold text-muted-foreground">Loading staff…</p>
           ) : staffRoster.length === 0 ? (
             <p className="text-sm font-semibold text-muted-foreground">
-              No active staff yet. Invite a Director, Head Coach, or Assistant Coach below.
+              No active staff yet. Invite a Director or Staff member below.
             </p>
           ) : (
             <div className="space-y-5">
               {staffRosterByRole.map((group) => (
                 <div key={group.role} className="space-y-2">
                   <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    {formatStaffRoleLabel(group.role)}
+                    {formatAppRoleLabel(group.role)}
                     <span className="ml-1 text-foreground/70">({group.members.length})</span>
                   </h3>
                   <ul className="space-y-2">
                     {group.members.map((user) => {
-                      const teamLabels = user.teamIds
-                        .map((teamId) => teamNameById.get(teamId))
-                        .filter((name): name is string => Boolean(name))
+                      const teamLabels = user.teamAssignments.map((assignment) => {
+                        const name = teamNameById.get(assignment.teamId) ?? 'Team'
+                        return `${name} · ${formatTeamRoleLabel(assignment.teamRole)}`
+                      })
                       return (
                         <li
                           key={user.id}
@@ -815,7 +876,7 @@ export function ClubAdminScreen({
                               ) : null}
                             </div>
                             <span className="shrink-0 rounded-lg border-2 border-athletic/40 bg-athletic/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground">
-                              {formatStaffRoleLabel(user.role)}
+                              {formatAppRoleLabel(user.appRole)}
                             </span>
                           </div>
                           {user.id === currentUserId ? (
@@ -890,19 +951,19 @@ export function ClubAdminScreen({
 
           <label className="block space-y-1.5">
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Role
+              App role
             </span>
             <select
-              value={inviteRole}
+              value={inviteAppRole}
               onChange={(event) => {
                 const value = event.target.value
-                if (isAssignableStaffRole(value)) setInviteRole(value)
+                if (isAssignableAppRole(value)) setInviteAppRole(value)
               }}
               className="min-h-11 w-full max-w-xs touch-manipulation rounded-xl border-2 border-border bg-background px-3 text-sm font-bold text-foreground"
             >
-              {ASSIGNABLE_STAFF_ROLES.map((role) => (
+              {ASSIGNABLE_APP_ROLES.map((role) => (
                 <option key={role} value={role}>
-                  {formatStaffRoleLabel(role)}
+                  {formatAppRoleLabel(role)}
                 </option>
               ))}
             </select>
@@ -910,34 +971,43 @@ export function ClubAdminScreen({
 
           <div className="space-y-1.5">
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Assign teams
+              Assign teams &amp; coaching roles
             </span>
             {activeTeams.length === 0 ? (
               <p className="text-xs font-semibold text-muted-foreground">
                 Create teams in Club Setup first, then assign them here.
               </p>
             ) : (
-              <div className="grid gap-1.5 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {activeTeams.map((team) => {
-                  const checked = inviteTeamIds.includes(team.id)
+                  const assignment = inviteAssignments.find((row) => row.teamId === team.id)
+                  const checked = Boolean(assignment)
                   return (
-                    <label
+                    <div
                       key={team.id}
                       className={cn(
-                        'flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border-2 px-2 py-1.5 text-xs font-bold',
+                        'space-y-2 rounded-xl border-2 px-2 py-2',
                         checked
-                          ? 'border-athletic bg-athletic/10 text-foreground'
-                          : 'border-border bg-background text-muted-foreground',
+                          ? 'border-athletic bg-athletic/10'
+                          : 'border-border bg-background',
                       )}
                     >
-                      <input
-                        type="checkbox"
-                        className="size-4 accent-athletic"
-                        checked={checked}
-                        onChange={() => toggleInviteTeam(team.id)}
-                      />
-                      {formatTeamDisplayName(team.name, team.ageGroup)}
-                    </label>
+                      <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs font-bold text-foreground">
+                        <input
+                          type="checkbox"
+                          className="size-5 accent-athletic"
+                          checked={checked}
+                          onChange={() => toggleInviteTeam(team.id)}
+                        />
+                        {formatTeamDisplayName(team.name, team.ageGroup)}
+                      </label>
+                      {assignment ? (
+                        <TeamRoleSelect
+                          value={assignment.teamRole}
+                          onChange={(teamRole) => setInviteTeamRole(team.id, teamRole)}
+                        />
+                      ) : null}
+                    </div>
                   )
                 })}
               </div>
@@ -970,8 +1040,9 @@ export function ClubAdminScreen({
                       {invite.displayName?.trim() || invite.email}
                     </p>
                     <p className="text-xs font-semibold text-muted-foreground">
-                      {invite.email} · {formatStaffRoleLabel(invite.role)} ·{' '}
-                      {invite.teamIds.length} team{invite.teamIds.length === 1 ? '' : 's'}
+                      {invite.email} · {formatAppRoleLabel(invite.appRole)} ·{' '}
+                      {invite.teamAssignments.length} team
+                      {invite.teamAssignments.length === 1 ? '' : 's'}
                     </p>
                   </div>
                   <button
@@ -998,17 +1069,18 @@ export function ClubAdminScreen({
               Manage Access
             </h2>
             <p className="text-xs font-semibold text-muted-foreground">
-              Change roles, team assignments, or revoke access for registered users.
+              App role controls Club Admin access. Team roles control coaching permissions on each
+              team.
             </p>
           <div className="club-admin-table overflow-x-auto rounded-2xl border-2 border-border bg-card">
-            <table className="w-full min-w-[42rem] border-collapse text-left">
+            <table className="w-full min-w-[48rem] border-collapse text-left">
               <thead>
                 <tr className="border-b-2 border-border bg-secondary/40">
                   <th className="px-3 py-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     User
                   </th>
                   <th className="px-3 py-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    Role
+                    App Role
                   </th>
                   <th className="px-3 py-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     Teams
@@ -1020,11 +1092,12 @@ export function ClubAdminScreen({
               </thead>
               <tbody>
                 {users.map((user) => {
-                  const selectedTeams = draftTeams[user.id] ?? []
+                  const selectedAssignments = draftAssignments[user.id] ?? []
                   const busy = busyUserId === user.id
-                  const teamsDirty =
-                    [...selectedTeams].sort().join(',') !==
-                    [...user.teamIds].sort().join(',')
+                  const teamsDirty = !assignmentsEqual(
+                    selectedAssignments,
+                    user.teamAssignments,
+                  )
 
                   return (
                     <tr key={user.id} className="border-b border-border align-top last:border-b-0">
@@ -1043,11 +1116,11 @@ export function ClubAdminScreen({
                       </td>
                       <td className="px-3 py-3">
                         <select
-                          value={user.role === 'pending' ? '' : user.role}
+                          value={user.appRole === 'pending' ? '' : user.appRole}
                           disabled={busy || user.id === currentUserId}
                           onChange={(event) => {
                             const value = event.target.value
-                            if (!isAssignableStaffRole(value)) return
+                            if (!isAssignableAppRole(value)) return
                             void handleRoleChange(user.id, value)
                           }}
                           className="min-h-11 w-full max-w-[11rem] touch-manipulation rounded-xl border-2 border-border bg-background px-3 text-sm font-bold text-foreground"
@@ -1055,13 +1128,13 @@ export function ClubAdminScreen({
                           <option value="" disabled>
                             Pending
                           </option>
-                          {ASSIGNABLE_STAFF_ROLES.map((role) => (
+                          {ASSIGNABLE_APP_ROLES.map((role) => (
                             <option key={role} value={role}>
-                              {formatStaffRoleLabel(role)}
+                              {formatAppRoleLabel(role)}
                             </option>
                           ))}
                         </select>
-                        {user.role === 'pending' ? (
+                        {user.appRole === 'pending' ? (
                           <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-danger">
                             Awaiting assignment
                           </p>
@@ -1073,28 +1146,42 @@ export function ClubAdminScreen({
                             Create teams in Club Setup first.
                           </p>
                         ) : (
-                          <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto pr-1">
+                          <div className="flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
                             {activeTeams.map((team) => {
-                              const checked = selectedTeams.includes(team.id)
+                              const assignment = selectedAssignments.find(
+                                (row) => row.teamId === team.id,
+                              )
+                              const checked = Boolean(assignment)
                               return (
-                                <label
+                                <div
                                   key={team.id}
                                   className={cn(
-                                    'flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border-2 px-2 py-1.5 text-xs font-bold',
+                                    'space-y-2 rounded-xl border-2 px-2 py-2',
                                     checked
-                                      ? 'border-athletic bg-athletic/10 text-foreground'
-                                      : 'border-border bg-background text-muted-foreground',
+                                      ? 'border-athletic bg-athletic/10'
+                                      : 'border-border bg-background',
                                   )}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    className="size-4 accent-athletic"
-                                    checked={checked}
-                                    disabled={busy}
-                                    onChange={() => toggleTeam(user.id, team.id)}
-                                  />
-                                  {formatTeamDisplayName(team.name, team.ageGroup)}
-                                </label>
+                                  <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs font-bold text-foreground">
+                                    <input
+                                      type="checkbox"
+                                      className="size-5 accent-athletic"
+                                      checked={checked}
+                                      disabled={busy}
+                                      onChange={() => toggleTeam(user.id, team.id)}
+                                    />
+                                    {formatTeamDisplayName(team.name, team.ageGroup)}
+                                  </label>
+                                  {assignment ? (
+                                    <TeamRoleSelect
+                                      value={assignment.teamRole}
+                                      disabled={busy}
+                                      onChange={(teamRole) =>
+                                        setDraftTeamRole(user.id, team.id, teamRole)
+                                      }
+                                    />
+                                  ) : null}
+                                </div>
                               )
                             })}
                           </div>
@@ -1103,7 +1190,7 @@ export function ClubAdminScreen({
                           type="button"
                           disabled={busy || !teamsDirty}
                           onClick={() => void handleSaveTeams(user)}
-                          className="mt-2 min-h-10 w-full touch-manipulation rounded-xl border-2 border-border bg-secondary px-3 text-[11px] font-bold uppercase tracking-wide text-foreground disabled:opacity-40"
+                          className="mt-2 min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-secondary px-3 text-[11px] font-bold uppercase tracking-wide text-foreground disabled:opacity-40"
                         >
                           Save Teams
                         </button>
