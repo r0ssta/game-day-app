@@ -603,4 +603,7 @@ grant execute on function public.create_staff_invite(
   text, public.app_role, uuid[], text, public.team_role, public.team_role[]
 ) to authenticated;
 
+grant usage on type public.app_role to anon, authenticated, service_role;
+grant usage on type public.team_role to anon, authenticated, service_role;
+
 notify pgrst, 'reload schema';

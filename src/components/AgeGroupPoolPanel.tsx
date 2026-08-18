@@ -8,6 +8,7 @@ import {
   isAgeGroup,
 } from '@/lib/age-groups'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { fetchSeasonRosterTeamByPlayerId } from '@/lib/supabase-api'
 import type { DbPlayer } from '@/types/database'
 import { cn } from '@/lib/utils'
 
@@ -47,8 +48,12 @@ export function AgeGroupPoolPanel({
 }: AgeGroupPoolPanelProps) {
   const [ageGroup, setAgeGroup] = useState<AgeGroup>('U13')
   const [pool, setPool] = useState<DbPlayer[]>([])
+  const [rosterTeamByPlayerId, setRosterTeamByPlayerId] = useState<Map<string, string>>(
+    () => new Map(),
+  )
   const [loading, setLoading] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [showAssigned, setShowAssigned] = useState(false)
   const activeTeams = useMemo(
     () => teams.filter((team) => team.activeStatus !== false),
     [teams],
@@ -59,16 +64,31 @@ export function AgeGroupPoolPanel({
   const [jersey, setJersey] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const teamNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const team of teams) {
+      map.set(team.id, formatTeamDisplayName(team.name, team.ageGroup))
+    }
+    return map
+  }, [teams])
+
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      setPool(await loadPool(ageGroup, { includeInactive: showArchived }))
+      const [nextPool, rosterMap] = await Promise.all([
+        loadPool(ageGroup, { includeInactive: showArchived }),
+        seasonId
+          ? fetchSeasonRosterTeamByPlayerId(seasonId)
+          : Promise.resolve(new Map<string, string>()),
+      ])
+      setPool(nextPool)
+      setRosterTeamByPlayerId(rosterMap)
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to load pool')
     } finally {
       setLoading(false)
     }
-  }, [ageGroup, loadPool, onToast, showArchived])
+  }, [ageGroup, loadPool, onToast, seasonId, showArchived])
 
   useEffect(() => {
     void refresh()
@@ -77,7 +97,19 @@ export function AgeGroupPoolPanel({
   const matchingTeams = activeTeams.filter(
     (team) => !team.ageGroup || team.ageGroup === ageGroup,
   )
-  const visiblePool = showArchived ? pool : pool.filter((player) => player.active_status)
+
+  const visiblePool = useMemo(() => {
+    return pool.filter((player) => {
+      if (!showArchived && !player.active_status) return false
+      if (!showAssigned && rosterTeamByPlayerId.has(player.id)) return false
+      return true
+    })
+  }, [pool, showArchived, showAssigned, rosterTeamByPlayerId])
+
+  const assignedCount = useMemo(
+    () => pool.filter((player) => rosterTeamByPlayerId.has(player.id)).length,
+    [pool, rosterTeamByPlayerId],
+  )
 
   return (
     <section className="age-group-pool-panel mt-6 space-y-4 rounded-2xl border-2 border-border bg-card p-4">
@@ -88,8 +120,9 @@ export function AgeGroupPoolPanel({
         </h2>
       </div>
       <p className="text-xs font-semibold text-muted-foreground">
-        Club players live in an age-group pool. Archive players who leave so they stay out of
-        selectors while match history and stats remain.
+        Club players live in an age-group pool. By default this list shows players not yet on a
+        team roster for the active season — assign them below. Archive players who leave so they
+        stay out of selectors while match history remains.
       </p>
 
       <label className="block space-y-1.5">
@@ -202,24 +235,44 @@ export function AgeGroupPoolPanel({
         </select>
       </label>
 
-      <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
-        <input
-          type="checkbox"
-          className="size-4 accent-athletic"
-          checked={showArchived}
-          onChange={(e) => setShowArchived(e.target.checked)}
-        />
-        Show archived players
-      </label>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
+          <input
+            type="checkbox"
+            className="size-4 accent-athletic"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+          />
+          Show archived players
+        </label>
+        <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
+          <input
+            type="checkbox"
+            className="size-4 accent-athletic"
+            checked={showAssigned}
+            onChange={(e) => setShowAssigned(e.target.checked)}
+          />
+          Show players already on a team
+          {assignedCount > 0 ? ` (${assignedCount})` : ''}
+        </label>
+      </div>
 
       <ul className="max-h-64 space-y-2 overflow-y-auto">
         {loading ? (
           <li className="text-sm font-semibold text-muted-foreground">Loading…</li>
         ) : visiblePool.length === 0 ? (
-          <li className="text-sm font-semibold text-muted-foreground">No players in this pool yet.</li>
+          <li className="text-sm font-semibold text-muted-foreground">
+            {!showAssigned && assignedCount > 0
+              ? 'Everyone in this age group is already on a team roster. Turn on “Show players already on a team” to review them.'
+              : 'No players in this pool yet.'}
+          </li>
         ) : (
           visiblePool.map((player) => {
             const archived = !player.active_status
+            const rosterTeamId = rosterTeamByPlayerId.get(player.id)
+            const rosterTeamName = rosterTeamId
+              ? teamNameById.get(rosterTeamId) ?? 'a team'
+              : null
             return (
               <li
                 key={player.id}
@@ -236,8 +289,13 @@ export function AgeGroupPoolPanel({
                 <span className="min-w-0 flex-1 truncate text-sm font-bold">
                   {formatPlayerFullName(player.first_name, player.last_name)}
                   {archived ? ' (archived)' : ''}
+                  {rosterTeamName ? (
+                    <span className="mt-0.5 block truncate text-[10px] font-bold uppercase tracking-wide text-athletic">
+                      On {rosterTeamName}
+                    </span>
+                  ) : null}
                 </span>
-                {!archived ? (
+                {!archived && !rosterTeamId ? (
                   <button
                     type="button"
                     disabled={!seasonId || !assignTeamId || busy}
@@ -250,7 +308,10 @@ export function AgeGroupPoolPanel({
                         playerId: player.id,
                         primaryJerseyNumber: player.jersey,
                       })
-                        .then(() => onToast('Assigned to season roster'))
+                        .then(() => {
+                          onToast('Assigned to season roster')
+                          return refresh()
+                        })
                         .catch((err) =>
                           onToast(err instanceof Error ? err.message : 'Failed to assign'),
                         )

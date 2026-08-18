@@ -328,6 +328,23 @@ export async function fetchAgeGroupPoolPlayers(
   return data ?? []
 }
 
+/** Map of player_id → team_id for primary season roster assignments. */
+export async function fetchSeasonRosterTeamByPlayerId(
+  seasonId: string,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('season_rosters')
+    .select('player_id, team_id')
+    .eq('season_id', seasonId)
+  if (error) throw error
+
+  const map = new Map<string, string>()
+  for (const row of data ?? []) {
+    if (row.player_id && row.team_id) map.set(row.player_id, row.team_id)
+  }
+  return map
+}
+
 /** Club-wide player directory (Director). */
 export async function fetchClubPlayers(options?: {
   includeInactive?: boolean

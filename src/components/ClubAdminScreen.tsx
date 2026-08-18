@@ -236,7 +236,13 @@ export function ClubAdminScreen({
         Object.fromEntries(rows.map((row) => [row.id, [...row.teamAssignments]])),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load club users')
+      const detail =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : err instanceof Error
+            ? err.message
+            : 'Failed to load club users'
+      setError(detail || 'Failed to load club users')
     } finally {
       setLoading(false)
     }
