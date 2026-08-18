@@ -94,21 +94,38 @@ export function AgeGroupPoolPanel({
     void refresh()
   }, [refresh])
 
-  const matchingTeams = activeTeams.filter(
-    (team) => !team.ageGroup || team.ageGroup === ageGroup,
+  const matchingTeams = useMemo(
+    () => activeTeams.filter((team) => !team.ageGroup || team.ageGroup === ageGroup),
+    [activeTeams, ageGroup],
   )
 
+  useEffect(() => {
+    const preferred = matchingTeams[0]?.id ?? ''
+    if (!preferred) {
+      if (assignTeamId) setAssignTeamId('')
+      return
+    }
+    if (!matchingTeams.some((team) => team.id === assignTeamId)) {
+      setAssignTeamId(preferred)
+    }
+  }, [assignTeamId, matchingTeams])
+
   const visiblePool = useMemo(() => {
+    // Without an active season we can't know assignments — don't treat everyone as free agents.
+    if (!seasonId) return []
     return pool.filter((player) => {
       if (!showArchived && !player.active_status) return false
       if (!showAssigned && rosterTeamByPlayerId.has(player.id)) return false
       return true
     })
-  }, [pool, showArchived, showAssigned, rosterTeamByPlayerId])
+  }, [pool, seasonId, showArchived, showAssigned, rosterTeamByPlayerId])
 
   const assignedCount = useMemo(
-    () => pool.filter((player) => rosterTeamByPlayerId.has(player.id)).length,
-    [pool, rosterTeamByPlayerId],
+    () =>
+      seasonId
+        ? pool.filter((player) => rosterTeamByPlayerId.has(player.id)).length
+        : 0,
+    [pool, rosterTeamByPlayerId, seasonId],
   )
 
   return (
@@ -120,10 +137,16 @@ export function AgeGroupPoolPanel({
         </h2>
       </div>
       <p className="text-xs font-semibold text-muted-foreground">
-        Club players live in an age-group pool. By default this list shows players not yet on a
-        team roster for the active season — assign them below. Archive players who leave so they
-        stay out of selectors while match history remains.
+        Use this when forming teams: by default only unassigned players for the active season are
+        listed. Archive players who leave so they stay out of selectors while match history remains.
       </p>
+
+      {!seasonId ? (
+        <p className="rounded-xl border-2 border-athletic/40 bg-athletic/10 px-3 py-2 text-xs font-bold text-foreground">
+          Activate a season above before assigning pool players to teams. The unassigned list stays
+          empty until then so assigned players aren&apos;t mistaken for free agents.
+        </p>
+      ) : null}
 
       <label className="block space-y-1.5">
         <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -260,11 +283,17 @@ export function AgeGroupPoolPanel({
       <ul className="max-h-64 space-y-2 overflow-y-auto">
         {loading ? (
           <li className="text-sm font-semibold text-muted-foreground">Loading…</li>
+        ) : !seasonId ? (
+          <li className="text-sm font-semibold text-muted-foreground">
+            Activate a season to see who still needs a team.
+          </li>
         ) : visiblePool.length === 0 ? (
           <li className="text-sm font-semibold text-muted-foreground">
             {!showAssigned && assignedCount > 0
               ? 'Everyone in this age group is already on a team roster. Turn on “Show players already on a team” to review them.'
-              : 'No players in this pool yet.'}
+              : pool.length === 0
+                ? 'No players in this pool yet.'
+                : 'No unassigned players in this age group.'}
           </li>
         ) : (
           visiblePool.map((player) => {

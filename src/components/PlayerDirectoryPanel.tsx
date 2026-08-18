@@ -48,6 +48,14 @@ export function PlayerDirectoryPanel({
     [teams],
   )
 
+  const teamsForAgeGroup = useMemo(
+    () =>
+      ageGroup === 'all'
+        ? activeTeams
+        : activeTeams.filter((team) => team.age_group === ageGroup),
+    [activeTeams, ageGroup],
+  )
+
   const teamNameById = useMemo(() => {
     const map = new Map<string, string>()
     for (const team of teams) {
@@ -82,6 +90,14 @@ export function PlayerDirectoryPanel({
       cancelled = true
     }
   }, [activeSeason?.id, onToast])
+
+  // Drop a team selection that isn't in the current age-group list.
+  useEffect(() => {
+    if (teamId === 'all' || teamId === 'unassigned') return
+    if (!teamsForAgeGroup.some((team) => team.id === teamId)) {
+      setTeamId('all')
+    }
+  }, [teamId, teamsForAgeGroup])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -176,7 +192,7 @@ export function PlayerDirectoryPanel({
           >
             <option value="all">All teams</option>
             <option value="unassigned">Unassigned</option>
-            {activeTeams.map((team) => (
+            {teamsForAgeGroup.map((team) => (
               <option key={team.id} value={team.id}>
                 {formatTeamDisplayName(team.name, team.age_group)}
               </option>

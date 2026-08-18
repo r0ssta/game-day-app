@@ -597,16 +597,6 @@ export function ClubAdminScreen({
           onToast={onToast}
         />
 
-        <AgeGroupPoolPanel
-          teams={teams}
-          seasonId={activeSeasonId}
-          loadPool={loadAgeGroupPool}
-          onAssignToTeam={onAssignPoolPlayer}
-          onCreatePoolPlayer={onCreatePoolPlayer}
-          onSetPlayerActive={onSetPlayerActive}
-          onToast={onToast}
-        />
-
         <section className="club-admin-invite mt-6 space-y-4 rounded-2xl border-2 border-border bg-card p-4">
           <div className="flex items-center gap-2">
             <Users className="size-5 text-athletic" strokeWidth={2.5} />
@@ -824,6 +814,16 @@ export function ClubAdminScreen({
             </div>
           </form>
         </section>
+
+        <AgeGroupPoolPanel
+          teams={teams}
+          seasonId={activeSeasonId}
+          loadPool={loadAgeGroupPool}
+          onAssignToTeam={onAssignPoolPlayer}
+          onCreatePoolPlayer={onCreatePoolPlayer}
+          onSetPlayerActive={onSetPlayerActive}
+          onToast={onToast}
+        />
           </>
         ) : null}
 
