@@ -56,9 +56,9 @@ import {
   getSetupLineupBlockReason,
   isHalftimeLineupValid,
 } from '@/lib/lineup'
-import { calculateSubRotationPlan } from '@/lib/sub-rotation'
 import { resolveSetupLineup } from '@/lib/lineup-presets'
 import type { TeamFormat } from '@/lib/team-format'
+import type { SubFrequency } from '@/lib/sub-rotation'
 import {
   applySubIn,
   applySubOut,
@@ -842,6 +842,9 @@ type SetupScreenProps = {
   onHalfLengthChange: (value: number) => void
   gkPlaysFullHalf: boolean
   onGkPlaysFullHalfChange: (value: boolean) => void
+  subFrequency: SubFrequency
+  onSubFrequencyChange: (value: SubFrequency) => void
+  onSetupSubIntervalMinutesChange: (minutes: number | null) => void
   masterRoster: RosterPlayer[]
   setupLineup: SetupLineup
   firstHalfFormation: string
@@ -892,6 +895,9 @@ function SetupScreen({
   onHalfLengthChange,
   gkPlaysFullHalf,
   onGkPlaysFullHalfChange,
+  subFrequency,
+  onSubFrequencyChange,
+  onSetupSubIntervalMinutesChange,
   masterRoster,
   setupLineup,
   firstHalfFormation,
@@ -1051,6 +1057,9 @@ function SetupScreen({
           attendingCount={attendingCount}
           gkPlaysFullHalf={gkPlaysFullHalf}
           onGkPlaysFullHalfChange={onGkPlaysFullHalfChange}
+          subFrequency={subFrequency}
+          onSubFrequencyChange={onSubFrequencyChange}
+          onIntervalMinutesChange={onSetupSubIntervalMinutesChange}
         />
 
         {masterRoster.length > 0 ? (
@@ -1636,6 +1645,10 @@ export default function App() {
     setHalfLengthMinutes,
     gkPlaysFullHalf,
     setGkPlaysFullHalf,
+    subFrequency,
+    setSubFrequency,
+    setupSubIntervalMinutes,
+    setSetupSubIntervalMinutes,
     subIntervalSeconds,
     opponent,
     setOpponent,
@@ -2058,13 +2071,7 @@ export default function App() {
       const absentPlayers = masterRoster.filter(
         (p) => resolvedLineup.attending[p.id] === false,
       )
-      const rotationPlan = calculateSubRotationPlan({
-        teamFormat: activeTeamFormat,
-        halfLengthMinutes,
-        attendingCount: attendingPlayers.length,
-        gkPlaysFullHalf,
-      })
-
+      const rotationMinutes = setupSubIntervalMinutes
       await beginMatch({
         teamId: activeTeamId,
         teamName: formatTeamDisplayName(team.name, team.age_group),
@@ -2080,7 +2087,8 @@ export default function App() {
         firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
         matchPositions: resolvedMatchPositions,
         firstHalfFormation: matchFormations.first,
-        subIntervalSeconds: rotationPlan.ok ? rotationPlan.subIntervalSeconds : null,
+        subIntervalSeconds:
+          rotationMinutes != null && rotationMinutes > 0 ? rotationMinutes * 60 : null,
         gkPlaysFullHalf,
       })
 
@@ -2107,8 +2115,8 @@ export default function App() {
     matchTime,
     matchPositions,
     matchFormations,
-    activeTeamFormat,
     gkPlaysFullHalf,
+    setupSubIntervalMinutes,
     beginMatch,
   ])
 
@@ -2766,6 +2774,9 @@ export default function App() {
           onHalfLengthChange={setHalfLengthMinutes}
           gkPlaysFullHalf={gkPlaysFullHalf}
           onGkPlaysFullHalfChange={setGkPlaysFullHalf}
+          subFrequency={subFrequency}
+          onSubFrequencyChange={setSubFrequency}
+          onSetupSubIntervalMinutesChange={setSetupSubIntervalMinutes}
           masterRoster={masterRoster}
           setupLineup={setupLineup}
           firstHalfFormation={matchFormations.first}

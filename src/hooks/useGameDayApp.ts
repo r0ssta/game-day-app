@@ -25,6 +25,7 @@ import {
   restoreMatchClockSeconds,
 } from '@/lib/match-clock'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
+import type { SubFrequency } from '@/lib/sub-rotation'
 import {
   DEFAULT_FORMATION_ID,
   getDefaultFormationId,
@@ -168,6 +169,9 @@ export function useGameDayApp() {
   const [matchTournamentGame, setMatchTournamentGame] = useState(false)
   const [halfLengthMinutes, setHalfLengthMinutes] = useState(DEFAULT_HALF_LENGTH)
   const [gkPlaysFullHalf, setGkPlaysFullHalf] = useState(true)
+  const [subFrequency, setSubFrequency] = useState<SubFrequency>('medium')
+  /** Pre-game effective interval (minutes) from Sub Rotation Assistant, including ± override. */
+  const [setupSubIntervalMinutes, setSetupSubIntervalMinutes] = useState<number | null>(null)
   const [subIntervalSeconds, setSubIntervalSeconds] = useState<number | null>(null)
 
   const [opponent, setOpponent] = useState('')
@@ -1527,6 +1531,10 @@ export function useGameDayApp() {
     setHalfLengthMinutes,
     gkPlaysFullHalf,
     setGkPlaysFullHalf,
+    subFrequency,
+    setSubFrequency,
+    setupSubIntervalMinutes,
+    setSetupSubIntervalMinutes,
     subIntervalSeconds,
     opponent,
     setOpponent,
