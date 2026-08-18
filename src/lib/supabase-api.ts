@@ -703,6 +703,64 @@ export async function findCoachByName(name: string): Promise<DbCoach | null> {
   return data
 }
 
+export type TeamCoachingStaff = {
+  headCoaches: string[]
+  assistants: string[]
+}
+
+/** Display names for staff assigned to a team (Head / Assistant). */
+export async function fetchTeamCoachingStaff(teamId: string): Promise<TeamCoachingStaff> {
+  const { data: members, error: membersError } = await supabase
+    .from('team_members')
+    .select('user_id, team_role')
+    .eq('team_id', teamId)
+  if (membersError) throw membersError
+
+  const rows = members ?? []
+  if (rows.length === 0) {
+    return { headCoaches: [], assistants: [] }
+  }
+
+  const userIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))]
+  const [{ data: profiles }, { data: roles }] = await Promise.all([
+    supabase.from('profiles').select('id, email, display_name').in('id', userIds),
+    supabase.from('user_roles').select('user_id, display_name').in('user_id', userIds),
+  ])
+
+  const profileById = new Map((profiles ?? []).map((row) => [row.id, row] as const))
+  const roleNameById = new Map(
+    (roles ?? []).map((row) => [row.user_id, row.display_name] as const),
+  )
+
+  const resolveName = (userId: string): string | null => {
+    const profile = profileById.get(userId)
+    const fromProfile = profile?.display_name?.trim()
+    if (fromProfile) return fromProfile
+    const fromRole = roleNameById.get(userId)?.trim()
+    if (fromRole) return fromRole
+    const email = profile?.email?.trim()
+    if (email) return email.split('@')[0] || email
+    return null
+  }
+
+  const headCoaches: string[] = []
+  const assistants: string[] = []
+  for (const row of rows) {
+    const name = resolveName(row.user_id)
+    if (!name) continue
+    if (row.team_role === 'head_coach') {
+      if (!headCoaches.includes(name)) headCoaches.push(name)
+    } else if (row.team_role === 'assistant_coach') {
+      if (!assistants.includes(name)) assistants.push(name)
+    }
+  }
+
+  headCoaches.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  assistants.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+  return { headCoaches, assistants }
+}
+
 export async function resolveCoachIdForName(name: string): Promise<string | null> {
   const trimmed = name.trim()
   if (!trimmed) return null

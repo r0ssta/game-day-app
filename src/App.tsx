@@ -125,20 +125,51 @@ function periodLabel(period: MatchPeriod) {
   return period === '1st' ? '1st Half' : '2nd Half'
 }
 
-function CoachNameField({
+function MatchCoachSelect({
   id,
-  label,
   value,
-  suggestions,
   onChange,
+  teamHeadCoaches,
+  teamAssistants,
+  allCoachNames,
 }: {
   id: string
-  label: string
   value: string
-  suggestions: string[]
   onChange: (value: string) => void
+  teamHeadCoaches: string[]
+  teamAssistants: string[]
+  allCoachNames: string[]
 }) {
-  const listId = `${id}-suggestions`
+  const teamNames = useMemo(() => {
+    const seen = new Set<string>()
+    const ordered: Array<{ name: string; role: 'Head Coach' | 'Assistant Coach' }> = []
+    for (const name of teamHeadCoaches) {
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      ordered.push({ name, role: 'Head Coach' })
+    }
+    for (const name of teamAssistants) {
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      ordered.push({ name, role: 'Assistant Coach' })
+    }
+    return ordered
+  }, [teamHeadCoaches, teamAssistants])
+
+  const otherCoaches = useMemo(() => {
+    const teamKeys = new Set(teamNames.map((entry) => entry.name.toLowerCase()))
+    return allCoachNames
+      .filter((name) => name.trim() && !teamKeys.has(name.toLowerCase()))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [allCoachNames, teamNames])
+
+  const valueInOptions =
+    Boolean(value.trim()) &&
+    [...teamNames.map((entry) => entry.name), ...otherCoaches].some(
+      (name) => name.toLowerCase() === value.trim().toLowerCase(),
+    )
 
   return (
     <div>
@@ -146,22 +177,45 @@ function CoachNameField({
         htmlFor={id}
         className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
       >
-        {label}
+        Head Coach
       </label>
-      <input
+      <select
         id={id}
-        type="text"
-        list={listId}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. Coach Smith"
-        className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-      />
-      <datalist id={listId}>
-        {suggestions.map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
+        value={valueInOptions ? value : value.trim() ? value : ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+      >
+        <option value="" disabled>
+          Select a coach…
+        </option>
+        {!valueInOptions && value.trim() ? (
+          <option value={value}>{value}</option>
+        ) : null}
+        {teamNames.length > 0 ? (
+          <optgroup label="This team">
+            {teamNames.map((entry) => (
+              <option key={`${entry.role}-${entry.name}`} value={entry.name}>
+                {entry.name} ({entry.role})
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+        {otherCoaches.length > 0 ? (
+          <optgroup label="All Velocity coaches">
+            {otherCoaches.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+      </select>
+      {teamAssistants.length > 0 ? (
+        <p className="mt-2 text-xs font-semibold text-muted-foreground">
+          Assistant{teamAssistants.length === 1 ? '' : 's'} on this team:{' '}
+          <span className="text-foreground">{teamAssistants.join(', ')}</span>
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -761,7 +815,9 @@ type SetupScreenProps = {
   teamSwitcher: ReactNode
   coachName: string
   onCoachNameChange: (value: string) => void
-  coachSuggestions: string[]
+  teamHeadCoaches: string[]
+  teamAssistants: string[]
+  allCoachNames: string[]
   rosterLoading: boolean
   suggestedJersey: number
   onAddPlayer: (input: {
@@ -816,7 +872,9 @@ function SetupScreen({
   teamSwitcher,
   coachName,
   onCoachNameChange,
-  coachSuggestions,
+  teamHeadCoaches,
+  teamAssistants,
+  allCoachNames,
   rosterLoading,
   suggestedJersey,
   onAddPlayer,
@@ -883,12 +941,13 @@ function SetupScreen({
             {activeTeamFormat} format · {maxFieldPlayers} on field
           </p>
 
-          <CoachNameField
+          <MatchCoachSelect
             id="head-coach"
-            label="Head Coach"
             value={coachName}
-            suggestions={coachSuggestions}
             onChange={onCoachNameChange}
+            teamHeadCoaches={teamHeadCoaches}
+            teamAssistants={teamAssistants}
+            allCoachNames={allCoachNames}
           />
 
           <div>
@@ -1568,6 +1627,7 @@ export default function App() {
     activeTeamPrimaryCoachName,
     setupCoachName,
     setSetupCoachName,
+    teamCoachingStaff,
     matchTeamName,
     matchCoachName,
     matchOpponent,
@@ -1649,10 +1709,16 @@ export default function App() {
   const canDeleteMatches = canDeleteMatchesForTeam(activeTeamId)
   const canUseSprocketIntegration = canUseSprocketForTeam(activeTeamId)
 
-  const coachSuggestions = useMemo(
-    () => coaches.map((coach) => coach.name).sort((a, b) => a.localeCompare(b)),
-    [coaches],
-  )
+  const allCoachNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const coach of coaches) {
+      const name = coach.name.trim()
+      if (name) names.add(name)
+    }
+    for (const name of teamCoachingStaff.headCoaches) names.add(name)
+    for (const name of teamCoachingStaff.assistants) names.add(name)
+    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [coaches, teamCoachingStaff])
 
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
@@ -2673,7 +2739,9 @@ export default function App() {
           teamSwitcher={screenTeamSwitcher}
           coachName={setupCoachName}
           onCoachNameChange={setSetupCoachName}
-          coachSuggestions={coachSuggestions}
+          teamHeadCoaches={teamCoachingStaff.headCoaches}
+          teamAssistants={teamCoachingStaff.assistants}
+          allCoachNames={allCoachNames}
           rosterLoading={rosterLoading}
           suggestedJersey={suggestedJersey}
           onAddPlayer={handleAddPlayer}

@@ -56,6 +56,8 @@ import {
   fetchAgeGroupPoolPlayers,
   fetchPlayersByIds,
   fetchCoaches,
+  fetchTeamCoachingStaff,
+  type TeamCoachingStaff,
   fetchLineupPresetsByTeamId,
   fetchMatchRecapBundle,
   fetchScheduledMatchesByTeamId,
@@ -154,6 +156,10 @@ export function useGameDayApp() {
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
   const [setupCoachName, setSetupCoachName] = useState('')
+  const [teamCoachingStaff, setTeamCoachingStaff] = useState<TeamCoachingStaff>({
+    headCoaches: [],
+    assistants: [],
+  })
   const [matchTeamName, setMatchTeamName] = useState('')
   const [matchCoachName, setMatchCoachName] = useState('')
   const [matchOpponent, setMatchOpponent] = useState('')
@@ -382,8 +388,27 @@ export function useGameDayApp() {
 
     if (!enteredSetup || !selectedTeamId) return
 
+    let cancelled = false
     const team = teams.find((entry) => entry.id === selectedTeamId)
-    setSetupCoachName(team?.primary_coach_name?.trim() ?? '')
+    const fallback = team?.primary_coach_name?.trim() ?? ''
+
+    void (async () => {
+      try {
+        const staff = await fetchTeamCoachingStaff(selectedTeamId)
+        if (cancelled) return
+        setTeamCoachingStaff(staff)
+        const preferred = staff.headCoaches[0] ?? staff.assistants[0] ?? fallback
+        setSetupCoachName(preferred)
+      } catch {
+        if (cancelled) return
+        setTeamCoachingStaff({ headCoaches: [], assistants: [] })
+        setSetupCoachName(fallback)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [appMode, selectedTeamId, teams])
 
   useEffect(() => {
@@ -1478,6 +1503,7 @@ export function useGameDayApp() {
     activeTeamPrimaryCoachName,
     setupCoachName,
     setSetupCoachName,
+    teamCoachingStaff,
     matchTeamName,
     matchCoachName,
     matchOpponent,
