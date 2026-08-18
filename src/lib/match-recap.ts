@@ -248,13 +248,15 @@ export function buildRecapRows(
     if (player.attending) participatingIds.add(player.id)
   }
   for (const playerId of eventStats.keys()) {
+    const player = players.find((entry) => entry.id === playerId)
+    if (player && player.attending === false) continue
     participatingIds.add(playerId)
   }
 
   return [...participatingIds]
     .map((playerId) => {
       const player = players.find((p) => p.id === playerId)
-      if (!player) return null
+      if (!player || player.attending === false) return null
 
       const stats = eventStats.get(playerId)
       const positions = resolvePlayerPositions(stats, player)

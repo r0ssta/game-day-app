@@ -217,13 +217,13 @@ function PoolPlayerChip({
           <Pencil className="size-3.5" />
         </button>
       )}
-      {showAttendingToggle && onToggleAttending && (
+          {showAttendingToggle && onToggleAttending && (
         <button
           type="button"
           onClick={onToggleAttending}
-          className={`${TOUCH_ROW} shrink-0 rounded-md bg-secondary px-3 text-[10px] font-bold uppercase text-muted-foreground active:scale-95`}
+          className={`${TOUCH_ROW} shrink-0 rounded-md border-2 border-border bg-secondary px-3 text-[10px] font-bold uppercase tracking-wide text-foreground active:scale-95`}
         >
-          Out
+          Absent
         </button>
       )}
     </div>
@@ -343,6 +343,22 @@ export function TacticalPitchLineup({
   useEffect(() => {
     if (assignmentsRef) assignmentsRef.current = slotAssignments
   }, [assignmentsRef, slotAssignments])
+
+  // Drop absent players from pitch slots when attendance flips outside this component.
+  useEffect(() => {
+    setSlotAssignments((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const [slotId, playerId] of Object.entries(prev)) {
+        if (playerId && attending[playerId] === false) {
+          next[slotId] = null
+          changed = true
+          onRemoveStarter(playerId)
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [attending, onRemoveStarter])
 
   const assignPlayerToSlot = useCallback(
     (playerId: string, slotId: string) => {
@@ -557,7 +573,9 @@ export function TacticalPitchLineup({
 
           {absentPlayers.length > 0 && (
             <div className="rounded-xl border border-dashed border-border bg-card/50 p-3">
-              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Not Attending</h3>
+              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Absent
+              </h3>
               <ul className="space-y-2">
                 {absentPlayers.map((player) => (
                   <li key={player.id}>
@@ -571,7 +589,10 @@ export function TacticalPitchLineup({
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-[10px] text-muted-foreground">Tap a player to mark them attending again.</p>
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                Tap a player to mark them Attending again. Absent players stay out of lineup, bench,
+                and post-game recap.
+              </p>
             </div>
           )}
         </div>

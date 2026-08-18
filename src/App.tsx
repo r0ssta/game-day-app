@@ -12,6 +12,8 @@ import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { EndMatchTimingModal } from '@/components/EndMatchTimingModal'
 import { GoalWizardModal } from '@/components/GoalWizardModal'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
+import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
+import { SubCountdownTimer } from '@/components/SubCountdownTimer'
 import { HomeScreen } from '@/components/HomeScreen'
 import { ReportingScreen } from '@/components/ReportingScreen'
 import { BackToHomeButton, ScreenHeader } from '@/components/AppNavigation'
@@ -54,6 +56,7 @@ import {
   getSetupLineupBlockReason,
   isHalftimeLineupValid,
 } from '@/lib/lineup'
+import { calculateSubRotationPlan } from '@/lib/sub-rotation'
 import { resolveSetupLineup } from '@/lib/lineup-presets'
 import type { TeamFormat } from '@/lib/team-format'
 import {
@@ -781,6 +784,8 @@ type SetupScreenProps = {
   onTournamentGameChange: (value: boolean) => void
   halfLengthMinutes: number
   onHalfLengthChange: (value: number) => void
+  gkPlaysFullHalf: boolean
+  onGkPlaysFullHalfChange: (value: boolean) => void
   masterRoster: RosterPlayer[]
   setupLineup: SetupLineup
   firstHalfFormation: string
@@ -827,6 +832,8 @@ function SetupScreen({
   onTournamentGameChange,
   halfLengthMinutes,
   onHalfLengthChange,
+  gkPlaysFullHalf,
+  onGkPlaysFullHalfChange,
   masterRoster,
   setupLineup,
   firstHalfFormation,
@@ -978,6 +985,76 @@ function SetupScreen({
             </select>
           </div>
         </section>
+
+        <SubbingAssistantPanel
+          teamFormat={activeTeamFormat}
+          halfLengthMinutes={halfLengthMinutes}
+          attendingCount={attendingCount}
+          gkPlaysFullHalf={gkPlaysFullHalf}
+          onGkPlaysFullHalfChange={onGkPlaysFullHalfChange}
+        />
+
+        {masterRoster.length > 0 ? (
+          <section
+            aria-label="Attendance tracker"
+            className="attendance-tracker space-y-3 rounded-2xl border-2 border-border bg-card p-4"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display text-sm font-black uppercase tracking-wide text-foreground">
+                Attendance Tracker
+              </h2>
+              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                {attendingCount}/{masterRoster.length} attending
+              </span>
+            </div>
+            <ul className="space-y-2">
+              {masterRoster.map((player) => {
+                const isAttending = setupLineup.attending[player.id] !== false
+                return (
+                  <li
+                    key={player.id}
+                    className="flex items-center gap-2 rounded-xl border-2 border-border bg-background px-3 py-2"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-neon/40 bg-neon/10 font-display text-sm font-bold tabular-nums text-neon">
+                      {player.number ?? '—'}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
+                      {formatPlayerFullName(player.firstName, player.lastName)}
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        aria-pressed={isAttending}
+                        onClick={() => onSetAttending(player.id, true)}
+                        className={cn(
+                          'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
+                          isAttending
+                            ? 'border-neon bg-neon text-neon-foreground'
+                            : 'border-border bg-secondary text-muted-foreground',
+                        )}
+                      >
+                        Attending
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={!isAttending}
+                        onClick={() => onSetAttending(player.id, false)}
+                        className={cn(
+                          'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
+                          !isAttending
+                            ? 'border-foreground bg-foreground text-background'
+                            : 'border-border bg-secondary text-muted-foreground',
+                        )}
+                      >
+                        Absent
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        ) : null}
 
         <section aria-label="Lineup builder">
           <div className="mb-3 flex items-center justify-between">
@@ -1497,6 +1574,9 @@ export default function App() {
     matchLocationType,
     halfLengthMinutes,
     setHalfLengthMinutes,
+    gkPlaysFullHalf,
+    setGkPlaysFullHalf,
+    subIntervalSeconds,
     opponent,
     setOpponent,
     locationType,
@@ -1902,6 +1982,15 @@ export default function App() {
       const attendingPlayers = masterRoster.filter(
         (p) => resolvedLineup.attending[p.id] !== false,
       )
+      const absentPlayers = masterRoster.filter(
+        (p) => resolvedLineup.attending[p.id] === false,
+      )
+      const rotationPlan = calculateSubRotationPlan({
+        teamFormat: activeTeamFormat,
+        halfLengthMinutes,
+        attendingCount: attendingPlayers.length,
+        gkPlaysFullHalf,
+      })
 
       await beginMatch({
         teamId: activeTeamId,
@@ -1914,9 +2003,12 @@ export default function App() {
         matchDate,
         matchTime,
         attendingPlayers,
+        absentPlayers,
         firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
         matchPositions: resolvedMatchPositions,
         firstHalfFormation: matchFormations.first,
+        subIntervalSeconds: rotationPlan.ok ? rotationPlan.subIntervalSeconds : null,
+        gkPlaysFullHalf,
       })
 
       setQaSpeedMultiplier(1)
@@ -1943,6 +2035,7 @@ export default function App() {
     matchPositions,
     matchFormations,
     activeTeamFormat,
+    gkPlaysFullHalf,
     beginMatch,
   ])
 
@@ -2596,6 +2689,8 @@ export default function App() {
           onTournamentGameChange={setTournamentGame}
           halfLengthMinutes={halfLengthMinutes}
           onHalfLengthChange={setHalfLengthMinutes}
+          gkPlaysFullHalf={gkPlaysFullHalf}
+          onGkPlaysFullHalfChange={setGkPlaysFullHalf}
           masterRoster={masterRoster}
           setupLineup={setupLineup}
           firstHalfFormation={matchFormations.first}
@@ -2805,6 +2900,12 @@ export default function App() {
         ) : null}
 
         {matchId ? <SidelineStatsPanel matchId={matchId} players={players} /> : null}
+
+        <SubCountdownTimer
+          intervalSeconds={subIntervalSeconds}
+          running={running}
+          periodClockStarted={periodClockStarted}
+        />
 
         <LiveTacticalPitch
           ref={livePitchRef}

@@ -800,6 +800,8 @@ export async function createMatchRecord(input: {
   matchDate: string
   matchTime: string
   status?: DbMatch['status']
+  subIntervalSeconds?: number | null
+  gkPlaysFullHalf?: boolean
 }): Promise<DbMatch> {
   const coachName = input.coachName.trim() || null
   const matchDate = input.matchDate.trim() || null
@@ -827,10 +829,19 @@ export async function createMatchRecord(input: {
     match_time: matchTime,
     coach_name: coachName,
     location_type: input.locationType,
+    sub_interval_seconds: input.subIntervalSeconds ?? null,
+    gk_plays_full_half: input.gkPlaysFullHalf ?? true,
   }
 
   // Try fullest payload first; retry with fewer optional columns when schema is behind.
-  const optionalKeys = ['match_date', 'match_time', 'coach_name', 'location_type'] as const
+  const optionalKeys = [
+    'match_date',
+    'match_time',
+    'coach_name',
+    'location_type',
+    'sub_interval_seconds',
+    'gk_plays_full_half',
+  ] as const
   const payloadAttempts: Array<Record<string, unknown>> = []
 
   for (let mask = (1 << optionalKeys.length) - 1; mask >= 0; mask--) {
@@ -943,19 +954,34 @@ export async function createMatchStats(
   firstHalfStarterIds: string[],
   matchPositions: Record<string, string>,
   formation: string,
+  absentPlayers: RosterPlayer[] = [],
 ): Promise<MatchPlayer[]> {
   const firstSet = new Set(firstHalfStarterIds)
+  const attendingIds = new Set(attendingPlayers.map((player) => player.id))
 
-  const matchPlayers = attendingPlayers.map((player) => {
-    const isFirstHalfStarter = firstSet.has(player.id)
-    return createMatchPlayer(player, {
-      attending: true,
-      isFirstHalfStarter,
-      isSecondHalfStarter: false,
-      isOnField: isFirstHalfStarter,
-      matchPosition: matchPositions[player.id] ?? player.position,
-    })
-  })
+  const matchPlayers = [
+    ...attendingPlayers.map((player) => {
+      const isFirstHalfStarter = firstSet.has(player.id)
+      return createMatchPlayer(player, {
+        attending: true,
+        isFirstHalfStarter,
+        isSecondHalfStarter: false,
+        isOnField: isFirstHalfStarter,
+        matchPosition: matchPositions[player.id] ?? player.position,
+      })
+    }),
+    ...absentPlayers
+      .filter((player) => !attendingIds.has(player.id))
+      .map((player) =>
+        createMatchPlayer(player, {
+          attending: false,
+          isFirstHalfStarter: false,
+          isSecondHalfStarter: false,
+          isOnField: false,
+          matchPosition: matchPositions[player.id] ?? player.position,
+        }),
+      ),
+  ]
 
   const rows = matchPlayers.map((p) => matchPlayerToStatPayload(matchId, p))
   if (rows.length > 0) {
@@ -964,7 +990,7 @@ export async function createMatchStats(
   }
 
   const starterEvents = matchPlayers
-    .filter((p) => p.isOnField)
+    .filter((p) => p.attending && p.isOnField)
     .map((p) =>
       matchEventToRow({
         matchId,
@@ -978,7 +1004,8 @@ export async function createMatchStats(
 
   await insertMatchEventRows(starterEvents)
 
-  return matchPlayers
+  // Live match state only needs attending players on the pitch/bench.
+  return matchPlayers.filter((player) => player.attending)
 }
 
 export async function fetchActiveMatch(): Promise<ActiveMatchBundle | null> {

@@ -63,6 +63,8 @@ create table if not exists public.matches (
   period_clock_started boolean not null default false,
   internal_coach_notes text,
   parent_facing_recap text,
+  sub_interval_seconds integer check (sub_interval_seconds is null or sub_interval_seconds > 0),
+  gk_plays_full_half boolean not null default true,
   stat_tracker_token text,
   created_at timestamptz not null default now()
 );

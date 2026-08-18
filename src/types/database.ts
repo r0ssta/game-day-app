@@ -79,6 +79,10 @@ export type DbMatch = {
   internal_coach_notes: string | null
   /** Parent-facing weekly recap summary used in email drafts. */
   parent_facing_recap: string | null
+  /** Suggested sub rotation length in seconds (from Subbing Assistant). */
+  sub_interval_seconds: number | null
+  /** When true, GK is held out of equal-play outfield rotation. */
+  gk_plays_full_half: boolean
   stat_tracker_token?: string | null
   qualitative_context?: QualitativeContextJson | null
   created_at: string

@@ -283,9 +283,16 @@
     font-weight: 700;
   }
 
-  html.sunlight-mode .parent-recap-preview {
-    font-size: 0.95rem;
-    line-height: 1.45;
+  html.sunlight-mode .subbing-assistant-panel,
+  html.sunlight-mode .attendance-tracker,
+  html.sunlight-mode .sub-countdown-timer {
+    border-color: oklch(0.12 0 0);
+    background-color: oklch(1 0 0);
+    color: oklch(0.12 0 0);
+  }
+
+  html.sunlight-mode .sub-countdown-timer p:last-child {
+    font-weight: 900;
   }
 }
 

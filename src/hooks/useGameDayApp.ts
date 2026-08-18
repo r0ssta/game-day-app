@@ -160,6 +160,8 @@ export function useGameDayApp() {
   const [matchLocationType, setMatchLocationType] = useState<LocationType>('home')
   const [matchTournamentGame, setMatchTournamentGame] = useState(false)
   const [halfLengthMinutes, setHalfLengthMinutes] = useState(DEFAULT_HALF_LENGTH)
+  const [gkPlaysFullHalf, setGkPlaysFullHalf] = useState(true)
+  const [subIntervalSeconds, setSubIntervalSeconds] = useState<number | null>(null)
 
   const [opponent, setOpponent] = useState('')
   const [locationType, setLocationType] = useState<LocationType>('home')
@@ -290,7 +292,9 @@ export function useGameDayApp() {
               )
             }
           }
-          const matchPlayers = rebuildMatchPlayers(roster, stats)
+          const matchPlayers = rebuildMatchPlayers(roster, stats).filter(
+            (player) => player.attending,
+          )
 
           setSelectedTeamId(match.team_id)
           resolvedTeamId = match.team_id
@@ -310,6 +314,8 @@ export function useGameDayApp() {
           setPeriod(match.period)
           setPeriodClockStarted(match.period_clock_started)
           setHalfLengthMinutes(match.half_length)
+          setSubIntervalSeconds(match.sub_interval_seconds ?? null)
+          setGkPlaysFullHalf(match.gk_plays_full_half !== false)
           setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
           setMatchCoachName(resolveMatchCoachName(match, coach))
           setSetupCoachName(resolveMatchCoachName(match, coach))
@@ -958,9 +964,12 @@ export function useGameDayApp() {
       matchDate: string
       matchTime: string
       attendingPlayers: RosterPlayer[]
+      absentPlayers?: RosterPlayer[]
       firstHalfStarterIds: string[]
       matchPositions: Record<string, string>
       firstHalfFormation: string
+      subIntervalSeconds?: number | null
+      gkPlaysFullHalf?: boolean
     }) => {
       const existing = await fetchActiveMatch()
       if (existing) {
@@ -983,6 +992,8 @@ export function useGameDayApp() {
           halfLength: input.halfLength,
           matchDate: input.matchDate,
           matchTime: input.matchTime,
+          subIntervalSeconds: input.subIntervalSeconds ?? null,
+          gkPlaysFullHalf: input.gkPlaysFullHalf ?? true,
         })
         createdMatchId = match.id
 
@@ -992,6 +1003,7 @@ export function useGameDayApp() {
           input.firstHalfStarterIds,
           input.matchPositions,
           input.firstHalfFormation,
+          input.absentPlayers ?? [],
         )
 
         setMatchId(match.id)
@@ -1017,6 +1029,8 @@ export function useGameDayApp() {
         setMatchLocationType(input.locationType)
         setMatchTournamentGame(input.tournamentGame)
         setHalfLengthMinutes(input.halfLength)
+        setSubIntervalSeconds(input.subIntervalSeconds ?? null)
+        setGkPlaysFullHalf(input.gkPlaysFullHalf ?? true)
 
         return match.id
       } catch (err) {
@@ -1271,7 +1285,7 @@ export function useGameDayApp() {
         roster.push(poolPlayerToGuestRoster(guest, match.team_id))
       }
     }
-    const matchPlayers = rebuildMatchPlayers(roster, stats)
+    const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) => player.attending)
 
     setSelectedTeamId(match.team_id)
     setMasterRoster(roster)
@@ -1289,6 +1303,8 @@ export function useGameDayApp() {
     setPeriod(match.period)
     setPeriodClockStarted(match.period_clock_started)
     setHalfLengthMinutes(match.half_length)
+    setSubIntervalSeconds(match.sub_interval_seconds ?? null)
+    setGkPlaysFullHalf(match.gk_plays_full_half !== false)
     setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
     setMatchCoachName(resolveMatchCoachName(match, coach))
     setMatchOpponent(match.opponent)
@@ -1469,6 +1485,9 @@ export function useGameDayApp() {
     matchTournamentGame,
     halfLengthMinutes,
     setHalfLengthMinutes,
+    gkPlaysFullHalf,
+    setGkPlaysFullHalf,
+    subIntervalSeconds,
     opponent,
     setOpponent,
     locationType,
