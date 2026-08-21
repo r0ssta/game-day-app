@@ -43,7 +43,7 @@ type AuthContextValue = {
   canDeleteMatches: boolean
   /** @deprecated Prefer canUseSprocketForTeam(activeTeamId) */
   canUseSprocketIntegration: boolean
-  /** Send a 6-digit email OTP (PWA-friendly; no magic-link redirect). */
+  /** Send an email OTP (PWA-friendly; no magic-link redirect). */
   sendLoginOtp: (email: string) => Promise<void>
   /** Verify the email OTP and establish a session. */
   verifyLoginOtp: (email: string, token: string) => Promise<void>
@@ -179,8 +179,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const trimmedEmail = email.trim()
     const trimmedToken = token.trim()
     if (!trimmedEmail) throw new Error('Email is required')
-    if (!/^\d{6}$/.test(trimmedToken)) {
-      throw new Error('Enter the 6-digit code from your email')
+    // GoTrue OTP length is project-configurable (typically 6–8, max 10).
+    if (!/^\d{6,10}$/.test(trimmedToken)) {
+      throw new Error('Enter the login code from your email')
     }
 
     const { error } = await supabase.auth.verifyOtp({

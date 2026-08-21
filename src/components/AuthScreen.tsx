@@ -11,6 +11,9 @@ type AuthStep = 'email' | 'otp'
 
 const RESEND_COOLDOWN_SECONDS = 60
 const OTP_PENDING_KEY = 'gameday.auth.otpPending'
+/** GoTrue allows 6–10; this project targets 6 but accepts the full range. */
+const OTP_MIN_LENGTH = 6
+const OTP_MAX_LENGTH = 10
 
 type OtpPending = {
   email: string
@@ -178,7 +181,7 @@ export function AuthScreen() {
           </h1>
           <p className="mt-2 text-sm font-semibold text-muted-foreground">
             {step === 'otp'
-              ? 'Enter the 6-digit code from your email to finish signing in on this device.'
+              ? 'Enter the login code from your email to finish signing in on this device.'
               : mode === 'register'
                 ? 'Register for Virginia Velocity Game Day. We email a one-time code — no password.'
                 : 'Sign in to Virginia Velocity Game Day with a one-time email code. No password needed.'}
@@ -237,13 +240,13 @@ export function AuthScreen() {
                   {busy && otp.length === 0 && !error
                     ? (
                       <>
-                        Sending a 6-digit code to{' '}
+                        Sending a login code to{' '}
                         <span className="font-black">{email.trim()}</span>…
                       </>
                       )
                     : (
                       <>
-                        We sent a 6-digit code to{' '}
+                        We sent a login code to{' '}
                         <span className="font-black">{email.trim()}</span>.
                       </>
                       )}
@@ -263,17 +266,17 @@ export function AuthScreen() {
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
-                  maxLength={6}
+                  maxLength={OTP_MAX_LENGTH}
                   required
                   value={otp}
                   onChange={(event) => {
-                    const next = event.target.value.replace(/\D/g, '').slice(0, 6)
+                    const next = event.target.value.replace(/\D/g, '').slice(0, OTP_MAX_LENGTH)
                     setOtp(next)
                     setError(null)
                   }}
                   className="min-h-14 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-4 text-center font-display text-3xl font-black tracking-[0.35em] text-foreground tabular-nums"
                   placeholder="••••••"
-                  aria-label="6-digit login code"
+                  aria-label="Login code from email"
                 />
               </label>
 
@@ -285,7 +288,7 @@ export function AuthScreen() {
 
               <button
                 type="submit"
-                disabled={busy || otp.length !== 6}
+                disabled={busy || otp.length < OTP_MIN_LENGTH}
                 className="flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-neon bg-neon px-4 text-sm font-bold uppercase tracking-wide text-neon-foreground active:scale-[0.98] disabled:opacity-50"
               >
                 <KeyRound className="size-4" strokeWidth={2.5} />

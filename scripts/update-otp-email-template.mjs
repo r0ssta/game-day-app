@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Update Supabase Auth "Magic Link" email template to send a 6-digit OTP
+ * Update Supabase Auth "Magic Link" email template to send an email OTP
  * ({{ .Token }}) for PWA login without opening a magic link.
  *
  * Requires a personal access token from https://supabase.com/dashboard/account/tokens
@@ -46,7 +46,7 @@ const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN
 
 const SUBJECT = 'Your Virginia Velocity Game Day login code'
 const CONTENT = `<h2>Your login code</h2>
-<p>Enter this 6-digit code in the Game Day app to sign in:</p>
+<p>Enter this code in the Game Day app to sign in:</p>
 <p style="font-size:28px;font-weight:700;letter-spacing:6px;">{{ .Token }}</p>
 <p>This code expires shortly. If you did not request it, you can ignore this email.</p>
 `
@@ -84,7 +84,7 @@ async function main() {
 
   console.log(`Updated Magic Link / OTP email template for project ${PROJECT_REF}.`)
   console.log(`Subject: ${SUBJECT}`)
-  console.log('Body now includes {{ .Token }} for 6-digit codes.')
+  console.log('Body now includes {{ .Token }} for email OTP codes.')
 }
 
 main().catch((err) => {
