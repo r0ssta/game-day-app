@@ -4,6 +4,7 @@ import {
   type SubFrequency,
   type SubRotationPlan,
 } from '@/lib/sub-rotation'
+import { ENABLE_SUB_ASSISTANT } from '@/lib/feature-flags'
 import type { TeamFormat } from '@/lib/team-format'
 import { cn } from '@/lib/utils'
 import { Minus, Plus } from 'lucide-react'
@@ -22,6 +23,7 @@ type SubbingAssistantPanelProps = {
   className?: string
 }
 
+/** Archived behind ENABLE_SUB_ASSISTANT — flip that flag to restore on Game Day setup. */
 export function SubbingAssistantPanel({
   teamFormat,
   halfLengthMinutes,
@@ -38,6 +40,7 @@ export function SubbingAssistantPanel({
   // Drop manual override when format / attendance / frequency / half length change.
   const suggestionKey = `${teamFormat}|${halfLengthMinutes}|${attendingCount}|${gkPlaysFullHalf}|${subFrequency}`
   useEffect(() => {
+    if (!ENABLE_SUB_ASSISTANT) return
     setIntervalOverrideMinutes(null)
   }, [suggestionKey])
 
@@ -62,8 +65,14 @@ export function SubbingAssistantPanel({
   )
 
   useEffect(() => {
+    if (!ENABLE_SUB_ASSISTANT) {
+      onIntervalMinutesChange(null)
+      return
+    }
     onIntervalMinutesChange(plan.ok && plan.playersToSwap > 0 ? plan.subIntervalMinutes : null)
   }, [plan.ok, plan.playersToSwap, plan.subIntervalMinutes, onIntervalMinutesChange])
+
+  if (!ENABLE_SUB_ASSISTANT) return null
 
   const canStep = plan.ok && plan.playersToSwap > 0 && plan.subIntervalMinutes > 0
   const atMin = plan.subIntervalMinutes <= 1

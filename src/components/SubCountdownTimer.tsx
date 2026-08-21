@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { RotateCcw } from 'lucide-react'
+import { ENABLE_SUB_ASSISTANT } from '@/lib/feature-flags'
 import { formatSubIntervalLabel } from '@/lib/sub-rotation'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +17,8 @@ type SubCountdownTimerProps = {
 /**
  * Owns its own countdown tick so parent pitch/lineup views are not re-rendered every second.
  * Pauses when the match clock is paused; resumes from remaining time when play continues.
+ *
+ * Archived behind ENABLE_SUB_ASSISTANT — flip that flag to restore on Game Day.
  */
 export const SubCountdownTimer = memo(function SubCountdownTimer({
   intervalSeconds,
@@ -44,6 +47,7 @@ export const SubCountdownTimer = memo(function SubCountdownTimer({
   }, [periodClockStarted])
 
   useEffect(() => {
+    if (!ENABLE_SUB_ASSISTANT) return
     if (!periodClockStarted || !running || intervalRef.current <= 0) return
 
     const id = window.setInterval(() => {
@@ -57,6 +61,7 @@ export const SubCountdownTimer = memo(function SubCountdownTimer({
     setRemainingSeconds(intervalRef.current)
   }, [])
 
+  if (!ENABLE_SUB_ASSISTANT) return null
   if (!intervalSeconds || intervalSeconds <= 0) return null
 
   const warning = remainingSeconds > 0 && remainingSeconds <= 60
