@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   CheckCircle2,
   Goal,
+  Lock,
   Share2,
   Shield,
   UserPlus,
@@ -45,6 +46,7 @@ import {
 } from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
+import { useWakeLock } from '@/hooks/useWakeLock'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatAppRoleLabel } from '@/lib/staff-roles'
 import type { FormationRole, FormationRemapResult } from '@/lib/formations'
@@ -59,6 +61,11 @@ import {
 import { resolveSetupLineup } from '@/lib/lineup-presets'
 import type { TeamFormat } from '@/lib/team-format'
 import type { SubFrequency } from '@/lib/sub-rotation'
+import {
+  ENABLE_QA_SPEED,
+  ENABLE_SUB_ASSISTANT,
+  ENABLE_WAKE_LOCK,
+} from '@/lib/feature-flags'
 import {
   applySubIn,
   applySubOut,
@@ -275,6 +282,8 @@ type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
+  /** True when Screen Wake Lock is held (keeps display on). */
+  wakeLockActive?: boolean
   onHome: () => void
   onLogGoal?: () => void
   onOpponentGoal?: () => void
@@ -334,6 +343,7 @@ function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
+  wakeLockActive = false,
   onHome,
   onLogGoal,
   onOpponentGoal,
@@ -411,6 +421,15 @@ function MatchHeader({
               <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 {periodLabel(period)}
               </span>
+              {wakeLockActive ? (
+                <span
+                  className="inline-flex items-center text-muted-foreground"
+                  title="Screen stay-awake is on"
+                  aria-label="Screen stay-awake is on"
+                >
+                  <Lock className="size-3.5" strokeWidth={2.5} aria-hidden />
+                </span>
+              ) : null}
             </div>
             <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
               {waitingToStart
@@ -1051,16 +1070,18 @@ function SetupScreen({
           </div>
         </section>
 
-        <SubbingAssistantPanel
-          teamFormat={activeTeamFormat}
-          halfLengthMinutes={halfLengthMinutes}
-          attendingCount={attendingCount}
-          gkPlaysFullHalf={gkPlaysFullHalf}
-          onGkPlaysFullHalfChange={onGkPlaysFullHalfChange}
-          subFrequency={subFrequency}
-          onSubFrequencyChange={onSubFrequencyChange}
-          onIntervalMinutesChange={onSetupSubIntervalMinutesChange}
-        />
+        {ENABLE_SUB_ASSISTANT ? (
+          <SubbingAssistantPanel
+            teamFormat={activeTeamFormat}
+            halfLengthMinutes={halfLengthMinutes}
+            attendingCount={attendingCount}
+            gkPlaysFullHalf={gkPlaysFullHalf}
+            onGkPlaysFullHalfChange={onGkPlaysFullHalfChange}
+            subFrequency={subFrequency}
+            onSubFrequencyChange={onSubFrequencyChange}
+            onIntervalMinutesChange={onSetupSubIntervalMinutesChange}
+          />
+        ) : null}
 
         {masterRoster.length > 0 ? (
           <section
@@ -1719,6 +1740,9 @@ export default function App() {
     deleteMatch,
   } = useGameDayApp()
 
+  // Keep the display awake only on the live match screen (not setup / dashboard / settings).
+  const wakeLockActive = useWakeLock(ENABLE_WAKE_LOCK && appMode === 'match')
+
   const canDeleteMatches = canDeleteMatchesForTeam(activeTeamId)
   const canUseSprocketIntegration = canUseSprocketForTeam(activeTeamId)
 
@@ -2088,7 +2112,9 @@ export default function App() {
         matchPositions: resolvedMatchPositions,
         firstHalfFormation: matchFormations.first,
         subIntervalSeconds:
-          rotationMinutes != null && rotationMinutes > 0 ? rotationMinutes * 60 : null,
+          ENABLE_SUB_ASSISTANT && rotationMinutes != null && rotationMinutes > 0
+            ? rotationMinutes * 60
+            : null,
         gkPlaysFullHalf,
       })
 
@@ -2967,13 +2993,16 @@ export default function App() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
+        wakeLockActive={wakeLockActive}
         onHome={() => setAppMode('home')}
         onLogGoal={() => setGoalWizardOpen(true)}
         onOpponentGoal={handleOpponentGoal}
       />
 
       <div className={`${APP_CONTAINER} space-y-5 pt-4 md:space-y-6 md:pt-5`}>
-        <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
+        {ENABLE_QA_SPEED ? (
+          <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
+        ) : null}
 
         {matchId ? (
           <button
@@ -2988,11 +3017,13 @@ export default function App() {
 
         {matchId ? <SidelineStatsPanel matchId={matchId} players={players} /> : null}
 
-        <SubCountdownTimer
-          intervalSeconds={subIntervalSeconds}
-          running={running}
-          periodClockStarted={periodClockStarted}
-        />
+        {ENABLE_SUB_ASSISTANT ? (
+          <SubCountdownTimer
+            intervalSeconds={subIntervalSeconds}
+            running={running}
+            periodClockStarted={periodClockStarted}
+          />
+        ) : null}
 
         <LiveTacticalPitch
           ref={livePitchRef}
