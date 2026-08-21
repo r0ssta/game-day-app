@@ -46,7 +46,7 @@ import {
 } from '@/components/RosterPositionFields'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
-import { useWakeLock } from '@/hooks/useWakeLock'
+import { useWakeLock, WAKE_LOCK_BLOCKED_TOAST } from '@/hooks/useWakeLock'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatAppRoleLabel } from '@/lib/staff-roles'
 import type { FormationRole, FormationRemapResult } from '@/lib/formations'
@@ -1740,8 +1740,10 @@ export default function App() {
     deleteMatch,
   } = useGameDayApp()
 
-  // Keep the display awake only on the live match screen (not setup / dashboard / settings).
-  const wakeLockActive = useWakeLock(ENABLE_WAKE_LOCK && appMode === 'match')
+  // Screen stay-awake is armed only from Start 1st/2nd Half click handlers (user gesture).
+  const { isActive: wakeLockActive, requestWakeLock } = useWakeLock({
+    activeSession: ENABLE_WAKE_LOCK && (appMode === 'match' || appMode === 'halftime'),
+  })
 
   const canDeleteMatches = canDeleteMatchesForTeam(activeTeamId)
   const canUseSprocketIntegration = canUseSprocketForTeam(activeTeamId)
@@ -2044,7 +2046,8 @@ export default function App() {
 
   useEffect(() => {
     if (!toast) return
-    const id = setTimeout(() => setToast(null), 2200)
+    const durationMs = toast === WAKE_LOCK_BLOCKED_TOAST ? 5000 : 2200
+    const id = setTimeout(() => setToast(null), durationMs)
     return () => clearTimeout(id)
   }, [toast])
 
@@ -2205,8 +2208,17 @@ export default function App() {
         clock_seconds: seconds,
       })
     }
-    setToast(`1st half underway · ${formatClock(seconds)}`)
-  }, [seconds, matchId, setPlayers, setPeriodClockStarted, setRunning])
+
+    const underwayToast = `1st half underway · ${formatClock(seconds)}`
+    if (ENABLE_WAKE_LOCK) {
+      // Must run in this click handler — browsers require a user gesture for Wake Lock / NoSleep.
+      void requestWakeLock().then((result) => {
+        setToast(result.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
+      })
+    } else {
+      setToast(underwayToast)
+    }
+  }, [seconds, matchId, setPlayers, setPeriodClockStarted, setRunning, requestWakeLock])
 
   const handleEnterHalftime = useCallback(async () => {
     setRunning(false)
@@ -2225,6 +2237,13 @@ export default function App() {
     if (!canBeginSecondHalf) return
     const assignments = halftimeAssignmentsRef.current ?? halftimeSlotAssignments
     const newClock = halfDurationSeconds(halfLengthMinutes)
+
+    const wakePromise =
+      ENABLE_WAKE_LOCK
+        ? // Must run in this click handler — browsers require a user gesture for Wake Lock / NoSleep.
+          requestWakeLock()
+        : Promise.resolve({ active: false, blockedByOs: false, usedFallback: false })
+
     await beginSecondHalf(assignments)
     if (matchId) {
       syncMatchRecord(matchId, {
@@ -2233,8 +2252,18 @@ export default function App() {
         period_clock_started: true,
       })
     }
-    setToast(`2nd half underway · ${formatClock(newClock)}`)
-  }, [canBeginSecondHalf, halfLengthMinutes, matchId, beginSecondHalf, halftimeSlotAssignments])
+
+    const underwayToast = `2nd half underway · ${formatClock(newClock)}`
+    const wakeResult = await wakePromise
+    setToast(wakeResult.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
+  }, [
+    canBeginSecondHalf,
+    halfLengthMinutes,
+    matchId,
+    beginSecondHalf,
+    halftimeSlotAssignments,
+    requestWakeLock,
+  ])
 
   const handleLoadLineupPreset = useCallback(
     (presetId: string) => {
