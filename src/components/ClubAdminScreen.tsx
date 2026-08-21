@@ -372,8 +372,8 @@ export function ClubAdminScreen({
       await loadUsers()
       onToast(
         result.status === 'updated_existing'
-          ? `Updated ${result.email} and sent a login link`
-          : `Invite sent to ${result.email}`,
+          ? `Updated ${result.email} and sent a login code`
+          : `Invited ${result.email} — login code emailed`,
       )
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to create invite')
@@ -923,8 +923,8 @@ export function ClubAdminScreen({
             </h2>
           </div>
           <p className="text-xs font-semibold text-muted-foreground">
-            We email them a magic link. When they open it, their role and team access are applied
-            automatically.
+            We email them a one-time login code. When they sign in with that code, their role and team
+            access are applied automatically.
           </p>
 
           <div className="grid gap-3 md:grid-cols-2">

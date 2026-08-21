@@ -193,15 +193,24 @@
     font-weight: 800;
   }
 
+  html.sunlight-mode .auth-otp-panel,
   html.sunlight-mode .auth-magic-success {
     border-color: oklch(0.28 0.14 145);
     background-color: oklch(0.94 0.06 145);
     color: oklch(0.18 0.08 145);
   }
 
+  html.sunlight-mode .auth-otp-panel p,
   html.sunlight-mode .auth-magic-success p {
     color: oklch(0.16 0.02 260);
     font-weight: 800;
+  }
+
+  html.sunlight-mode .auth-otp-panel input {
+    border-color: oklch(0.12 0 0);
+    background-color: oklch(1 0 0);
+    color: oklch(0.12 0 0);
+    font-weight: 900;
   }
 
   html.sunlight-mode .club-admin-table {

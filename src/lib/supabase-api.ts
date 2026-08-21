@@ -9,7 +9,6 @@ import {
   rosterProfilePositionToLegacy,
 } from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
-import { getAuthRedirectUrl } from '@/lib/auth-redirect'
 import { createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
@@ -2038,7 +2037,6 @@ export async function createStaffInvite(input: {
     email,
     options: {
       shouldCreateUser: true,
-      emailRedirectTo: getAuthRedirectUrl(),
       data: displayName ? { display_name: displayName } : undefined,
     },
   })

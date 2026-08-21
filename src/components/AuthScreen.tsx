@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { Mail, SunMedium, UserPlus } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { KeyRound, Mail, SunMedium, UserPlus } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSunlightMode } from '@/contexts/SunlightModeContext'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
@@ -7,26 +7,86 @@ import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
 type AuthMode = 'sign_in' | 'register'
+type AuthStep = 'email' | 'otp'
+
+const RESEND_COOLDOWN_SECONDS = 60
 
 export function AuthScreen() {
-  const { signInWithMagicLink } = useAuth()
+  const { sendLoginOtp, verifyLoginOtp } = useAuth()
   const { sunlightMode, toggleSunlightMode } = useSunlightMode()
   const [mode, setMode] = useState<AuthMode>('sign_in')
+  const [step, setStep] = useState<AuthStep>('email')
   const [email, setEmail] = useState('')
+  const [otp, setOtp] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [linkSent, setLinkSent] = useState(false)
+  const [resendSeconds, setResendSeconds] = useState(0)
+  const otpInputRef = useRef<HTMLInputElement>(null)
 
-  const onSubmit = async (event: FormEvent) => {
+  useEffect(() => {
+    if (resendSeconds <= 0) return
+    const id = window.setTimeout(() => setResendSeconds((s) => Math.max(0, s - 1)), 1000)
+    return () => window.clearTimeout(id)
+  }, [resendSeconds])
+
+  useEffect(() => {
+    if (step !== 'otp') return
+    otpInputRef.current?.focus()
+  }, [step])
+
+  const resetToEmail = () => {
+    setStep('email')
+    setOtp('')
+    setError(null)
+    setResendSeconds(0)
+  }
+
+  const sendCode = async (targetEmail: string) => {
+    await sendLoginOtp(targetEmail)
+    setResendSeconds(RESEND_COOLDOWN_SECONDS)
+  }
+
+  const onSubmitEmail = async (event: FormEvent) => {
     event.preventDefault()
     setBusy(true)
     setError(null)
-    setLinkSent(false)
     try {
-      await signInWithMagicLink(email)
-      setLinkSent(true)
+      await sendCode(email)
+      setOtp('')
+      setStep('otp')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send login link')
+      setError(err instanceof Error ? err.message : 'Could not send login code')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onSubmitOtp = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await verifyLoginOtp(email, otp)
+      // AuthProvider onAuthStateChange swaps to the signed-in app shell.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not verify code')
+      setOtp('')
+      otpInputRef.current?.focus()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onResend = async () => {
+    if (resendSeconds > 0 || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await sendCode(email)
+      setOtp('')
+      otpInputRef.current?.focus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend code')
     } finally {
       setBusy(false)
     }
@@ -57,74 +117,127 @@ export function AuthScreen() {
             {mode === 'register' ? 'Create Account' : 'Staff Login'}
           </h1>
           <p className="mt-2 text-sm font-semibold text-muted-foreground">
-            {mode === 'register'
-              ? 'Register for Virginia Velocity Game Day. We will create your account and send a magic link — no password.'
-              : 'Sign in to Virginia Velocity Game Day with a one-time magic link. No password needed.'}
+            {step === 'otp'
+              ? 'Enter the 6-digit code from your email to finish signing in on this device.'
+              : mode === 'register'
+                ? 'Register for Virginia Velocity Game Day. We email a one-time code — no password.'
+                : 'Sign in to Virginia Velocity Game Day with a one-time email code. No password needed.'}
           </p>
         </div>
 
         <form
-          onSubmit={(event) => void onSubmit(event)}
+          onSubmit={(event) => void (step === 'otp' ? onSubmitOtp(event) : onSubmitEmail(event))}
           className="auth-panel space-y-4 rounded-2xl border-2 border-border bg-card p-5 shadow-lg"
         >
-          <div className="grid grid-cols-2 gap-2 rounded-xl border-2 border-border bg-background p-1">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('sign_in')
-                setError(null)
-                setLinkSent(false)
-              }}
-              className={cn(
-                'min-h-11 touch-manipulation rounded-lg text-xs font-bold uppercase tracking-wide',
-                mode === 'sign_in'
-                  ? 'bg-neon text-neon-foreground'
-                  : 'bg-transparent text-muted-foreground',
-              )}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('register')
-                setError(null)
-                setLinkSent(false)
-              }}
-              className={cn(
-                'min-h-11 touch-manipulation rounded-lg text-xs font-bold uppercase tracking-wide',
-                mode === 'register'
-                  ? 'bg-neon text-neon-foreground'
-                  : 'bg-transparent text-muted-foreground',
-              )}
-            >
-              Create Account
-            </button>
-          </div>
-
-          {linkSent ? (
-            <div
-              role="status"
-              className="auth-magic-success rounded-xl border-2 border-athletic bg-athletic/15 px-4 py-4"
-            >
-              <p className="text-base font-black uppercase tracking-wide text-foreground">
-                Check your email for the login link!
-              </p>
-              <p className="mt-2 text-sm font-semibold text-foreground">
-                We sent a magic link to <span className="font-black">{email.trim()}</span>. Open it on
-                this device to finish{' '}
-                {mode === 'register' ? 'creating your account' : 'signing in'}.
-              </p>
+          {step === 'email' ? (
+            <div className="grid grid-cols-2 gap-2 rounded-xl border-2 border-border bg-background p-1">
               <button
                 type="button"
                 onClick={() => {
-                  setLinkSent(false)
+                  setMode('sign_in')
                   setError(null)
                 }}
-                className="mt-4 min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-4 text-xs font-bold uppercase tracking-wide text-foreground"
+                className={cn(
+                  'min-h-11 touch-manipulation rounded-lg text-xs font-bold uppercase tracking-wide',
+                  mode === 'sign_in'
+                    ? 'bg-neon text-neon-foreground'
+                    : 'bg-transparent text-muted-foreground',
+                )}
               >
-                Use a different email
+                Sign In
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('register')
+                  setError(null)
+                }}
+                className={cn(
+                  'min-h-11 touch-manipulation rounded-lg text-xs font-bold uppercase tracking-wide',
+                  mode === 'register'
+                    ? 'bg-neon text-neon-foreground'
+                    : 'bg-transparent text-muted-foreground',
+                )}
+              >
+                Create Account
+              </button>
+            </div>
+          ) : null}
+
+          {step === 'otp' ? (
+            <div
+              role="status"
+              className="auth-otp-panel space-y-4 rounded-xl border-2 border-athletic bg-athletic/15 px-4 py-4"
+            >
+              <div>
+                <p className="text-base font-black uppercase tracking-wide text-foreground">
+                  Enter your login code
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  We sent a 6-digit code to <span className="font-black">{email.trim()}</span>.
+                </p>
+              </div>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  One-time code
+                </span>
+                <input
+                  ref={otpInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  maxLength={6}
+                  required
+                  value={otp}
+                  onChange={(event) => {
+                    const next = event.target.value.replace(/\D/g, '').slice(0, 6)
+                    setOtp(next)
+                    setError(null)
+                  }}
+                  className="min-h-14 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-4 text-center font-display text-3xl font-black tracking-[0.35em] text-foreground tabular-nums"
+                  placeholder="••••••"
+                  aria-label="6-digit login code"
+                />
+              </label>
+
+              {error ? (
+                <p className="rounded-xl border-2 border-danger/50 bg-danger/10 px-3 py-2 text-sm font-bold text-danger">
+                  {error}
+                </p>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={busy || otp.length !== 6}
+                className="flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-neon bg-neon px-4 text-sm font-bold uppercase tracking-wide text-neon-foreground active:scale-[0.98] disabled:opacity-50"
+              >
+                <KeyRound className="size-4" strokeWidth={2.5} />
+                {busy ? 'Verifying…' : 'Verify Code'}
+              </button>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => void onResend()}
+                  disabled={busy || resendSeconds > 0}
+                  className="min-h-11 touch-manipulation rounded-xl border-2 border-border bg-background px-4 text-xs font-bold uppercase tracking-wide text-foreground disabled:opacity-50"
+                >
+                  {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend Code'}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetToEmail}
+                  disabled={busy}
+                  className="min-h-11 touch-manipulation rounded-xl border-2 border-border bg-background px-4 text-xs font-bold uppercase tracking-wide text-foreground disabled:opacity-50"
+                >
+                  Use a different email
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -160,10 +273,10 @@ export function AuthScreen() {
                   <Mail className="size-4" strokeWidth={2.5} />
                 )}
                 {busy
-                  ? 'Sending link…'
+                  ? 'Sending code…'
                   : mode === 'register'
-                    ? 'Email Me a Sign-Up Link'
-                    : 'Email Me a Login Link'}
+                    ? 'Email Me a Sign-Up Code'
+                    : 'Email Me a Login Code'}
               </button>
             </>
           )}

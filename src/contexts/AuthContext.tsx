@@ -9,7 +9,6 @@ import {
 } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/supabaseClient'
-import { getAuthRedirectUrl } from '@/lib/auth-redirect'
 import {
   type AppRole,
   type TeamRole,
@@ -44,7 +43,10 @@ type AuthContextValue = {
   canDeleteMatches: boolean
   /** @deprecated Prefer canUseSprocketForTeam(activeTeamId) */
   canUseSprocketIntegration: boolean
-  signInWithMagicLink: (email: string) => Promise<void>
+  /** Send a 6-digit email OTP (PWA-friendly; no magic-link redirect). */
+  sendLoginOtp: (email: string) => Promise<void>
+  /** Verify the email OTP and establish a session. */
+  verifyLoginOtp: (email: string, token: string) => Promise<void>
   signOut: () => Promise<void>
   refreshRole: () => Promise<void>
 }
@@ -160,15 +162,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [loadAccess])
 
-  const signInWithMagicLink = useCallback(async (email: string) => {
+  const sendLoginOtp = useCallback(async (email: string) => {
+    const trimmed = email.trim()
+    if (!trimmed) throw new Error('Email is required')
+
     const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
+      email: trimmed,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: getAuthRedirectUrl(),
       },
     })
     if (error) throw error
+  }, [])
+
+  const verifyLoginOtp = useCallback(async (email: string, token: string) => {
+    const trimmedEmail = email.trim()
+    const trimmedToken = token.trim()
+    if (!trimmedEmail) throw new Error('Email is required')
+    if (!/^\d{6}$/.test(trimmedToken)) {
+      throw new Error('Enter the 6-digit code from your email')
+    }
+
+    const { error } = await supabase.auth.verifyOtp({
+      email: trimmedEmail,
+      token: trimmedToken,
+      type: 'email',
+    })
+    if (error) {
+      const message = error.message.toLowerCase()
+      if (message.includes('expired') || message.includes('invalid')) {
+        throw new Error('That code is invalid or expired. Request a new code and try again.')
+      }
+      throw error
+    }
   }, [])
 
   const signOut = useCallback(async () => {
@@ -214,7 +240,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Legacy globals: directors only until caller passes a team id.
       canDeleteMatches: canDeleteMatches(role, null),
       canUseSprocketIntegration: canUseSprocketIntegration(role, null),
-      signInWithMagicLink,
+      sendLoginOtp,
+      verifyLoginOtp,
       signOut,
       refreshRole,
     }),
@@ -227,7 +254,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getTeamRole,
       canDeleteMatchesForTeam,
       canUseSprocketForTeam,
-      signInWithMagicLink,
+      sendLoginOtp,
+      verifyLoginOtp,
       signOut,
       refreshRole,
     ],

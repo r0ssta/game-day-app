@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "db:migrate": "node scripts/run-migrations.mjs",
     "db:migrate:status": "node scripts/run-migrations.mjs --status",
-    "db:migrate:baseline": "node scripts/run-migrations.mjs --baseline"
+    "db:migrate:baseline": "node scripts/run-migrations.mjs --baseline",
+    "auth:otp-template": "node scripts/update-otp-email-template.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
