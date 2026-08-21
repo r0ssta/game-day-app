@@ -10,17 +10,59 @@ type AuthMode = 'sign_in' | 'register'
 type AuthStep = 'email' | 'otp'
 
 const RESEND_COOLDOWN_SECONDS = 60
+const OTP_PENDING_KEY = 'gameday.auth.otpPending'
+
+type OtpPending = {
+  email: string
+  mode: AuthMode
+  resendUntil: number
+}
+
+function readOtpPending(): OtpPending | null {
+  try {
+    const raw = sessionStorage.getItem(OTP_PENDING_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<OtpPending>
+    if (typeof parsed.email !== 'string' || !parsed.email.trim()) return null
+    return {
+      email: parsed.email.trim(),
+      mode: parsed.mode === 'register' ? 'register' : 'sign_in',
+      resendUntil: typeof parsed.resendUntil === 'number' ? parsed.resendUntil : 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeOtpPending(pending: OtpPending | null) {
+  try {
+    if (!pending) {
+      sessionStorage.removeItem(OTP_PENDING_KEY)
+      return
+    }
+    sessionStorage.setItem(OTP_PENDING_KEY, JSON.stringify(pending))
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.).
+  }
+}
+
+function cooldownSecondsFrom(resendUntil: number) {
+  return Math.max(0, Math.ceil((resendUntil - Date.now()) / 1000))
+}
 
 export function AuthScreen() {
   const { sendLoginOtp, verifyLoginOtp } = useAuth()
   const { sunlightMode, toggleSunlightMode } = useSunlightMode()
-  const [mode, setMode] = useState<AuthMode>('sign_in')
-  const [step, setStep] = useState<AuthStep>('email')
-  const [email, setEmail] = useState('')
+  const restored = useRef(readOtpPending())
+  const [mode, setMode] = useState<AuthMode>(restored.current?.mode ?? 'sign_in')
+  const [step, setStep] = useState<AuthStep>(restored.current ? 'otp' : 'email')
+  const [email, setEmail] = useState(restored.current?.email ?? '')
   const [otp, setOtp] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [resendSeconds, setResendSeconds] = useState(0)
+  const [resendSeconds, setResendSeconds] = useState(() =>
+    restored.current ? cooldownSecondsFrom(restored.current.resendUntil) : 0,
+  )
   const otpInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -35,25 +77,42 @@ export function AuthScreen() {
   }, [step])
 
   const resetToEmail = () => {
+    writeOtpPending(null)
     setStep('email')
     setOtp('')
     setError(null)
     setResendSeconds(0)
   }
 
+  const enterOtpStep = (targetEmail: string, nextMode: AuthMode) => {
+    const trimmed = targetEmail.trim()
+    const resendUntil = Date.now() + RESEND_COOLDOWN_SECONDS * 1000
+    writeOtpPending({ email: trimmed, mode: nextMode, resendUntil })
+    setEmail(trimmed)
+    setOtp('')
+    setError(null)
+    setStep('otp')
+    setResendSeconds(RESEND_COOLDOWN_SECONDS)
+  }
+
   const sendCode = async (targetEmail: string) => {
     await sendLoginOtp(targetEmail)
-    setResendSeconds(RESEND_COOLDOWN_SECONDS)
   }
 
   const onSubmitEmail = async (event: FormEvent) => {
     event.preventDefault()
+    const trimmed = email.trim()
+    if (!trimmed) {
+      setError('Email is required')
+      return
+    }
+
+    // Advance immediately so switching to Mail (or a suspended tab) still
+    // lands on the code entry UI once the email is on its way.
+    enterOtpStep(trimmed, mode)
     setBusy(true)
-    setError(null)
     try {
-      await sendCode(email)
-      setOtp('')
-      setStep('otp')
+      await sendCode(trimmed)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send login code')
     } finally {
@@ -67,6 +126,7 @@ export function AuthScreen() {
     setError(null)
     try {
       await verifyLoginOtp(email, otp)
+      writeOtpPending(null)
       // AuthProvider onAuthStateChange swaps to the signed-in app shell.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not verify code')
@@ -83,7 +143,7 @@ export function AuthScreen() {
     setError(null)
     try {
       await sendCode(email)
-      setOtp('')
+      enterOtpStep(email, mode)
       otpInputRef.current?.focus()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not resend code')
@@ -174,7 +234,19 @@ export function AuthScreen() {
                   Enter your login code
                 </p>
                 <p className="mt-2 text-sm font-semibold text-foreground">
-                  We sent a 6-digit code to <span className="font-black">{email.trim()}</span>.
+                  {busy && otp.length === 0 && !error
+                    ? (
+                      <>
+                        Sending a 6-digit code to{' '}
+                        <span className="font-black">{email.trim()}</span>…
+                      </>
+                      )
+                    : (
+                      <>
+                        We sent a 6-digit code to{' '}
+                        <span className="font-black">{email.trim()}</span>.
+                      </>
+                      )}
                 </p>
               </div>
 
