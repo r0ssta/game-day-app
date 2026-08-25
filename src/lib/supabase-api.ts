@@ -1170,6 +1170,9 @@ export async function updateMatchRecord(
       DbMatch,
       | 'home_score'
       | 'away_score'
+      | 'home_pk_score'
+      | 'away_pk_score'
+      | 'pk_winner_is_us'
       | 'clock_seconds'
       | 'period'
       | 'period_clock_started'

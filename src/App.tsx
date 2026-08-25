@@ -11,6 +11,7 @@ import {
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { EndMatchTimingModal } from '@/components/EndMatchTimingModal'
 import { GoalWizardModal, type GoalWizardStep, type GoalWizardTeam } from '@/components/GoalWizardModal'
+import { HomeScreen } from '@/components/HomeScreen'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
 import { SubCountdownTimer } from '@/components/SubCountdownTimer'
@@ -119,7 +120,14 @@ import type {
 } from '@/types/match'
 import type { LocationType } from '@/lib/match-location'
 import { formatVenueLabel } from '@/lib/match-location'
-
+import {
+  APP_CONTAINER,
+  APP_SHELL,
+  APP_SHELL_LOCKED,
+  MODAL_OVERLAY,
+  MODAL_PANEL,
+  TOUCH_ICON_BUTTON,
+} from '@/lib/layout'
 
 const HALF_LENGTH_OPTIONS = [25, 30, 35, 40, 45]
 
@@ -1710,7 +1718,6 @@ export default function App() {
     matchCoachName,
     matchOpponent,
     matchLocationType,
-    matchTournamentGame,
     matchGoesToPks,
     homePkScore,
     setHomePkScore,
