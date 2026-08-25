@@ -66,6 +66,8 @@ export type MatchEventInput = {
   playerId?: string | null
   eventNotes?: string | null
   assistPlayerId?: string | null
+  /** True when a regulation goal / opponent_goal came from a penalty kick. */
+  isPk?: boolean
   pkResult?: 'make' | 'miss' | null
   pkTeam?: 'us' | 'opponent' | null
 }
@@ -83,6 +85,9 @@ function matchEventToRow(event: MatchEventInput, includeExtended = true) {
   const extended: Record<string, unknown> = { ...row, formation: event.formation }
   if (event.eventType === 'goal') {
     extended.assist_player_id = event.assistPlayerId ?? null
+  }
+  if (event.eventType === 'goal' || event.eventType === 'opponent_goal') {
+    extended.is_pk = event.isPk === true
   }
   if (event.eventType === 'pk_attempt') {
     extended.pk_result = event.pkResult ?? null
@@ -135,12 +140,14 @@ async function insertMatchEventRows(
       const {
         formation: _formation,
         assist_player_id: _assistPlayerId,
+        is_pk: _isPk,
         pk_result: _pkResult,
         pk_team: _pkTeam,
         ...keep
       } = row as Record<string, unknown> & {
         formation?: string
         assist_player_id?: string | null
+        is_pk?: boolean
         pk_result?: string | null
         pk_team?: string | null
       }

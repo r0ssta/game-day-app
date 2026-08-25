@@ -129,6 +129,8 @@ export type DbMatchEvent = {
   event_notes: string | null
   formation: string | null
   assist_player_id: string | null
+  /** True when a regulation goal / opponent_goal came from a penalty kick. */
+  is_pk?: boolean
   /** Present for pk_attempt events. */
   pk_result: 'make' | 'miss' | null
   /** Present for pk_attempt events. */

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { EndMatchTimingModal } from '@/components/EndMatchTimingModal'
-import { GoalWizardModal } from '@/components/GoalWizardModal'
+import { GoalWizardModal, type GoalWizardStep, type GoalWizardTeam } from '@/components/GoalWizardModal'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
 import { SubCountdownTimer } from '@/components/SubCountdownTimer'
@@ -1829,7 +1829,9 @@ export default function App() {
     'home' | 'recap_history' | 'reporting' | null
   >(null)
   const [goalWizardOpen, setGoalWizardOpen] = useState(false)
-  const [goalWizardStep, setGoalWizardStep] = useState<'scorer' | 'assist'>('scorer')
+  const [goalWizardTeam, setGoalWizardTeam] = useState<GoalWizardTeam>('us')
+  const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>('goal_type')
+  const [goalIsPk, setGoalIsPk] = useState(false)
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
   const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
   const [liveDeleting, setLiveDeleting] = useState(false)
@@ -2073,7 +2075,9 @@ export default function App() {
       await deleteMatch(targetMatchId)
       void refreshPendingReviewMatches()
       setGoalWizardOpen(false)
-      setGoalWizardStep('scorer')
+      setGoalWizardTeam('us')
+      setGoalWizardStep('goal_type')
+      setGoalIsPk(false)
       setGoalScorerId(null)
       setQaSpeedMultiplier(1)
       if (recapReturnMode === 'recap_history') {
@@ -2664,50 +2668,62 @@ export default function App() {
 
   const closeGoalWizard = useCallback(() => {
     setGoalWizardOpen(false)
-    setGoalWizardStep('scorer')
+    setGoalWizardTeam('us')
+    setGoalWizardStep('goal_type')
+    setGoalIsPk(false)
     setGoalScorerId(null)
   }, [])
 
-  const handleSelectGoalScorer = useCallback((player: MatchPlayer) => {
-    setGoalScorerId(player.id)
-    setGoalWizardStep('assist')
+  const openGoalWizard = useCallback((team: GoalWizardTeam) => {
+    setGoalWizardTeam(team)
+    setGoalWizardStep('goal_type')
+    setGoalIsPk(false)
+    setGoalScorerId(null)
+    setGoalWizardOpen(true)
   }, [])
 
-  const handleOpponentGoal = useCallback(() => {
-    if (!matchId) return
+  const commitOpponentGoal = useCallback(
+    (isPk: boolean) => {
+      if (!matchId) return
 
-    const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
-    const opponentLabel = matchOpponent.trim() || 'Opponent'
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const opponentLabel = matchOpponent.trim() || 'Opponent'
 
-    setAwayScore((current) => {
-      const next = current + 1
-      syncMatchRecord(matchId, { away_score: next })
-      setToast(`Opponent goal · ${opponentLabel} ${next}`)
-      return next
-    })
+      setAwayScore((current) => {
+        const next = current + 1
+        syncMatchRecord(matchId, { away_score: next })
+        setToast(
+          isPk
+            ? `Opponent PK · ${opponentLabel} ${next}`
+            : `Opponent goal · ${opponentLabel} ${next}`,
+        )
+        return next
+      })
 
-    syncMatchEvent({
-      matchId,
-      eventType: 'opponent_goal',
-      timestamp: eventTimestamp,
-      formation: activeFormation,
-    })
+      syncMatchEvent({
+        matchId,
+        eventType: 'opponent_goal',
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        isPk,
+      })
 
-    setPlayers((prev) => {
-      const next = applyPlusMinusDelta(prev, -1)
-      if (matchId) syncMatchStats(matchId, next)
-      return next
-    })
-  }, [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore, setPlayers])
+      setPlayers((prev) => {
+        const next = applyPlusMinusDelta(prev, -1)
+        if (matchId) syncMatchStats(matchId, next)
+        return next
+      })
+    },
+    [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore, setPlayers],
+  )
 
-  const handleCompleteGoal = useCallback(
-    (assistPlayerId: string | null) => {
-      if (!matchId || !goalScorerId) return
+  const commitOurGoal = useCallback(
+    (scorerId: string, assistPlayerId: string | null, isPk: boolean) => {
+      if (!matchId) return
 
-      const scorer = players.find((p) => p.id === goalScorerId)
+      const scorer = players.find((p) => p.id === scorerId)
       if (!scorer) return
-
-      if (assistPlayerId === goalScorerId) return
+      if (assistPlayerId === scorerId) return
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
 
@@ -2719,11 +2735,12 @@ export default function App() {
 
       syncMatchEvent({
         matchId,
-        playerId: goalScorerId,
+        playerId: scorerId,
         eventType: 'goal',
         timestamp: eventTimestamp,
         formation: activeFormation,
-        assistPlayerId,
+        assistPlayerId: isPk ? null : assistPlayerId,
+        isPk,
       })
 
       setPlayers((prev) => {
@@ -2732,29 +2749,62 @@ export default function App() {
         return next
       })
 
-      const assistPlayer = assistPlayerId
-        ? players.find((p) => p.id === assistPlayerId)
-        : null
+      const assistPlayer =
+        !isPk && assistPlayerId ? players.find((p) => p.id === assistPlayerId) : null
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const scorerLabel = formatPlayerLabel(scorer, sidelineMap)
-      const assistLabel = assistPlayer
-        ? formatPlayerLabel(assistPlayer, sidelineMap)
-        : 'Unassisted'
+      const detail = isPk
+        ? 'PK'
+        : assistPlayer
+          ? formatPlayerLabel(assistPlayer, sidelineMap)
+          : 'Unassisted'
 
-      setToast(`Goal · ${scorerLabel} (${assistLabel})`)
+      setToast(`Goal · ${scorerLabel} (${detail})`)
       closeGoalWizard()
     },
     [
       matchId,
-      goalScorerId,
       players,
       seconds,
       halfLengthMinutes,
       activeFormation,
       setHomeScore,
-      closeGoalWizard,
       setPlayers,
+      closeGoalWizard,
     ],
+  )
+
+  const handleSelectGoalType = useCallback(
+    (isPk: boolean) => {
+      if (goalWizardTeam === 'opponent') {
+        commitOpponentGoal(isPk)
+        closeGoalWizard()
+        return
+      }
+      setGoalIsPk(isPk)
+      setGoalWizardStep('scorer')
+    },
+    [goalWizardTeam, commitOpponentGoal, closeGoalWizard],
+  )
+
+  const handleSelectGoalScorer = useCallback(
+    (player: MatchPlayer) => {
+      setGoalScorerId(player.id)
+      if (goalIsPk) {
+        commitOurGoal(player.id, null, true)
+        return
+      }
+      setGoalWizardStep('assist')
+    },
+    [goalIsPk, commitOurGoal],
+  )
+
+  const handleCompleteGoal = useCallback(
+    (assistPlayerId: string | null) => {
+      if (!goalScorerId) return
+      commitOurGoal(goalScorerId, assistPlayerId, goalIsPk)
+    },
+    [goalScorerId, goalIsPk, commitOurGoal],
   )
 
   const handleShareStatTracker = useCallback(async () => {
@@ -3186,8 +3236,8 @@ export default function App() {
         periodClockStarted={periodClockStarted}
         wakeLockActive={wakeLockActive}
         onHome={() => setAppMode('home')}
-        onLogGoal={() => setGoalWizardOpen(true)}
-        onOpponentGoal={handleOpponentGoal}
+        onLogGoal={() => openGoalWizard('us')}
+        onOpponentGoal={() => openGoalWizard('opponent')}
         onShareStatTracker={
           matchId ? () => void handleShareStatTracker() : undefined
         }
@@ -3249,9 +3299,12 @@ export default function App() {
 
       <GoalWizardModal
         open={goalWizardOpen}
+        team={goalWizardTeam}
         step={goalWizardStep}
+        isPk={goalIsPk}
         players={players}
         scorerId={goalScorerId}
+        onSelectGoalType={handleSelectGoalType}
         onSelectScorer={handleSelectGoalScorer}
         onSelectAssist={handleCompleteGoal}
         onClose={closeGoalWizard}
