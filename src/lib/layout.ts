@@ -20,13 +20,19 @@ export const APP_CONTAINER_TIGHT =
 export const PITCH_BENCH_LAYOUT =
   'grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden md:grid-cols-[minmax(0,1fr)_minmax(260px,320px)] md:items-stretch lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_380px]'
 
+/** Flow layout: pitch + bench grow with page scroll (no nested scrollers). */
+export const PITCH_BENCH_LAYOUT_FLOW =
+  'grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(260px,320px)] lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_380px]'
+
 /** Bench column: fills height; put overflow-y-auto on the inner player list. */
 export const PITCH_BENCH_SIDEBAR =
   'flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden'
 
-/** Live match still page-scrolls — cap bench height so it doesn't grow forever. */
-export const PITCH_BENCH_SIDEBAR_CAPPED =
-  'flex min-h-0 min-w-0 flex-col gap-4 max-h-[min(42vh,420px)] overflow-y-auto overscroll-contain md:max-h-[min(72vh,720px)]'
+/** Bench column in page-scroll contexts — lists grow; parent page is the only scroller. */
+export const PITCH_BENCH_SIDEBAR_FLOW = 'flex min-w-0 flex-col gap-4'
+
+/** @deprecated Prefer PITCH_BENCH_SIDEBAR_FLOW — kept as alias so live match doesn't nest scroll. */
+export const PITCH_BENCH_SIDEBAR_CAPPED = PITCH_BENCH_SIDEBAR_FLOW
 
 export const MODAL_OVERLAY =
   'fixed inset-0 z-[100] flex flex-col justify-end bg-background/80 p-0 backdrop-blur-sm md:items-center md:justify-center md:p-4'

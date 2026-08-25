@@ -17,7 +17,7 @@ import {
   rosterPositionAbbrev,
 } from '@/lib/positions'
 import { cn } from '@/lib/utils'
-import { PITCH_BENCH_LAYOUT, PITCH_BENCH_SIDEBAR, TOUCH_ICON_BUTTON, TOUCH_ROW } from '@/lib/layout'
+import { PITCH_BENCH_LAYOUT, PITCH_BENCH_LAYOUT_FLOW, PITCH_BENCH_SIDEBAR, PITCH_BENCH_SIDEBAR_FLOW, TOUCH_ICON_BUTTON, TOUCH_ROW } from '@/lib/layout'
 
 export type PitchLineupPlayer = {
   id: string
@@ -53,6 +53,11 @@ type TacticalPitchLineupProps = {
   assignmentsResetKey?: string | number
   assignmentsRef?: MutableRefObject<Record<string, string | null> | null>
   teamFormat?: TeamFormat
+  /**
+   * When false, bench/absent lists grow naturally so a parent page can be the only scroller.
+   * Default true keeps inner list scroll for filled-height shells.
+   */
+  constrainLists?: boolean
 }
 
 function formatJersey(number: number | null) {
@@ -248,6 +253,7 @@ export function TacticalPitchLineup({
   assignmentsResetKey,
   assignmentsRef,
   teamFormat,
+  constrainLists = true,
 }: TacticalPitchLineupProps) {
   const availableFormations = useMemo(
     () => (teamFormat ? getFormationsForFormat(teamFormat) : getFormationsForFormat('9v9')),
@@ -476,7 +482,13 @@ export function TacticalPitchLineup({
   }
 
   return (
-    <section aria-label={title} className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+    <section
+      aria-label={title}
+      className={cn(
+        'flex flex-col gap-3',
+        constrainLists ? 'min-h-0 flex-1 overflow-hidden' : undefined,
+      )}
+    >
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-display text-xl font-bold uppercase tracking-wide text-foreground">
           <Users className="size-5 text-athletic" />
@@ -517,8 +529,13 @@ export function TacticalPitchLineup({
         Tap a player, then tap a position — or drag from the bench onto the pitch.
       </p>
 
-      <div className={PITCH_BENCH_LAYOUT}>
-        <div className="min-w-0 shrink-0 md:min-h-0 md:overflow-hidden">
+      <div className={constrainLists ? PITCH_BENCH_LAYOUT : PITCH_BENCH_LAYOUT_FLOW}>
+        <div
+          className={cn(
+            'min-w-0 shrink-0',
+            constrainLists && 'md:min-h-0 md:overflow-hidden',
+          )}
+        >
           <SoccerPitchSurface>
             {formation.slots.map((slot) => {
               const playerId = slotAssignments[slot.id]
@@ -542,8 +559,13 @@ export function TacticalPitchLineup({
           </SoccerPitchSurface>
         </div>
 
-        <div className={PITCH_BENCH_SIDEBAR}>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-secondary/20 p-3">
+        <div className={constrainLists ? PITCH_BENCH_SIDEBAR : PITCH_BENCH_SIDEBAR_FLOW}>
+          <div
+            className={cn(
+              'rounded-xl border border-border bg-secondary/20 p-3',
+              constrainLists && 'flex min-h-0 flex-1 flex-col overflow-hidden',
+            )}
+          >
             <div className="mb-2 flex shrink-0 items-center justify-between">
               <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">Bench / Unassigned</h3>
               <span className="text-xs font-semibold text-muted-foreground">{poolPlayers.length} players</span>
@@ -551,7 +573,12 @@ export function TacticalPitchLineup({
             {poolPlayers.length === 0 ? (
               <p className="py-3 text-center text-sm text-muted-foreground">All attending players are on the pitch</p>
             ) : (
-              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
+              <ul
+                className={cn(
+                  'space-y-2',
+                  constrainLists && 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+                )}
+              >
                 {poolPlayers.map((player) => (
                   <li key={player.id}>
                     <PoolPlayerChip
@@ -572,11 +599,21 @@ export function TacticalPitchLineup({
           </div>
 
           {absentPlayers.length > 0 && (
-            <div className="flex max-h-[40%] min-h-0 flex-col overflow-hidden rounded-xl border border-dashed border-border bg-card/50 p-3">
+            <div
+              className={cn(
+                'rounded-xl border border-dashed border-border bg-card/50 p-3',
+                constrainLists && 'flex max-h-[40%] min-h-0 flex-col overflow-hidden',
+              )}
+            >
               <h3 className="mb-2 shrink-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                 Absent
               </h3>
-              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
+              <ul
+                className={cn(
+                  'space-y-2',
+                  constrainLists && 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+                )}
+              >
                 {absentPlayers.map((player) => (
                   <li key={player.id}>
                     <PoolPlayerChip
