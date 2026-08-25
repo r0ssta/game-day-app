@@ -122,7 +122,7 @@ function PitchSlotBadge({
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={cn(
-        'absolute flex min-h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 touch-manipulation flex-col items-center transition-transform active:scale-95',
+        'absolute flex min-h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 touch-pan-y flex-col items-center transition-transform active:scale-95',
         highlighted && 'z-10 scale-110',
       )}
     >
@@ -176,12 +176,16 @@ function PoolPlayerChip({
   onEdit?: () => void
   showAttendingToggle: boolean
 }) {
+  // HTML5 drag blocks touch scrolling on phones; tap-to-assign covers mobile.
+  const allowDrag =
+    typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
+
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
+      draggable={allowDrag}
+      onDragStart={allowDrag ? onDragStart : undefined}
       className={cn(
-        'flex items-center gap-2 rounded-xl border bg-card px-2 py-2 transition-colors',
+        'flex touch-pan-y items-center gap-2 rounded-xl border bg-card px-2 py-2 transition-colors',
         selected ? 'border-neon ring-2 ring-neon/40' : 'border-border',
       )}
     >

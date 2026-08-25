@@ -123,7 +123,6 @@ import { formatVenueLabel } from '@/lib/match-location'
 import {
   APP_CONTAINER,
   APP_SHELL,
-  APP_SHELL_LOCKED,
   MODAL_OVERLAY,
   MODAL_PANEL,
   TOUCH_ICON_BUTTON,
@@ -980,18 +979,15 @@ function SetupScreen({
   )
 
   return (
-    <main className={APP_SHELL_LOCKED}>
-      <div className={`${APP_CONTAINER} flex min-h-0 flex-1 flex-col overflow-hidden pt-4 md:pt-5`}>
-        <div className="shrink-0">
-          <ScreenHeader
-            title="Game Day Setup"
-            subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
-            onHome={onBackToHome}
-            teamSwitcher={teamSwitcher}
-          />
-        </div>
+    <main className={APP_SHELL}>
+      <div className={`${APP_CONTAINER} space-y-3 pt-4 md:pt-5`}>
+        <ScreenHeader
+          title="Game Day Setup"
+          subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
+          onHome={onBackToHome}
+          teamSwitcher={teamSwitcher}
+        />
 
-        <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-0.5 md:mt-5">
             <p className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {activeTeamFormat} format · {maxFieldPlayers} on field
             </p>
@@ -1295,9 +1291,10 @@ function SetupScreen({
               </>
             )}
           </section>
-        </div>
+      </div>
 
-        <div className="shrink-0 space-y-2 border-t-2 border-border bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="sticky bottom-0 z-20 space-y-2 border-t-2 border-border bg-background/95 px-4 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/90 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+        <div className="mx-auto w-full max-w-md md:max-w-2xl lg:max-w-4xl">
           <button
             type="button"
             onClick={onStartMatch}
@@ -1377,78 +1374,76 @@ function HalftimeSetupScreen({
     : firstHalfClock.regulation
 
   return (
-    <main className={APP_SHELL_LOCKED}>
-      <div className={`${APP_CONTAINER} flex min-h-0 flex-1 flex-col overflow-hidden pt-4 md:pt-5`}>
-        <div className="shrink-0">
-          <ScreenHeader
-            title="Halftime Setup"
-            subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
-            onHome={onBackToHome}
-          />
-        </div>
+    <main className={APP_SHELL}>
+      <div className={`${APP_CONTAINER} space-y-3 pt-4 md:pt-5`}>
+        <ScreenHeader
+          title="Halftime Setup"
+          subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
+          onHome={onBackToHome}
+        />
 
-        <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain md:mt-5">
-          {lineupPresets.length > 0 ? (
-            <div>
-              <label
-                htmlFor="load-halftime-preset"
-                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-              >
-                Load Lineup Preset
-              </label>
-              <select
-                id="load-halftime-preset"
-                value={selectedPresetId}
-                onChange={(e) => {
-                  const presetId = e.target.value
-                  setSelectedPresetId(presetId)
-                  if (presetId) onLoadLineupPreset(presetId)
-                }}
-                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-              >
-                <option value="">Choose a saved lineup…</option>
-                {lineupPresets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.preset_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
+        {lineupPresets.length > 0 ? (
+          <div>
+            <label
+              htmlFor="load-halftime-preset"
+              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              Load Lineup Preset
+            </label>
+            <select
+              id="load-halftime-preset"
+              value={selectedPresetId}
+              onChange={(e) => {
+                const presetId = e.target.value
+                setSelectedPresetId(presetId)
+                if (presetId) onLoadLineupPreset(presetId)
+              }}
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+            >
+              <option value="">Choose a saved lineup…</option>
+              {lineupPresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.preset_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
-          <TacticalPitchLineup
-            title="2nd Half Lineup"
-            formationId={secondHalfFormation}
-            onFormationChange={onSetSecondHalfFormation}
-            initialSlotAssignments={initialSlotAssignments}
-            assignmentsResetKey={assignmentsResetKey}
-            assignmentsRef={halftimeAssignmentsRef}
-            constrainLists={false}
-            players={attendingPlayers.map((player) => ({
-              id: player.id,
-              name: formatPlayerFullName(player.firstName, player.lastName),
-              shortName: getSidelineName(player, sidelineNameMap),
-              number: player.number,
-              isGuest: player.isGuest,
-              matchPosition: player.matchPosition,
-              minutesLabel: formatPlayingTimeBadge(player.totalSecondsPlayed),
-              badge: carriedFromFirstHalf[player.id]
-                ? player.isFirstHalfStarter
-                  ? 'Started 1st Half'
-                  : 'Carried from 1st'
-                : undefined,
-              meta: player.matchPosition,
-            }))}
-            attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
-            starters={secondHalfStarters}
-            maxFieldPlayers={maxFieldPlayers}
-            teamFormat={activeTeamFormat}
-            onAssignStarter={onAssignSecondHalfStarter}
-            onRemoveStarter={onRemoveSecondHalfStarter}
-          />
-        </div>
+        <TacticalPitchLineup
+          title="2nd Half Lineup"
+          formationId={secondHalfFormation}
+          onFormationChange={onSetSecondHalfFormation}
+          initialSlotAssignments={initialSlotAssignments}
+          assignmentsResetKey={assignmentsResetKey}
+          assignmentsRef={halftimeAssignmentsRef}
+          constrainLists={false}
+          players={attendingPlayers.map((player) => ({
+            id: player.id,
+            name: formatPlayerFullName(player.firstName, player.lastName),
+            shortName: getSidelineName(player, sidelineNameMap),
+            number: player.number,
+            isGuest: player.isGuest,
+            matchPosition: player.matchPosition,
+            minutesLabel: formatPlayingTimeBadge(player.totalSecondsPlayed),
+            badge: carriedFromFirstHalf[player.id]
+              ? player.isFirstHalfStarter
+                ? 'Started 1st Half'
+                : 'Carried from 1st'
+              : undefined,
+            meta: player.matchPosition,
+          }))}
+          attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
+          starters={secondHalfStarters}
+          maxFieldPlayers={maxFieldPlayers}
+          teamFormat={activeTeamFormat}
+          onAssignStarter={onAssignSecondHalfStarter}
+          onRemoveStarter={onRemoveSecondHalfStarter}
+        />
+      </div>
 
-        <div className="shrink-0 space-y-2 border-t-2 border-border bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="sticky bottom-0 z-20 border-t-2 border-border bg-background/95 px-4 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/90 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+        <div className="mx-auto w-full max-w-md md:max-w-2xl lg:max-w-4xl">
           <button
             type="button"
             onClick={onBeginSecondHalf}
