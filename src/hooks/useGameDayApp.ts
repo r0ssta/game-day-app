@@ -173,6 +173,7 @@ export function useGameDayApp() {
   const [homePkScore, setHomePkScore] = useState(0)
   const [awayPkScore, setAwayPkScore] = useState(0)
   const [pkWinnerIsUs, setPkWinnerIsUs] = useState<boolean | null>(null)
+  const [pkGkPlayerId, setPkGkPlayerId] = useState<string | null>(null)
   const [halfLengthMinutes, setHalfLengthMinutes] = useState(DEFAULT_HALF_LENGTH)
   const [gkPlaysFullHalf, setGkPlaysFullHalf] = useState(true)
   const [subFrequency, setSubFrequency] = useState<SubFrequency>('medium')
@@ -347,6 +348,7 @@ export function useGameDayApp() {
           setHomePkScore(match.home_pk_score ?? 0)
           setAwayPkScore(match.away_pk_score ?? 0)
           setPkWinnerIsUs(match.pk_winner_is_us ?? null)
+          setPkGkPlayerId(match.pk_gk_player_id ?? null)
           setLocationType(resolveMatchLocationType(match))
           setMatchDate(match.match_date ?? defaultMatchDate())
           setMatchTime(normalizeMatchTimeForInput(match.match_time))
@@ -1072,6 +1074,7 @@ export function useGameDayApp() {
         setHomePkScore(0)
         setAwayPkScore(0)
         setPkWinnerIsUs(null)
+        setPkGkPlayerId(null)
         setSeconds(initialHalfClock(input.halfLength))
         setPeriod('1st')
         setRunning(false)
@@ -1278,11 +1281,13 @@ export function useGameDayApp() {
         setHomePkScore(0)
         setAwayPkScore(0)
         setPkWinnerIsUs(null)
+        setPkGkPlayerId(null)
         if (matchId) {
           void syncMatchRecord(matchId, {
             home_pk_score: 0,
             away_pk_score: 0,
             pk_winner_is_us: null,
+            pk_gk_player_id: null,
             period_clock_started: false,
             clock_seconds: persistableClockSeconds(clockSeconds),
           })
@@ -1351,6 +1356,7 @@ export function useGameDayApp() {
     setHomePkScore(0)
     setAwayPkScore(0)
     setPkWinnerIsUs(null)
+    setPkGkPlayerId(null)
     setLocationType('home')
     setTournamentGame(false)
     setGoesToPks(false)
@@ -1410,6 +1416,7 @@ export function useGameDayApp() {
     setHomePkScore(match.home_pk_score ?? 0)
     setAwayPkScore(match.away_pk_score ?? 0)
     setPkWinnerIsUs(match.pk_winner_is_us ?? null)
+    setPkGkPlayerId(match.pk_gk_player_id ?? null)
     setSeconds(
       restoreMatchClockSeconds(
         match.clock_seconds,
@@ -1609,6 +1616,8 @@ export function useGameDayApp() {
     awayPkScore,
     setAwayPkScore,
     pkWinnerIsUs,
+    pkGkPlayerId,
+    setPkGkPlayerId,
     halfLengthMinutes,
     setHalfLengthMinutes,
     gkPlaysFullHalf,

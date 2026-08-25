@@ -76,6 +76,8 @@ export type DbMatch = {
   away_pk_score: number
   /** null until a PK shootout is finalized; true = we won on PKs. */
   pk_winner_is_us: boolean | null
+  /** Our goalkeeper for the penalty shootout. */
+  pk_gk_player_id?: string | null
   clock_seconds: number
   period: '1st' | '2nd'
   status: 'active' | 'scheduled' | 'pending_review' | 'completed'

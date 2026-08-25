@@ -1,4 +1,5 @@
 import type { DbMatch, DbMatchEvent } from '@/types/database'
+import type { MatchPlayer } from '@/types/match'
 
 export type PkResult = 'make' | 'miss'
 export type PkTeam = 'us' | 'opponent'
@@ -191,5 +192,32 @@ export function shouldResumePenaltyShootout(match: {
     Boolean(match.goes_to_pks) &&
     match.home_score === match.away_score &&
     match.pk_winner_is_us == null
+  )
+}
+
+function isGoalkeeperPosition(position: string | null | undefined): boolean {
+  if (!position) return false
+  const normalized = position.trim().toUpperCase()
+  return (
+    normalized === 'GK' ||
+    normalized === 'KEEPER' ||
+    normalized === 'GOALKEEPER' ||
+    normalized.includes('GK')
+  )
+}
+
+/** Prefer on-field GK, then attending players with a GK roster position. */
+export function findMatchGoalkeeper(players: MatchPlayer[]): MatchPlayer | null {
+  const attending = players.filter((player) => player.attending)
+  const onFieldGk = attending.find(
+    (player) => player.isOnField && isGoalkeeperPosition(player.matchPosition),
+  )
+  if (onFieldGk) return onFieldGk
+  return (
+    attending.find(
+      (player) =>
+        isGoalkeeperPosition(player.primaryPosition) ||
+        isGoalkeeperPosition(player.position),
+    ) ?? null
   )
 }

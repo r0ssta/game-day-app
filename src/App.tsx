@@ -1714,6 +1714,8 @@ export default function App() {
     awayPkScore,
     setAwayPkScore,
     pkWinnerIsUs,
+    pkGkPlayerId,
+    setPkGkPlayerId,
     halfLengthMinutes,
     setHalfLengthMinutes,
     gkPlaysFullHalf,
@@ -3139,6 +3141,16 @@ export default function App() {
     )
   }
 
+  const handlePkGkPlayerChange = useCallback(
+    (playerId: string | null) => {
+      setPkGkPlayerId(playerId)
+      if (matchId) {
+        syncMatchRecord(matchId, { pk_gk_player_id: playerId })
+      }
+    },
+    [matchId, setPkGkPlayerId],
+  )
+
   if (appMode === 'penalty_shootout') {
     return (
       <PenaltyShootoutScreen
@@ -3147,6 +3159,8 @@ export default function App() {
         regulationHomeScore={homeScore}
         regulationAwayScore={awayScore}
         players={players}
+        gkPlayerId={pkGkPlayerId}
+        onGkPlayerChange={handlePkGkPlayerChange}
         onRecordAttempt={async ({ round, team, result, playerId }) => {
           if (!matchId) return
           const nextHome =

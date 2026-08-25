@@ -1173,6 +1173,7 @@ export async function updateMatchRecord(
       | 'home_pk_score'
       | 'away_pk_score'
       | 'pk_winner_is_us'
+      | 'pk_gk_player_id'
       | 'clock_seconds'
       | 'period'
       | 'period_clock_started'

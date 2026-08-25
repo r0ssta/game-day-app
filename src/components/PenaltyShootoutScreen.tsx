@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
-import { Check, Plus, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, Plus, Shield, X } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { APP_CONTAINER, APP_SHELL_LOCKED } from '@/lib/layout'
 import {
   canFinalizePkShootout,
   createEmptyPkRounds,
+  findMatchGoalkeeper,
   pkScoresFromRounds,
   type PkResult,
   type PkRoundState,
@@ -19,6 +20,8 @@ type PenaltyShootoutScreenProps = {
   regulationHomeScore: number
   regulationAwayScore: number
   players: MatchPlayer[]
+  gkPlayerId: string | null
+  onGkPlayerChange: (playerId: string | null) => void
   initialRounds?: PkRoundState[]
   busy?: boolean
   onRecordAttempt: (input: {
@@ -79,12 +82,18 @@ function ResultButtons({
   )
 }
 
+function playerOptionLabel(player: MatchPlayer) {
+  return `${player.number != null ? `#${player.number} ` : ''}${formatPlayerFullName(player.firstName, player.lastName)}`
+}
+
 export function PenaltyShootoutScreen({
   teamName,
   opponent,
   regulationHomeScore,
   regulationAwayScore,
   players,
+  gkPlayerId,
+  onGkPlayerChange,
   initialRounds,
   busy = false,
   onRecordAttempt,
@@ -99,6 +108,19 @@ export function PenaltyShootoutScreen({
   const attendingPlayers = useMemo(
     () => players.filter((player) => player.attending),
     [players],
+  )
+
+  const suggestedGk = useMemo(() => findMatchGoalkeeper(players), [players])
+
+  useEffect(() => {
+    if (gkPlayerId) return
+    if (!suggestedGk) return
+    onGkPlayerChange(suggestedGk.id)
+  }, [gkPlayerId, suggestedGk, onGkPlayerChange])
+
+  const selectedGk = useMemo(
+    () => attendingPlayers.find((player) => player.id === gkPlayerId) ?? null,
+    [attendingPlayers, gkPlayerId],
   )
 
   const { homePkScore, awayPkScore } = pkScoresFromRounds(rounds)
@@ -165,6 +187,40 @@ export function PenaltyShootoutScreen({
               {teamName.trim() || 'Us'} · {opponent.trim() || 'Opponent'}
             </p>
           </div>
+
+          <div className="rounded-2xl border-2 border-athletic/50 bg-athletic/10 p-3">
+            <label
+              htmlFor="pk-goalkeeper"
+              className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground"
+            >
+              <Shield className="size-3.5 text-athletic" strokeWidth={2.5} />
+              Our Goalkeeper
+            </label>
+            <select
+              id="pk-goalkeeper"
+              value={gkPlayerId ?? ''}
+              disabled={busy || saving}
+              onChange={(event) => onGkPlayerChange(event.target.value || null)}
+              className="min-h-12 w-full touch-manipulation rounded-xl border-2 border-border bg-card px-3 text-base font-bold text-foreground"
+            >
+              <option value="">Select goalkeeper…</option>
+              {attendingPlayers.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {playerOptionLabel(player)}
+                </option>
+              ))}
+            </select>
+            {selectedGk ? (
+              <p className="mt-2 text-sm font-bold text-foreground">
+                In goal vs opponent PKs:{' '}
+                <span className="text-athletic">{playerOptionLabel(selectedGk)}</span>
+              </p>
+            ) : (
+              <p className="mt-2 text-xs font-semibold text-muted-foreground">
+                Choose who is in goal for the shootout.
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-3">
@@ -202,8 +258,7 @@ export function PenaltyShootoutScreen({
                     <option value="">Select taker…</option>
                     {attendingPlayers.map((player) => (
                       <option key={player.id} value={player.id}>
-                        {player.number != null ? `#${player.number} ` : ''}
-                        {formatPlayerFullName(player.firstName, player.lastName)}
+                        {playerOptionLabel(player)}
                       </option>
                     ))}
                   </select>
@@ -229,7 +284,9 @@ export function PenaltyShootoutScreen({
                     Opponent
                   </p>
                   <div className="flex min-h-11 items-center rounded-xl border-2 border-dashed border-border px-3 text-xs font-semibold text-muted-foreground">
-                    No player tracking
+                    {selectedGk
+                      ? `Our GK: ${playerOptionLabel(selectedGk)}`
+                      : 'No GK selected'}
                   </div>
                   <ResultButtons
                     value={round.opponentResult}
