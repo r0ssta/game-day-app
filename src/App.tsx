@@ -290,6 +290,7 @@ type MatchHeaderProps = {
   onHome: () => void
   onLogGoal?: () => void
   onOpponentGoal?: () => void
+  onShareStatTracker?: () => void
 }
 
 function QaSpeedControls({
@@ -350,6 +351,7 @@ function MatchHeader({
   onHome,
   onLogGoal,
   onOpponentGoal,
+  onShareStatTracker,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
   const awayName = opponent.trim() || 'Opponent'
@@ -474,6 +476,17 @@ function MatchHeader({
               Opp. Goal
             </button>
           </div>
+        ) : null}
+
+        {onShareStatTracker ? (
+          <button
+            type="button"
+            onClick={onShareStatTracker}
+            className="flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-athletic/40 bg-athletic/10 px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-athletic active:scale-[0.98]"
+          >
+            <Share2 className="size-4" strokeWidth={2.5} />
+            Share Stat Tracker
+          </button>
         ) : null}
       </div>
     </header>
@@ -3175,22 +3188,14 @@ export default function App() {
         onHome={() => setAppMode('home')}
         onLogGoal={() => setGoalWizardOpen(true)}
         onOpponentGoal={handleOpponentGoal}
+        onShareStatTracker={
+          matchId ? () => void handleShareStatTracker() : undefined
+        }
       />
 
       <div className={`${APP_CONTAINER} space-y-5 pt-4 md:space-y-6 md:pt-5`}>
         {ENABLE_QA_SPEED ? (
           <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
-        ) : null}
-
-        {matchId ? (
-          <button
-            type="button"
-            onClick={() => void handleShareStatTracker()}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-athletic/30 bg-athletic/10 py-3 text-sm font-bold uppercase tracking-wide text-athletic transition-transform active:scale-[0.98]"
-          >
-            <Share2 className="size-4" />
-            Share Stat Tracker
-          </button>
         ) : null}
 
         {matchId ? <SidelineStatsPanel matchId={matchId} players={players} /> : null}
