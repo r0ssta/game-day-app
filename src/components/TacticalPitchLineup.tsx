@@ -476,8 +476,8 @@ export function TacticalPitchLineup({
   }
 
   return (
-    <section aria-label={title} className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <section aria-label={title} className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-display text-xl font-bold uppercase tracking-wide text-foreground">
           <Users className="size-5 text-athletic" />
           {title}
@@ -492,7 +492,7 @@ export function TacticalPitchLineup({
         </span>
       </div>
 
-      <div>
+      <div className="shrink-0">
         <label
           htmlFor="formation-select"
           className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
@@ -513,12 +513,12 @@ export function TacticalPitchLineup({
         </select>
       </div>
 
-      <p className="text-xs text-muted-foreground">
+      <p className="shrink-0 text-xs text-muted-foreground">
         Tap a player, then tap a position — or drag from the bench onto the pitch.
       </p>
 
       <div className={PITCH_BENCH_LAYOUT}>
-        <div className="min-w-0">
+        <div className="min-w-0 shrink-0 md:min-h-0 md:overflow-hidden">
           <SoccerPitchSurface>
             {formation.slots.map((slot) => {
               const playerId = slotAssignments[slot.id]
@@ -543,15 +543,15 @@ export function TacticalPitchLineup({
         </div>
 
         <div className={PITCH_BENCH_SIDEBAR}>
-          <div className="rounded-xl border border-border bg-secondary/20 p-3">
-            <div className="mb-2 flex items-center justify-between">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-secondary/20 p-3">
+            <div className="mb-2 flex shrink-0 items-center justify-between">
               <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">Bench / Unassigned</h3>
               <span className="text-xs font-semibold text-muted-foreground">{poolPlayers.length} players</span>
             </div>
             {poolPlayers.length === 0 ? (
               <p className="py-3 text-center text-sm text-muted-foreground">All attending players are on the pitch</p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
                 {poolPlayers.map((player) => (
                   <li key={player.id}>
                     <PoolPlayerChip
@@ -572,11 +572,11 @@ export function TacticalPitchLineup({
           </div>
 
           {absentPlayers.length > 0 && (
-            <div className="rounded-xl border border-dashed border-border bg-card/50 p-3">
-              <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            <div className="flex max-h-[40%] min-h-0 flex-col overflow-hidden rounded-xl border border-dashed border-border bg-card/50 p-3">
+              <h3 className="mb-2 shrink-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                 Absent
               </h3>
-              <ul className="space-y-2">
+              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
                 {absentPlayers.map((player) => (
                   <li key={player.id}>
                     <PoolPlayerChip
@@ -589,7 +589,7 @@ export function TacticalPitchLineup({
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-[10px] text-muted-foreground">
+              <p className="mt-2 shrink-0 text-[10px] text-muted-foreground">
                 Tap a player to mark them Attending again. Absent players stay out of lineup, bench,
                 and post-game recap.
               </p>

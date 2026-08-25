@@ -9,6 +9,7 @@ import {
   resolveMatchLocationType,
 } from '@/lib/match-location'
 import { fetchRecapEligibleMatchesByTeamId, resolveMatchCoachName } from '@/lib/supabase-api'
+import { formatMatchFinalLabel, formatMatchResultScore } from '@/lib/penalty-kicks'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 import type { DbMatch } from '@/types/database'
@@ -41,7 +42,7 @@ function matchDeleteLabel(match: DbMatch) {
   const { dateLabel } = formatMatchDisplayDateTime(match)
   const locationType = resolveMatchLocationType(match)
   const opponent = match.opponent.trim() || 'Opponent'
-  return `${dateLabel} · ${formatOpponentPrefix(locationType)} ${opponent} (${match.home_score}–${match.away_score})`
+  return `${dateLabel} · ${formatOpponentPrefix(locationType)} ${opponent} (${formatMatchResultScore(match)})`
 }
 
 export function MatchRecapHistoryScreen({
@@ -187,7 +188,7 @@ export function MatchRecapHistoryScreen({
                         </span>
                       </p>
                       <p className="mt-1 font-mono text-sm font-bold tabular-nums text-foreground">
-                        Final {match.home_score} – {match.away_score}
+                        {formatMatchFinalLabel(match)}
                       </p>
                       {headCoach ? (
                         <p className="mt-1 text-xs font-semibold text-muted-foreground">

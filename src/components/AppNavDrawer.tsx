@@ -110,7 +110,7 @@ export function buildAppNavItems(input: {
 
 export function resolveActiveNavSection(appMode: string, reportingTab?: string): AppNavSection | null {
   if (appMode === 'home') return 'home'
-  if (appMode === 'match' || appMode === 'match_setup' || appMode === 'halftime') return 'active_match'
+  if (appMode === 'match' || appMode === 'match_setup' || appMode === 'halftime' || appMode === 'penalty_shootout') return 'active_match'
   if (appMode === 'reporting' && reportingTab === 'season') return 'season'
   if (appMode === 'recap_history' || appMode === 'recap') return 'recaps'
   if (appMode === 'team') return 'roster'
@@ -329,5 +329,9 @@ export function AppNavDrawer({
 }
 
 export function AppNavShell({ children }: { children: ReactNode }) {
-  return <div className="min-h-dvh pt-14">{children}</div>
+  return (
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden pt-14">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+    </div>
+  )
 }

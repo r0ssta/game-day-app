@@ -10,6 +10,7 @@ import type { SeasonReportData } from '@/lib/season-reporting'
 import { SeasonRecordBanner } from '@/components/reporting/SeasonRecordBanner'
 import { cn } from '@/lib/utils'
 import type { DbMatch } from '@/types/database'
+import { formatMatchFinalLabel } from '@/lib/penalty-kicks'
 
 type PreviousMatchesTabProps = {
   data: SeasonReportData
@@ -83,7 +84,7 @@ export function PreviousMatchesTab({
                       </span>
                     </p>
                     <p className="mt-1 font-mono text-sm font-bold tabular-nums text-foreground">
-                      Final {match.home_score} – {match.away_score}
+                      {formatMatchFinalLabel(match)}
                     </p>
                     {headCoach ? (
                       <p className="mt-1 text-xs font-semibold text-muted-foreground">

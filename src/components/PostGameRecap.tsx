@@ -45,6 +45,7 @@ import {
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
+import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import type { Impact, MatchPlayer } from '@/types/match'
 import type { DbMatch, DbMatchEvent } from '@/types/database'
 
@@ -103,6 +104,9 @@ type PostGameRecapProps = {
   locationType: LocationType
   homeScore: number
   awayScore: number
+  homePkScore?: number
+  awayPkScore?: number
+  pkWinnerIsUs?: boolean | null
   halfLengthMinutes: number
   players: MatchPlayer[]
   isCompletedMatch?: boolean
@@ -121,6 +125,9 @@ export function PostGameRecap({
   locationType,
   homeScore,
   awayScore,
+  homePkScore = 0,
+  awayPkScore = 0,
+  pkWinnerIsUs = null,
   halfLengthMinutes,
   players,
   isCompletedMatch = false,
@@ -500,7 +507,14 @@ export function PostGameRecap({
     setDeleting(false)
   }
 
-  const deleteMatchLabel = `${teamName} ${homeScore}–${awayScore} ${formatOpponentPrefix(locationType)} ${opponent.trim() || 'Opponent'}`
+  const scoreLabel = formatMatchResultScore({
+    home_score: homeScore,
+    away_score: awayScore,
+    home_pk_score: homePkScore,
+    away_pk_score: awayPkScore,
+    pk_winner_is_us: pkWinnerIsUs,
+  })
+  const deleteMatchLabel = `${teamName} ${scoreLabel} ${formatOpponentPrefix(locationType)} ${opponent.trim() || 'Opponent'}`
 
   if (loading) {
     return (
@@ -537,7 +551,7 @@ export function PostGameRecap({
             ) : null}
             <p className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
               <span>
-                {teamName} {homeScore} – {awayScore} {formatOpponentPrefix(locationType)}{' '}
+                {teamName} {scoreLabel} {formatOpponentPrefix(locationType)}{' '}
                 {opponent.trim() || 'Opponent'}
               </span>
               <span

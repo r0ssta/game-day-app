@@ -69,8 +69,13 @@ export type DbMatch = {
   location: string
   location_type?: string | null
   tournament_game: boolean
+  goes_to_pks: boolean
   home_score: number
   away_score: number
+  home_pk_score: number
+  away_pk_score: number
+  /** null until a PK shootout is finalized; true = we won on PKs. */
+  pk_winner_is_us: boolean | null
   clock_seconds: number
   period: '1st' | '2nd'
   status: 'active' | 'scheduled' | 'pending_review' | 'completed'
@@ -119,10 +124,15 @@ export type DbMatchEvent = {
     | 'stat_pass'
     | 'stat_key_pass'
     | 'stat_team_log'
+    | 'pk_attempt'
   timestamp: number
   event_notes: string | null
   formation: string | null
   assist_player_id: string | null
+  /** Present for pk_attempt events. */
+  pk_result: 'make' | 'miss' | null
+  /** Present for pk_attempt events. */
+  pk_team: 'us' | 'opponent' | null
   created_at: string
 }
 

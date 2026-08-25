@@ -25,6 +25,7 @@ import {
   rebuildMatchPlayers,
   scoreToImpact,
 } from '@/lib/supabase-api'
+import { matchResultBucket } from '@/lib/penalty-kicks'
 import type { DbMatch } from '@/types/database'
 import type { Impact, RosterPlayer } from '@/types/match'
 
@@ -117,8 +118,9 @@ export function computeSeasonRecord(matches: DbMatch[]): SeasonRecord {
   for (const match of matches) {
     goalsFor += match.home_score
     goalsAgainst += match.away_score
-    if (match.home_score > match.away_score) wins++
-    else if (match.home_score < match.away_score) losses++
+    const result = matchResultBucket(match)
+    if (result === 'win') wins++
+    else if (result === 'loss') losses++
     else draws++
   }
 

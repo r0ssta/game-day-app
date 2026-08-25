@@ -1,7 +1,17 @@
 export type Impact = 'neutral' | 'positive' | 'negative'
 
-/** Top-level app views: home → team | match_setup | reporting | recap_history → match | halftime → recap → home */
-export type AppMode = 'home' | 'team' | 'match_setup' | 'reporting' | 'recap_history' | 'club_admin' | 'match' | 'halftime' | 'recap'
+/** Top-level app views: home → team | match_setup | reporting | recap_history → match | halftime | penalty_shootout → recap → home */
+export type AppMode =
+  | 'home'
+  | 'team'
+  | 'match_setup'
+  | 'reporting'
+  | 'recap_history'
+  | 'club_admin'
+  | 'match'
+  | 'halftime'
+  | 'penalty_shootout'
+  | 'recap'
 
 export type ActionType = 'GOAL' | 'ASSIST'
 
@@ -45,6 +55,7 @@ export type Player = MatchPlayer
 export type MatchSetupConfig = {
   locationType: 'home' | 'away'
   tournamentGame: boolean
+  goesToPks: boolean
   halfLengthMinutes: number
 }
 

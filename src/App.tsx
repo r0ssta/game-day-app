@@ -6,7 +6,6 @@ import {
   Share2,
   Shield,
   UserPlus,
-  Users,
   X,
 } from 'lucide-react'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
@@ -15,7 +14,7 @@ import { GoalWizardModal } from '@/components/GoalWizardModal'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
 import { SubCountdownTimer } from '@/components/SubCountdownTimer'
-import { HomeScreen } from '@/components/HomeScreen'
+import { PenaltyShootoutScreen } from '@/components/PenaltyShootoutScreen'
 import { ReportingScreen } from '@/components/ReportingScreen'
 import { BackToHomeButton, ScreenHeader } from '@/components/AppNavigation'
 import {
@@ -100,7 +99,11 @@ import {
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
-import { APP_CONTAINER, APP_SHELL, MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
+import {
+  encodePkAttemptNotes,
+  shouldEnterPenaltyShootout,
+  shouldResumePenaltyShootout,
+} from '@/lib/penalty-kicks'
 import type { DbMatch } from '@/types/database'
 import {
   buildSidelineNameMap,
@@ -857,6 +860,8 @@ type SetupScreenProps = {
   onLocationTypeChange: (value: LocationType) => void
   tournamentGame: boolean
   onTournamentGameChange: (value: boolean) => void
+  goesToPks: boolean
+  onGoesToPksChange: (value: boolean) => void
   halfLengthMinutes: number
   onHalfLengthChange: (value: number) => void
   gkPlaysFullHalf: boolean
@@ -910,6 +915,8 @@ function SetupScreen({
   onLocationTypeChange,
   tournamentGame,
   onTournamentGameChange,
+  goesToPks,
+  onGoesToPksChange,
   halfLengthMinutes,
   onHalfLengthChange,
   gkPlaysFullHalf,
@@ -952,320 +959,346 @@ function SetupScreen({
   )
 
   return (
-    <main className={`${APP_SHELL} pb-10 md:pb-12`}>
-      <div className={`${APP_CONTAINER} space-y-6 pt-6 md:space-y-8 md:pt-8`}>
-        <ScreenHeader
-          title="Game Day Setup"
-          subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
-          onHome={onBackToHome}
-          teamSwitcher={teamSwitcher}
-        />
-
-        <section className="space-y-4">
-          <p className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {activeTeamFormat} format · {maxFieldPlayers} on field
-          </p>
-
-          <MatchCoachSelect
-            id="head-coach"
-            value={coachName}
-            onChange={onCoachNameChange}
-            teamHeadCoaches={teamHeadCoaches}
-            teamAssistants={teamAssistants}
-            allCoachNames={allCoachNames}
+    <main className={APP_SHELL_LOCKED}>
+      <div className={`${APP_CONTAINER} flex min-h-0 flex-1 flex-col overflow-hidden pt-4 md:pt-5`}>
+        <div className="shrink-0">
+          <ScreenHeader
+            title="Game Day Setup"
+            subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
+            onHome={onBackToHome}
+            teamSwitcher={teamSwitcher}
           />
+        </div>
 
-          <div>
-            <label
-              htmlFor="opponent"
-              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-            >
-              Opponent Name
-            </label>
-            <input
-              id="opponent"
-              type="text"
-              value={opponent}
-              onChange={(e) => onOpponentChange(e.target.value)}
-              placeholder="e.g. Beach FC"
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label
-                htmlFor="match-date"
-                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-              >
-                Game Date
-              </label>
-              <input
-                id="match-date"
-                type="date"
-                value={matchDate}
-                onChange={(e) => onMatchDateChange(e.target.value)}
-                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="match-time"
-                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-              >
-                Game Time
-              </label>
-              <input
-                id="match-time"
-                type="time"
-                value={matchTime}
-                onChange={(e) => onMatchTimeChange(e.target.value)}
-                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold tabular-nums text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-              />
-            </div>
-          </div>
-
-          <HomeAwayToggle value={locationType} onChange={onLocationTypeChange} />
-
-          <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
-            <span className="text-sm font-bold text-foreground">Tournament Game</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={tournamentGame}
-              onClick={() => onTournamentGameChange(!tournamentGame)}
-              className={cn(
-                'relative h-8 w-14 rounded-full transition-colors',
-                tournamentGame ? 'bg-neon' : 'bg-secondary',
-              )}
-            >
-              <span
-                className={cn(
-                  'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
-                  tournamentGame ? 'left-7' : 'left-1',
-                )}
-              />
-            </button>
-          </div>
-
-          <div>
-            <label
-              htmlFor="half-length"
-              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-            >
-              Half Length (minutes)
-            </label>
-            <select
-              id="half-length"
-              value={halfLengthMinutes}
-              onChange={(e) => onHalfLengthChange(Number(e.target.value))}
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-            >
-              {HALF_LENGTH_OPTIONS.map((mins) => (
-                <option key={mins} value={mins}>
-                  {mins} minutes
-                </option>
-              ))}
-            </select>
-          </div>
-        </section>
-
-        {ENABLE_SUB_ASSISTANT ? (
-          <SubbingAssistantPanel
-            teamFormat={activeTeamFormat}
-            halfLengthMinutes={halfLengthMinutes}
-            attendingCount={attendingCount}
-            gkPlaysFullHalf={gkPlaysFullHalf}
-            onGkPlaysFullHalfChange={onGkPlaysFullHalfChange}
-            subFrequency={subFrequency}
-            onSubFrequencyChange={onSubFrequencyChange}
-            onIntervalMinutesChange={onSetupSubIntervalMinutesChange}
-          />
-        ) : null}
-
-        {masterRoster.length > 0 ? (
-          <section
-            aria-label="Attendance tracker"
-            className="attendance-tracker space-y-3 rounded-2xl border-2 border-border bg-card p-4"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="font-display text-sm font-black uppercase tracking-wide text-foreground">
-                Attendance Tracker
-              </h2>
-              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                {attendingCount}/{masterRoster.length} attending
-              </span>
-            </div>
-            <ul className="space-y-2">
-              {masterRoster.map((player) => {
-                const isAttending = setupLineup.attending[player.id] !== false
-                return (
-                  <li
-                    key={player.id}
-                    className="flex items-center gap-2 rounded-xl border-2 border-border bg-background px-3 py-2"
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-neon/40 bg-neon/10 font-display text-sm font-bold tabular-nums text-neon">
-                      {player.number ?? '—'}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
-                      {formatPlayerFullName(player.firstName, player.lastName)}
-                    </span>
-                    <div className="flex shrink-0 gap-1">
-                      <button
-                        type="button"
-                        aria-pressed={isAttending}
-                        onClick={() => onSetAttending(player.id, true)}
-                        className={cn(
-                          'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
-                          isAttending
-                            ? 'border-neon bg-neon text-neon-foreground'
-                            : 'border-border bg-secondary text-muted-foreground',
-                        )}
-                      >
-                        Attending
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={!isAttending}
-                        onClick={() => onSetAttending(player.id, false)}
-                        className={cn(
-                          'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
-                          !isAttending
-                            ? 'border-foreground bg-foreground text-background'
-                            : 'border-border bg-secondary text-muted-foreground',
-                        )}
-                      >
-                        Absent
-                      </button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-        ) : null}
-
-        <section aria-label="Lineup builder">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 font-display text-xl font-bold uppercase tracking-wide text-foreground">
-              <Users className="size-5 text-athletic" />
-              {activeTeamFormat} Lineup Builder
-            </h2>
-            <span className="rounded bg-secondary px-2 py-0.5 text-xs font-bold text-muted-foreground">
-              {attendingCount} attending
-            </span>
-          </div>
-
-          {rosterLoading ? (
-            <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-              Loading roster…
+        <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden md:mt-5">
+          <section className="max-h-[min(34dvh,300px)] shrink-0 space-y-3 overflow-y-auto overscroll-contain pr-0.5">
+            <p className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {activeTeamFormat} format · {maxFieldPlayers} on field
             </p>
-          ) : masterRoster.length === 0 ? (
-            <>
-              <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-                No players on this team yet. Add a player below to get started.
-              </p>
-              <AddPlayerToRoster
-                selectedTeamId={activeTeamId}
-                ageGroup={guestAgeGroup}
-                excludePlayerIds={masterRoster.map((player) => player.id)}
-                loadAgeGroupPool={loadAgeGroupPool}
-                onAddFromPool={onAddGuestFromPool}
-                suggestedJersey={suggestedJersey}
-                onAdd={onAddPlayer}
-              />
-            </>
-          ) : (
-            <>
-              {lineupPresets.length > 0 && (
-                <div>
-                  <label
-                    htmlFor="load-lineup-preset"
-                    className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-                  >
-                    Load Lineup Preset
-                  </label>
-                  <select
-                    id="load-lineup-preset"
-                    value={selectedPresetId}
-                    onChange={(e) => {
-                      const presetId = e.target.value
-                      setSelectedPresetId(presetId)
-                      if (presetId) onLoadLineupPreset(presetId)
-                    }}
-                    className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-                  >
-                    <option value="">Choose a saved lineup…</option>
-                    {lineupPresets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.preset_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
-              <TacticalPitchLineup
-                key={`${activeTeamId ?? 'no-team'}-${setupPitchKey}`}
-                title="1st Half Lineup"
-                formationId={firstHalfFormation}
-                onFormationChange={onSetFirstHalfFormation}
-                initialSlotAssignments={setupSlotAssignments}
-                assignmentsResetKey={setupPitchKey}
-                assignmentsRef={setupAssignmentsRef}
-                players={masterRoster.map((player) => ({
-                  id: player.id,
-                  name: formatPlayerFullName(player.firstName, player.lastName),
-                  shortName: setupLineup.attending[player.id]
-                    ? getSidelineName(player, sidelineNameMap)
-                    : formatPlayerFullName(player.firstName, player.lastName),
-                  number: player.number,
-                  isGuest: player.isGuest,
-                  primaryPosition: player.primaryPosition,
-                  secondaryPosition: player.secondaryPosition,
-                  meta: `Roster: ${player.position}`,
-                }))}
-                attending={setupLineup.attending}
-                starters={setupLineup.startFirstHalf}
-                maxFieldPlayers={maxFieldPlayers}
+            <MatchCoachSelect
+              id="head-coach"
+              value={coachName}
+              onChange={onCoachNameChange}
+              teamHeadCoaches={teamHeadCoaches}
+              teamAssistants={teamAssistants}
+              allCoachNames={allCoachNames}
+            />
+
+            <div>
+              <label
+                htmlFor="opponent"
+                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                Opponent Name
+              </label>
+              <input
+                id="opponent"
+                type="text"
+                value={opponent}
+                onChange={(e) => onOpponentChange(e.target.value)}
+                placeholder="e.g. Beach FC"
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="match-date"
+                  className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+                >
+                  Game Date
+                </label>
+                <input
+                  id="match-date"
+                  type="date"
+                  value={matchDate}
+                  onChange={(e) => onMatchDateChange(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="match-time"
+                  className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+                >
+                  Game Time
+                </label>
+                <input
+                  id="match-time"
+                  type="time"
+                  value={matchTime}
+                  onChange={(e) => onMatchTimeChange(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold tabular-nums text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                />
+              </div>
+            </div>
+
+            <HomeAwayToggle value={locationType} onChange={onLocationTypeChange} />
+
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
+              <span className="text-sm font-bold text-foreground">Tournament Game</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={tournamentGame}
+                onClick={() => onTournamentGameChange(!tournamentGame)}
+                className={cn(
+                  'relative h-8 w-14 rounded-full transition-colors',
+                  tournamentGame ? 'bg-neon' : 'bg-secondary',
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                    tournamentGame ? 'left-7' : 'left-1',
+                  )}
+                />
+              </button>
+            </div>
+
+            {tournamentGame ? (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-athletic/40 bg-athletic/10 px-4 py-3">
+                <span className="text-sm font-bold text-foreground">
+                  Would this game go to PKs if it ends in a tie?
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={goesToPks}
+                  onClick={() => onGoesToPksChange(!goesToPks)}
+                  className={cn(
+                    'relative h-8 w-14 shrink-0 rounded-full transition-colors',
+                    goesToPks ? 'bg-neon' : 'bg-secondary',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                      goesToPks ? 'left-7' : 'left-1',
+                    )}
+                  />
+                </button>
+              </div>
+            ) : null}
+
+            <div>
+              <label
+                htmlFor="half-length"
+                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                Half Length (minutes)
+              </label>
+              <select
+                id="half-length"
+                value={halfLengthMinutes}
+                onChange={(e) => onHalfLengthChange(Number(e.target.value))}
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              >
+                {HALF_LENGTH_OPTIONS.map((mins) => (
+                  <option key={mins} value={mins}>
+                    {mins} minutes
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {ENABLE_SUB_ASSISTANT ? (
+              <SubbingAssistantPanel
                 teamFormat={activeTeamFormat}
-                onAssignStarter={(playerId, _role: FormationRole, tacticalPosition) => {
-                  onSetStartFirstHalf(playerId, true)
-                  onSetMatchPosition(playerId, tacticalPosition)
-                }}
-                onRemoveStarter={(playerId) => onSetStartFirstHalf(playerId, false)}
-                onSetAttending={onSetAttending}
-                onEditPlayer={onEditPlayer}
+                halfLengthMinutes={halfLengthMinutes}
+                attendingCount={attendingCount}
+                gkPlaysFullHalf={gkPlaysFullHalf}
+                onGkPlaysFullHalfChange={onGkPlaysFullHalfChange}
+                subFrequency={subFrequency}
+                onSubFrequencyChange={onSubFrequencyChange}
+                onIntervalMinutesChange={onSetupSubIntervalMinutesChange}
               />
+            ) : null}
+          </section>
 
-              <AddPlayerToRoster
-                selectedTeamId={activeTeamId}
-                ageGroup={guestAgeGroup}
-                excludePlayerIds={masterRoster.map((player) => player.id)}
-                loadAgeGroupPool={loadAgeGroupPool}
-                onAddFromPool={onAddGuestFromPool}
-                suggestedJersey={suggestedJersey}
-                onAdd={onAddPlayer}
-              />
-            </>
-          )}
-        </section>
+          {masterRoster.length > 0 ? (
+            <section
+              aria-label="Attendance tracker"
+              className="attendance-tracker mt-3 flex min-h-0 max-h-[28%] flex-col overflow-hidden rounded-2xl border-2 border-border bg-card p-3"
+            >
+              <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                <h2 className="font-display text-sm font-black uppercase tracking-wide text-foreground">
+                  Attendance Tracker
+                </h2>
+                <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  {attendingCount}/{masterRoster.length} attending
+                </span>
+              </div>
+              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
+                {masterRoster.map((player) => {
+                  const isAttending = setupLineup.attending[player.id] !== false
+                  return (
+                    <li
+                      key={player.id}
+                      className="flex items-center gap-2 rounded-xl border-2 border-border bg-background px-3 py-2"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-neon/40 bg-neon/10 font-display text-sm font-bold tabular-nums text-neon">
+                        {player.number ?? '—'}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
+                        {formatPlayerFullName(player.firstName, player.lastName)}
+                      </span>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          aria-pressed={isAttending}
+                          onClick={() => onSetAttending(player.id, true)}
+                          className={cn(
+                            'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
+                            isAttending
+                              ? 'border-neon bg-neon text-neon-foreground'
+                              : 'border-border bg-secondary text-muted-foreground',
+                          )}
+                        >
+                          Attending
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={!isAttending}
+                          onClick={() => onSetAttending(player.id, false)}
+                          className={cn(
+                            'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
+                            !isAttending
+                              ? 'border-foreground bg-foreground text-background'
+                              : 'border-border bg-secondary text-muted-foreground',
+                          )}
+                        >
+                          Absent
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ) : null}
 
-        <button
-          type="button"
-          onClick={onStartMatch}
-          disabled={!canStartMatch}
-          className="flex w-full items-center justify-center gap-3 rounded-xl bg-neon py-8 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <span className="font-display text-3xl font-bold uppercase tracking-wide sm:text-4xl">
-            Ready for 1st Half
-          </span>
-        </button>
-        {!canStartMatch && startMatchBlockReason ? (
-          <p className="text-center text-sm font-semibold text-muted-foreground">
-            {startMatchBlockReason}
-          </p>
-        ) : null}
+          <section
+            aria-label="Lineup builder"
+            className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            {rosterLoading ? (
+              <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+                Loading roster…
+              </p>
+            ) : masterRoster.length === 0 ? (
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+                <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+                  No players on this team yet. Add a player below to get started.
+                </p>
+                <AddPlayerToRoster
+                  selectedTeamId={activeTeamId}
+                  ageGroup={guestAgeGroup}
+                  excludePlayerIds={masterRoster.map((player) => player.id)}
+                  loadAgeGroupPool={loadAgeGroupPool}
+                  onAddFromPool={onAddGuestFromPool}
+                  suggestedJersey={suggestedJersey}
+                  onAdd={onAddPlayer}
+                />
+              </div>
+            ) : (
+              <>
+                {lineupPresets.length > 0 && (
+                  <div className="mb-3 shrink-0">
+                    <label
+                      htmlFor="load-lineup-preset"
+                      className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+                    >
+                      Load Lineup Preset
+                    </label>
+                    <select
+                      id="load-lineup-preset"
+                      value={selectedPresetId}
+                      onChange={(e) => {
+                        const presetId = e.target.value
+                        setSelectedPresetId(presetId)
+                        if (presetId) onLoadLineupPreset(presetId)
+                      }}
+                      className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                    >
+                      <option value="">Choose a saved lineup…</option>
+                      {lineupPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.preset_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <TacticalPitchLineup
+                  key={`${activeTeamId ?? 'no-team'}-${setupPitchKey}`}
+                  title="1st Half Lineup"
+                  formationId={firstHalfFormation}
+                  onFormationChange={onSetFirstHalfFormation}
+                  initialSlotAssignments={setupSlotAssignments}
+                  assignmentsResetKey={setupPitchKey}
+                  assignmentsRef={setupAssignmentsRef}
+                  players={masterRoster.map((player) => ({
+                    id: player.id,
+                    name: formatPlayerFullName(player.firstName, player.lastName),
+                    shortName: setupLineup.attending[player.id]
+                      ? getSidelineName(player, sidelineNameMap)
+                      : formatPlayerFullName(player.firstName, player.lastName),
+                    number: player.number,
+                    isGuest: player.isGuest,
+                    primaryPosition: player.primaryPosition,
+                    secondaryPosition: player.secondaryPosition,
+                    meta: `Roster: ${player.position}`,
+                  }))}
+                  attending={setupLineup.attending}
+                  starters={setupLineup.startFirstHalf}
+                  maxFieldPlayers={maxFieldPlayers}
+                  teamFormat={activeTeamFormat}
+                  onAssignStarter={(playerId, _role: FormationRole, tacticalPosition) => {
+                    onSetStartFirstHalf(playerId, true)
+                    onSetMatchPosition(playerId, tacticalPosition)
+                  }}
+                  onRemoveStarter={(playerId) => onSetStartFirstHalf(playerId, false)}
+                  onSetAttending={onSetAttending}
+                  onEditPlayer={onEditPlayer}
+                />
+
+                <div className="mt-3 shrink-0">
+                  <AddPlayerToRoster
+                    selectedTeamId={activeTeamId}
+                    ageGroup={guestAgeGroup}
+                    excludePlayerIds={masterRoster.map((player) => player.id)}
+                    loadAgeGroupPool={loadAgeGroupPool}
+                    onAddFromPool={onAddGuestFromPool}
+                    suggestedJersey={suggestedJersey}
+                    onAdd={onAddPlayer}
+                  />
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+
+        <div className="shrink-0 space-y-2 border-t-2 border-border bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={onStartMatch}
+            disabled={!canStartMatch}
+            className="flex min-h-14 w-full touch-manipulation items-center justify-center gap-3 rounded-xl bg-neon py-5 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span className="font-display text-2xl font-bold uppercase tracking-wide sm:text-3xl">
+              Ready for 1st Half
+            </span>
+          </button>
+          {!canStartMatch && startMatchBlockReason ? (
+            <p className="text-center text-sm font-semibold text-muted-foreground">
+              {startMatchBlockReason}
+            </p>
+          ) : null}
+        </div>
       </div>
     </main>
   )
@@ -1329,87 +1362,89 @@ function HalftimeSetupScreen({
     : firstHalfClock.regulation
 
   return (
-    <main className={`${APP_SHELL} pb-36 md:pb-40`}>
-      <div className={`${APP_CONTAINER} space-y-6 pt-6 md:space-y-8 md:pt-8`}>
-        <ScreenHeader
-          title="Halftime Setup"
-          subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
-          onHome={onBackToHome}
-        />
+    <main className={APP_SHELL_LOCKED}>
+      <div className={`${APP_CONTAINER} flex min-h-0 flex-1 flex-col overflow-hidden pt-4 md:pt-5`}>
+        <div className="shrink-0">
+          <ScreenHeader
+            title="Halftime Setup"
+            subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
+            onHome={onBackToHome}
+          />
+        </div>
 
-        {lineupPresets.length > 0 ? (
-          <div>
-            <label
-              htmlFor="load-halftime-preset"
-              className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-            >
-              Load Lineup Preset
-            </label>
-            <select
-              id="load-halftime-preset"
-              value={selectedPresetId}
-              onChange={(e) => {
-                const presetId = e.target.value
-                setSelectedPresetId(presetId)
-                if (presetId) onLoadLineupPreset(presetId)
-              }}
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-            >
-              <option value="">Choose a saved lineup…</option>
-              {lineupPresets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.preset_name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
+        <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden md:mt-5">
+          {lineupPresets.length > 0 ? (
+            <div className="mb-3 shrink-0">
+              <label
+                htmlFor="load-halftime-preset"
+                className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+              >
+                Load Lineup Preset
+              </label>
+              <select
+                id="load-halftime-preset"
+                value={selectedPresetId}
+                onChange={(e) => {
+                  const presetId = e.target.value
+                  setSelectedPresetId(presetId)
+                  if (presetId) onLoadLineupPreset(presetId)
+                }}
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              >
+                <option value="">Choose a saved lineup…</option>
+                {lineupPresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.preset_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
-        <TacticalPitchLineup
-          title="2nd Half Lineup"
-          formationId={secondHalfFormation}
-          onFormationChange={onSetSecondHalfFormation}
-          initialSlotAssignments={initialSlotAssignments}
-          assignmentsResetKey={assignmentsResetKey}
-          assignmentsRef={halftimeAssignmentsRef}
-          players={attendingPlayers.map((player) => ({
-            id: player.id,
-            name: formatPlayerFullName(player.firstName, player.lastName),
-            shortName: getSidelineName(player, sidelineNameMap),
-            number: player.number,
-            isGuest: player.isGuest,
-            matchPosition: player.matchPosition,
-            minutesLabel: formatPlayingTimeBadge(player.totalSecondsPlayed),
-            badge: carriedFromFirstHalf[player.id]
-              ? player.isFirstHalfStarter
-                ? 'Started 1st Half'
-                : 'Carried from 1st'
-              : undefined,
-            meta: player.matchPosition,
-          }))}
-          attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
-          starters={secondHalfStarters}
-          maxFieldPlayers={maxFieldPlayers}
-          teamFormat={activeTeamFormat}
-          onAssignStarter={onAssignSecondHalfStarter}
-          onRemoveStarter={onRemoveSecondHalfStarter}
-        />
+          <TacticalPitchLineup
+            title="2nd Half Lineup"
+            formationId={secondHalfFormation}
+            onFormationChange={onSetSecondHalfFormation}
+            initialSlotAssignments={initialSlotAssignments}
+            assignmentsResetKey={assignmentsResetKey}
+            assignmentsRef={halftimeAssignmentsRef}
+            players={attendingPlayers.map((player) => ({
+              id: player.id,
+              name: formatPlayerFullName(player.firstName, player.lastName),
+              shortName: getSidelineName(player, sidelineNameMap),
+              number: player.number,
+              isGuest: player.isGuest,
+              matchPosition: player.matchPosition,
+              minutesLabel: formatPlayingTimeBadge(player.totalSecondsPlayed),
+              badge: carriedFromFirstHalf[player.id]
+                ? player.isFirstHalfStarter
+                  ? 'Started 1st Half'
+                  : 'Carried from 1st'
+                : undefined,
+              meta: player.matchPosition,
+            }))}
+            attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
+            starters={secondHalfStarters}
+            maxFieldPlayers={maxFieldPlayers}
+            teamFormat={activeTeamFormat}
+            onAssignStarter={onAssignSecondHalfStarter}
+            onRemoveStarter={onRemoveSecondHalfStarter}
+          />
+        </div>
 
-        <div className="h-24" aria-hidden />
+        <div className="shrink-0 space-y-2 border-t-2 border-border bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={onBeginSecondHalf}
+            disabled={!canBeginSecondHalf}
+            className="flex w-full min-h-14 touch-manipulation items-center justify-center gap-3 rounded-2xl bg-neon py-5 text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span className="font-display text-2xl font-black uppercase tracking-wide">
+              Start 2nd Half
+            </span>
+          </button>
+        </div>
       </div>
-
-      <StickyMatchActionBar>
-        <button
-          type="button"
-          onClick={onBeginSecondHalf}
-          disabled={!canBeginSecondHalf}
-          className="flex w-full min-h-14 touch-manipulation items-center justify-center gap-3 rounded-2xl bg-neon py-5 text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <span className="font-display text-2xl font-black uppercase tracking-wide">
-            Start 2nd Half
-          </span>
-        </button>
-      </StickyMatchActionBar>
     </main>
   )
 }
@@ -1662,6 +1697,13 @@ export default function App() {
     matchCoachName,
     matchOpponent,
     matchLocationType,
+    matchTournamentGame,
+    matchGoesToPks,
+    homePkScore,
+    setHomePkScore,
+    awayPkScore,
+    setAwayPkScore,
+    pkWinnerIsUs,
     halfLengthMinutes,
     setHalfLengthMinutes,
     gkPlaysFullHalf,
@@ -1677,6 +1719,8 @@ export default function App() {
     setLocationType,
     tournamentGame,
     setTournamentGame,
+    goesToPks,
+    setGoesToPks,
     matchDate,
     setMatchDate,
     matchTime,
@@ -1707,6 +1751,7 @@ export default function App() {
     enterHalftime,
     beginSecondHalf,
     finishGame,
+    finalizePenaltyShootout,
     returnToHome,
     openMatchRecap,
     matchStatus,
@@ -1742,7 +1787,9 @@ export default function App() {
 
   // Screen stay-awake is armed only from Start 1st/2nd Half click handlers (user gesture).
   const { isActive: wakeLockActive, requestWakeLock } = useWakeLock({
-    activeSession: ENABLE_WAKE_LOCK && (appMode === 'match' || appMode === 'halftime'),
+    activeSession:
+      ENABLE_WAKE_LOCK &&
+      (appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout'),
   })
 
   const canDeleteMatches = canDeleteMatchesForTeam(activeTeamId)
@@ -1794,7 +1841,10 @@ export default function App() {
   )
 
   const teamSwitchDisabled =
-    hasLiveMatch || appMode === 'match' || appMode === 'halftime'
+    hasLiveMatch ||
+    appMode === 'match' ||
+    appMode === 'halftime' ||
+    appMode === 'penalty_shootout'
 
   const navItems = useMemo(
     () =>
@@ -1835,7 +1885,22 @@ export default function App() {
               Object.keys(halftimeSecondHalf).length > 0 &&
               period === '1st' &&
               !periodClockStarted
-            setAppMode(inHalftimeSetup ? 'halftime' : 'match')
+            const inPenaltyShootout = shouldResumePenaltyShootout({
+              status: 'active',
+              period,
+              period_clock_started: periodClockStarted,
+              home_score: homeScore,
+              away_score: awayScore,
+              goes_to_pks: matchGoesToPks,
+              pk_winner_is_us: pkWinnerIsUs,
+            })
+            setAppMode(
+              inHalftimeSetup
+                ? 'halftime'
+                : inPenaltyShootout
+                  ? 'penalty_shootout'
+                  : 'match',
+            )
           } else if (hasPendingRecap && matchId) {
             setRecapReturnMode('home')
             setAppMode('recap')
@@ -1887,6 +1952,10 @@ export default function App() {
       halftimeSecondHalf,
       period,
       periodClockStarted,
+      homeScore,
+      awayScore,
+      matchGoesToPks,
+      pkWinnerIsUs,
       setAppMode,
     ],
   )
@@ -2106,6 +2175,7 @@ export default function App() {
         opponent,
         locationType,
         tournamentGame,
+        goesToPks,
         halfLength: halfLengthMinutes,
         matchDate,
         matchTime,
@@ -2139,6 +2209,7 @@ export default function App() {
     opponent,
     locationType,
     tournamentGame,
+    goesToPks,
     halfLengthMinutes,
     matchDate,
     matchTime,
@@ -2172,8 +2243,13 @@ export default function App() {
     async (endedOnTime: boolean) => {
       setEndingMatch(true)
       try {
-        await finishGame(seconds, { endedOnTime })
-        if (matchId) {
+        const enterPks = shouldEnterPenaltyShootout({
+          homeScore,
+          awayScore,
+          goesToPks: matchGoesToPks,
+        })
+        await finishGame(seconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
+        if (matchId && !enterPks) {
           syncMatchRecord(matchId, {
             period_clock_started: false,
             clock_seconds: persistableClockSeconds(seconds),
@@ -2181,9 +2257,11 @@ export default function App() {
         }
         setEndTimingOpen(false)
         setToast(
-          endedOnTime
-            ? 'Match complete — ended on time'
-            : 'Match complete — added time recorded',
+          enterPks
+            ? 'Tied regulation — starting penalty shootout'
+            : endedOnTime
+              ? 'Match complete — ended on time'
+              : 'Match complete — added time recorded',
         )
       } catch (err) {
         setToast(err instanceof Error ? err.message : 'Failed to end match')
@@ -2191,7 +2269,7 @@ export default function App() {
         setEndingMatch(false)
       }
     },
-    [seconds, matchId, finishGame],
+    [seconds, matchId, finishGame, homeScore, awayScore, matchGoesToPks],
   )
 
   const handleStartFirstHalf = useCallback(() => {
@@ -2750,7 +2828,18 @@ export default function App() {
           setAppMode('reporting')
         }}
         onViewRecaps={() => setAppMode('recap_history')}
-        onResumeMatch={() => setAppMode('match')}
+        onResumeMatch={() => {
+          const inPenaltyShootout = shouldResumePenaltyShootout({
+            status: 'active',
+            period,
+            period_clock_started: periodClockStarted,
+            home_score: homeScore,
+            away_score: awayScore,
+            goes_to_pks: matchGoesToPks,
+            pk_winner_is_us: pkWinnerIsUs,
+          })
+          setAppMode(inPenaltyShootout ? 'penalty_shootout' : 'match')
+        }}
       />
     )
   }
@@ -2824,7 +2913,12 @@ export default function App() {
           locationType={locationType}
           onLocationTypeChange={setLocationType}
           tournamentGame={tournamentGame}
-          onTournamentGameChange={setTournamentGame}
+          onTournamentGameChange={(value) => {
+            setTournamentGame(value)
+            if (!value) setGoesToPks(false)
+          }}
+          goesToPks={goesToPks}
+          onGoesToPksChange={setGoesToPks}
           halfLengthMinutes={halfLengthMinutes}
           onHalfLengthChange={setHalfLengthMinutes}
           gkPlaysFullHalf={gkPlaysFullHalf}
@@ -2985,6 +3079,58 @@ export default function App() {
     )
   }
 
+  if (appMode === 'penalty_shootout') {
+    return (
+      <PenaltyShootoutScreen
+        teamName={matchTeamName}
+        opponent={matchOpponent}
+        regulationHomeScore={homeScore}
+        regulationAwayScore={awayScore}
+        players={players}
+        onRecordAttempt={async ({ round, team, result, playerId }) => {
+          if (!matchId) return
+          const nextHome =
+            team === 'us' && result === 'make' ? homePkScore + 1 : homePkScore
+          const nextAway =
+            team === 'opponent' && result === 'make' ? awayPkScore + 1 : awayPkScore
+          if (team === 'us' && result === 'make') setHomePkScore(nextHome)
+          if (team === 'opponent' && result === 'make') setAwayPkScore(nextAway)
+          syncMatchEvent({
+            matchId,
+            eventType: 'pk_attempt',
+            timestamp: round,
+            formation: matchFormations.second,
+            playerId,
+            pkResult: result,
+            pkTeam: team,
+            eventNotes: encodePkAttemptNotes({ result, team, round }),
+          })
+          syncMatchRecord(matchId, {
+            home_pk_score: nextHome,
+            away_pk_score: nextAway,
+          })
+        }}
+        onFinalize={async ({ homePkScore: homePk, awayPkScore: awayPk, pkWinnerIsUs: weWon }) => {
+          try {
+            await finalizePenaltyShootout({
+              homePkScore: homePk,
+              awayPkScore: awayPk,
+              pkWinnerIsUs: weWon,
+            })
+            setToast(
+              weWon
+                ? `Won on PKs ${homePk}–${awayPk}`
+                : `Lost on PKs ${homePk}–${awayPk}`,
+            )
+          } catch (err) {
+            setToast(err instanceof Error ? err.message : 'Failed to finalize shootout')
+          }
+        }}
+        onBackToHome={() => setAppMode('home')}
+      />
+    )
+  }
+
   if (appMode === 'recap' && matchId) {
     return (
       <>
@@ -2996,6 +3142,9 @@ export default function App() {
           locationType={matchLocationType}
           homeScore={homeScore}
           awayScore={awayScore}
+          homePkScore={homePkScore}
+          awayPkScore={awayPkScore}
+          pkWinnerIsUs={pkWinnerIsUs}
           halfLengthMinutes={halfLengthMinutes}
           players={players}
           isCompletedMatch={matchStatus === 'completed'}
@@ -3070,18 +3219,6 @@ export default function App() {
           onSubOut={handleLiveSubOut}
           onReassignPosition={handleLiveReassignPosition}
         />
-
-        <div className="pt-2">
-          {canDeleteMatches ? (
-            <button
-              type="button"
-              onClick={() => setLiveDeleteConfirmOpen(true)}
-              className="delete-match-action min-h-12 w-full touch-manipulation rounded-xl border-2 border-danger/70 bg-danger/10 py-3 text-sm font-bold uppercase tracking-widest text-danger active:scale-[0.98]"
-            >
-              Delete Game / Clear Match Data
-            </button>
-          ) : null}
-        </div>
       </div>
 
       <StickyMatchActionBar>
@@ -3093,6 +3230,15 @@ export default function App() {
             onEndFirstHalf={() => void handleEnterHalftime()}
             onEndGame={handleEndGame}
           />
+        ) : null}
+        {canDeleteMatches ? (
+          <button
+            type="button"
+            onClick={() => setLiveDeleteConfirmOpen(true)}
+            className="delete-match-action min-h-11 w-full touch-manipulation rounded-xl border-2 border-danger/70 bg-danger/10 py-2.5 text-xs font-bold uppercase tracking-widest text-danger active:scale-[0.98]"
+          >
+            Delete Game / Clear Match Data
+          </button>
         ) : null}
       </StickyMatchActionBar>
 

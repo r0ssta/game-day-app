@@ -2,6 +2,7 @@ import { AlertCircle } from 'lucide-react'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { formatOpponentPrefix, resolveMatchLocationType } from '@/lib/match-location'
 import type { DbMatch } from '@/types/database'
+import { formatMatchFinalLabel } from '@/lib/penalty-kicks'
 
 type GameRecapNeededAlertsProps = {
   matches: DbMatch[]
@@ -39,7 +40,7 @@ export function GameRecapNeededAlerts({ matches, onOpenRecap }: GameRecapNeededA
                   {dateLabel} · {formatOpponentPrefix(locationType)} {opponentLabel}
                 </span>
                 <span className="mt-1 block font-mono text-xs font-bold tabular-nums text-muted-foreground">
-                  Final {match.home_score} – {match.away_score}
+                  {formatMatchFinalLabel(match)}
                 </span>
                 <span className="mt-2 block text-xs text-muted-foreground">
                   Player ratings and coach notes are saved as a draft until you finalize.

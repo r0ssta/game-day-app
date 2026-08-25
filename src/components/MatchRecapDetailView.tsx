@@ -21,6 +21,7 @@ import {
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
+import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import type { DbMatch, DbMatchEvent } from '@/types/database'
 import type { Impact, RosterPlayer } from '@/types/match'
 
@@ -126,7 +127,7 @@ export function MatchRecapDetailView({
               </h1>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <span>
-                  {teamName} {matchState.home_score} – {matchState.away_score}{' '}
+                  {teamName} {formatMatchResultScore(matchState)}{' '}
                   {formatOpponentPrefix(locationType)} {opponentLabel}
                 </span>
                 <span

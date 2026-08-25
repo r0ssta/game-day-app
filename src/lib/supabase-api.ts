@@ -58,6 +58,7 @@ export type MatchEventInput = {
     | 'position_change'
     | 'opponent_goal'
     | 'formation_change'
+    | 'pk_attempt'
     | StatTrackerEventType
     | 'stat_team_log'
   timestamp: number
@@ -65,6 +66,8 @@ export type MatchEventInput = {
   playerId?: string | null
   eventNotes?: string | null
   assistPlayerId?: string | null
+  pkResult?: 'make' | 'miss' | null
+  pkTeam?: 'us' | 'opponent' | null
 }
 
 function matchEventToRow(event: MatchEventInput, includeExtended = true) {
@@ -80,6 +83,10 @@ function matchEventToRow(event: MatchEventInput, includeExtended = true) {
   const extended: Record<string, unknown> = { ...row, formation: event.formation }
   if (event.eventType === 'goal') {
     extended.assist_player_id = event.assistPlayerId ?? null
+  }
+  if (event.eventType === 'pk_attempt') {
+    extended.pk_result = event.pkResult ?? null
+    extended.pk_team = event.pkTeam ?? null
   }
   return extended
 }
@@ -128,10 +135,14 @@ async function insertMatchEventRows(
       const {
         formation: _formation,
         assist_player_id: _assistPlayerId,
+        pk_result: _pkResult,
+        pk_team: _pkTeam,
         ...keep
       } = row as Record<string, unknown> & {
         formation?: string
         assist_player_id?: string | null
+        pk_result?: string | null
+        pk_team?: string | null
       }
       return keep
     })
@@ -898,6 +909,7 @@ export async function createMatchRecord(input: {
   opponent: string
   locationType: LocationType
   tournamentGame: boolean
+  goesToPks?: boolean
   halfLength: number
   matchDate: string
   matchTime: string
@@ -912,6 +924,7 @@ export async function createMatchRecord(input: {
       ? `${input.matchTime.trim()}:00`
       : input.matchTime.trim() || null
   const status = input.status ?? 'active'
+  const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
 
   const minimalPayload = {
     team_id: input.teamId,
@@ -933,6 +946,10 @@ export async function createMatchRecord(input: {
     location_type: input.locationType,
     sub_interval_seconds: input.subIntervalSeconds ?? null,
     gk_plays_full_half: input.gkPlaysFullHalf ?? true,
+    goes_to_pks: goesToPks,
+    home_pk_score: 0,
+    away_pk_score: 0,
+    pk_winner_is_us: null,
   }
 
   // Try fullest payload first; retry with fewer optional columns when schema is behind.
@@ -943,6 +960,10 @@ export async function createMatchRecord(input: {
     'location_type',
     'sub_interval_seconds',
     'gk_plays_full_half',
+    'goes_to_pks',
+    'home_pk_score',
+    'away_pk_score',
+    'pk_winner_is_us',
   ] as const
   const payloadAttempts: Array<Record<string, unknown>> = []
 

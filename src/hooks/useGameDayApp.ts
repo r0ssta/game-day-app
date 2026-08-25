@@ -22,6 +22,7 @@ import {
   addedTimeSeconds,
   elapsedInHalf,
   initialHalfClock,
+  persistableClockSeconds,
   restoreMatchClockSeconds,
 } from '@/lib/match-clock'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
@@ -74,6 +75,7 @@ import {
   rebuildMatchPlayers,
   resolveCoachIdForName,
   resolveMatchCoachName,
+  syncMatchRecord,
   syncMatchStats,
   updateLineupPreset,
   updateTeamFormat as updateTeamFormatApi,
@@ -167,6 +169,10 @@ export function useGameDayApp() {
   const [matchOpponent, setMatchOpponent] = useState('')
   const [matchLocationType, setMatchLocationType] = useState<LocationType>('home')
   const [matchTournamentGame, setMatchTournamentGame] = useState(false)
+  const [matchGoesToPks, setMatchGoesToPks] = useState(false)
+  const [homePkScore, setHomePkScore] = useState(0)
+  const [awayPkScore, setAwayPkScore] = useState(0)
+  const [pkWinnerIsUs, setPkWinnerIsUs] = useState<boolean | null>(null)
   const [halfLengthMinutes, setHalfLengthMinutes] = useState(DEFAULT_HALF_LENGTH)
   const [gkPlaysFullHalf, setGkPlaysFullHalf] = useState(true)
   const [subFrequency, setSubFrequency] = useState<SubFrequency>('medium')
@@ -177,6 +183,7 @@ export function useGameDayApp() {
   const [opponent, setOpponent] = useState('')
   const [locationType, setLocationType] = useState<LocationType>('home')
   const [tournamentGame, setTournamentGame] = useState(false)
+  const [goesToPks, setGoesToPks] = useState(false)
   const [matchDate, setMatchDate] = useState(defaultMatchDate)
   const [matchTime, setMatchTime] = useState(defaultMatchTime)
   const [setupLineup, setSetupLineup] = useState<SetupLineup>({ attending: {}, startFirstHalf: {} })
@@ -336,6 +343,10 @@ export function useGameDayApp() {
           setMatchOpponent(match.opponent)
           setMatchLocationType(resolveMatchLocationType(match))
           setMatchTournamentGame(match.tournament_game)
+          setMatchGoesToPks(Boolean(match.goes_to_pks))
+          setHomePkScore(match.home_pk_score ?? 0)
+          setAwayPkScore(match.away_pk_score ?? 0)
+          setPkWinnerIsUs(match.pk_winner_is_us ?? null)
           setLocationType(resolveMatchLocationType(match))
           setMatchDate(match.match_date ?? defaultMatchDate())
           setMatchTime(normalizeMatchTimeForInput(match.match_time))
@@ -561,6 +572,7 @@ export function useGameDayApp() {
       setOpponent(match.opponent)
       setLocationType(resolveMatchLocationType(match))
       setTournamentGame(Boolean(match.tournament_game))
+      setGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
       setHalfLengthMinutes(match.half_length > 0 ? match.half_length : DEFAULT_HALF_LENGTH)
       setMatchDate(match.match_date ?? match.date.slice(0, 10))
       setMatchTime(normalizeMatchTimeForInput(match.match_time))
@@ -1002,6 +1014,7 @@ export function useGameDayApp() {
       opponent: string
       locationType: LocationType
       tournamentGame: boolean
+      goesToPks?: boolean
       halfLength: number
       matchDate: string
       matchTime: string
@@ -1019,6 +1032,7 @@ export function useGameDayApp() {
       }
 
       let createdMatchId: string | null = null
+      const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
 
       try {
         const coachId = await resolveCoachIdForName(input.coachName)
@@ -1031,6 +1045,7 @@ export function useGameDayApp() {
           opponent: input.opponent,
           locationType: input.locationType,
           tournamentGame: input.tournamentGame,
+          goesToPks,
           halfLength: input.halfLength,
           matchDate: input.matchDate,
           matchTime: input.matchTime,
@@ -1054,6 +1069,9 @@ export function useGameDayApp() {
         setPlayers(matchPlayers)
         setHomeScore(0)
         setAwayScore(0)
+        setHomePkScore(0)
+        setAwayPkScore(0)
+        setPkWinnerIsUs(null)
         setSeconds(initialHalfClock(input.halfLength))
         setPeriod('1st')
         setRunning(false)
@@ -1070,6 +1088,7 @@ export function useGameDayApp() {
         setMatchOpponent(input.opponent)
         setMatchLocationType(input.locationType)
         setMatchTournamentGame(input.tournamentGame)
+        setMatchGoesToPks(goesToPks)
         setHalfLengthMinutes(input.halfLength)
         setSubIntervalSeconds(input.subIntervalSeconds ?? null)
         setGkPlaysFullHalf(input.gkPlaysFullHalf ?? true)
@@ -1213,6 +1232,7 @@ export function useGameDayApp() {
     async (
       clockSeconds: number,
       timing?: { endedOnTime: boolean },
+      options?: { enterPenaltyShootout?: boolean },
     ) => {
       setRunning(false)
 
@@ -1246,16 +1266,61 @@ export function useGameDayApp() {
 
         if (matchId) {
           void syncMatchStats(matchId, finalized)
-          void markMatchPendingReview(matchId)
+          if (!options?.enterPenaltyShootout) {
+            void markMatchPendingReview(matchId)
+          }
         }
 
         return finalized
       })
 
+      if (options?.enterPenaltyShootout) {
+        setHomePkScore(0)
+        setAwayPkScore(0)
+        setPkWinnerIsUs(null)
+        if (matchId) {
+          void syncMatchRecord(matchId, {
+            home_pk_score: 0,
+            away_pk_score: 0,
+            pk_winner_is_us: null,
+            period_clock_started: false,
+            clock_seconds: persistableClockSeconds(clockSeconds),
+          })
+        }
+        setPeriodClockStarted(false)
+        setMatchStatus('active')
+        setAppMode('penalty_shootout')
+        return
+      }
+
       setMatchStatus('pending_review')
       setAppMode('recap')
     },
     [matchId, halfLengthMinutes, setRunning, getActiveFormation],
+  )
+
+  const finalizePenaltyShootout = useCallback(
+    async (input: {
+      homePkScore: number
+      awayPkScore: number
+      pkWinnerIsUs: boolean
+    }) => {
+      setHomePkScore(input.homePkScore)
+      setAwayPkScore(input.awayPkScore)
+      setPkWinnerIsUs(input.pkWinnerIsUs)
+      if (matchId) {
+        await syncMatchRecord(matchId, {
+          home_pk_score: input.homePkScore,
+          away_pk_score: input.awayPkScore,
+          pk_winner_is_us: input.pkWinnerIsUs,
+          period_clock_started: false,
+        })
+        await markMatchPendingReview(matchId)
+      }
+      setMatchStatus('pending_review')
+      setAppMode('recap')
+    },
+    [matchId],
   )
 
   const returnToHome = useCallback(() => {
@@ -1282,7 +1347,13 @@ export function useGameDayApp() {
     setMatchOpponent('')
     setMatchLocationType('home')
     setMatchTournamentGame(false)
+    setMatchGoesToPks(false)
+    setHomePkScore(0)
+    setAwayPkScore(0)
+    setPkWinnerIsUs(null)
     setLocationType('home')
+    setTournamentGame(false)
+    setGoesToPks(false)
     setMatchFormations({
       first: getDefaultFormationId(activeTeamFormat),
       second: getDefaultFormationId(activeTeamFormat),
@@ -1336,6 +1407,9 @@ export function useGameDayApp() {
     setPlayers(matchPlayers)
     setHomeScore(match.home_score)
     setAwayScore(match.away_score)
+    setHomePkScore(match.home_pk_score ?? 0)
+    setAwayPkScore(match.away_pk_score ?? 0)
+    setPkWinnerIsUs(match.pk_winner_is_us ?? null)
     setSeconds(
       restoreMatchClockSeconds(
         match.clock_seconds,
@@ -1352,6 +1426,7 @@ export function useGameDayApp() {
     setMatchOpponent(match.opponent)
     setMatchLocationType(resolveMatchLocationType(match))
     setMatchTournamentGame(match.tournament_game)
+    setMatchGoesToPks(Boolean(match.goes_to_pks))
     setFirstHalfStarterIds(stats.filter((s) => s.is_first_half_starter).map((s) => s.player_id))
     setSecondHalfStarterIds(stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id))
     setAppMode('recap')
@@ -1501,6 +1576,7 @@ export function useGameDayApp() {
     enterHalftime,
     beginSecondHalf,
     finishGame,
+    finalizePenaltyShootout,
     returnToHome,
     openMatchRecap,
     openPendingReviewRecap,
@@ -1527,6 +1603,12 @@ export function useGameDayApp() {
     matchOpponent,
     matchLocationType,
     matchTournamentGame,
+    matchGoesToPks,
+    homePkScore,
+    setHomePkScore,
+    awayPkScore,
+    setAwayPkScore,
+    pkWinnerIsUs,
     halfLengthMinutes,
     setHalfLengthMinutes,
     gkPlaysFullHalf,
@@ -1542,6 +1624,8 @@ export function useGameDayApp() {
     setLocationType,
     tournamentGame,
     setTournamentGame,
+    goesToPks,
+    setGoesToPks,
     matchDate,
     setMatchDate,
     matchTime,

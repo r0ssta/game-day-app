@@ -12,6 +12,7 @@ import { MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 import type { DbMatch, DbMatchEvent } from '@/types/database'
 import type { MatchPlayer, RosterPlayer } from '@/types/match'
+import { formatMatchResultScore } from '@/lib/penalty-kicks'
 
 type ParentRecapEmailModalProps = {
   open: boolean
@@ -129,7 +130,7 @@ export function ParentRecapEmailModal({
       const text = await draftParentFacingRecapWithAi(match.internal_coach_notes ?? '', {
         teamName,
         opponent,
-        scoreLine: `${match.home_score}–${match.away_score}`,
+        scoreLine: formatMatchResultScore(match),
       })
       setParentFacingRecap(text)
       onToast('AI draft ready — review before sending')

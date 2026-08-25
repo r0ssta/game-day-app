@@ -12,6 +12,7 @@ import {
 import type { DbMatch } from '@/types/database'
 import type { Impact, RosterPlayer } from '@/types/match'
 import type { LineupCombinationAnalytics } from '@/lib/lineup-analytics'
+import { matchResultBucket } from '@/lib/penalty-kicks'
 
 export type PlayingTimeEntry = {
   playerId: string
@@ -220,8 +221,9 @@ export function buildScoringDefenseAnalytics(matches: DbMatch[]): ScoringDefense
     venueRecord.matchesPlayed += 1
     venueRecord.goalsFor += match.home_score
     venueRecord.goalsAgainst += match.away_score
-    if (match.home_score > match.away_score) venueRecord.wins += 1
-    else if (match.home_score < match.away_score) venueRecord.losses += 1
+    const result = matchResultBucket(match)
+    if (result === 'win') venueRecord.wins += 1
+    else if (result === 'loss') venueRecord.losses += 1
     else venueRecord.draws += 1
 
     if (match.away_score === 0) {

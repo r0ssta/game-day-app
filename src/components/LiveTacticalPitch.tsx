@@ -19,7 +19,7 @@ import {
 import { formatPlayingTimeClock, getLiveSecondsPlayed } from '@/lib/play-time'
 import { displayMatchPosition } from '@/lib/positions'
 import { cn } from '@/lib/utils'
-import { PITCH_BENCH_LAYOUT, PITCH_BENCH_SIDEBAR } from '@/lib/layout'
+import { PITCH_BENCH_LAYOUT, PITCH_BENCH_SIDEBAR_CAPPED } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -707,7 +707,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
             </SoccerPitchSurface>
           </div>
 
-          <div className={PITCH_BENCH_SIDEBAR}>
+          <div className={PITCH_BENCH_SIDEBAR_CAPPED}>
             <div className="rounded-xl border-2 border-dashed border-border bg-secondary/20 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Bench</h3>
