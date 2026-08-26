@@ -2806,6 +2806,16 @@ export default function App() {
     [goalScorerId, goalIsPk, commitOurGoal],
   )
 
+  const handlePkGkPlayerChange = useCallback(
+    (playerId: string | null) => {
+      setPkGkPlayerId(playerId)
+      if (matchId) {
+        syncMatchRecord(matchId, { pk_gk_player_id: playerId })
+      }
+    },
+    [matchId, setPkGkPlayerId],
+  )
+
   const handleShareStatTracker = useCallback(async () => {
     if (!matchId) return
 
@@ -3140,16 +3150,6 @@ export default function App() {
       </>
     )
   }
-
-  const handlePkGkPlayerChange = useCallback(
-    (playerId: string | null) => {
-      setPkGkPlayerId(playerId)
-      if (matchId) {
-        syncMatchRecord(matchId, { pk_gk_player_id: playerId })
-      }
-    },
-    [matchId, setPkGkPlayerId],
-  )
 
   if (appMode === 'penalty_shootout') {
     return (
