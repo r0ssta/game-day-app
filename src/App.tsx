@@ -123,6 +123,7 @@ import { formatVenueLabel } from '@/lib/match-location'
 import {
   APP_CONTAINER,
   APP_SHELL,
+  APP_SHELL_LOCKED,
   MODAL_OVERLAY,
   MODAL_PANEL,
   TOUCH_ICON_BUTTON,
@@ -294,6 +295,8 @@ type MatchHeaderProps = {
   periodClockStarted: boolean
   /** True when Screen Wake Lock is held (keeps display on). */
   wakeLockActive?: boolean
+  /** When true, header is already outside the scrollport — no sticky needed. */
+  pinned?: boolean
   onHome: () => void
   onLogGoal?: () => void
   onOpponentGoal?: () => void
@@ -355,6 +358,7 @@ function MatchHeader({
   running,
   periodClockStarted,
   wakeLockActive = false,
+  pinned = false,
   onHome,
   onLogGoal,
   onOpponentGoal,
@@ -371,8 +375,12 @@ function MatchHeader({
   const showGoalActions = Boolean(periodClockStarted && onLogGoal && onOpponentGoal)
 
   return (
-    <header className="sticky top-14 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className={`${APP_CONTAINER} space-y-2 py-2`}>
+    <header
+      className={cn(
+        'z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
+        pinned ? 'relative' : 'sticky top-0',
+      )}
+    >      <div className={`${APP_CONTAINER} space-y-2 py-2`}>
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <p className="truncate text-center text-xs font-bold text-foreground sm:text-sm">
@@ -3233,8 +3241,9 @@ export default function App() {
   }
 
   return (
-    <main className={`${APP_SHELL} pb-36 md:pb-40`}>
+    <main className={APP_SHELL_LOCKED}>
       <MatchHeader
+        pinned
         teamName={matchTeamName}
         coachName={matchCoachName}
         opponent={matchOpponent}
@@ -3254,7 +3263,7 @@ export default function App() {
         }
       />
 
-      <div className={`${APP_CONTAINER} space-y-5 pt-4 md:space-y-6 md:pt-5`}>
+      <div className={`${APP_CONTAINER} min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain pt-4 pb-36 md:space-y-6 md:pt-5 md:pb-40`}>
         {ENABLE_QA_SPEED ? (
           <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
         ) : null}

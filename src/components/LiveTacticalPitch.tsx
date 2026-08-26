@@ -19,7 +19,7 @@ import {
 import { formatPlayingTimeClock, getLiveSecondsPlayed } from '@/lib/play-time'
 import { displayMatchPosition } from '@/lib/positions'
 import { cn } from '@/lib/utils'
-import { PITCH_BENCH_LAYOUT, PITCH_BENCH_SIDEBAR_CAPPED } from '@/lib/layout'
+import { PITCH_BENCH_LAYOUT_FLOW, PITCH_BENCH_SIDEBAR_FLOW } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -131,7 +131,7 @@ function LivePitchPlayerBadge({
       onClick={onTap}
       aria-pressed={selected}
       className={cn(
-        'absolute flex min-h-[44px] min-w-[44px] -translate-x-1/2 -translate-y-1/2 touch-manipulation flex-col items-center justify-center transition-transform duration-150 active:scale-95',
+        'absolute flex min-h-[44px] min-w-[44px] -translate-x-1/2 -translate-y-1/2 touch-pan-y flex-col items-center justify-center transition-transform duration-150 active:scale-95',
         selected && SELECTED_RING,
         swapTarget && !selected && 'ring-2 ring-athletic/80 scale-105',
       )}
@@ -200,7 +200,7 @@ function BenchPlayerRow({
         onClick={onTap}
         aria-pressed={selected}
         className={cn(
-          'flex min-h-[52px] w-full touch-manipulation items-center gap-3 rounded-xl border-2 bg-card px-3 py-3 text-left active:scale-[0.98]',
+          'flex min-h-[52px] w-full touch-pan-y items-center gap-3 rounded-xl border-2 bg-card px-3 py-3 text-left active:scale-[0.98]',
           selected
             ? 'border-neon bg-neon/10 shadow-[0_0_16px_rgba(var(--neon-rgb,255,255,0),0.35)]'
             : swapTarget
@@ -669,7 +669,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           </p>
         )}
 
-        <div className={PITCH_BENCH_LAYOUT}>
+        <div className={PITCH_BENCH_LAYOUT_FLOW}>
           <div className="min-w-0">
             <SoccerPitchSurface>
               {formation.slots.map((slot) => {
@@ -707,7 +707,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
             </SoccerPitchSurface>
           </div>
 
-          <div className={PITCH_BENCH_SIDEBAR_CAPPED}>
+          <div className={PITCH_BENCH_SIDEBAR_FLOW}>
             <div className="rounded-xl border-2 border-dashed border-border bg-secondary/20 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Bench</h3>
