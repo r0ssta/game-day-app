@@ -11,6 +11,7 @@ import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
 import {
   parseParentHubRoute,
   registerParentServiceWorker,
+  restoreStandaloneParentHubPath,
 } from '@/lib/parent-hub'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
@@ -41,7 +42,11 @@ function AuthenticatedApp() {
 
 function Root() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
-  const [parentHubRoute, setParentHubRoute] = useState(() => parseParentHubRoute())
+  const [parentHubRoute, setParentHubRoute] = useState(() => {
+    // Home Screen apps must stay on the public hub even when a coach session exists.
+    restoreStandaloneParentHubPath()
+    return parseParentHubRoute()
+  })
 
   useEffect(() => {
     void registerParentServiceWorker()
@@ -49,6 +54,7 @@ function Root() {
 
   useEffect(() => {
     const syncRoute = () => {
+      restoreStandaloneParentHubPath()
       setTrackerRoute(parseStatTrackerRoute())
       setParentHubRoute(parseParentHubRoute())
     }
@@ -61,6 +67,7 @@ function Root() {
     }
   }, [])
 
+  // Public Parent Hub bypasses AuthProvider entirely — logged-in coaches still see the hub.
   return (
     <SunlightModeProvider>
       {trackerRoute ? (

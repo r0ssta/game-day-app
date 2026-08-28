@@ -2,6 +2,10 @@ import { formatPlayerFullName } from '@/lib/player-names'
 import { formatPeriodLong, type TotalPeriods } from '@/lib/match-periods'
 import { supabase } from '@/supabaseClient'
 import { ENABLE_PARENT_HUB } from '@/lib/feature-flags'
+import {
+  isStandalonePwa,
+  readRememberedParentHubSlug,
+} from '@/lib/parent-hub-pwa'
 
 /** Public VAPID key — must be set as VITE_VAPID_PUBLIC_KEY (see `.env.local`). */
 export const VAPID_PUBLIC_KEY =
@@ -123,6 +127,34 @@ export function parseParentHubRoute(): ParentHubRoute | null {
 export function buildParentHubUrl(teamSlug: string): string {
   const slug = teamSlug.trim().toLowerCase()
   return `${window.location.origin}/hub/${encodeURIComponent(slug)}`
+}
+
+/**
+ * If a Home Screen / standalone launch landed on the coach root (`/`) instead of
+ * `/hub/:slug`, rewrite to the remembered Parent Hub before auth mounts.
+ * Returns true when the location was corrected.
+ */
+export function restoreStandaloneParentHubPath(): boolean {
+  if (typeof window === 'undefined') return false
+  if (!isStandalonePwa()) return false
+  if (parseParentHubRoute()) return false
+
+  const path = window.location.pathname
+  // Only bounce bare app roots — never hijack tracker or other public routes.
+  const isCoachRoot =
+    path === '/' ||
+    path === '' ||
+    path === '/index.html' ||
+    path === '/coach' ||
+    path.startsWith('/coach/')
+  if (!isCoachRoot) return false
+
+  const slug = readRememberedParentHubSlug()
+  if (!slug) return false
+
+  const next = `/hub/${encodeURIComponent(slug)}${window.location.search}${window.location.hash}`
+  window.history.replaceState(null, '', next)
+  return true
 }
 
 export async function shareParentHubLink(

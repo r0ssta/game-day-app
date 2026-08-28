@@ -11,7 +11,7 @@ import {
 import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
-import { getMatchSortTimestamp, matchDateTimeIso } from '@/lib/match-schedule'
+import { getMatchSortTimestamp, matchDateTimeIso, formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
 import {
   addedTimeSeconds,
@@ -39,10 +39,17 @@ import type {
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
 import {
+  abbreviateOpponentName,
+  buildPlayerRatingTrend,
   clampPlayerRating,
+  emptyPlayerRatingTrend,
+  legacyImpactScoreToRating,
   ratingToLegacyImpactScore,
   type PlayerRating,
+  type PlayerRatingTrend,
+  type PlayerRatingTrendPoint,
 } from '@/lib/player-rating'
+import { isOverallReviewPosition } from '@/lib/match-recap'
 import {
   type AppRole,
   type AssignableAppRole,
@@ -1498,6 +1505,111 @@ export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[
     return []
   }
   throw error
+}
+
+type MatchReviewJoinRow = {
+  match_id: string
+  player_id: string
+  position: string
+  rating: number | null
+  impact_score?: number | null
+  matches:
+    | {
+        id: string
+        opponent: string
+        date: string
+        match_date: string | null
+        team_id: string
+        status: string
+      }
+    | {
+        id: string
+        opponent: string
+        date: string
+        match_date: string | null
+        team_id: string
+        status: string
+      }[]
+    | null
+}
+
+/**
+ * Historical overall (1–5) evaluations for one player on a team, oldest → newest.
+ * Joins `matches` for date/opponent context used by the season rating trend chart.
+ */
+export async function fetchPlayerSeasonRatingTrend(
+  playerId: string,
+  teamId: string,
+): Promise<PlayerRatingTrend> {
+  const { data, error } = await supabase
+    .from('match_reviews')
+    .select(
+      `
+      match_id,
+      player_id,
+      position,
+      rating,
+      matches!inner (
+        id,
+        opponent,
+        date,
+        match_date,
+        team_id,
+        status
+      )
+    `,
+    )
+    .eq('player_id', playerId)
+    .eq('matches.team_id', teamId)
+
+  if (error) {
+    if (isOptionalTableError(error) || isMissingColumnError(error)) {
+      console.warn(
+        '[fetchPlayerSeasonRatingTrend] unavailable:',
+        formatSupabaseError(error),
+      )
+      return emptyPlayerRatingTrend()
+    }
+    throw error
+  }
+
+  const byMatch = new Map<string, PlayerRatingTrendPoint>()
+
+  for (const row of (data ?? []) as MatchReviewJoinRow[]) {
+    if (!isOverallReviewPosition(row.position)) continue
+
+    const match = Array.isArray(row.matches) ? row.matches[0] : row.matches
+    if (!match || match.team_id !== teamId) continue
+    if (match.status !== 'completed' && match.status !== 'pending_review') continue
+
+    const rating =
+      typeof row.rating === 'number'
+        ? clampPlayerRating(row.rating)
+        : typeof row.impact_score === 'number'
+          ? legacyImpactScoreToRating(row.impact_score)
+          : null
+    if (rating == null) continue
+
+    const schedule = {
+      date: match.date,
+      match_date: match.match_date,
+      match_time: null as string | null,
+    }
+    const { dateLabel } = formatMatchDisplayDateTime(schedule)
+    const opponent = match.opponent.trim() || 'Opponent'
+    const shortDate = dateLabel.split(',')[0]?.trim() || dateLabel
+
+    byMatch.set(match.id, {
+      matchId: match.id,
+      opponent,
+      dateLabel,
+      shortLabel: abbreviateOpponentName(opponent) || shortDate,
+      rating,
+      sortTimestamp: getMatchSortTimestamp(schedule),
+    })
+  }
+
+  return buildPlayerRatingTrend([...byMatch.values()])
 }
 
 export type PostGameReviewInput = {

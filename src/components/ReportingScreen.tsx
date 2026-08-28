@@ -99,7 +99,7 @@ export function ReportingScreen({
     ? getPlayerFromRoster(teamRoster, selectedPlayerId)
     : null
 
-  if (selectedPlayer && selectedPlayerId) {
+  if (selectedPlayer && selectedPlayerId && activeTeamId) {
     const stats =
       reportData.playerStats.get(selectedPlayerId) ??
       emptyPlayerSeasonStats(selectedPlayerId)
@@ -108,6 +108,7 @@ export function ReportingScreen({
       <PlayerSeasonProfileView
         player={selectedPlayer}
         stats={stats}
+        teamId={activeTeamId}
         onBack={() => setSelectedPlayerId(null)}
       />
     )

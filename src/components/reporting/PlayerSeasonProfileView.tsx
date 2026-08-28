@@ -1,13 +1,20 @@
+import { useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import { formatPlusMinus } from '@/lib/plus-minus'
-import { formatPlayerRating } from '@/lib/player-rating'
+import {
+  emptyPlayerRatingTrend,
+  formatPlayerRating,
+  type PlayerRatingTrend,
+} from '@/lib/player-rating'
 import {
   formatPlayerSeasonHeader,
   formatPositionBreakdownDetail,
   formatPositionBreakdownLine,
   type PlayerSeasonStats,
 } from '@/lib/season-reporting'
+import { fetchPlayerSeasonRatingTrend } from '@/lib/supabase-api'
+import { PlayerRatingChart } from '@/components/reporting/PlayerRatingChart'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import type { RosterPlayer } from '@/types/match'
@@ -26,16 +33,46 @@ function ratingBadgeClass(rating: number | null | undefined): string {
 type PlayerSeasonProfileViewProps = {
   player: RosterPlayer
   stats: PlayerSeasonStats
+  teamId: string
   onBack: () => void
 }
 
-export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonProfileViewProps) {
+export function PlayerSeasonProfileView({
+  player,
+  stats,
+  teamId,
+  onBack,
+}: PlayerSeasonProfileViewProps) {
   const header = formatPlayerSeasonHeader(player, stats)
   const highCount = stats.matchLogs.filter((log) => log.overallRating.rating >= 4).length
-  const midCount = stats.matchLogs.filter(
-    (log) => log.overallRating.rating === 3,
-  ).length
+  const midCount = stats.matchLogs.filter((log) => log.overallRating.rating === 3).length
   const lowCount = stats.matchLogs.filter((log) => log.overallRating.rating <= 2).length
+
+  const [ratingTrend, setRatingTrend] = useState<PlayerRatingTrend>(emptyPlayerRatingTrend)
+  const [trendLoading, setTrendLoading] = useState(true)
+  const [trendError, setTrendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      setTrendLoading(true)
+      setTrendError(null)
+      try {
+        const trend = await fetchPlayerSeasonRatingTrend(player.id, teamId)
+        if (!cancelled) setRatingTrend(trend)
+      } catch (err) {
+        if (!cancelled) {
+          setTrendError(err instanceof Error ? err.message : 'Failed to load rating trend')
+          setRatingTrend(emptyPlayerRatingTrend())
+        }
+      } finally {
+        if (!cancelled) setTrendLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [player.id, teamId])
 
   return (
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
@@ -59,6 +96,41 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
             </p>
           </div>
         </header>
+
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Season Rating Trend
+          </h2>
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Season Average Rating
+              </p>
+              <p className="mt-0.5 font-display text-3xl font-black tabular-nums text-neon">
+                {trendLoading
+                  ? '…'
+                  : ratingTrend.seasonAverage != null
+                    ? `${formatPlayerRating(ratingTrend.seasonAverage, 1)}/5`
+                    : '—'}
+              </p>
+              {!trendLoading && ratingTrend.ratedMatchCount > 0 ? (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Across {ratingTrend.ratedMatchCount} rated match
+                  {ratingTrend.ratedMatchCount === 1 ? '' : 'es'}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {trendError ? (
+            <p className="mt-3 text-sm text-danger">{trendError}</p>
+          ) : trendLoading ? (
+            <p className="mt-4 py-8 text-center text-sm text-muted-foreground">Loading trend…</p>
+          ) : (
+            <div className="mt-4 min-w-0">
+              <PlayerRatingChart points={ratingTrend.points} />
+            </div>
+          )}
+        </section>
 
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">

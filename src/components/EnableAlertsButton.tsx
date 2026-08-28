@@ -8,6 +8,7 @@ import {
   subscribeParentWebPush,
   type ParentHubPlayer,
 } from '@/lib/parent-hub'
+import { isStandalonePwa } from '@/lib/parent-hub-pwa'
 import { cn } from '@/lib/utils'
 
 type EnableAlertsButtonProps = {
@@ -19,8 +20,12 @@ type EnableAlertsButtonProps = {
 /**
  * Parent Hub opt-in: request notification permission, subscribe with the VAPID public key,
  * and persist the PushSubscription (+ optional target player) via Supabase.
+ *
+ * Hidden outside installed / standalone display mode — iOS Safari rejects Web Push
+ * with an Apple support error unless the page was launched from the Home Screen.
  */
 export function EnableAlertsButton({ teamId, players, className }: EnableAlertsButtonProps) {
+  const [standalone, setStandalone] = useState(() => isStandalonePwa())
   const [targetPlayerId, setTargetPlayerId] = useState('')
   const [busy, setBusy] = useState(false)
   const [enabled, setEnabled] = useState(false)
@@ -39,6 +44,23 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
   }, [players])
 
   useEffect(() => {
+    const syncStandalone = () => setStandalone(isStandalonePwa())
+    syncStandalone()
+    const mediaStandalone = window.matchMedia('(display-mode: standalone)')
+    const mediaFullscreen = window.matchMedia('(display-mode: fullscreen)')
+    mediaStandalone.addEventListener('change', syncStandalone)
+    mediaFullscreen.addEventListener('change', syncStandalone)
+    return () => {
+      mediaStandalone.removeEventListener('change', syncStandalone)
+      mediaFullscreen.removeEventListener('change', syncStandalone)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!standalone) {
+      setChecking(false)
+      return
+    }
     let cancelled = false
     setChecking(true)
     void (async () => {
@@ -59,7 +81,10 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
     return () => {
       cancelled = true
     }
-  }, [teamId])
+  }, [teamId, standalone])
+
+  // Regular Safari / browser tabs must not offer the button (Apple Web Push restriction).
+  if (!standalone) return null
 
   const onEnable = async () => {
     setBusy(true)

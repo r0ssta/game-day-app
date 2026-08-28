@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Share, X } from 'lucide-react'
 import { MODAL_OVERLAY } from '@/lib/layout'
+import { isStandalonePwa } from '@/lib/parent-hub-pwa'
 import { cn } from '@/lib/utils'
 
 const DISMISS_KEY = 'vvfc-ios-install-dismissed'
@@ -12,17 +13,6 @@ function isIosDevice(): boolean {
   // iPadOS 13+ reports as MacIntel with touch points
   const iPadOs = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
   return iOS || iPadOs
-}
-
-/** True when the PWA is already installed / launched from the Home Screen. */
-function isStandalonePwa(): boolean {
-  if (typeof window === 'undefined') return false
-  const nav = window.navigator as Navigator & { standalone?: boolean }
-  return (
-    Boolean(nav.standalone) ||
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.matchMedia('(display-mode: fullscreen)').matches
-  )
 }
 
 /**

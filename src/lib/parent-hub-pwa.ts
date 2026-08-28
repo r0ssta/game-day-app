@@ -48,6 +48,40 @@ function resolveLogoUrl(logoUrl: string | null | undefined): string {
   return raw.startsWith('/') ? raw : `/${raw}`
 }
 
+/** True when launched as an installed Home Screen / standalone PWA (incl. iOS Safari). */
+export function isStandalonePwa(): boolean {
+  if (typeof window === 'undefined') return false
+  const nav = window.navigator as Navigator & { standalone?: boolean }
+  return (
+    Boolean(nav.standalone) ||
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches
+  )
+}
+
+const PARENT_HUB_SLUG_STORAGE_KEY = 'vvfc-parent-hub-slug'
+
+/** Remember the last team hub slug so standalone launches that land on `/` can restore it. */
+export function rememberParentHubSlug(slug: string): void {
+  const clean = slug.trim().toLowerCase()
+  if (!clean || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(PARENT_HUB_SLUG_STORAGE_KEY, clean)
+  } catch {
+    // private mode / blocked storage
+  }
+}
+
+export function readRememberedParentHubSlug(): string | null {
+  if (typeof localStorage === 'undefined') return null
+  try {
+    const value = localStorage.getItem(PARENT_HUB_SLUG_STORAGE_KEY)?.trim().toLowerCase()
+    return value || null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Vite SPA stand-in for a server `/hub/[slug]/layout.tsx`:
  * injects team-scoped manifest + Apple Home Screen meta tags.

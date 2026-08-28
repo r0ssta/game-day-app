@@ -44,17 +44,49 @@ function buildManifest(input: {
 }) {
   const theme = (input.brandColor?.trim() || DEFAULT_THEME).toLowerCase()
   const iconSrc = absoluteUrl(input.origin, input.logoUrl)
-  const startUrl = input.slug
-    ? `/hub/${encodeURIComponent(input.slug)}`
-    : '/'
+  const slug = input.slug?.trim().toLowerCase() || ''
+
+  // Team hub installs open `/hub/:slug` in standalone and stay scoped under `/hub/`.
+  // The slug-less fallback is the coach app root (index.html default link).
+  if (slug) {
+    const startPath = `/hub/${encodeURIComponent(slug)}`
+    return {
+      id: startPath,
+      name: input.name,
+      short_name: shortName(input.name),
+      description: `Live scores, schedule, and match recaps for ${input.name}.`,
+      start_url: `${input.origin}${startPath}`,
+      scope: `${input.origin}/hub/`,
+      display: 'standalone' as const,
+      orientation: 'portrait-primary',
+      background_color: theme,
+      theme_color: theme,
+      lang: 'en-US',
+      icons: [
+        {
+          src: iconSrc,
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: iconSrc,
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any maskable',
+        },
+      ],
+    }
+  }
 
   return {
+    id: '/',
     name: input.name,
     short_name: shortName(input.name),
     description: `Live scores, schedule, and match recaps for ${input.name}.`,
-    start_url: startUrl,
-    scope: '/',
-    display: 'standalone',
+    start_url: `${input.origin}/`,
+    scope: `${input.origin}/`,
+    display: 'standalone' as const,
     orientation: 'portrait-primary',
     background_color: theme,
     theme_color: theme,

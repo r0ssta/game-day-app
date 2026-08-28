@@ -19,6 +19,7 @@ import {
 import {
   applyParentHubManifestLink,
   applyParentHubPwaHead,
+  rememberParentHubSlug,
 } from '@/lib/parent-hub-pwa'
 import { APP_CONTAINER } from '@/lib/layout'
 import { cn } from '@/lib/utils'
@@ -332,11 +333,13 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
   useEffect(() => {
     if (route.kind === 'slug') {
       applyParentHubManifestLink(route.slug)
+      rememberParentHubSlug(route.slug)
     }
   }, [route])
 
   useEffect(() => {
     if (!hub?.teamSlug) return
+    rememberParentHubSlug(hub.teamSlug)
     return applyParentHubPwaHead({
       slug: hub.teamSlug,
       teamName: formatTeamDisplayName(hub.teamName, hub.ageGroup),

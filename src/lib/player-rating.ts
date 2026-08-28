@@ -44,3 +44,43 @@ export function formatPlayerRating(value: number | null | undefined, digits = 1)
   if (Number.isInteger(value)) return String(value)
   return value.toFixed(digits)
 }
+
+/** One overall post-match rating tied to a completed match (for trend charts). */
+export type PlayerRatingTrendPoint = {
+  matchId: string
+  opponent: string
+  dateLabel: string
+  /** Compact axis label: abbreviated opponent or short date. */
+  shortLabel: string
+  rating: PlayerRating
+  sortTimestamp: number
+}
+
+export type PlayerRatingTrend = {
+  points: PlayerRatingTrendPoint[]
+  /** Mathematical average of overall match ratings (1–5). */
+  seasonAverage: number | null
+  ratedMatchCount: number
+}
+
+export function emptyPlayerRatingTrend(): PlayerRatingTrend {
+  return { points: [], seasonAverage: null, ratedMatchCount: 0 }
+}
+
+export function abbreviateOpponentName(opponent: string, maxLen = 10): string {
+  const trimmed = opponent.trim() || 'Opp'
+  if (trimmed.length <= maxLen) return trimmed
+  return `${trimmed.slice(0, Math.max(1, maxLen - 1))}…`
+}
+
+export function buildPlayerRatingTrend(
+  points: PlayerRatingTrendPoint[],
+): PlayerRatingTrend {
+  const sorted = [...points].sort((a, b) => a.sortTimestamp - b.sortTimestamp)
+  return {
+    points: sorted,
+    seasonAverage: averagePlayerRatings(sorted.map((point) => point.rating)),
+    ratedMatchCount: sorted.length,
+  }
+}
+
