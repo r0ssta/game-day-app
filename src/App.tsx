@@ -949,6 +949,8 @@ type SetupScreenProps = {
   onBackToHome: () => void
   setupSlotAssignments?: Record<string, string | null>
   setupSlotLabelOverrides?: Record<string, string>
+  onSetupSlotAssignmentsChange?: (assignments: Record<string, string | null>) => void
+  onSetupSlotLabelOverridesChange?: (overrides: Record<string, string>) => void
   setupPitchKey: number
   setupAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
   setupLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
@@ -1009,6 +1011,8 @@ function SetupScreen({
   onBackToHome,
   setupSlotAssignments,
   setupSlotLabelOverrides,
+  onSetupSlotAssignmentsChange,
+  onSetupSlotLabelOverridesChange,
   setupPitchKey,
   setupAssignmentsRef,
   setupLabelOverridesRef,
@@ -1364,6 +1368,8 @@ function SetupScreen({
                   assignmentsResetKey={setupPitchKey}
                   assignmentsRef={setupAssignmentsRef}
                   slotLabelOverridesRef={setupLabelOverridesRef}
+                  onSlotAssignmentsChange={onSetupSlotAssignmentsChange}
+                  onSlotLabelOverridesChange={onSetupSlotLabelOverridesChange}
                   constrainLists={false}
                   players={masterRoster.map((player) => ({
                     id: player.id,
@@ -1890,7 +1896,9 @@ export default function App() {
     removeLineupPreset,
     setPlayerActive,
     setupSlotAssignments,
+    setSetupSlotAssignments,
     setupSlotLabelOverrides,
+    setSetupSlotLabelOverrides,
     setupPitchKey,
     halftimePitchKey,
     enterHalftime,
@@ -3354,6 +3362,8 @@ export default function App() {
           onBackToHome={() => setAppMode('home')}
           setupSlotAssignments={setupSlotAssignments}
           setupSlotLabelOverrides={setupSlotLabelOverrides}
+          onSetupSlotAssignmentsChange={setSetupSlotAssignments}
+          onSetupSlotLabelOverridesChange={setSetupSlotLabelOverrides}
           setupPitchKey={setupPitchKey}
           setupAssignmentsRef={setupAssignmentsRef}
           setupLabelOverridesRef={setupLabelOverridesRef}

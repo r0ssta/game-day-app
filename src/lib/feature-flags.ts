@@ -10,3 +10,8 @@ export const ENABLE_WAKE_LOCK = true
 export const ENABLE_QA_SPEED = false
 /** Sideline share link + live micro-stats panel — hidden until ready for coaches. */
 export const ENABLE_STAT_TRACKER = false
+/**
+ * Per-position impact ratings on post-game recap.
+ * Keep off for now; overall player rating stays available.
+ */
+export const ENABLE_POSITIONAL_RECAP_RATINGS = false

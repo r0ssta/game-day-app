@@ -714,7 +714,7 @@ function TeamLineupsTab({
         presetName: trimmed,
         formationId,
         slotAssignments: assignmentsRef.current ?? {},
-        slotLabelOverrides: labelOverridesRef.current ?? {},
+        slotLabelOverrides: labelOverridesRef.current ?? initialSlotLabelOverrides ?? {},
       })
       onToast(editingPresetId ? 'Preset updated' : 'Preset saved')
       resetEditor()
@@ -809,6 +809,13 @@ function TeamLineupsTab({
             assignmentsResetKey={assignmentsKey}
             assignmentsRef={assignmentsRef}
             slotLabelOverridesRef={labelOverridesRef}
+            onSlotAssignmentsChange={(next) => {
+              assignmentsRef.current = next
+            }}
+            onSlotLabelOverridesChange={(next) => {
+              labelOverridesRef.current = next
+              setInitialSlotLabelOverrides(next)
+            }}
             onAssignStarter={(playerId) => setStarters((prev) => ({ ...prev, [playerId]: true }))}
             onRemoveStarter={(playerId) => setStarters((prev) => ({ ...prev, [playerId]: false }))}
           />

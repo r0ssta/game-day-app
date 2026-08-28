@@ -47,6 +47,7 @@ import {
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
+import { ENABLE_POSITIONAL_RECAP_RATINGS } from '@/lib/feature-flags'
 import type { Impact, MatchPlayer } from '@/types/match'
 import type { DbMatch, DbMatchEvent } from '@/types/database'
 
@@ -671,8 +672,10 @@ export function PostGameRecap({
               Player Review
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Rate overall match performance for every player. Position breakdowns are optional and
-              only saved when you interact with a role rating.
+              Rate overall match performance for every player.
+              {ENABLE_POSITIONAL_RECAP_RATINGS
+                ? ' Position breakdowns are optional and only saved when you interact with a role rating.'
+                : ''}
             </p>
           </div>
 
@@ -756,7 +759,7 @@ export function PostGameRecap({
                       </div>
                     </div>
 
-                    {multiPosition ? (
+                    {ENABLE_POSITIONAL_RECAP_RATINGS && multiPosition ? (
                       <div className="space-y-3">
                         <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                           Position Breakdowns{' '}

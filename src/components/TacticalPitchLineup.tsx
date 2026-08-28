@@ -66,6 +66,10 @@ type TacticalPitchLineupProps = {
   assignmentsRef?: MutableRefObject<Record<string, string | null> | null>
   /** Optional ref for coach positional label overrides (setup → match tracking). */
   slotLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
+  /** Keep parent state in sync so remounts / preset saves see the latest overrides. */
+  onSlotLabelOverridesChange?: (overrides: Record<string, string>) => void
+  /** Keep parent slot assignments in sync when the coach leaves and returns to setup. */
+  onSlotAssignmentsChange?: (assignments: Record<string, string | null>) => void
   teamFormat?: TeamFormat
   /**
    * When false, bench/absent lists grow naturally so a parent page can be the only scroller.
@@ -210,6 +214,8 @@ export function TacticalPitchLineup({
   assignmentsResetKey,
   assignmentsRef,
   slotLabelOverridesRef,
+  onSlotLabelOverridesChange,
+  onSlotAssignmentsChange,
   teamFormat,
   constrainLists = true,
 }: TacticalPitchLineupProps) {
@@ -271,11 +277,29 @@ export function TacticalPitchLineup({
     }
   }, [availableFormations, formationId, setFormationId, teamFormat])
 
+  const publishAssignments = useCallback(
+    (next: Record<string, string | null>) => {
+      if (assignmentsRef) assignmentsRef.current = next
+      onSlotAssignmentsChange?.(next)
+    },
+    [assignmentsRef, onSlotAssignmentsChange],
+  )
+
+  const publishLabelOverrides = useCallback(
+    (next: Record<string, string>) => {
+      if (slotLabelOverridesRef) slotLabelOverridesRef.current = next
+      onSlotLabelOverridesChange?.(next)
+    },
+    [slotLabelOverridesRef, onSlotLabelOverridesChange],
+  )
+
   useEffect(() => {
     const restoredOverrides = initialSlotLabelOverrides ?? {}
     if (initialSlotAssignments) {
       setSlotAssignments(initialSlotAssignments)
       setSlotLabelOverrides(restoredOverrides)
+      publishAssignments(initialSlotAssignments)
+      publishLabelOverrides(restoredOverrides)
       setSelectedPlayerId(null)
       setSelectedSlotId(null)
 
@@ -298,23 +322,29 @@ export function TacticalPitchLineup({
     }
 
     if (hydrateFromStarters) {
-      setSlotAssignments(
-        buildAssignmentsFromStarters(
-          formation,
-          players.map((p) => ({
-            id: p.id,
-            matchPosition: p.matchPosition ?? p.meta,
-            position: p.matchPosition ?? p.meta,
-          })),
-          starters,
-        ),
+      const nextAssignments = buildAssignmentsFromStarters(
+        formation,
+        players.map((p) => ({
+          id: p.id,
+          matchPosition: p.matchPosition ?? p.meta,
+          position: p.matchPosition ?? p.meta,
+        })),
+        starters,
       )
+      setSlotAssignments(nextAssignments)
       setSlotLabelOverrides(restoredOverrides)
+      publishAssignments(nextAssignments)
+      publishLabelOverrides(restoredOverrides)
       return
     }
 
-    setSlotAssignments(Object.fromEntries(formation.slots.map((s) => [s.id, null])))
+    const emptyAssignments = Object.fromEntries(formation.slots.map((s) => [s.id, null]))
+    setSlotAssignments(emptyAssignments)
     setSlotLabelOverrides({})
+    // Keep refs current, but do not push an empty wipe into parent state — that races
+    // React Strict Mode remounts and can clear a lineup the coach already built.
+    if (assignmentsRef) assignmentsRef.current = emptyAssignments
+    if (slotLabelOverridesRef) slotLabelOverridesRef.current = {}
     // Only re-hydrate when parent explicitly bumps assignmentsResetKey (load preset, reset editor).
     // Do not depend on `players`, `starters`, or `formation` — those change on every assign/render
     // and were wiping drag-and-drop / tap assignments immediately after placement.
@@ -340,9 +370,10 @@ export function TacticalPitchLineup({
           onRemoveStarter(playerId)
         }
       }
+      if (changed) publishAssignments(next)
       return changed ? next : prev
     })
-  }, [attending, onRemoveStarter])
+  }, [attending, onRemoveStarter, publishAssignments])
 
   const assignPlayerToSlot = useCallback(
     (playerId: string, slotId: string) => {
@@ -360,6 +391,7 @@ export function TacticalPitchLineup({
         const displaced = next[slotId]
         next[slotId] = playerId
         if (displaced && displaced !== playerId) onRemoveStarter(displaced)
+        publishAssignments(next)
         return next
       })
 
@@ -375,6 +407,7 @@ export function TacticalPitchLineup({
       maxFieldPlayers,
       slotAssignments,
       slotLabelOverrides,
+      publishAssignments,
     ],
   )
 
@@ -382,10 +415,14 @@ export function TacticalPitchLineup({
     (slotId: string) => {
       const playerId = slotAssignments[slotId]
       if (!playerId) return
-      setSlotAssignments((prev) => ({ ...prev, [slotId]: null }))
+      setSlotAssignments((prev) => {
+        const next = { ...prev, [slotId]: null }
+        publishAssignments(next)
+        return next
+      })
       onRemoveStarter(playerId)
     },
-    [slotAssignments, onRemoveStarter],
+    [slotAssignments, onRemoveStarter, publishAssignments],
   )
 
   const handleSlotClick = (slotId: string) => {
@@ -411,12 +448,17 @@ export function TacticalPitchLineup({
   }
 
   const handleSlotLabelChange = (slotId: string, label: string) => {
-    setSlotLabelOverrides((prev) => ({ ...prev, [slotId]: label }))
+    const normalized = label.trim().toUpperCase()
+    setSlotLabelOverrides((prev) => {
+      const next = { ...prev, [slotId]: normalized }
+      publishLabelOverrides(next)
+      return next
+    })
     const playerId = slotAssignments[slotId]
     if (!playerId) return
     const slot = formation.slots.find((s) => s.id === slotId)
     if (!slot) return
-    onAssignStarter(playerId, slot.role, label.trim().toUpperCase())
+    onAssignStarter(playerId, slot.role, normalized)
   }
 
   const handleFormationChange = (nextId: string) => {
@@ -451,12 +493,14 @@ export function TacticalPitchLineup({
 
     setFormationId(nextId)
     setSlotAssignments(remap.slotAssignments)
+    publishAssignments(remap.slotAssignments)
     // Drop overrides for slots that no longer exist on the new formation.
     setSlotLabelOverrides((prev) => {
       const next: Record<string, string> = {}
       for (const slot of nextFormation.slots) {
         if (prev[slot.id]) next[slot.id] = prev[slot.id]
       }
+      publishLabelOverrides(next)
       return next
     })
     setSelectedPlayerId(null)
