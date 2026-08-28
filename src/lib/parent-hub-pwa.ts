@@ -59,6 +59,33 @@ export function isStandalonePwa(): boolean {
   )
 }
 
+/** iPhone / iPod / iPad (incl. iPadOS desktop UA). */
+export function isIosDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  // iPadOS 13+ reports as MacIntel with touch points
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+}
+
+/**
+ * Apple only allows Web Push from a Home Screen / standalone launch.
+ * Android + desktop browsers support push in a normal tab.
+ */
+export function requiresStandaloneForWebPush(): boolean {
+  return isIosDevice()
+}
+
+/** Whether Parent Hub should offer the Enable Alerts control in the current context. */
+export function canOfferParentWebPush(): boolean {
+  if (typeof window === 'undefined') return false
+  if (!('Notification' in window) || !('PushManager' in window) || !('serviceWorker' in navigator)) {
+    return false
+  }
+  if (requiresStandaloneForWebPush()) return isStandalonePwa()
+  return true
+}
+
 const PARENT_HUB_SLUG_STORAGE_KEY = 'vvfc-parent-hub-slug'
 
 /** Remember the last team hub slug so standalone launches that land on `/` can restore it. */

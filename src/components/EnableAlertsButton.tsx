@@ -8,7 +8,9 @@ import {
   subscribeParentWebPush,
   type ParentHubPlayer,
 } from '@/lib/parent-hub'
-import { isStandalonePwa } from '@/lib/parent-hub-pwa'
+import {
+  canOfferParentWebPush,
+} from '@/lib/parent-hub-pwa'
 import { cn } from '@/lib/utils'
 
 type EnableAlertsButtonProps = {
@@ -21,11 +23,11 @@ type EnableAlertsButtonProps = {
  * Parent Hub opt-in: request notification permission, subscribe with the VAPID public key,
  * and persist the PushSubscription (+ optional target player) via Supabase.
  *
- * Hidden outside installed / standalone display mode — iOS Safari rejects Web Push
- * with an Apple support error unless the page was launched from the Home Screen.
+ * Visible in normal browser tabs on Android / desktop (Web Push works without install).
+ * On iOS, only shown from an installed Home Screen / standalone launch — Apple requires it.
  */
 export function EnableAlertsButton({ teamId, players, className }: EnableAlertsButtonProps) {
-  const [standalone, setStandalone] = useState(() => isStandalonePwa())
+  const [canOffer, setCanOffer] = useState(() => canOfferParentWebPush())
   const [targetPlayerId, setTargetPlayerId] = useState('')
   const [busy, setBusy] = useState(false)
   const [enabled, setEnabled] = useState(false)
@@ -44,20 +46,20 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
   }, [players])
 
   useEffect(() => {
-    const syncStandalone = () => setStandalone(isStandalonePwa())
-    syncStandalone()
+    const sync = () => setCanOffer(canOfferParentWebPush())
+    sync()
     const mediaStandalone = window.matchMedia('(display-mode: standalone)')
     const mediaFullscreen = window.matchMedia('(display-mode: fullscreen)')
-    mediaStandalone.addEventListener('change', syncStandalone)
-    mediaFullscreen.addEventListener('change', syncStandalone)
+    mediaStandalone.addEventListener('change', sync)
+    mediaFullscreen.addEventListener('change', sync)
     return () => {
-      mediaStandalone.removeEventListener('change', syncStandalone)
-      mediaFullscreen.removeEventListener('change', syncStandalone)
+      mediaStandalone.removeEventListener('change', sync)
+      mediaFullscreen.removeEventListener('change', sync)
     }
   }, [])
 
   useEffect(() => {
-    if (!standalone) {
+    if (!canOffer) {
       setChecking(false)
       return
     }
@@ -81,10 +83,10 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
     return () => {
       cancelled = true
     }
-  }, [teamId, standalone])
+  }, [teamId, canOffer])
 
-  // Regular Safari / browser tabs must not offer the button (Apple Web Push restriction).
-  if (!standalone) return null
+  // iOS Safari tabs (non-standalone) and unsupported browsers stay hidden.
+  if (!canOffer) return null
 
   const onEnable = async () => {
     setBusy(true)
