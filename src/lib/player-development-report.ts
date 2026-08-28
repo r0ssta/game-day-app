@@ -28,6 +28,8 @@ export type PlayerDevelopmentTotals = {
   totalSeconds: number
   goals: number
   assists: number
+  yellowCards: number
+  redCards: number
   tackles: number
   keyPasses: number
   plusMinus: number
@@ -69,6 +71,8 @@ function emptyTotals(): PlayerDevelopmentTotals {
     totalSeconds: 0,
     goals: 0,
     assists: 0,
+    yellowCards: 0,
+    redCards: 0,
     tackles: 0,
     keyPasses: 0,
     plusMinus: 0,
@@ -214,6 +218,8 @@ export async function loadPlayerDevelopmentReport(input: {
       const seconds = recap?.totalSeconds ?? stat.total_seconds_played ?? 0
       const goals = recap?.goals ?? 0
       const assists = recap?.assists ?? 0
+      const yellowCards = recap?.yellowCards ?? 0
+      const redCards = recap?.redCards ?? 0
       const plusMinus = plusMinusLedger.get(playerId) ?? stat.plus_minus ?? 0
 
       const applyTo = (totals: PlayerDevelopmentTotals) => {
@@ -221,6 +227,8 @@ export async function loadPlayerDevelopmentReport(input: {
         totals.totalSeconds += seconds
         totals.goals += goals
         totals.assists += assists
+        totals.yellowCards += yellowCards
+        totals.redCards += redCards
         totals.plusMinus += plusMinus
         addMicro(totals, micro)
       }

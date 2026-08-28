@@ -32,6 +32,8 @@ export type BuildParentRecapEmailInput = {
   parentFacingRecap: string
   focusForNextWeek: string
   playerLines: ParentRecapPlayerLine[]
+  /** Omit when empty — section is skipped in the email body. */
+  disciplineLines?: string[]
 }
 
 /**
@@ -96,20 +98,22 @@ export function buildParentRecapEmailDraft(
     input.playerLines.length > 0
       ? input.playerLines.map((line) => `• ${line.bullet}`).join('\n')
       : '• No player minutes recorded for this match.'
+  const discipline = (input.disciplineLines ?? []).filter((line) => line.trim().length > 0)
 
   const subject = `${input.teamName} Match Recap vs. ${input.opponent} - ${input.matchDateLabel}`
-  const body = [
+  const bodyParts = [
     'Game Summary',
     gameSummary,
     '',
     'Player Minutes & Positions',
     playerBlock,
-    '',
-    'Focus for Next Week',
-    focus,
-  ].join('\n')
+  ]
+  if (discipline.length > 0) {
+    bodyParts.push('', 'Discipline / Cards', ...discipline.map((line) => `• ${line}`))
+  }
+  bodyParts.push('', 'Focus for Next Week', focus)
 
-  return { subject, body, playerLines: input.playerLines }
+  return { subject, body: bodyParts.join('\n'), playerLines: input.playerLines }
 }
 
 /** True when a client-side OpenAI key is configured for parent-recap drafting. */

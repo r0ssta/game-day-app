@@ -310,7 +310,11 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       [players],
     )
     const benchPlayers = useMemo(
-      () => players.filter((p) => p.attending && !p.isOnField),
+      () => players.filter((p) => p.attending && !p.isOnField && !p.isSentOff),
+      [players],
+    )
+    const sentOffPlayers = useMemo(
+      () => players.filter((p) => p.attending && p.isSentOff),
       [players],
     )
 
@@ -327,6 +331,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           shortName: getSidelineName(p, sidelineNameMap),
           number: p.number,
           minutesLabel: formatPlayingTimeClock(getLiveSecondsPlayed(p, clockSeconds)),
+          showYellowCard: p.yellowCardCount === 1 && !p.isSentOff,
         })),
       [players, sidelineNameMap, clockSeconds],
     )
@@ -610,6 +615,32 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                 </ul>
               )}
             </div>
+
+            {sentOffPlayers.length > 0 ? (
+              <div className="rounded-xl border-2 border-danger/30 bg-danger/5 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-danger">
+                    Sent Off
+                  </h3>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {sentOffPlayers.length}
+                  </span>
+                </div>
+                <ul className="space-y-2">
+                  {sentOffPlayers.map((player) => (
+                    <BenchPlayerRow
+                      key={player.id}
+                      player={player}
+                      displayName={getSidelineName(player, sidelineNameMap)}
+                      clockSeconds={clockSeconds}
+                    />
+                  ))}
+                </ul>
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  Red-carded players stay locked out for the rest of the match.
+                </p>
+              </div>
+            ) : null}
           </div>
         </FormationPitch>
 

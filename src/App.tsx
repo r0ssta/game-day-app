@@ -5,11 +5,13 @@ import {
   Lock,
   Share2,
   Shield,
+  SquareAsterisk,
   UserPlus,
   X,
 } from 'lucide-react'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { EndMatchTimingModal } from '@/components/EndMatchTimingModal'
+import { CardWizardModal } from '@/components/CardWizardModal'
 import { GoalWizardModal, type GoalWizardStep, type GoalWizardTeam } from '@/components/GoalWizardModal'
 import { HomeScreen } from '@/components/HomeScreen'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
@@ -300,6 +302,7 @@ type MatchHeaderProps = {
   onHome: () => void
   onLogGoal?: () => void
   onOpponentGoal?: () => void
+  onLogCard?: () => void
   onShareStatTracker?: () => void
 }
 
@@ -362,6 +365,7 @@ function MatchHeader({
   onHome,
   onLogGoal,
   onOpponentGoal,
+  onLogCard,
   onShareStatTracker,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
@@ -473,7 +477,7 @@ function MatchHeader({
         </div>
 
         {showGoalActions ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div className={cn('grid gap-2', onLogCard ? 'grid-cols-3' : 'grid-cols-2')}>
             <button
               type="button"
               onClick={onLogGoal}
@@ -490,6 +494,16 @@ function MatchHeader({
               <Shield className="size-4" strokeWidth={2.5} />
               Opp. Goal
             </button>
+            {onLogCard ? (
+              <button
+                type="button"
+                onClick={onLogCard}
+                className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-amber-700 active:scale-[0.98]"
+              >
+                <SquareAsterisk className="size-4" strokeWidth={2.5} />
+                Log Card
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -1846,6 +1860,7 @@ export default function App() {
   const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>('goal_type')
   const [goalIsPk, setGoalIsPk] = useState(false)
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
+  const [cardWizardOpen, setCardWizardOpen] = useState(false)
   const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
   const [liveDeleting, setLiveDeleting] = useState(false)
   const [endTimingOpen, setEndTimingOpen] = useState(false)
@@ -2582,6 +2597,8 @@ export default function App() {
   const handleLiveSubIn = useCallback(
     (benchId: string, tacticalPosition: string) => {
       if (!matchId) return
+      const bench = players.find((p) => p.id === benchId)
+      if (!bench || bench.isSentOff) return
       const onFieldCount = players.filter((p) => p.attending && p.isOnField).length
       if (onFieldCount >= maxFieldPlayers) return
 
@@ -2644,6 +2661,8 @@ export default function App() {
   const handleLiveSwap = useCallback(
     (benchId: string, fieldId: string, tacticalPosition: string) => {
       if (!matchId) return
+      const bench = players.find((p) => p.id === benchId)
+      if (!bench || bench.isSentOff) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
 
@@ -2699,6 +2718,108 @@ export default function App() {
     setGoalScorerId(null)
     setGoalWizardOpen(true)
   }, [])
+
+  const handleConfirmCard = useCallback(
+    (playerId: string, kind: 'yellow' | 'red') => {
+      if (!matchId) return
+      const player = players.find((p) => p.id === playerId)
+      if (!player || player.isSentOff) {
+        setCardWizardOpen(false)
+        return
+      }
+
+      const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
+      const label = formatPlayerLabel(player, sidelineMap)
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+
+      const isSecondYellow = kind === 'yellow' && player.yellowCardCount >= 1
+      if (isSecondYellow) {
+        const confirmed = window.confirm(
+          'Second Yellow. This results in a Red Card and the player will be sent off. Confirm?',
+        )
+        if (!confirmed) return
+      }
+
+      const issueRed = kind === 'red' || isSecondYellow
+      setCardWizardOpen(false)
+
+      setPlayers((prev) => {
+        let next = prev.map((p) => {
+          if (p.id !== playerId) return p
+          if (issueRed) {
+            return {
+              ...p,
+              yellowCardCount: isSecondYellow
+                ? Math.max(2, p.yellowCardCount + 1)
+                : p.yellowCardCount,
+              isSentOff: true,
+            }
+          }
+          return { ...p, yellowCardCount: p.yellowCardCount + 1 }
+        })
+
+        const events: Parameters<typeof syncMatchEvents>[0] = []
+
+        if (kind === 'yellow' || isSecondYellow) {
+          events.push({
+            matchId,
+            playerId,
+            eventType: 'yellow_card',
+            timestamp: eventTimestamp,
+            formation: activeFormation,
+            eventNotes: isSecondYellow ? 'second_yellow' : null,
+          })
+        }
+
+        if (issueRed) {
+          events.push({
+            matchId,
+            playerId,
+            eventType: 'red_card',
+            timestamp: eventTimestamp,
+            formation: activeFormation,
+            eventNotes: isSecondYellow ? 'second_yellow' : 'straight_red',
+          })
+
+          const current = next.find((p) => p.id === playerId)
+          if (current?.isOnField) {
+            next = applySubOut(next, playerId, seconds).map((p) =>
+              p.id === playerId ? { ...p, isSentOff: true } : p,
+            )
+            events.push({
+              matchId,
+              playerId,
+              eventType: 'sub_out',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              eventNotes: 'sent_off',
+            })
+          } else {
+            next = next.map((p) =>
+              p.id === playerId ? { ...p, isOnField: false, isSentOff: true } : p,
+            )
+          }
+        }
+
+        const updated = next.find((p) => p.id === playerId)
+        if (updated) syncMatchStat(matchId, updated)
+        if (events.length > 0) syncMatchEvents(events)
+
+        if (issueRed) {
+          setToast(
+            isSecondYellow
+              ? `2nd yellow → Red · ${label} sent off`
+              : `Red card · ${label} sent off`,
+          )
+        } else {
+          setToast(`Yellow card · ${label}`)
+        }
+
+        return next
+      })
+    },
+    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
+  )
 
   const commitOpponentGoal = useCallback(
     (isPk: boolean) => {
@@ -3271,6 +3392,7 @@ export default function App() {
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}
         onOpponentGoal={() => openGoalWizard('opponent')}
+        onLogCard={() => setCardWizardOpen(true)}
         onShareStatTracker={
           matchId ? () => void handleShareStatTracker() : undefined
         }
@@ -3341,6 +3463,13 @@ export default function App() {
         onSelectScorer={handleSelectGoalScorer}
         onSelectAssist={handleCompleteGoal}
         onClose={closeGoalWizard}
+      />
+
+      <CardWizardModal
+        open={cardWizardOpen}
+        players={players}
+        onConfirm={handleConfirmCard}
+        onClose={() => setCardWizardOpen(false)}
       />
 
       <DeleteMatchConfirmModal

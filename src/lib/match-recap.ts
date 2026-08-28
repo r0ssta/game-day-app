@@ -17,6 +17,8 @@ export type PlayerRecapStats = {
   positions: string[]
   goals: number
   assists: number
+  yellowCards: number
+  redCards: number
 }
 
 export type PositionRecapReview = {
@@ -33,6 +35,8 @@ export type PlayerRecapReview = {
   positions: string[]
   goals: number
   assists: number
+  yellowCards: number
+  redCards: number
   overallReview: PositionRecapReview
   positionReviews: PositionRecapReview[]
   sidelineStatsSummary?: string | null
@@ -138,12 +142,20 @@ export function aggregatePlayerRecaps(
       totalSeconds: number
       goals: number
       assists: number
+      yellowCards: number
+      redCards: number
     }
   >()
 
   const ensure = (playerId: string) => {
     if (!stats.has(playerId)) {
-      stats.set(playerId, { totalSeconds: 0, goals: 0, assists: 0 })
+      stats.set(playerId, {
+        totalSeconds: 0,
+        goals: 0,
+        assists: 0,
+        yellowCards: 0,
+        redCards: 0,
+      })
     }
     return stats.get(playerId)!
   }
@@ -176,6 +188,12 @@ export function aggregatePlayerRecaps(
       case 'assist':
         row.assists += 1
         break
+      case 'yellow_card':
+        row.yellowCards += 1
+        break
+      case 'red_card':
+        row.redCards += 1
+        break
     }
   }
 
@@ -183,7 +201,13 @@ export function aggregatePlayerRecaps(
 
   const result = new Map<string, PlayerRecapStats>()
   for (const playerId of playerIds) {
-    const row = stats.get(playerId) ?? { totalSeconds: 0, goals: 0, assists: 0 }
+    const row = stats.get(playerId) ?? {
+      totalSeconds: 0,
+      goals: 0,
+      assists: 0,
+      yellowCards: 0,
+      redCards: 0,
+    }
     const fallbackPosition = playersById?.get(playerId)?.matchPosition
     result.set(playerId, {
       playerId,
@@ -191,6 +215,8 @@ export function aggregatePlayerRecaps(
       positions: computePlayerPositionsFromTimeline(playerId, timeline, fallbackPosition),
       goals: row.goals,
       assists: row.assists,
+      yellowCards: row.yellowCards,
+      redCards: row.redCards,
     })
   }
   return result
@@ -276,6 +302,8 @@ export function buildRecapRows(
         positions,
         goals: stats?.goals ?? 0,
         assists: stats?.assists ?? 0,
+        yellowCards: stats?.yellowCards ?? 0,
+        redCards: stats?.redCards ?? 0,
         overallReview: {
           position: OVERALL_REVIEW_POSITION,
           impact: overallSaved?.impact ?? player.impact,
@@ -297,12 +325,14 @@ export function buildRecapSummaryText(input: {
   coachName?: string
   coachSummary?: string
   qualitativeContextLines?: string[]
+  disciplineLines?: string[]
   rows: PlayerRecapReview[]
 }): string {
   const coachSummary = input.coachSummary?.trim()
   const coachName = input.coachName?.trim()
   const venueLine = formatOpponentWithVenue(input.opponent, input.locationType ?? 'home')
   const qualitativeLines = input.qualitativeContextLines ?? []
+  const disciplineLines = input.disciplineLines ?? []
   const lines = [
     'POST-GAME RECAP',
     '===============',
@@ -313,9 +343,11 @@ export function buildRecapSummaryText(input: {
       ? ['COACH SUMMARY', '--------------', coachSummary, '']
       : []),
     ...(qualitativeLines.length > 0 ? [...qualitativeLines, ''] : []),
-    ...(coachSummary || qualitativeLines.length > 0
-      ? ['PLAYER STATS', '------------']
-      : ['PLAYER STATS', '------------']),
+    ...(disciplineLines.length > 0
+      ? ['DISCIPLINE / CARDS', '------------------', ...disciplineLines.map((l) => `• ${l}`), '']
+      : []),
+    'PLAYER STATS',
+    '------------',
     ...input.rows.flatMap((row) => {
       const positions = row.positions.length > 0 ? row.positions.join(', ') : '—'
       const overallNotes = row.overallReview.notes.trim()
@@ -330,11 +362,15 @@ export function buildRecapSummaryText(input: {
             })
           : []),
       ]
+      const cardBits = [
+        row.yellowCards > 0 ? `YC:${row.yellowCards}` : null,
+        row.redCards > 0 ? `RC:${row.redCards}` : null,
+      ].filter(Boolean)
 
       return [
         `${row.number !== null ? `#${row.number}` : '—'} ${row.name}`,
         `  ${formatRecapMinutes(row.totalSeconds)} · ${positions}`,
-        `  G:${row.goals} A:${row.assists}`,
+        `  G:${row.goals} A:${row.assists}${cardBits.length ? ` ${cardBits.join(' ')}` : ''}`,
         ...(row.sidelineStatsSummary ? [`  Sideline: ${row.sidelineStatsSummary}`] : []),
         ...ratingLines,
       ].join('\n')

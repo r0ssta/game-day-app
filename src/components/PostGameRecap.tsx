@@ -16,6 +16,7 @@ import {
   type PlayerRecapStats,
   type SavedPositionReview,
 } from '@/lib/match-recap'
+import { buildDisciplineCardSummaries } from '@/lib/match-cards'
 import {
   EMPTY_QUALITATIVE_CONTEXT,
   formatQualitativeContextSummary,
@@ -238,6 +239,15 @@ export function PostGameRecap({
     [players, eventStats, reviews],
   )
 
+  const disciplineSummaries = useMemo(
+    () => buildDisciplineCardSummaries(matchEvents, players),
+    [matchEvents, players],
+  )
+  const disciplineLines = useMemo(
+    () => disciplineSummaries.map((row) => row.label),
+    [disciplineSummaries],
+  )
+
   const getSavedReview = (
     playerId: string,
     position: string,
@@ -445,6 +455,7 @@ export function PostGameRecap({
         coachName,
         coachSummary,
         qualitativeContextLines,
+        disciplineLines,
         rows: buildSummaryRows(),
       })
 
@@ -468,6 +479,7 @@ export function PostGameRecap({
       coachName,
       coachSummary,
       qualitativeContextLines,
+      disciplineLines,
       rows: buildSummaryRows(),
     })
     const subject = encodeURIComponent(
@@ -487,6 +499,7 @@ export function PostGameRecap({
       coachName,
       coachSummary,
       qualitativeContextLines,
+      disciplineLines,
       rows: buildSummaryRows(),
     })
     void navigator.clipboard.writeText(summary).then(() => onToast('Summary copied'))
@@ -637,6 +650,21 @@ export function PostGameRecap({
           readOnly={readOnly}
         />
 
+        {disciplineSummaries.length > 0 ? (
+          <section className="rounded-xl border border-amber-400/40 bg-amber-400/5 p-4">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              Discipline / Cards
+            </h2>
+            <ul className="mt-3 space-y-1.5">
+              {disciplineSummaries.map((row) => (
+                <li key={row.playerId} className="text-sm font-semibold text-foreground">
+                  {row.label}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         <section className="overflow-hidden rounded-xl border border-border bg-card">
           <div className="border-b border-border bg-secondary/40 px-4 py-3">
             <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
@@ -685,6 +713,9 @@ export function PostGameRecap({
                       </p>
                       <p className="text-xs font-semibold text-muted-foreground">
                         Goals {row.goals} · Assists {row.assists}
+                        {row.yellowCards > 0 || row.redCards > 0
+                          ? ` · YC ${row.yellowCards} · RC ${row.redCards}`
+                          : ''}
                       </p>
                       {microSummary ? (
                         <p className="mt-0.5 text-xs font-semibold text-athletic">

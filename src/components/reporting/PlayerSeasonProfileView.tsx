@@ -100,6 +100,18 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Yellow Cards
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-amber-600">{stats.yellowCards}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Red Cards
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-danger">{stats.redCards}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Plus/Minus
               </dt>
               <dd
@@ -244,7 +256,11 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
                   </div>
                   <p className="mt-1 text-xs font-semibold text-muted-foreground">
                     {formatRecapMinutes(log.minutes)} · {log.positions.join(', ')} · G {log.goals}{' '}
-                    · A {log.assists} · +/- {formatPlusMinus(log.plusMinus)}
+                    · A {log.assists}
+                    {log.yellowCards > 0 || log.redCards > 0
+                      ? ` · YC ${log.yellowCards} · RC ${log.redCards}`
+                      : ''}{' '}
+                    · +/- {formatPlusMinus(log.plusMinus)}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span

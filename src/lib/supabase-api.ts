@@ -59,6 +59,8 @@ export type MatchEventInput = {
     | 'opponent_goal'
     | 'formation_change'
     | 'pk_attempt'
+    | 'yellow_card'
+    | 'red_card'
     | StatTrackerEventType
     | 'stat_team_log'
   timestamp: number
@@ -215,11 +217,13 @@ export function statToMatchPlayer(roster: RosterPlayer, stat: DbMatchStat): Matc
     attending: stat.attending,
     isFirstHalfStarter: stat.is_first_half_starter,
     isSecondHalfStarter: stat.is_second_half_starter,
-    isOnField: stat.attending && stat.match_status === 'on-field',
+    isOnField: stat.attending && !stat.is_sent_off && stat.match_status === 'on-field',
     matchPosition: stat.match_position,
     totalSecondsPlayed: stat.total_seconds_played,
     subbedInAt: stat.subbed_in_at,
     plusMinus: stat.plus_minus ?? 0,
+    yellowCardCount: 0,
+    isSentOff: Boolean(stat.is_sent_off),
   }
 }
 
@@ -244,6 +248,7 @@ export function matchPlayerToStatPayload(matchId: string, player: MatchPlayer) {
     attending: player.attending,
     plus_minus: player.plusMinus,
     is_match_guest: player.isGuest,
+    is_sent_off: player.isSentOff,
   }
 }
 
@@ -1190,7 +1195,16 @@ export async function upsertMatchStat(matchId: string, player: MatchPlayer) {
   const { error } = await supabase.from('match_stats').upsert(payload, {
     onConflict: 'match_id,player_id',
   })
-  if (error) throw error
+  if (!error) return
+  if (isMissingColumnError(error)) {
+    const { is_sent_off: _sentOff, ...withoutSentOff } = payload
+    const { error: retryError } = await supabase.from('match_stats').upsert(withoutSentOff, {
+      onConflict: 'match_id,player_id',
+    })
+    if (retryError) throw retryError
+    return
+  }
+  throw error
 }
 
 export async function upsertMatchStats(matchId: string, players: MatchPlayer[]) {
@@ -1198,7 +1212,16 @@ export async function upsertMatchStats(matchId: string, players: MatchPlayer[]) 
   const { error } = await supabase.from('match_stats').upsert(rows, {
     onConflict: 'match_id,player_id',
   })
-  if (error) throw error
+  if (!error) return
+  if (isMissingColumnError(error)) {
+    const stripped = rows.map(({ is_sent_off: _sentOff, ...rest }) => rest)
+    const { error: retryError } = await supabase.from('match_stats').upsert(stripped, {
+      onConflict: 'match_id,player_id',
+    })
+    if (retryError) throw retryError
+    return
+  }
+  throw error
 }
 
 export async function insertMatchEvent(input: MatchEventInput) {
@@ -1976,6 +1999,14 @@ export async function replaceClubUserTeams(
 export async function revokeClubUserAccess(userId: string): Promise<void> {
   await replaceClubUserTeams(userId, [])
   await updateClubUserAppRole(userId, 'pending')
+}
+
+/** Permanently delete a staff auth user (directors only). */
+export async function deleteClubUser(userId: string): Promise<void> {
+  const { error } = await supabase.rpc('delete_staff_user', {
+    p_user_id: userId,
+  })
+  if (error) throw error
 }
 
 export type StaffInviteRow = {

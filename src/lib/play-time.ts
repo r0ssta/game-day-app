@@ -25,6 +25,8 @@ export function createMatchPlayer(
     totalSecondsPlayed: 0,
     subbedInAt: null,
     plusMinus: 0,
+    yellowCardCount: 0,
+    isSentOff: false,
   }
 }
 

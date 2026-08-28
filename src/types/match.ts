@@ -47,6 +47,10 @@ export type MatchPlayer = RosterPlayer & {
   totalSecondsPlayed: number
   subbedInAt: number | null
   plusMinus: number
+  /** Yellow cards received in this match (0–2). */
+  yellowCardCount: number
+  /** True after a red card — locked out of the bench for the rest of the match. */
+  isSentOff: boolean
 }
 
 /** @deprecated Use MatchPlayer in match context */

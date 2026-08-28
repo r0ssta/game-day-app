@@ -73,6 +73,7 @@ import {
   mergeMatchTimingContext,
   markMatchPendingReview,
   rebuildMatchPlayers,
+  fetchMatchEvents,
   resolveCoachIdForName,
   resolveMatchCoachName,
   syncMatchRecord,
@@ -113,6 +114,7 @@ import {
   resolveTeamAgeGroup,
   seasonRosterToPlayers,
 } from '@/lib/season-roster'
+import { applyCardsFromEvents } from '@/lib/match-cards'
 
 const DEFAULT_HALF_LENGTH = 30
 
@@ -317,6 +319,16 @@ export function useGameDayApp() {
           const matchPlayers = rebuildMatchPlayers(roster, stats).filter(
             (player) => player.attending,
           )
+          let playersWithCards = matchPlayers
+          try {
+            const events = await fetchMatchEvents(match.id)
+            if (!cancelled) {
+              playersWithCards = applyCardsFromEvents(matchPlayers, events)
+            }
+          } catch (cardErr) {
+            console.warn('[bootstrap] could not restore card state', cardErr)
+          }
+          if (cancelled) return
 
           setSelectedTeamId(match.team_id)
           resolvedTeamId = match.team_id
@@ -324,7 +336,7 @@ export function useGameDayApp() {
           setMatchId(match.id)
           setMatchStatus('active')
           setAppMode('home')
-          setPlayers(matchPlayers)
+          setPlayers(playersWithCards)
           setHomeScore(match.home_score)
           setAwayScore(match.away_score)
           setSeconds(

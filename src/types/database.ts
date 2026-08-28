@@ -127,6 +127,8 @@ export type DbMatchEvent = {
     | 'stat_key_pass'
     | 'stat_team_log'
     | 'pk_attempt'
+    | 'yellow_card'
+    | 'red_card'
   timestamp: number
   event_notes: string | null
   formation: string | null
@@ -163,6 +165,8 @@ export type DbMatchStat = {
   attending: boolean
   plus_minus?: number
   is_match_guest?: boolean
+  /** True after a red card (straight or second yellow). */
+  is_sent_off?: boolean
   created_at: string
 }
 

@@ -57,6 +57,8 @@ function TotalsGrid({ totals }: { totals: PlayerDevelopmentTotals }) {
       <MetricCard label="Minutes" value={formatRecapMinutes(totals.totalSeconds)} />
       <MetricCard label="Goals" value={String(totals.goals)} emphasize />
       <MetricCard label="Assists" value={String(totals.assists)} />
+      <MetricCard label="Yellow Cards" value={String(totals.yellowCards)} />
+      <MetricCard label="Red Cards" value={String(totals.redCards)} />
       <MetricCard label="Tackles" value={String(totals.tackles)} />
       <MetricCard label="Key Passes" value={String(totals.keyPasses)} />
       <MetricCard

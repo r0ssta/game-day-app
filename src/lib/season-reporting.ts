@@ -54,6 +54,8 @@ export type PlayerMatchLog = {
   minutes: number
   goals: number
   assists: number
+  yellowCards: number
+  redCards: number
   plusMinus: number
   overallRating: { impact: Impact; notes: string }
   positionRatings: Array<{ position: string; impact: Impact; notes: string }>
@@ -67,6 +69,8 @@ export type PlayerSeasonStats = {
   averageMinutesPerMatch: number
   goals: number
   assists: number
+  yellowCards: number
+  redCards: number
   plusMinus: number
   positionsPlayed: string[]
   primaryPositionPlayed: string
@@ -151,6 +155,8 @@ export function emptyPlayerSeasonStats(playerId: string): PlayerSeasonStats {
     averageMinutesPerMatch: 0,
     goals: 0,
     assists: 0,
+    yellowCards: 0,
+    redCards: 0,
     plusMinus: 0,
     positionsPlayed: [],
     primaryPositionPlayed: '—',
@@ -275,6 +281,8 @@ export async function loadSeasonReport(
         const minutes = recap?.totalSeconds ?? stat.total_seconds_played ?? 0
         const goals = recap?.goals ?? 0
         const assists = recap?.assists ?? 0
+        const yellowCards = recap?.yellowCards ?? 0
+        const redCards = recap?.redCards ?? 0
         const positions =
           player && recap
             ? resolvePlayerPositions(recap, player)
@@ -296,6 +304,8 @@ export async function loadSeasonReport(
         entry.totalMinutes += minutes
         entry.goals += goals
         entry.assists += assists
+        entry.yellowCards += yellowCards
+        entry.redCards += redCards
         entry.plusMinus += plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0
         entry.ratingCounts[overallReview.impact] += 1
 
@@ -349,6 +359,8 @@ export async function loadSeasonReport(
           minutes,
           goals,
           assists,
+          yellowCards,
+          redCards,
           plusMinus: plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0,
           overallRating: {
             impact: overallReview.impact,

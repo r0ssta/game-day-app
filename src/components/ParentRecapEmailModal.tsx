@@ -6,6 +6,7 @@ import {
   draftParentFacingRecapWithAi,
   isParentRecapAiDraftEnabled,
 } from '@/lib/parent-recap'
+import { buildDisciplineCardSummaries } from '@/lib/match-cards'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { saveParentFacingRecap } from '@/lib/supabase-api'
 import { MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
@@ -83,6 +84,11 @@ export function ParentRecapEmailModal({
     [events, halfLengthSeconds, players],
   )
 
+  const disciplineLines = useMemo(
+    () => buildDisciplineCardSummaries(events, players).map((row) => row.label),
+    [events, players],
+  )
+
   const draft = useMemo(
     () =>
       buildParentRecapEmailDraft({
@@ -92,8 +98,17 @@ export function ParentRecapEmailModal({
         parentFacingRecap,
         focusForNextWeek,
         playerLines,
+        disciplineLines,
       }),
-    [teamName, opponent, dateLabel, parentFacingRecap, focusForNextWeek, playerLines],
+    [
+      teamName,
+      opponent,
+      dateLabel,
+      parentFacingRecap,
+      focusForNextWeek,
+      playerLines,
+      disciplineLines,
+    ],
   )
 
   if (!open) return null

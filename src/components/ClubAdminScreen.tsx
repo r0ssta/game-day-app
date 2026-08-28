@@ -47,6 +47,7 @@ import {
   fetchPendingStaffInvites,
   replaceClubUserTeams,
   revokeClubUserAccess,
+  deleteClubUser,
   updateClubUserAppRole,
   type ClubAdminTeamAssignment,
   type ClubAdminUserRow,
@@ -476,6 +477,38 @@ export function ClubAdminScreen({
       onToast('Access revoked')
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to revoke access')
+    } finally {
+      setBusyUserId(null)
+    }
+  }
+
+  const handleDeleteUser = async (user: ClubAdminUserRow) => {
+    if (user.id === currentUserId) {
+      onToast('You cannot delete your own account')
+      return
+    }
+    const label = user.email ?? user.displayName ?? 'this user'
+    const confirmed = window.confirm(
+      `Permanently delete ${label}? This removes their login and cannot be undone. Match history keeps any coach name already saved on past games.`,
+    )
+    if (!confirmed) return
+    const doubleConfirmed = window.confirm(
+      `Delete ${label} for real? They will need a new invite to ever sign in again.`,
+    )
+    if (!doubleConfirmed) return
+
+    setBusyUserId(user.id)
+    try {
+      await deleteClubUser(user.id)
+      setUsers((prev) => prev.filter((row) => row.id !== user.id))
+      setDraftAssignments((prev) => {
+        const next = { ...prev }
+        delete next[user.id]
+        return next
+      })
+      onToast('Staff deleted')
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Failed to delete staff')
     } finally {
       setBusyUserId(null)
     }
@@ -1202,14 +1235,24 @@ export function ClubAdminScreen({
                         </button>
                       </td>
                       <td className="px-3 py-3">
-                        <button
-                          type="button"
-                          disabled={busy || user.id === currentUserId}
-                          onClick={() => void handleRevoke(user)}
-                          className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-danger/60 bg-danger/10 px-3 text-[11px] font-bold uppercase tracking-wide text-danger disabled:opacity-40"
-                        >
-                          Revoke Access
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            disabled={busy || user.id === currentUserId}
+                            onClick={() => void handleRevoke(user)}
+                            className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-danger/60 bg-danger/10 px-3 text-[11px] font-bold uppercase tracking-wide text-danger disabled:opacity-40"
+                          >
+                            Revoke Access
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || user.id === currentUserId}
+                            onClick={() => void handleDeleteUser(user)}
+                            className="delete-match-confirm min-h-11 w-full touch-manipulation rounded-xl border-2 border-danger bg-danger px-3 text-[11px] font-bold uppercase tracking-wide text-danger-foreground disabled:opacity-40"
+                          >
+                            Delete Staff
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )

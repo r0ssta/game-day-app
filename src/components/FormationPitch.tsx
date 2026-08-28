@@ -1,5 +1,7 @@
 import {
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -17,6 +19,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { GripVertical } from 'lucide-react'
 import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
 import {
   TACTICAL_SLOT_LABELS,
@@ -34,7 +37,11 @@ export type FormationPitchPlayer = {
   isGuest?: boolean
   /** Optional second-line label under the name (e.g. minutes at halftime). */
   minutesLabel?: string
+  /** Single yellow card indicator on the pitch badge. */
+  showYellowCard?: boolean
 }
+
+type DragType = 'player' | 'slot'
 
 type FormationPitchProps = {
   formation: Formation
@@ -48,7 +55,10 @@ type FormationPitchProps = {
   onSlotLabelChange?: (slotId: string, label: string) => void
   /** Optional content under an occupied slot badge (e.g. live impact toggles). */
   renderOccupiedExtra?: (playerId: string) => ReactNode
-  /** When false, skips DnD entirely (live match). Default true. */
+  /**
+   * When false, skips DnD entirely (live match) — slots are fixed, no reposition handles.
+   * Default true (setup / halftime).
+   */
   enableDragDrop?: boolean
   /** Pulse slots to show they are tappable (live). */
   pulseInteractive?: boolean
@@ -62,6 +72,14 @@ type FormationPitchProps = {
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
+}
+
+function cloneFormationSlots(slots: FormationSlot[]): FormationSlot[] {
+  return slots.map((slot) => ({ ...slot }))
+}
+
+function clampPercent(value: number, min = 6, max = 94) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function SlotLabelPopover({
@@ -117,9 +135,15 @@ function PitchSlotVisual({
   highlighted,
   pulseInteractive,
   allowLabelEdit,
+  allowSlotReposition,
   labelEditorOpen,
   dropHighlight,
   setDroppableRef,
+  dragHandleRef,
+  dragHandleListeners,
+  dragHandleAttributes,
+  slotDragStyle,
+  isSlotDragging,
   occupiedExtra,
   onOpenLabelEditor,
   onCloseLabelEditor,
@@ -133,9 +157,15 @@ function PitchSlotVisual({
   highlighted: boolean
   pulseInteractive?: boolean
   allowLabelEdit: boolean
+  allowSlotReposition: boolean
   labelEditorOpen: boolean
   dropHighlight?: boolean
   setDroppableRef?: (node: HTMLElement | null) => void
+  dragHandleRef?: (node: HTMLElement | null) => void
+  dragHandleListeners?: ReturnType<typeof useDraggable>['listeners']
+  dragHandleAttributes?: ReturnType<typeof useDraggable>['attributes']
+  slotDragStyle?: CSSProperties
+  isSlotDragging?: boolean
   occupiedExtra?: ReactNode
   onOpenLabelEditor: () => void
   onCloseLabelEditor: () => void
@@ -145,8 +175,12 @@ function PitchSlotVisual({
   return (
     <div
       ref={setDroppableRef}
-      className="absolute"
-      style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
+      className={cn('absolute', isSlotDragging && 'z-30')}
+      style={{
+        left: `${slot.x}%`,
+        top: `${slot.y}%`,
+        ...slotDragStyle,
+      }}
     >
       <div className="relative -translate-x-1/2 -translate-y-1/2">
         <button
@@ -162,11 +196,18 @@ function PitchSlotVisual({
           {player ? (
             <div
               className={cn(
-                'flex size-14 flex-col items-center justify-center rounded-full border-2 bg-neon text-neon-foreground shadow-lg',
+                'relative flex size-14 flex-col items-center justify-center rounded-full border-2 bg-neon text-neon-foreground shadow-lg',
                 selected ? 'border-white ring-2 ring-white/80' : 'border-neon-foreground/30',
                 dropHighlight && 'ring-2 ring-athletic',
               )}
             >
+              {player.showYellowCard ? (
+                <span
+                  className="absolute -right-0.5 -top-0.5 size-3 rounded-[2px] border border-black/20 bg-amber-400 shadow"
+                  title="Yellow card"
+                  aria-label="Yellow card"
+                />
+              ) : null}
               <span className="font-display text-lg font-black leading-none tabular-nums">
                 {formatJersey(player.number)}
               </span>
@@ -191,8 +232,27 @@ function PitchSlotVisual({
           )}
         </button>
 
+        {allowSlotReposition ? (
+          <button
+            ref={dragHandleRef}
+            type="button"
+            className={cn(
+              'absolute -right-3 top-1/2 z-20 flex size-8 -translate-y-1/2 touch-none items-center justify-center rounded-md border border-white/50 bg-black/70 text-white shadow',
+              isSlotDragging && 'ring-2 ring-athletic',
+            )}
+            aria-label={`Reposition ${label} slot`}
+            {...(dragHandleListeners ?? {})}
+            {...(dragHandleAttributes ?? {})}
+          >
+            <GripVertical className="size-4" strokeWidth={2.5} />
+          </button>
+        ) : null}
+
         {occupiedExtra ? (
-          <div className="absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2"
+            onClick={(e) => e.stopPropagation()}
+          >
             {occupiedExtra}
           </div>
         ) : null}
@@ -228,11 +288,52 @@ function PitchSlotVisual({
   )
 }
 
-function DroppableSlot(
-  props: Omit<Parameters<typeof PitchSlotVisual>[0], 'dropHighlight' | 'setDroppableRef'>,
+/** Droppable player target + optional slot-reposition drag handle (setup only). */
+function InteractiveSlot(
+  props: Omit<
+    Parameters<typeof PitchSlotVisual>[0],
+    | 'dropHighlight'
+    | 'setDroppableRef'
+    | 'dragHandleRef'
+    | 'dragHandleListeners'
+    | 'dragHandleAttributes'
+    | 'slotDragStyle'
+    | 'isSlotDragging'
+  >,
 ) {
-  const { setNodeRef, isOver } = useDroppable({ id: `slot:${props.slot.id}` })
-  return <PitchSlotVisual {...props} setDroppableRef={setNodeRef} dropHighlight={isOver} />
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: `slot:${props.slot.id}`,
+    data: { type: 'slot' as DragType, slotId: props.slot.id },
+  })
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragHandleRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `slot-move:${props.slot.id}`,
+    data: { type: 'slot' as DragType, slotId: props.slot.id },
+    disabled: !props.allowSlotReposition,
+  })
+
+  const slotDragStyle: CSSProperties | undefined = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined
+
+  return (
+    <PitchSlotVisual
+      {...props}
+      setDroppableRef={setDroppableRef}
+      dropHighlight={isOver}
+      dragHandleRef={props.allowSlotReposition ? setDragHandleRef : undefined}
+      dragHandleListeners={props.allowSlotReposition ? listeners : undefined}
+      dragHandleAttributes={props.allowSlotReposition ? attributes : undefined}
+      slotDragStyle={slotDragStyle}
+      isSlotDragging={isDragging}
+    />
+  )
 }
 
 /** Drag handle for bench players — must render inside FormationPitch with enableDragDrop. */
@@ -247,7 +348,7 @@ export function FormationDraggableHandle({
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `player:${playerId}`,
-    data: { playerId },
+    data: { type: 'player' as DragType, playerId },
   })
 
   const style: CSSProperties | undefined = transform
@@ -289,8 +390,18 @@ export function FormationPitch({
   children,
   className,
 }: FormationPitchProps) {
+  const [pitchSlots, setPitchSlots] = useState<FormationSlot[]>(() =>
+    cloneFormationSlots(formation.slots),
+  )
   const [activeDragPlayerId, setActiveDragPlayerId] = useState<string | null>(null)
   const [labelEditorSlotId, setLabelEditorSlotId] = useState<string | null>(null)
+  const pitchSurfaceRef = useRef<HTMLDivElement>(null)
+
+  // Reset coordinates when the formation template changes.
+  useEffect(() => {
+    setPitchSlots(cloneFormationSlots(formation.slots))
+    setLabelEditorSlotId(null)
+  }, [formation.id]) // eslint-disable-line react-hooks/exhaustive-deps -- template identity only
 
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const activeDragPlayer = activeDragPlayerId ? playerById.get(activeDragPlayerId) ?? null : null
@@ -301,57 +412,103 @@ export function FormationPitch({
   )
 
   const handleDragStart = (event: DragStartEvent) => {
-    const id = String(event.active.id)
-    if (id.startsWith('player:')) setActiveDragPlayerId(id.slice('player:'.length))
+    const type = event.active.data.current?.type as DragType | undefined
+    if (type === 'player') {
+      const playerId =
+        (event.active.data.current?.playerId as string | undefined) ??
+        String(event.active.id).replace(/^player:/, '')
+      setActiveDragPlayerId(playerId)
+      return
+    }
+    setActiveDragPlayerId(null)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveDragPlayerId(null)
+    const type = event.active.data.current?.type as DragType | undefined
+
+    if (type === 'slot') {
+      const slotId =
+        (event.active.data.current?.slotId as string | undefined) ??
+        String(event.active.id).replace(/^slot-move:/, '')
+      const { delta } = event
+      const rect = pitchSurfaceRef.current?.getBoundingClientRect()
+      if (!rect || rect.width <= 0 || rect.height <= 0) return
+
+      const dxPct = (delta.x / rect.width) * 100
+      const dyPct = (delta.y / rect.height) * 100
+
+      setPitchSlots((prev) =>
+        prev.map((slot) =>
+          slot.id === slotId
+            ? {
+                ...slot,
+                x: clampPercent(slot.x + dxPct),
+                y: clampPercent(slot.y + dyPct),
+              }
+            : slot,
+        ),
+      )
+      return
+    }
+
+    if (type !== 'player') return
+
     const { active, over } = event
     if (!over) return
-    const playerId = String(active.id).startsWith('player:')
-      ? String(active.id).slice('player:'.length)
-      : null
-    const slotId = String(over.id).startsWith('slot:')
-      ? String(over.id).slice('slot:'.length)
-      : null
+
+    const playerId =
+      (active.data.current?.playerId as string | undefined) ??
+      (String(active.id).startsWith('player:') ? String(active.id).slice('player:'.length) : null)
+    const overType = over.data.current?.type as DragType | undefined
+    const slotId =
+      overType === 'slot'
+        ? ((over.data.current?.slotId as string | undefined) ??
+          (String(over.id).startsWith('slot:') ? String(over.id).slice('slot:'.length) : null))
+        : String(over.id).startsWith('slot:')
+          ? String(over.id).slice('slot:'.length)
+          : null
+
     if (playerId && slotId) onAssignPlayer(playerId, slotId)
   }
 
   const pitch = (
-    <SoccerPitchSurface>
-      {formation.slots.map((slot) => {
-        const playerId = slotAssignments[slot.id] ?? null
-        const player = playerId ? playerById.get(playerId) ?? null : null
-        const label = resolveSlotLabel(slot, slotLabelOverrides)
-        const slotProps = {
-          slot,
-          label,
-          player,
-          selected: playerId === selectedPlayerId,
-          highlighted: Boolean(selectedPlayerId) || selectedSlotId === slot.id,
-          pulseInteractive,
-          allowLabelEdit: Boolean(onSlotLabelChange),
-          labelEditorOpen: labelEditorSlotId === slot.id,
-          occupiedExtra:
-            playerId && renderOccupiedExtra ? renderOccupiedExtra(playerId) : undefined,
-          onOpenLabelEditor: () => setLabelEditorSlotId(slot.id),
-          onCloseLabelEditor: () => setLabelEditorSlotId(null),
-          onLabelChange: onSlotLabelChange
-            ? (next: string) => onSlotLabelChange(slot.id, next)
-            : undefined,
-          onTap: () => {
-            setLabelEditorSlotId(null)
-            onSlotTap?.(slot.id)
-          },
-        }
-        return enableDragDrop ? (
-          <DroppableSlot key={slot.id} {...slotProps} />
-        ) : (
-          <PitchSlotVisual key={slot.id} {...slotProps} />
-        )
-      })}
-    </SoccerPitchSurface>
+    <div ref={pitchSurfaceRef}>
+      <SoccerPitchSurface>
+        {pitchSlots.map((slot) => {
+          const playerId = slotAssignments[slot.id] ?? null
+          const player = playerId ? playerById.get(playerId) ?? null : null
+          const label = resolveSlotLabel(slot, slotLabelOverrides)
+          const slotProps = {
+            slot,
+            label,
+            player,
+            selected: playerId === selectedPlayerId,
+            highlighted: Boolean(selectedPlayerId) || selectedSlotId === slot.id,
+            pulseInteractive,
+            allowLabelEdit: Boolean(onSlotLabelChange),
+            allowSlotReposition: enableDragDrop,
+            labelEditorOpen: labelEditorSlotId === slot.id,
+            occupiedExtra:
+              playerId && renderOccupiedExtra ? renderOccupiedExtra(playerId) : undefined,
+            onOpenLabelEditor: () => setLabelEditorSlotId(slot.id),
+            onCloseLabelEditor: () => setLabelEditorSlotId(null),
+            onLabelChange: onSlotLabelChange
+              ? (next: string) => onSlotLabelChange(slot.id, next)
+              : undefined,
+            onTap: () => {
+              setLabelEditorSlotId(null)
+              onSlotTap?.(slot.id)
+            },
+          }
+          return enableDragDrop ? (
+            <InteractiveSlot key={slot.id} {...slotProps} />
+          ) : (
+            <PitchSlotVisual key={slot.id} {...slotProps} />
+          )
+        })}
+      </SoccerPitchSurface>
+    </div>
   )
 
   const content = (
@@ -361,6 +518,7 @@ export function FormationPitch({
     </div>
   )
 
+  // Live / action mode: no DnD context, fixed slots, no reposition handles.
   if (!enableDragDrop) return content
 
   return (

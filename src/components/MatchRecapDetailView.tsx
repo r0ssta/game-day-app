@@ -289,6 +289,9 @@ export function MatchRecapDetailView({
                           <p className="mt-0.5 text-xs text-muted-foreground">{positionsLabel}</p>
                           <p className="text-xs font-semibold text-muted-foreground">
                             Goals {row.goals} · Assists {row.assists}
+                            {row.yellowCards > 0 || row.redCards > 0
+                              ? ` · YC ${row.yellowCards} · RC ${row.redCards}`
+                              : ''}
                           </p>
                           <div className="mt-2 space-y-2">
                             <div className="rounded-lg bg-secondary/50 px-3 py-2">

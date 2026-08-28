@@ -47,7 +47,7 @@ function PlayerRow({
         <span className="block truncate text-sm font-bold text-foreground">{name}</span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
           {stats.matchesPlayed} matches · {formatRecapMinutes(stats.totalMinutes)} · {stats.goals}{' '}
-          G · {stats.assists} A
+          G · {stats.assists} A · {stats.yellowCards} YC · {stats.redCards} RC
         </span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
           Overall +{stats.ratingCounts.positive} / ={stats.ratingCounts.neutral} / −
