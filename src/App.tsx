@@ -1448,7 +1448,6 @@ type HalftimeSetupScreenProps = {
   initialSlotAssignments?: Record<string, string | null>
   initialSlotLabelOverrides?: Record<string, string>
   assignmentsResetKey: string | number
-  carriedFromFirstHalf: Record<string, boolean>
   halftimeAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
   halftimeLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
   lineupPresets: { id: string; preset_name: string }[]
@@ -1476,7 +1475,6 @@ function HalftimeSetupScreen({
   initialSlotAssignments,
   initialSlotLabelOverrides,
   assignmentsResetKey,
-  carriedFromFirstHalf,
   halftimeAssignmentsRef,
   halftimeLabelOverridesRef,
   lineupPresets,
@@ -1541,7 +1539,7 @@ function HalftimeSetupScreen({
         ) : null}
 
         <TacticalPitchLineup
-          title="2nd Half Lineup"
+          title={`${formatPeriodLong(nextPeriod, totalPeriods)} Lineup`}
           formationId={secondHalfFormation}
           onFormationChange={onSetSecondHalfFormation}
           initialSlotAssignments={initialSlotAssignments}
@@ -1558,11 +1556,7 @@ function HalftimeSetupScreen({
             isGuest: player.isGuest,
             matchPosition: player.matchPosition,
             minutesLabel: formatPlayingTimeBadge(player.totalSecondsPlayed),
-            badge: carriedFromFirstHalf[player.id]
-              ? player.isFirstHalfStarter
-                ? 'Started 1st Half'
-                : 'Carried from 1st'
-              : undefined,
+            didNotStartFirstHalf: !player.isFirstHalfStarter,
             meta: player.matchPosition,
           }))}
           attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
@@ -1885,7 +1879,6 @@ export default function App() {
     halftimeSlotAssignments,
     halftimeSlotLabelOverrides,
     secondHalfSlotAssignments,
-    carriedFromFirstHalf,
     lineupPresets,
     teamRoster,
     refreshLineupPresets,
@@ -3484,7 +3477,6 @@ export default function App() {
           initialSlotAssignments={halftimeSlotAssignments}
           initialSlotLabelOverrides={halftimeSlotLabelOverrides}
           assignmentsResetKey={`halftime-${matchId ?? 'local'}-${halftimePitchKey}`}
-          carriedFromFirstHalf={carriedFromFirstHalf}
           halftimeAssignmentsRef={halftimeAssignmentsRef}
           halftimeLabelOverridesRef={halftimeLabelOverridesRef}
           lineupPresets={lineupPresets}

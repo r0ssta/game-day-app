@@ -163,7 +163,6 @@ export function useGameDayApp() {
   const [secondHalfSlotAssignments, setSecondHalfSlotAssignments] = useState<
     Record<string, string | null>
   >({})
-  const [carriedFromFirstHalf, setCarriedFromFirstHalf] = useState<Record<string, boolean>>({})
   const [lineupPresets, setLineupPresets] = useState<DbLineupPreset[]>([])
   const [scheduledMatches, setScheduledMatches] = useState<DbMatch[]>([])
   const [scheduledLoading, setScheduledLoading] = useState(false)
@@ -1192,7 +1191,6 @@ export function useGameDayApp() {
 
       let nextPlayers: MatchPlayer[] = []
       let toggles: Record<string, boolean> = {}
-      let carried: Record<string, boolean> = {}
 
       setPlayers((prev) => {
         if (matchId) {
@@ -1217,9 +1215,6 @@ export function useGameDayApp() {
           finalized.filter((p) => p.attending).map((p) => [p.id, p.isOnField]),
         )
         toggles = ensureHalftimeStarters(attendingIds, onFieldById)
-        carried = Object.fromEntries(
-          finalized.filter((p) => p.attending && onFieldById[p.id]).map((p) => [p.id, true]),
-        )
 
         nextPlayers = finalized.map((p) =>
           p.attending ? { ...p, isOnField: false, subbedInAt: null } : p,
@@ -1230,7 +1225,6 @@ export function useGameDayApp() {
       })
 
       if (slotAssignments) setHalftimeSlotAssignments(slotAssignments)
-      setCarriedFromFirstHalf(carried)
       setHalftimeSecondHalf(toggles)
       setHalftimePitchKey(0)
       // Carry the formation that just ended into the next-period lineup editor.
@@ -1458,7 +1452,6 @@ export function useGameDayApp() {
     setHalftimeSlotAssignments({})
     setHalftimeSlotLabelOverrides({})
     setSecondHalfSlotAssignments({})
-    setCarriedFromFirstHalf({})
     setSetupSlotAssignments(undefined)
     setSetupSlotLabelOverrides(undefined)
     setSetupPitchKey((k) => k + 1)
@@ -1687,7 +1680,6 @@ export function useGameDayApp() {
     halftimeSlotLabelOverrides,
     secondHalfSlotAssignments,
     setSecondHalfSlotAssignments,
-    carriedFromFirstHalf,
     lineupPresets,
     teamRoster,
     refreshLineupPresets,

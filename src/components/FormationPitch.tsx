@@ -42,6 +42,8 @@ export type FormationPitchPlayer = {
   showYellowCard?: boolean
   /** Soft cue that the player is due for a sub (long continuous stint). */
   needsSubCue?: boolean
+  /** Intermission cue: player was not in the 1st-half starting XI. */
+  didNotStartFirstHalf?: boolean
 }
 
 type DragType = 'player' | 'slot'
@@ -249,6 +251,15 @@ function PitchSlotVisual({
                   title="Yellow card"
                   aria-label="Yellow card"
                 />
+              ) : null}
+              {player.didNotStartFirstHalf ? (
+                <span
+                  className="absolute -right-0.5 bottom-0 rounded border border-slate-700/30 bg-slate-800 px-0.5 py-px text-[7px] font-black uppercase leading-none tracking-wide text-white shadow"
+                  title="Didn't start 1st half"
+                  aria-label="Didn't start 1st half"
+                >
+                  NS
+                </span>
               ) : null}
               {allowSlotReposition ? (
                 <span className="absolute -left-1 -top-1 flex size-5 items-center justify-center rounded-full border border-white/50 bg-black/60 text-white">

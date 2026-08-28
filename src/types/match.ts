@@ -41,7 +41,7 @@ export type RosterPlayer = {
 export type MatchPlayer = RosterPlayer & {
   impact: Impact
   attending: boolean
-  /** Frozen at kickoff — used for halftime badge */
+  /** Frozen at kickoff — used to flag non-starters on the next-period lineup */
   isFirstHalfStarter: boolean
   /** Set when 2nd half begins */
   isSecondHalfStarter: boolean

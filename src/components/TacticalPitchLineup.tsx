@@ -40,6 +40,8 @@ export type PitchLineupPlayer = {
   meta?: string
   /** 1st-half minutes played — shown next to the player name at halftime. */
   minutesLabel?: string
+  /** Intermission: highlight players who were not in the 1st-half starting XI. */
+  didNotStartFirstHalf?: boolean
   matchPosition?: string
   primaryPosition?: string
   secondaryPosition?: string
@@ -157,6 +159,14 @@ function PoolPlayerChip({
               </span>
             ) : null}
             {player.isGuest && <GuestBadge />}
+            {player.didNotStartFirstHalf ? (
+              <span
+                title="Didn't start 1st half"
+                className="rounded bg-slate-800 px-1 py-0.5 text-[9px] font-black uppercase tracking-wide text-white"
+              >
+                Didn&apos;t start 1st
+              </span>
+            ) : null}
             {player.primaryPosition && (
               <RosterPositionHint position={player.primaryPosition} variant="primary" />
             )}
@@ -165,9 +175,9 @@ function PoolPlayerChip({
                 <RosterPositionHint position={player.secondaryPosition} variant="secondary" />
               )}
           </span>
-          {player.badge && (
+          {player.badge && !player.didNotStartFirstHalf ? (
             <span className="text-[10px] font-semibold text-muted-foreground">{player.badge}</span>
-          )}
+          ) : null}
           {player.meta && <span className="block text-[10px] text-muted-foreground">{player.meta}</span>}
         </span>
       </button>
@@ -266,6 +276,7 @@ export function TacticalPitchLineup({
         number: p.number,
         isGuest: p.isGuest,
         minutesLabel: p.minutesLabel,
+        didNotStartFirstHalf: p.didNotStartFirstHalf,
       })),
     [players],
   )
