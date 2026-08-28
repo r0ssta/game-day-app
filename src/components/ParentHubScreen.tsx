@@ -73,11 +73,25 @@ function LiveTab({
       return
     }
     let cancelled = false
-    void fetchParentLiveEvents(liveMatch.id).then((rows) => {
-      if (!cancelled) setEvents(rows)
-    })
+
+    const loadEvents = async () => {
+      try {
+        const rows = await fetchParentLiveEvents(liveMatch.id)
+        if (!cancelled) setEvents(rows)
+      } catch (err) {
+        console.warn('[ParentHub] live events hydrate failed', err)
+      }
+    }
+
+    void loadEvents()
+    // Poll as a backup when Realtime is blocked (RLS / network) so the timeline still moves.
+    const pollId = window.setInterval(() => {
+      void loadEvents()
+    }, 8_000)
+
     return () => {
       cancelled = true
+      window.clearInterval(pollId)
     }
   }, [liveMatch?.id])
 
