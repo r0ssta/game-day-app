@@ -22,6 +22,7 @@ import {
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, MODAL_OVERLAY, MODAL_PANEL } from '@/lib/layout'
+import type { MatchPeriod } from '@/types/match'
 
 type StatTrackerScreenProps = {
   matchId: string
@@ -172,7 +173,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
   const [homeScore, setHomeScore] = useState(0)
   const [awayScore, setAwayScore] = useState(0)
   const [clockSeconds, setClockSeconds] = useState(0)
-  const [period, setPeriod] = useState<'1st' | '2nd'>('1st')
+  const [period, setPeriod] = useState<MatchPeriod>('1st')
   const [matchStatus, setMatchStatus] = useState<'active' | 'scheduled' | 'pending_review' | 'completed'>('active')
   const [roster, setRoster] = useState<StatTrackerRosterPlayer[]>([])
   const [pendingAction, setPendingAction] = useState<StatTrackerEventType | null>(null)

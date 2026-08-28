@@ -2026,6 +2026,20 @@ export async function deleteClubUser(userId: string): Promise<void> {
   if (error) throw error
 }
 
+/** Director-only rename of a staff member (profiles + user_roles). */
+export async function updateClubUserDisplayName(
+  userId: string,
+  displayName: string,
+): Promise<void> {
+  const trimmed = displayName.trim()
+  if (!trimmed) throw new Error('Display name is required')
+  const { error } = await supabase.rpc('update_staff_display_name', {
+    p_user_id: userId,
+    p_display_name: trimmed,
+  })
+  if (error) throw error
+}
+
 export type StaffInviteRow = {
   id: string
   email: string

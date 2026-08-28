@@ -120,7 +120,6 @@ import {
   defaultPeriodLengthMinutes,
   periodIndexToCode,
   resolveCurrentPeriod,
-  resolveMatchFormatDefaults,
   resolvePeriodLengthMinutes,
   resolveTotalPeriods,
   supportsThreePeriodFormat,

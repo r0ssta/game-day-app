@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   Archive,
+  Check,
   CheckCircle2,
   ClipboardList,
   Pencil,
   RefreshCw,
   Shield,
+  Trash2,
   UserPlus,
   Users,
   X,
@@ -49,6 +51,7 @@ import {
   revokeClubUserAccess,
   deleteClubUser,
   updateClubUserAppRole,
+  updateClubUserDisplayName,
   type ClubAdminTeamAssignment,
   type ClubAdminUserRow,
   type StaffInviteRow,
@@ -62,6 +65,12 @@ const STAFF_ROSTER_ROLE_ORDER: ActiveAppRole[] = ['director', 'coach']
 
 function staffDisplayName(user: ClubAdminUserRow): string {
   return user.displayName?.trim() || user.email?.trim() || 'Unnamed staff'
+}
+
+function deleteStaffActionLabel(role: ClubAdminUserRow['appRole']): string {
+  if (role === 'coach') return 'Delete Coach'
+  if (role === 'director') return 'Delete Director'
+  return 'Delete Staff'
 }
 
 function compareStaffUsers(a: ClubAdminUserRow, b: ClubAdminUserRow): number {
@@ -222,6 +231,8 @@ export function ClubAdminScreen({
   const [inviteAssignments, setInviteAssignments] = useState<ClubAdminTeamAssignment[]>([])
   const [inviteBusy, setInviteBusy] = useState(false)
   const [adminTab, setAdminTab] = useState<ClubAdminTab>('setup')
+  const [editingNameUserId, setEditingNameUserId] = useState<string | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
@@ -482,12 +493,48 @@ export function ClubAdminScreen({
     }
   }
 
+  const beginEditDisplayName = (user: ClubAdminUserRow) => {
+    setEditingNameUserId(user.id)
+    setNameDraft(user.displayName?.trim() || '')
+  }
+
+  const cancelEditDisplayName = () => {
+    setEditingNameUserId(null)
+    setNameDraft('')
+  }
+
+  const handleSaveDisplayName = async (user: ClubAdminUserRow) => {
+    const trimmed = nameDraft.trim()
+    if (!trimmed) {
+      onToast('Enter a display name')
+      return
+    }
+    if (trimmed === (user.displayName?.trim() || '')) {
+      cancelEditDisplayName()
+      return
+    }
+
+    setBusyUserId(user.id)
+    try {
+      await updateClubUserDisplayName(user.id, trimmed)
+      setUsers((prev) =>
+        prev.map((row) => (row.id === user.id ? { ...row, displayName: trimmed } : row)),
+      )
+      cancelEditDisplayName()
+      onToast('Name updated')
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Failed to update name')
+    } finally {
+      setBusyUserId(null)
+    }
+  }
+
   const handleDeleteUser = async (user: ClubAdminUserRow) => {
     if (user.id === currentUserId) {
       onToast('You cannot delete your own account')
       return
     }
-    const label = user.email ?? user.displayName ?? 'this user'
+    const label = staffDisplayName(user)
     const confirmed = window.confirm(
       `Permanently delete ${label}? This removes their login and cannot be undone. Match history keeps any coach name already saved on past games.`,
     )
@@ -506,6 +553,7 @@ export function ClubAdminScreen({
         delete next[user.id]
         return next
       })
+      if (editingNameUserId === user.id) cancelEditDisplayName()
       onToast('Staff deleted')
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to delete staff')
@@ -871,7 +919,7 @@ export function ClubAdminScreen({
                   Staff Roster
                 </h2>
                 <p className="text-xs font-semibold text-muted-foreground">
-                  Directors and Staff (with per-team coaching roles)
+                  Directors and Staff — edit names or delete accounts here
                   {staffRoster.length > 0 ? ` · ${staffRoster.length}` : ''}
                 </p>
               </div>
@@ -898,6 +946,9 @@ export function ClubAdminScreen({
                         const name = teamNameById.get(assignment.teamId) ?? 'Team'
                         return `${name} · ${formatTeamRoleLabel(assignment.teamRole)}`
                       })
+                      const busy = busyUserId === user.id
+                      const editing = editingNameUserId === user.id
+                      const isSelf = user.id === currentUserId
                       return (
                         <li
                           key={user.id}
@@ -905,9 +956,44 @@ export function ClubAdminScreen({
                         >
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-black text-foreground">
-                                {staffDisplayName(user)}
-                              </p>
+                              {editing ? (
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                  <input
+                                    type="text"
+                                    value={nameDraft}
+                                    onChange={(event) => setNameDraft(event.target.value)}
+                                    disabled={busy}
+                                    autoFocus
+                                    aria-label="Display name"
+                                    className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-card px-3 text-sm font-semibold text-foreground"
+                                    placeholder="Display name"
+                                  />
+                                  <div className="flex shrink-0 gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={busy || !nameDraft.trim()}
+                                      onClick={() => void handleSaveDisplayName(user)}
+                                      className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-neon bg-neon px-3 text-[11px] font-bold uppercase tracking-wide text-neon-foreground disabled:opacity-40 sm:flex-none"
+                                    >
+                                      <Check className="size-4" strokeWidth={2.5} />
+                                      Save
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={cancelEditDisplayName}
+                                      className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-3 text-[11px] font-bold uppercase tracking-wide text-foreground disabled:opacity-40 sm:flex-none"
+                                    >
+                                      <X className="size-4" strokeWidth={2.5} />
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="truncate text-sm font-black text-foreground">
+                                  {staffDisplayName(user)}
+                                </p>
+                              )}
                               {user.email ? (
                                 <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
                                   {user.email}
@@ -918,7 +1004,7 @@ export function ClubAdminScreen({
                               {formatAppRoleLabel(user.appRole)}
                             </span>
                           </div>
-                          {user.id === currentUserId ? (
+                          {isSelf ? (
                             <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-athletic">
                               You
                             </p>
@@ -928,6 +1014,28 @@ export function ClubAdminScreen({
                               ? teamLabels.join(' · ')
                               : 'No teams assigned'}
                           </p>
+                          {!editing ? (
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => beginEditDisplayName(user)}
+                                className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-3 text-[11px] font-bold uppercase tracking-wide text-foreground disabled:opacity-40"
+                              >
+                                <Pencil className="size-3.5" strokeWidth={2.5} />
+                                Edit Name
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy || isSelf}
+                                onClick={() => void handleDeleteUser(user)}
+                                className="inline-flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-danger bg-danger px-3 text-[11px] font-bold uppercase tracking-wide text-danger-foreground disabled:opacity-40"
+                              >
+                                <Trash2 className="size-3.5" strokeWidth={2.5} />
+                                {deleteStaffActionLabel(user.appRole)}
+                              </button>
+                            </div>
+                          ) : null}
                         </li>
                       )
                     })}
@@ -1141,17 +1249,61 @@ export function ClubAdminScreen({
                   return (
                     <tr key={user.id} className="border-b border-border align-top last:border-b-0">
                       <td className="px-3 py-3">
-                        <p className="text-sm font-black text-foreground">
-                          {user.displayName?.trim() || '—'}
-                        </p>
-                        <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
-                          {user.email ?? user.id}
-                        </p>
-                        {user.id === currentUserId ? (
-                          <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-athletic">
-                            You
-                          </p>
-                        ) : null}
+                        {editingNameUserId === user.id ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={nameDraft}
+                              onChange={(event) => setNameDraft(event.target.value)}
+                              disabled={busy}
+                              autoFocus
+                              aria-label="Display name"
+                              className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-3 text-sm font-semibold text-foreground"
+                              placeholder="Display name"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                disabled={busy || !nameDraft.trim()}
+                                onClick={() => void handleSaveDisplayName(user)}
+                                className="min-h-10 flex-1 touch-manipulation rounded-xl border-2 border-neon bg-neon px-2 text-[11px] font-bold uppercase tracking-wide text-neon-foreground disabled:opacity-40"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={cancelEditDisplayName}
+                                className="min-h-10 flex-1 touch-manipulation rounded-xl border-2 border-border bg-secondary px-2 text-[11px] font-bold uppercase tracking-wide text-foreground disabled:opacity-40"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-sm font-black text-foreground">
+                              {user.displayName?.trim() || '—'}
+                            </p>
+                            <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                              {user.email ?? user.id}
+                            </p>
+                            {user.id === currentUserId ? (
+                              <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-athletic">
+                                You
+                              </p>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => beginEditDisplayName(user)}
+                              className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-3 text-[11px] font-bold uppercase tracking-wide text-foreground disabled:opacity-40"
+                            >
+                              <Pencil className="size-3.5" strokeWidth={2.5} />
+                              Edit Name
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <select
@@ -1250,7 +1402,7 @@ export function ClubAdminScreen({
                             onClick={() => void handleDeleteUser(user)}
                             className="delete-match-confirm min-h-11 w-full touch-manipulation rounded-xl border-2 border-danger bg-danger px-3 text-[11px] font-bold uppercase tracking-wide text-danger-foreground disabled:opacity-40"
                           >
-                            Delete Staff
+                            {deleteStaffActionLabel(user.appRole)}
                           </button>
                         </div>
                       </td>
