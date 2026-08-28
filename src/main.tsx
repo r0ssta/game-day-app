@@ -9,6 +9,7 @@ import { StatTrackerScreen } from '@/components/StatTrackerScreen'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
 import {
+  installParentHubLaunchConsumer,
   parseParentHubRoute,
   registerParentServiceWorker,
   restoreStandaloneParentHubPath,
@@ -22,6 +23,8 @@ import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 
 applySunlightMode(readSunlightMode())
+// Must run before Auth mounts — captured PWA links may land on / with target in launchQueue.
+installParentHubLaunchConsumer()
 
 /** Resolve hub route before React mounts so we never flash Staff Login. */
 function bootstrapParentHubRoute() {

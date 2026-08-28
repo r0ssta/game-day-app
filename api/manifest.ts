@@ -59,6 +59,7 @@ function buildManifest(input: {
       scope: `${input.origin}/hub/`,
       display: 'standalone' as const,
       orientation: 'portrait-primary',
+      launch_handler: { client_mode: 'navigate-existing' },
       background_color: theme,
       theme_color: theme,
       lang: 'en-US',

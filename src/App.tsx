@@ -78,6 +78,7 @@ import {
   buildPeriodPush,
   buildSubstitutionPush,
   notifyWebPush,
+  buildParentHubUrl,
   shareParentHubLink,
 } from '@/lib/parent-hub'
 import {
@@ -1024,6 +1025,7 @@ type SetupScreenProps = {
   onLoadLineupPreset: (presetId: string) => void
   onBackToHome: () => void
   onShareParentHub?: () => void
+  parentHubUrl?: string | null
   setupSlotAssignments?: Record<string, string | null>
   setupSlotLabelOverrides?: Record<string, string>
   onSetupSlotAssignmentsChange?: (assignments: Record<string, string | null>) => void
@@ -1087,6 +1089,7 @@ function SetupScreen({
   onLoadLineupPreset,
   onBackToHome,
   onShareParentHub,
+  parentHubUrl,
   setupSlotAssignments,
   setupSlotLabelOverrides,
   onSetupSlotAssignmentsChange,
@@ -1124,7 +1127,33 @@ function SetupScreen({
               {activeTeamFormat} format · {maxFieldPlayers} on field
             </p>
 
-            {onShareParentHub ? (
+            {onShareParentHub && parentHubUrl ? (
+              <div className="space-y-2 rounded-xl border-2 border-border bg-card p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Parent Team Hub
+                </p>
+                <p className="break-all font-mono text-xs font-semibold text-foreground">
+                  {parentHubUrl}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.open(parentHubUrl, '_blank', 'noopener,noreferrer')}
+                    className="flex min-h-12 touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-neon bg-neon/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
+                  >
+                    Open Hub
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onShareParentHub}
+                    className="flex min-h-12 touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-border bg-background px-3 py-2 text-xs font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
+                  >
+                    <Share2 className="size-4" strokeWidth={2.5} />
+                    Share
+                  </button>
+                </div>
+              </div>
+            ) : onShareParentHub ? (
               <button
                 type="button"
                 onClick={onShareParentHub}
@@ -3792,6 +3821,9 @@ export default function App() {
           onLoadLineupPreset={handleLoadLineupPreset}
           onBackToHome={() => setAppMode('home')}
           onShareParentHub={ENABLE_PARENT_HUB ? () => void handleShareParentHub() : undefined}
+          parentHubUrl={
+            ENABLE_PARENT_HUB && activeTeamSlug ? buildParentHubUrl(activeTeamSlug) : null
+          }
           setupSlotAssignments={setupSlotAssignments}
           setupSlotLabelOverrides={setupSlotLabelOverrides}
           onSetupSlotAssignmentsChange={setSetupSlotAssignments}

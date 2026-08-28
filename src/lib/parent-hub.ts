@@ -8,6 +8,7 @@ import {
 import { supabase } from '@/supabaseClient'
 import { ENABLE_PARENT_HUB } from '@/lib/feature-flags'
 import {
+  isIosDevice,
   isStandalonePwa,
   readRememberedParentHubSlug,
 } from '@/lib/parent-hub-pwa'
@@ -139,9 +140,7 @@ export function parseParentHubRoute(): ParentHubRoute | null {
 /** Public Parent Hub URL using the team's unique slug. */
 export function buildParentHubUrl(teamSlug: string): string {
   const slug = teamSlug.trim().toLowerCase()
-  // Include query fallback so deep links still resolve if a root-scoped PWA
-  // strips the path and lands on / or /hub.
-  return `${window.location.origin}/hub/${encodeURIComponent(slug)}?teamHub=1&slug=${encodeURIComponent(slug)}`
+  return `${window.location.origin}/hub/${encodeURIComponent(slug)}`
 }
 
 /** Deep link when only the team id is known (push fallback). */
@@ -184,11 +183,27 @@ export async function shareParentHubLink(
 ): Promise<'shared' | 'copied'> {
   const url = buildParentHubUrl(teamSlug)
   const title = `${teamLabel} · Team Hub`
-  const text = `Follow ${teamLabel} live scores, schedule, and recaps:\n${url}`
+  const text = `Follow ${teamLabel} live scores, schedule, and match recaps:\n${url}`
 
   if (typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title, text, url })
+      // iOS (and some Android share targets) ignore `url` and substitute the
+      // current document URL instead — from the coach app that is Staff Login (/).
+      // Only pass `url` when we are already on a Parent Hub route.
+      const sharingFromHub = parseParentHubRoute() != null
+      if (sharingFromHub) {
+        await navigator.share({ title, text, url })
+      } else if (isIosDevice()) {
+        await navigator.share({ title, text })
+      } else {
+        // Prefer url+text on Android/desktop, but fall back to text-only if needed.
+        try {
+          await navigator.share({ title, text, url })
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') throw err
+          await navigator.share({ title, text })
+        }
+      }
       return 'shared'
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err
@@ -197,6 +212,37 @@ export async function shareParentHubLink(
 
   await navigator.clipboard.writeText(url)
   return 'copied'
+}
+
+/**
+ * When an installed PWA is opened via a captured link, Chromium may launch at
+ * start_url (/) and deliver the intended URL through launchQueue instead.
+ */
+export function installParentHubLaunchConsumer(): void {
+  const launchQueue = (
+    window as Window & {
+      launchQueue?: {
+        setConsumer: (cb: (params: { targetURL?: string }) => void) => void
+      }
+    }
+  ).launchQueue
+  if (!launchQueue?.setConsumer) return
+
+  launchQueue.setConsumer((params) => {
+    const raw = params.targetURL?.trim()
+    if (!raw) return
+    try {
+      const target = new URL(raw, window.location.origin)
+      if (target.origin !== window.location.origin) return
+      const next = `${target.pathname}${target.search}${target.hash}`
+      const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
+      if (next === current) return
+      // Force a full navigation so Parent Hub bootstrap runs before Auth mounts.
+      window.location.replace(next)
+    } catch {
+      // ignore malformed launch targets
+    }
+  })
 }
 
 function normalizeParentHubPayload(data: unknown): ParentHubPayload {
