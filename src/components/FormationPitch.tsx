@@ -139,9 +139,9 @@ function PitchSlotVisual({
   labelEditorOpen,
   dropHighlight,
   setDroppableRef,
-  dragHandleRef,
-  dragHandleListeners,
-  dragHandleAttributes,
+  setRepositionRef,
+  repositionListeners,
+  repositionAttributes,
   slotDragStyle,
   isSlotDragging,
   occupiedExtra,
@@ -161,9 +161,10 @@ function PitchSlotVisual({
   labelEditorOpen: boolean
   dropHighlight?: boolean
   setDroppableRef?: (node: HTMLElement | null) => void
-  dragHandleRef?: (node: HTMLElement | null) => void
-  dragHandleListeners?: ReturnType<typeof useDraggable>['listeners']
-  dragHandleAttributes?: ReturnType<typeof useDraggable>['attributes']
+  /** Draggable node for free repositioning (player badge or empty slot). */
+  setRepositionRef?: (node: HTMLElement | null) => void
+  repositionListeners?: ReturnType<typeof useDraggable>['listeners']
+  repositionAttributes?: ReturnType<typeof useDraggable>['attributes']
   slotDragStyle?: CSSProperties
   isSlotDragging?: boolean
   occupiedExtra?: ReactNode
@@ -175,7 +176,7 @@ function PitchSlotVisual({
   return (
     <div
       ref={setDroppableRef}
-      className={cn('absolute', isSlotDragging && 'z-30')}
+      className={cn('absolute', isSlotDragging && 'z-30 opacity-90')}
       style={{
         left: `${slot.x}%`,
         top: `${slot.y}%`,
@@ -183,15 +184,31 @@ function PitchSlotVisual({
       }}
     >
       <div className="relative -translate-x-1/2 -translate-y-1/2">
+        {/*
+          Setup: the badge itself is the reposition drag source (with activation distance so
+          tap-to-assign/remove still works). Live: no listeners — fixed formation shape.
+        */}
         <button
+          ref={allowSlotReposition ? setRepositionRef : undefined}
           type="button"
           onClick={onTap}
           className={cn(
-            'flex min-h-11 min-w-11 touch-pan-y flex-col items-center transition-transform active:scale-95',
+            'flex min-h-11 min-w-11 flex-col items-center transition-transform active:scale-95',
+            allowSlotReposition ? 'touch-none cursor-grab active:cursor-grabbing' : 'touch-pan-y',
             highlighted && 'z-10 scale-110',
             dropHighlight && 'scale-110',
             pulseInteractive && 'animate-pulse',
+            isSlotDragging && 'ring-2 ring-athletic ring-offset-2 ring-offset-transparent',
           )}
+          aria-label={
+            allowSlotReposition
+              ? player
+                ? `Move ${player.shortName ?? player.name} on pitch`
+                : `Move ${label} slot`
+              : undefined
+          }
+          {...(allowSlotReposition ? (repositionListeners ?? {}) : {})}
+          {...(allowSlotReposition ? (repositionAttributes ?? {}) : {})}
         >
           {player ? (
             <div
@@ -208,6 +225,11 @@ function PitchSlotVisual({
                   aria-label="Yellow card"
                 />
               ) : null}
+              {allowSlotReposition ? (
+                <span className="absolute -left-1 -top-1 flex size-5 items-center justify-center rounded-full border border-white/50 bg-black/60 text-white">
+                  <GripVertical className="size-3" strokeWidth={2.5} aria-hidden />
+                </span>
+              ) : null}
               <span className="font-display text-lg font-black leading-none tabular-nums">
                 {formatJersey(player.number)}
               </span>
@@ -223,30 +245,19 @@ function PitchSlotVisual({
           ) : (
             <div
               className={cn(
-                'flex size-12 flex-col items-center justify-center rounded-full border-2 border-dashed bg-black/20 text-white/90 backdrop-blur-sm',
+                'relative flex size-12 flex-col items-center justify-center rounded-full border-2 border-dashed bg-black/20 text-white/90 backdrop-blur-sm',
                 highlighted || dropHighlight ? 'border-white bg-white/20' : 'border-white/60',
               )}
             >
+              {allowSlotReposition ? (
+                <span className="absolute -left-1 -top-1 flex size-5 items-center justify-center rounded-full border border-white/50 bg-black/60 text-white">
+                  <GripVertical className="size-3" strokeWidth={2.5} aria-hidden />
+                </span>
+              ) : null}
               <span className="text-[10px] font-black uppercase">{label}</span>
             </div>
           )}
         </button>
-
-        {allowSlotReposition ? (
-          <button
-            ref={dragHandleRef}
-            type="button"
-            className={cn(
-              'absolute -right-3 top-1/2 z-20 flex size-8 -translate-y-1/2 touch-none items-center justify-center rounded-md border border-white/50 bg-black/70 text-white shadow',
-              isSlotDragging && 'ring-2 ring-athletic',
-            )}
-            aria-label={`Reposition ${label} slot`}
-            {...(dragHandleListeners ?? {})}
-            {...(dragHandleAttributes ?? {})}
-          >
-            <GripVertical className="size-4" strokeWidth={2.5} />
-          </button>
-        ) : null}
 
         {occupiedExtra ? (
           <div
@@ -288,15 +299,15 @@ function PitchSlotVisual({
   )
 }
 
-/** Droppable player target + optional slot-reposition drag handle (setup only). */
+/** Droppable player target + free XY reposition of the slot (setup only). */
 function InteractiveSlot(
   props: Omit<
     Parameters<typeof PitchSlotVisual>[0],
     | 'dropHighlight'
     | 'setDroppableRef'
-    | 'dragHandleRef'
-    | 'dragHandleListeners'
-    | 'dragHandleAttributes'
+    | 'setRepositionRef'
+    | 'repositionListeners'
+    | 'repositionAttributes'
     | 'slotDragStyle'
     | 'isSlotDragging'
   >,
@@ -309,7 +320,7 @@ function InteractiveSlot(
   const {
     attributes,
     listeners,
-    setNodeRef: setDragHandleRef,
+    setNodeRef: setRepositionRef,
     transform,
     isDragging,
   } = useDraggable({
@@ -327,9 +338,9 @@ function InteractiveSlot(
       {...props}
       setDroppableRef={setDroppableRef}
       dropHighlight={isOver}
-      dragHandleRef={props.allowSlotReposition ? setDragHandleRef : undefined}
-      dragHandleListeners={props.allowSlotReposition ? listeners : undefined}
-      dragHandleAttributes={props.allowSlotReposition ? attributes : undefined}
+      setRepositionRef={props.allowSlotReposition ? setRepositionRef : undefined}
+      repositionListeners={props.allowSlotReposition ? listeners : undefined}
+      repositionAttributes={props.allowSlotReposition ? attributes : undefined}
       slotDragStyle={slotDragStyle}
       isSlotDragging={isDragging}
     />
@@ -407,8 +418,9 @@ export function FormationPitch({
   const activeDragPlayer = activeDragPlayerId ? playerById.get(activeDragPlayerId) ?? null : null
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+    // Distance keeps short taps for assign/remove; longer press-drag moves the slot/player.
+    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 160, tolerance: 10 } }),
   )
 
   const handleDragStart = (event: DragStartEvent) => {

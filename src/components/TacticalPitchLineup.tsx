@@ -508,8 +508,9 @@ export function TacticalPitchLineup({
       </div>
 
       <p className="shrink-0 text-xs text-muted-foreground">
-        Drag players from the bench onto a slot, or tap to assign. Use the grip on a slot to
-        reposition it on the pitch. Tap a position badge to override its label (e.g. CAM → CM).
+        Pick a base formation, then drag players (or empty slots) on the pitch to fine-tune their
+        positions. Drag from the bench to fill a slot, or tap to assign / remove. Tap a position
+        badge to override its label.
       </p>
 
       <FormationPitch
