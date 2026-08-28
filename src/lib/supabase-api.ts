@@ -12,6 +12,7 @@ import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso, formatMatchDisplayDateTime } from '@/lib/match-schedule'
+import { startingLineupNote } from '@/lib/match-event-notes'
 import type { LocationType } from '@/lib/match-location'
 import {
   addedTimeSeconds,
@@ -100,12 +101,14 @@ function matchEventToRow(event: MatchEventInput, includeExtended = true) {
   }
   if (!includeExtended) return row
 
-  const extended: Record<string, unknown> = { ...row, formation: event.formation }
+  const extended: Record<string, unknown> = {
+    ...row,
+    formation: event.formation,
+    // Column is NOT NULL; always send an explicit boolean so inserts never rely on DB defaults.
+    is_pk: event.isPk === true,
+  }
   if (event.eventType === 'goal') {
     extended.assist_player_id = event.assistPlayerId ?? null
-  }
-  if (event.eventType === 'goal' || event.eventType === 'opponent_goal') {
-    extended.is_pk = event.isPk === true
   }
   if (event.eventType === 'pk_attempt') {
     extended.pk_result = event.pkResult ?? null
@@ -1162,7 +1165,7 @@ export async function createMatchStats(
         eventType: 'sub_in',
         timestamp: 0,
         formation,
-        eventNotes: p.matchPosition,
+        eventNotes: startingLineupNote(p.matchPosition),
       }),
     )
 
@@ -1257,16 +1260,23 @@ export async function upsertMatchStats(matchId: string, players: MatchPlayer[]) 
   throw error
 }
 
+const PLAYER_OPTIONAL_EVENT_TYPES = new Set([
+  'opponent_goal',
+  'formation_change',
+  'stat_team_log',
+  'shot_home',
+  'shot_away',
+  'save_home',
+  'save_away',
+  'pk_attempt',
+])
+
+function isPlayerOptionalEventType(eventType: string): boolean {
+  return PLAYER_OPTIONAL_EVENT_TYPES.has(eventType)
+}
+
 export async function insertMatchEvent(input: MatchEventInput) {
-  const playerOptional =
-    input.eventType === 'opponent_goal' ||
-    input.eventType === 'formation_change' ||
-    input.eventType === 'stat_team_log' ||
-    input.eventType === 'shot_home' ||
-    input.eventType === 'shot_away' ||
-    input.eventType === 'save_home' ||
-    input.eventType === 'save_away'
-  if (!playerOptional && !input.playerId) {
+  if (!isPlayerOptionalEventType(input.eventType) && !input.playerId) {
     throw new Error('playerId is required for this event type')
   }
   await insertMatchEventRows([matchEventToRow(input)])
@@ -1275,15 +1285,7 @@ export async function insertMatchEvent(input: MatchEventInput) {
 export async function insertMatchEvents(events: MatchEventInput[]) {
   if (events.length === 0) return
   for (const event of events) {
-    const playerOptional =
-      event.eventType === 'opponent_goal' ||
-      event.eventType === 'formation_change' ||
-      event.eventType === 'stat_team_log' ||
-      event.eventType === 'shot_home' ||
-      event.eventType === 'shot_away' ||
-      event.eventType === 'save_home' ||
-      event.eventType === 'save_away'
-    if (!playerOptional && !event.playerId) {
+    if (!isPlayerOptionalEventType(event.eventType) && !event.playerId) {
       throw new Error('playerId is required for this event type')
     }
   }

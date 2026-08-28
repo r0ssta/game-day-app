@@ -103,6 +103,7 @@ import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
 import {
+  insertMatchEvent,
   syncMatchClock,
   syncMatchEvent,
   syncMatchEvents,
@@ -3349,14 +3350,22 @@ export default function App() {
       } else {
         setAwayShots((n) => n + 1)
       }
-      syncMatchEvent({
+      void insertMatchEvent({
         matchId,
         eventType,
         timestamp: eventTimestamp,
         formation: activeFormation,
         playerId: null,
       })
-      setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+        .then(() => {
+          setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+        })
+        .catch((err) => {
+          if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
+          else setAwayShots((n) => Math.max(0, n - 1))
+          console.error('[commitTeamShot]', err)
+          setToast('Could not save shot — try again')
+        })
     },
     [
       matchId,
@@ -3366,6 +3375,7 @@ export default function App() {
       activeFormation,
       setHomeShots,
       setAwayShots,
+      setToast,
     ],
   )
 
@@ -3376,32 +3386,44 @@ export default function App() {
 
       if (side === 'away') {
         setAwaySaves((n) => n + 1)
-        syncMatchEvent({
+        void insertMatchEvent({
           matchId,
           eventType: 'save_away',
           timestamp: eventTimestamp,
           formation: activeFormation,
           playerId: null,
         })
-        setToast('Save · Away')
+          .then(() => setToast('Save · Away'))
+          .catch((err) => {
+            setAwaySaves((n) => Math.max(0, n - 1))
+            console.error('[commitTeamSave]', err)
+            setToast('Could not save — try again')
+          })
         return
       }
 
       const gk = findActiveOnFieldGoalkeeper(players)
       setHomeSaves((n) => n + 1)
-      syncMatchEvent({
+      void insertMatchEvent({
         matchId,
         eventType: 'save_home',
         timestamp: eventTimestamp,
         formation: activeFormation,
         playerId: gk?.id ?? null,
       })
-      if (gk) {
-        const label = formatPlayerFullName(gk.firstName, gk.lastName)
-        setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
-      } else {
-        setToast('Save · Home (no GK on pitch)')
-      }
+        .then(() => {
+          if (gk) {
+            const label = formatPlayerFullName(gk.firstName, gk.lastName)
+            setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
+          } else {
+            setToast('Save · Home (no GK on pitch)')
+          }
+        })
+        .catch((err) => {
+          setHomeSaves((n) => Math.max(0, n - 1))
+          console.error('[commitTeamSave]', err)
+          setToast('Could not save — try again')
+        })
     },
     [
       matchId,
@@ -3412,6 +3434,7 @@ export default function App() {
       players,
       setHomeSaves,
       setAwaySaves,
+      setToast,
     ],
   )
 

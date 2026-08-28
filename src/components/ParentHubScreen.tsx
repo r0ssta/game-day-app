@@ -10,6 +10,7 @@ import { formatPlayerFullName } from '@/lib/player-names'
 import {
   fetchParentHub,
   fetchParentLiveEvents,
+  filterParentLiveTimeline,
   formatParentEventLine,
   isParentHubLiveEventType,
   shouldShowParentLiveEvent,
@@ -80,7 +81,7 @@ function LiveTab({
       try {
         const rows = await fetchParentLiveEvents(liveMatch.id)
         if (!cancelled) {
-          setEvents(rows.filter((row) => shouldShowParentLiveEvent(row)))
+          setEvents(filterParentLiveTimeline(rows))
         }
       } catch (err) {
         console.warn('[ParentHub] live events hydrate failed', err)
@@ -127,7 +128,13 @@ function LiveTab({
           if (!isParentHubLiveEventType(row.event_type)) {
             return
           }
-          if (!shouldShowParentLiveEvent({ eventType: row.event_type, timestamp: row.timestamp })) {
+          if (
+            !shouldShowParentLiveEvent({
+              eventType: row.event_type,
+              timestamp: row.timestamp,
+              eventNotes: row.event_notes,
+            })
+          ) {
             return
           }
 
@@ -153,7 +160,7 @@ function LiveTab({
           }
           setEvents((prev) => {
             if (prev.some((e) => e.id === nextEvent.id)) return prev
-            return [...prev, nextEvent]
+            return filterParentLiveTimeline([...prev, nextEvent])
           })
           setLiveMatchState((prev) => {
             if (!prev) return prev

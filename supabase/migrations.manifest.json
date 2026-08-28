@@ -46,6 +46,7 @@
     "supabase-match-shot-save-migration.sql",
     "supabase-match-review-rating-migration.sql",
     "supabase-parent-live-events-fix-migration.sql",
-    "supabase-parent-live-feed-events-migration.sql"
+    "supabase-parent-live-feed-events-migration.sql",
+    "supabase-parent-live-lineup-labels-migration.sql"
   ]
 }

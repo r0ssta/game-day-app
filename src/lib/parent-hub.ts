@@ -521,16 +521,31 @@ export function buildSubstitutionPush(input: {
   }
 }
 
+import {
+  isPeriodEndSubEvent,
+  isStartingLineupEvent,
+  parseStartingLineupPosition,
+} from '@/lib/match-event-notes'
+
 export function formatParentEventLine(event: ParentLiveEvent, opponent: string): string {
   const minute = `${Math.max(0, Math.floor(event.timestamp / 60))}'`
   const name = event.playerName?.trim() || 'Player'
+  const opponentLabel = opponent.trim() || 'Opponent'
+
+  if (isStartingLineupEvent(event.eventType, event.eventNotes, event.timestamp)) {
+    const position = parseStartingLineupPosition(event.eventNotes)
+    return position
+      ? `Starting lineup · ${name} · ${position}`
+      : `Starting lineup · ${name}`
+  }
+
   switch (event.eventType) {
     case 'goal':
       return `${minute} GOAL · ${name}${event.isPk ? ' (PK)' : ''}${
         event.assistPlayerName ? ` · assist ${event.assistPlayerName}` : ''
       }`
     case 'opponent_goal':
-      return `${minute} Goal · ${opponent || 'Opponent'}${event.isPk ? ' (PK)' : ''}`
+      return `${minute} ${opponentLabel} goal${event.isPk ? ' (PK)' : ''}`
     case 'yellow_card':
       return `${minute} Yellow · ${name}`
     case 'red_card':
@@ -542,11 +557,11 @@ export function formatParentEventLine(event: ParentLiveEvent, opponent: string):
     case 'shot_home':
       return `${minute} Shot · Home`
     case 'shot_away':
-      return `${minute} Shot · ${opponent || 'Away'}`
+      return `${minute} Shot · ${opponentLabel}`
     case 'save_home':
       return `${minute} Save · ${name !== 'Player' ? name : 'Home'}`
     case 'save_away':
-      return `${minute} Save · ${opponent || 'Away'}`
+      return `${minute} Save · ${opponentLabel}`
     default:
       return `${minute} ${event.eventType}`
   }
@@ -573,11 +588,41 @@ export function isParentHubLiveEventType(value: string): value is ParentHubLiveE
 }
 
 /**
- * Kickoff starter `sub_in` rows (clock 0) clutter the parent feed — keep mid-match subs only.
+ * Parent timeline rules:
+ * - Show kickoff/period starters as "Starting lineup · name · position"
+ * - Hide period-end mass sub-offs
+ * - Hide legacy untagged kickoff sub_out noise
  */
-export function shouldShowParentLiveEvent(event: Pick<ParentLiveEvent, 'eventType' | 'timestamp'>): boolean {
+export function shouldShowParentLiveEvent(
+  event: Pick<ParentLiveEvent, 'eventType' | 'timestamp' | 'eventNotes'>,
+): boolean {
+  if (!isParentHubLiveEventType(event.eventType)) return false
+  if (isPeriodEndSubEvent(event.eventType, event.eventNotes)) return false
+  if (isStartingLineupEvent(event.eventType, event.eventNotes, event.timestamp)) return true
   if ((event.eventType === 'sub_in' || event.eventType === 'sub_out') && event.timestamp <= 0) {
     return false
   }
-  return isParentHubLiveEventType(event.eventType)
+  return true
+}
+
+/**
+ * Hide untagged mass sub-offs at the same clock second (half/full-time clears).
+ * Tagged `period_end` rows are already excluded by shouldShowParentLiveEvent.
+ */
+export function filterParentLiveTimeline(events: ParentLiveEvent[]): ParentLiveEvent[] {
+  const subOutCounts = new Map<number, number>()
+  for (const event of events) {
+    if (event.eventType !== 'sub_out') continue
+    subOutCounts.set(event.timestamp, (subOutCounts.get(event.timestamp) ?? 0) + 1)
+  }
+  const massSubOutTimestamps = new Set<number>()
+  for (const [timestamp, count] of subOutCounts) {
+    if (count >= 5) massSubOutTimestamps.add(timestamp)
+  }
+
+  return events.filter((event) => {
+    if (!shouldShowParentLiveEvent(event)) return false
+    if (event.eventType === 'sub_out' && massSubOutTimestamps.has(event.timestamp)) return false
+    return true
+  })
 }

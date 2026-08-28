@@ -116,6 +116,7 @@ import {
   seasonRosterToPlayers,
 } from '@/lib/season-roster'
 import { applyCardsFromEvents } from '@/lib/match-cards'
+import { PERIOD_END_NOTE, startingLineupNote } from '@/lib/match-event-notes'
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import {
   defaultPeriodLengthMinutes,
@@ -1224,6 +1225,7 @@ export function useGameDayApp() {
                 eventType: 'sub_out',
                 timestamp: elapsed,
                 formation,
+                eventNotes: PERIOD_END_NOTE,
               })
             }
           }
@@ -1312,7 +1314,7 @@ export function useGameDayApp() {
               eventType: 'sub_in',
               timestamp: 0,
               formation,
-              eventNotes: starter?.matchPosition,
+              eventNotes: startingLineupNote(starter?.matchPosition),
             })
           }
           void syncMatchStats(matchId, stamped)
@@ -1384,6 +1386,7 @@ export function useGameDayApp() {
                 eventType: 'sub_out',
                 timestamp: elapsed,
                 formation,
+                eventNotes: PERIOD_END_NOTE,
               })
             }
           }
