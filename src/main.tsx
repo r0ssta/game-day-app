@@ -12,11 +12,27 @@ import {
   parseParentHubRoute,
   registerParentServiceWorker,
   restoreStandaloneParentHubPath,
+  unregisterRootScopedParentServiceWorker,
 } from '@/lib/parent-hub'
+import {
+  applyParentHubManifestLink,
+  rememberParentHubSlug,
+} from '@/lib/parent-hub-pwa'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 
 applySunlightMode(readSunlightMode())
+
+/** Resolve hub route before React mounts so we never flash Staff Login. */
+function bootstrapParentHubRoute() {
+  restoreStandaloneParentHubPath()
+  const route = parseParentHubRoute()
+  if (route?.kind === 'slug') {
+    applyParentHubManifestLink(route.slug)
+    rememberParentHubSlug(route.slug)
+  }
+  return route
+}
 
 function AuthenticatedApp() {
   const { loading, isAuthenticated, isActiveStaff } = useAuth()
@@ -42,21 +58,21 @@ function AuthenticatedApp() {
 
 function Root() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
-  const [parentHubRoute, setParentHubRoute] = useState(() => {
-    // Home Screen apps must stay on the public hub even when a coach session exists.
-    restoreStandaloneParentHubPath()
-    return parseParentHubRoute()
-  })
+  const [parentHubRoute, setParentHubRoute] = useState(() => bootstrapParentHubRoute())
 
   useEffect(() => {
-    void registerParentServiceWorker()
-  }, [])
+    if (parentHubRoute) {
+      void registerParentServiceWorker()
+    } else {
+      void unregisterRootScopedParentServiceWorker()
+    }
+  }, [parentHubRoute])
 
   useEffect(() => {
     const syncRoute = () => {
-      restoreStandaloneParentHubPath()
+      const nextHub = bootstrapParentHubRoute()
       setTrackerRoute(parseStatTrackerRoute())
-      setParentHubRoute(parseParentHubRoute())
+      setParentHubRoute(nextHub)
     }
     syncRoute()
     window.addEventListener('hashchange', syncRoute)

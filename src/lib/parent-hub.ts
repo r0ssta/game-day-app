@@ -98,6 +98,14 @@ export function parseParentHubRoute(): ParentHubRoute | null {
   const hubSlug = window.location.pathname.match(/^\/hub\/([^/]+)\/?$/i)
   if (hubSlug?.[1]) return routeFromSegment(hubSlug[1])
 
+  // Bare /hub with ?slug= or ?teamId= (common when start_url/scope was wrong)
+  if (/^\/hub\/?$/i.test(window.location.pathname)) {
+    const teamId = params.get('teamId')?.trim()
+    if (teamId) return { kind: 'teamId', teamId }
+    const slug = params.get('slug')?.trim()
+    if (slug) return { kind: 'slug', slug: slug.toLowerCase() }
+  }
+
   // Legacy paths that used team UUID
   const pathMatch = window.location.pathname.match(/^\/team\/([^/]+)\/?$/i)
   if (pathMatch?.[1]) return routeFromSegment(pathMatch[1])
@@ -117,7 +125,7 @@ export function parseParentHubRoute(): ParentHubRoute | null {
     const fromPath = hashPath.match(/^\/?team\/([^/]+)(?:\/hub)?\/?$/i)
     if (fromPath?.[1]) return routeFromSegment(fromPath[1])
     const hashParams = new URLSearchParams(hashSearch)
-    if (hashParams.get('teamHub') === '1') {
+    if (hashParams.get('teamHub') === '1' || /^\/?hub\/?$/i.test(hashPath)) {
       const teamId = hashParams.get('teamId')?.trim()
       if (teamId) return { kind: 'teamId', teamId }
       const slug = hashParams.get('slug')?.trim()
@@ -131,7 +139,15 @@ export function parseParentHubRoute(): ParentHubRoute | null {
 /** Public Parent Hub URL using the team's unique slug. */
 export function buildParentHubUrl(teamSlug: string): string {
   const slug = teamSlug.trim().toLowerCase()
-  return `${window.location.origin}/hub/${encodeURIComponent(slug)}`
+  // Include query fallback so deep links still resolve if a root-scoped PWA
+  // strips the path and lands on / or /hub.
+  return `${window.location.origin}/hub/${encodeURIComponent(slug)}?teamHub=1&slug=${encodeURIComponent(slug)}`
+}
+
+/** Deep link when only the team id is known (push fallback). */
+export function buildParentHubUrlByTeamId(teamId: string): string {
+  const id = teamId.trim()
+  return `${window.location.origin}/?teamHub=1&teamId=${encodeURIComponent(id)}`
 }
 
 /**
@@ -233,9 +249,11 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 export async function registerParentServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
+  // Parent Hub SW must only control /hub/* — never the coach login at /.
+  if (!parseParentHubRoute()) return null
   try {
     const { Workbox } = await import('workbox-window')
-    const wb = new Workbox('/sw.js', { scope: '/' })
+    const wb = new Workbox('/sw.js', { scope: '/hub/' })
     let waitingForUpdate = false
 
     // Activate updated SW promptly so Parent Hub gets fresh shell + strategies.
@@ -253,6 +271,30 @@ export async function registerParentServiceWorker(): Promise<ServiceWorkerRegist
   } catch (err) {
     console.warn('[sw] register failed', err)
     return null
+  }
+}
+
+/**
+ * Coach app lives at `/`. Older builds registered a root-scoped SW + "Team Hub"
+ * manifest that captured parent links and opened Staff Login. Clear that here.
+ */
+export async function unregisterRootScopedParentServiceWorker(): Promise<void> {
+  if (!('serviceWorker' in navigator)) return
+  if (parseParentHubRoute()) return
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    const origin = window.location.origin
+    await Promise.all(
+      registrations.map(async (registration) => {
+        const scope = registration.scope.replace(/\/$/, '') || origin
+        // Unregister only root-scoped workers (…/ ), keep /hub/ workers alone.
+        if (scope === origin) {
+          await registration.unregister()
+        }
+      }),
+    )
+  } catch (err) {
+    console.warn('[sw] unregister root scope failed', err)
   }
 }
 
@@ -376,7 +418,7 @@ export function notifyWebPush(input: {
 
       const hubUrl = input.teamSlug
         ? buildParentHubUrl(input.teamSlug)
-        : `${window.location.origin}/hub`
+        : buildParentHubUrlByTeamId(input.teamId)
 
       const response = await fetch('/api/send-web-push', {
         method: 'POST',

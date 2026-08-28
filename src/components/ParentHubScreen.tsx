@@ -381,7 +381,9 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
     // Canonicalize legacy UUID / query links to /hub/:slug once resolved.
     if (payload.teamSlug) {
       const canonical = `/hub/${encodeURIComponent(payload.teamSlug)}`
-      if (window.location.pathname !== canonical) {
+      const pathMismatch = window.location.pathname !== canonical
+      const hasQuery = Boolean(window.location.search)
+      if (pathMismatch || hasQuery) {
         window.history.replaceState(null, '', canonical)
       }
     }

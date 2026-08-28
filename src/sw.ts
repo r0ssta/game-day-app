@@ -32,7 +32,8 @@ self.addEventListener('message', (event) => {
   }
 })
 
-// SPA navigations (/hub/:slug, etc.) → cached index.html shell
+// SPA navigations under /hub/* → cached index.html shell
+// (SW is registered with scope /hub/ so coach login at / is never controlled.)
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('/index.html'), {
     denylist: [/^\/api\//],
