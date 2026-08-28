@@ -8,12 +8,14 @@ import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-s
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
+  assignParentEventPeriodIndexes,
   fetchParentHub,
   fetchParentLiveEvents,
   filterParentLiveTimeline,
   formatParentEventLine,
   isParentHubLiveEventType,
   shouldShowParentLiveEvent,
+  sortParentLiveTimelineNewestFirst,
   type ParentHubMatch,
   type ParentHubPayload,
   type ParentHubRoute,
@@ -207,9 +209,8 @@ function LiveTab({
     )
   }
 
-  const timeline = [...events].sort(
-    (a, b) => a.timestamp - b.timestamp || a.createdAt.localeCompare(b.createdAt),
-  )
+  const timeline = sortParentLiveTimelineNewestFirst(events)
+  const periodById = assignParentEventPeriodIndexes(events)
 
   return (
     <div className="space-y-4">
@@ -236,12 +237,14 @@ function LiveTab({
           </p>
         ) : (
           <ul className="space-y-2">
-            {[...timeline].reverse().map((event) => (
+            {timeline.map((event) => (
               <li
                 key={event.id}
                 className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground"
               >
-                {formatParentEventLine(event, liveMatchState.opponent)}
+                {formatParentEventLine(event, liveMatchState.opponent, {
+                  periodIndex: periodById.get(event.id) ?? 1,
+                })}
               </li>
             ))}
           </ul>

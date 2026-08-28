@@ -574,7 +574,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           }}
           onSlotTap={handleSlotTap}
           enableDragDrop={false}
-          pulseInteractive
           renderOccupiedExtra={
             onSetImpact
               ? (playerId) => {

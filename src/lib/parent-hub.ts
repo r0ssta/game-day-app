@@ -1,5 +1,10 @@
 import { formatPlayerFullName } from '@/lib/player-names'
 import { formatPeriodLong, type TotalPeriods } from '@/lib/match-periods'
+import {
+  isPeriodEndSubEvent,
+  isStartingLineupEvent,
+  parseStartingLineupPosition,
+} from '@/lib/match-event-notes'
 import { supabase } from '@/supabaseClient'
 import { ENABLE_PARENT_HUB } from '@/lib/feature-flags'
 import {
@@ -521,22 +526,66 @@ export function buildSubstitutionPush(input: {
   }
 }
 
-import {
-  isPeriodEndSubEvent,
-  isStartingLineupEvent,
-  parseStartingLineupPosition,
-} from '@/lib/match-event-notes'
+/**
+ * Match clocks reset each half, so parent timeline order must use wall time
+ * (`createdAt`), not period-relative `timestamp`.
+ */
+export function sortParentLiveTimelineNewestFirst(
+  events: ParentLiveEvent[],
+): ParentLiveEvent[] {
+  return [...events].sort(
+    (a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+  )
+}
 
-export function formatParentEventLine(event: ParentLiveEvent, opponent: string): string {
-  const minute = `${Math.max(0, Math.floor(event.timestamp / 60))}'`
+/**
+ * Infer 1H/2H/… from chronology: a new starting-lineup batch after non-lineup
+ * events means the next period (period-end rows are filtered out of the feed).
+ */
+export function assignParentEventPeriodIndexes(
+  events: ParentLiveEvent[],
+): Map<string, number> {
+  const chrono = [...events].sort(
+    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+  )
+  let period = 1
+  let hadNonLineupInPeriod = false
+  const periodById = new Map<string, number>()
+
+  for (const event of chrono) {
+    const isLineup = isStartingLineupEvent(
+      event.eventType,
+      event.eventNotes,
+      event.timestamp,
+    )
+    if (isLineup && hadNonLineupInPeriod) {
+      period += 1
+      hadNonLineupInPeriod = false
+    }
+    if (!isLineup) {
+      hadNonLineupInPeriod = true
+    }
+    periodById.set(event.id, period)
+  }
+
+  return periodById
+}
+
+export function formatParentEventLine(
+  event: ParentLiveEvent,
+  opponent: string,
+  options?: { periodIndex?: number },
+): string {
+  const periodIndex = options?.periodIndex ?? 1
+  const periodPrefix = periodIndex > 1 ? `${periodIndex}H ` : ''
+  const minute = `${periodPrefix}${Math.max(0, Math.floor(event.timestamp / 60))}'`
   const name = event.playerName?.trim() || 'Player'
   const opponentLabel = opponent.trim() || 'Opponent'
 
   if (isStartingLineupEvent(event.eventType, event.eventNotes, event.timestamp)) {
     const position = parseStartingLineupPosition(event.eventNotes)
-    return position
-      ? `Starting lineup · ${name} · ${position}`
-      : `Starting lineup · ${name}`
+    const lineupLabel = periodIndex > 1 ? `${periodIndex}H lineup` : 'Starting lineup'
+    return position ? `${lineupLabel} · ${name} · ${position}` : `${lineupLabel} · ${name}`
   }
 
   switch (event.eventType) {
