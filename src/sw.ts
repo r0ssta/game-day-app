@@ -13,7 +13,7 @@ import {
   precacheAndRoute,
 } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
-import { NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies'
+import { NetworkFirst, NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies'
 
 declare let self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<string | { url: string; revision: string | null }>
@@ -39,44 +39,56 @@ registerRoute(
   }),
 )
 
-const PARENT_HUB_RPC_PATHS = new Set([
+const LIVE_EVENTS_RPC = '/rest/v1/rpc/get_parent_live_events'
+
+const PARENT_HUB_CACHEABLE_RPC_PATHS = new Set([
   '/rest/v1/rpc/get_parent_hub',
   '/rest/v1/rpc/get_parent_hub_by_slug',
-  '/rest/v1/rpc/get_parent_live_events',
   '/rest/v1/rpc/get_team_pwa_branding',
 ])
-
-function isParentHubReadRpc(url: URL): boolean {
-  return PARENT_HUB_RPC_PATHS.has(url.pathname)
-}
 
 function isSupabaseHost(url: URL): boolean {
   return url.hostname.endsWith('.supabase.co') || url.hostname.includes('supabase')
 }
 
-const parentHubApiStrategy = new StaleWhileRevalidate({
+function isLiveEventsRpc(url: URL): boolean {
+  return url.pathname === LIVE_EVENTS_RPC
+}
+
+function isParentHubCacheableRpc(url: URL): boolean {
+  return PARENT_HUB_CACHEABLE_RPC_PATHS.has(url.pathname)
+}
+
+// Live timeline must never be served stale (goals/shots arrive continuously).
+registerRoute(
+  ({ url }) => isSupabaseHost(url) && isLiveEventsRpc(url),
+  new NetworkOnly(),
+  'POST',
+)
+
+// Hub shell payload: prefer network so scores stay current; short offline fallback.
+const parentHubApiStrategy = new NetworkFirst({
   cacheName: 'parent-hub-api',
+  networkTimeoutSeconds: 4,
   plugins: [
     new ExpirationPlugin({
-      maxEntries: 50,
-      maxAgeSeconds: 60 * 60 * 24, // 24 hours
+      maxEntries: 40,
+      maxAgeSeconds: 60, // 1 minute
       purgeOnQuotaError: true,
     }),
   ],
 })
 
-// Match feed + schedule payloads (Supabase RPCs are POST even for reads).
 registerRoute(
-  ({ url }) => isSupabaseHost(url) && isParentHubReadRpc(url),
+  ({ url }) => isSupabaseHost(url) && isParentHubCacheableRpc(url),
   parentHubApiStrategy,
   'POST',
 )
 
-// Dynamic PWA manifest + any future Parent Hub GET APIs
 registerRoute(
   ({ url }) =>
     url.pathname.startsWith('/api/manifest') ||
-    (isSupabaseHost(url) && isParentHubReadRpc(url)),
+    (isSupabaseHost(url) && isParentHubCacheableRpc(url)),
   parentHubApiStrategy,
   'GET',
 )
@@ -100,7 +112,9 @@ registerRoute(
 const coachWriteMatcher = ({ url }: { url: URL }) => {
   if (url.pathname.startsWith('/api/send-web-push')) return true
   if (url.pathname.startsWith('/auth/v1/')) return true
-  if (isSupabaseHost(url) && isParentHubReadRpc(url)) return false
+  if (isSupabaseHost(url) && (isLiveEventsRpc(url) || isParentHubCacheableRpc(url))) {
+    return false
+  }
   if (isSupabaseHost(url) && url.pathname.startsWith('/rest/v1/')) return true
   if (isSupabaseHost(url) && url.pathname.startsWith('/functions/v1/')) return true
   return true

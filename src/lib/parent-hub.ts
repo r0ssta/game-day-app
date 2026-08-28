@@ -539,7 +539,45 @@ export function formatParentEventLine(event: ParentLiveEvent, opponent: string):
       return `${minute} Sub ON · ${name}`
     case 'sub_out':
       return `${minute} Sub OFF · ${name}`
+    case 'shot_home':
+      return `${minute} Shot · Home`
+    case 'shot_away':
+      return `${minute} Shot · ${opponent || 'Away'}`
+    case 'save_home':
+      return `${minute} Save · ${name !== 'Player' ? name : 'Home'}`
+    case 'save_away':
+      return `${minute} Save · ${opponent || 'Away'}`
     default:
       return `${minute} ${event.eventType}`
   }
+}
+
+/** Event types shown on the public Parent Hub live timeline. */
+export const PARENT_HUB_LIVE_EVENT_TYPES = [
+  'goal',
+  'opponent_goal',
+  'yellow_card',
+  'red_card',
+  'sub_in',
+  'sub_out',
+  'shot_home',
+  'shot_away',
+  'save_home',
+  'save_away',
+] as const
+
+export type ParentHubLiveEventType = (typeof PARENT_HUB_LIVE_EVENT_TYPES)[number]
+
+export function isParentHubLiveEventType(value: string): value is ParentHubLiveEventType {
+  return (PARENT_HUB_LIVE_EVENT_TYPES as readonly string[]).includes(value)
+}
+
+/**
+ * Kickoff starter `sub_in` rows (clock 0) clutter the parent feed — keep mid-match subs only.
+ */
+export function shouldShowParentLiveEvent(event: Pick<ParentLiveEvent, 'eventType' | 'timestamp'>): boolean {
+  if ((event.eventType === 'sub_in' || event.eventType === 'sub_out') && event.timestamp <= 0) {
+    return false
+  }
+  return isParentHubLiveEventType(event.eventType)
 }

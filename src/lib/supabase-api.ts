@@ -1261,7 +1261,11 @@ export async function insertMatchEvent(input: MatchEventInput) {
   const playerOptional =
     input.eventType === 'opponent_goal' ||
     input.eventType === 'formation_change' ||
-    input.eventType === 'stat_team_log'
+    input.eventType === 'stat_team_log' ||
+    input.eventType === 'shot_home' ||
+    input.eventType === 'shot_away' ||
+    input.eventType === 'save_home' ||
+    input.eventType === 'save_away'
   if (!playerOptional && !input.playerId) {
     throw new Error('playerId is required for this event type')
   }
@@ -1274,7 +1278,11 @@ export async function insertMatchEvents(events: MatchEventInput[]) {
     const playerOptional =
       event.eventType === 'opponent_goal' ||
       event.eventType === 'formation_change' ||
-      event.eventType === 'stat_team_log'
+      event.eventType === 'stat_team_log' ||
+      event.eventType === 'shot_home' ||
+      event.eventType === 'shot_away' ||
+      event.eventType === 'save_home' ||
+      event.eventType === 'save_away'
     if (!playerOptional && !event.playerId) {
       throw new Error('playerId is required for this event type')
     }

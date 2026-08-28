@@ -11,6 +11,8 @@ import {
   fetchParentHub,
   fetchParentLiveEvents,
   formatParentEventLine,
+  isParentHubLiveEventType,
+  shouldShowParentLiveEvent,
   type ParentHubMatch,
   type ParentHubPayload,
   type ParentHubRoute,
@@ -77,7 +79,9 @@ function LiveTab({
     const loadEvents = async () => {
       try {
         const rows = await fetchParentLiveEvents(liveMatch.id)
-        if (!cancelled) setEvents(rows)
+        if (!cancelled) {
+          setEvents(rows.filter((row) => shouldShowParentLiveEvent(row)))
+        }
       } catch (err) {
         console.warn('[ParentHub] live events hydrate failed', err)
       }
@@ -120,11 +124,10 @@ function LiveTab({
             assist_player_id: string | null
             created_at: string
           }
-          if (
-            !['goal', 'opponent_goal', 'yellow_card', 'red_card', 'sub_in', 'sub_out'].includes(
-              row.event_type,
-            )
-          ) {
+          if (!isParentHubLiveEventType(row.event_type)) {
+            return
+          }
+          if (!shouldShowParentLiveEvent({ eventType: row.event_type, timestamp: row.timestamp })) {
             return
           }
 
