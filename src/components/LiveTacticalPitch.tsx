@@ -1,14 +1,21 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Users } from 'lucide-react'
-import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { Users, X } from 'lucide-react'
+import { FormationPitch } from '@/components/FormationPitch'
 import {
   buildAssignmentsFromStarters,
   getFormationById,
   getFormationsForFormat,
   remapFormationSlotAssignments,
-  slotToTacticalPosition,
+  resolveSlotLabel,
   type FormationRemapResult,
-  type FormationSlot,
 } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
 import {
@@ -17,7 +24,6 @@ import {
   getSidelineName,
 } from '@/lib/player-names'
 import { formatPlayingTimeClock, getLiveSecondsPlayed } from '@/lib/play-time'
-import { displayMatchPosition } from '@/lib/positions'
 import { cn } from '@/lib/utils'
 import { PITCH_BENCH_LAYOUT_FLOW, PITCH_BENCH_SIDEBAR_FLOW } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
@@ -27,13 +33,10 @@ function formatJersey(number: number | null) {
 }
 
 const IMPACT_RING: Record<Impact, string> = {
-  neutral: 'border-white/70',
+  neutral: 'border-border',
   positive: 'border-neon ring-2 ring-neon/50',
   negative: 'border-danger ring-2 ring-danger/50',
 }
-
-const SELECTED_RING =
-  'ring-4 ring-white shadow-[0_0_18px_rgba(255,255,255,0.65)] scale-105 z-20'
 
 export type PositionReassignUpdate = {
   playerId: string
@@ -60,9 +63,9 @@ export type LiveTacticalPitchHandle = {
   getSlotAssignments: () => Record<string, string | null>
 }
 
-type FieldSelection = { kind: 'field'; slotId: string; playerId: string | null }
-type BenchSelection = { kind: 'bench'; playerId: string }
-type TapSelection = FieldSelection | BenchSelection
+type SubSheetState =
+  | { mode: 'substitute'; slotId: string; fieldPlayerId: string }
+  | { mode: 'insert'; slotId: string }
 
 function ImpactToggleGroup({
   impact,
@@ -101,135 +104,162 @@ function ImpactToggleGroup({
   )
 }
 
-function LivePitchPlayerBadge({
-  player,
-  displayName,
-  clockSeconds,
-  slotLabel,
-  selected,
-  swapTarget,
-  flashed,
-  onTap,
-  onSetImpact,
-}: {
-  player: MatchPlayer | null
-  displayName: string
-  clockSeconds: number
-  slotLabel: string
-  selected: boolean
-  swapTarget: boolean
-  flashed: boolean
-  onTap: () => void
-  onSetImpact?: (impact: Impact) => void
-}) {
-  const liveSeconds = player ? getLiveSecondsPlayed(player, clockSeconds) : 0
-  const positionLabel = player ? displayMatchPosition(player.matchPosition) : slotLabel
-
-  return (
-    <button
-      type="button"
-      onClick={onTap}
-      aria-pressed={selected}
-      className={cn(
-        'absolute flex min-h-[44px] min-w-[44px] -translate-x-1/2 -translate-y-1/2 touch-pan-y flex-col items-center justify-center transition-transform duration-150 active:scale-95',
-        selected && SELECTED_RING,
-        swapTarget && !selected && 'ring-2 ring-athletic/80 scale-105',
-      )}
-    >
-      {player ? (
-        <div
-          className={cn(
-            'flex min-w-[5.25rem] flex-col items-center rounded-2xl border-2 bg-neon px-1.5 py-2 text-neon-foreground shadow-lg transition-all duration-300',
-            IMPACT_RING[player.impact],
-            flashed && 'animate-pulse ring-4 ring-white/90 brightness-125',
-          )}
-        >
-          <span className="font-display text-lg font-black leading-none tabular-nums">
-            {formatJersey(player.number)}
-          </span>
-          <span className="max-w-[4.75rem] truncate text-[10px] font-bold leading-tight">
-            {displayName}
-          </span>
-          <span className="max-w-[4.75rem] truncate text-[8px] font-black uppercase tracking-wide text-neon-foreground/80">
-            {positionLabel}
-          </span>
-          <span className="font-mono text-[10px] font-bold tabular-nums text-neon-foreground/90">
-            {formatPlayingTimeClock(liveSeconds)}
-          </span>
-          {onSetImpact && (
-            <ImpactToggleGroup impact={player.impact} onSetImpact={onSetImpact} compact />
-          )}
-        </div>
-      ) : (
-        <div
-          className={cn(
-            'flex size-14 flex-col items-center justify-center rounded-full border-2 border-dashed bg-black/25 text-white/90 backdrop-blur-sm',
-            swapTarget && 'border-athletic bg-athletic/25 ring-2 ring-athletic/70',
-          )}
-        >
-          <span className="text-[10px] font-black uppercase">{slotLabel}</span>
-        </div>
-      )}
-    </button>
-  )
-}
-
 function BenchPlayerRow({
   player,
   displayName,
   clockSeconds,
-  selected,
-  swapTarget,
   onTap,
   onSetImpact,
+  actionLabel,
 }: {
   player: MatchPlayer
   displayName: string
   clockSeconds: number
-  selected: boolean
-  swapTarget: boolean
-  onTap: () => void
+  onTap?: () => void
   onSetImpact?: (impact: Impact) => void
+  actionLabel?: string
 }) {
   const liveSeconds = getLiveSecondsPlayed(player, clockSeconds)
+  const interactive = Boolean(onTap)
+
+  const body = (
+    <>
+      <div
+        className={cn(
+          'flex size-11 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
+          onSetImpact ? IMPACT_RING[player.impact] : 'border-border',
+          'bg-secondary text-foreground',
+        )}
+      >
+        {formatJersey(player.number)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="truncate text-base font-bold text-foreground">{displayName}</span>
+          <span className="font-mono text-xs font-bold tabular-nums text-blue-400">
+            {formatPlayingTimeClock(liveSeconds)}
+          </span>
+        </div>
+        {actionLabel ? (
+          <span className="text-[10px] font-bold uppercase tracking-wide text-athletic">
+            {actionLabel}
+          </span>
+        ) : null}
+      </div>
+      {onSetImpact && (
+        <ImpactToggleGroup impact={player.impact} onSetImpact={onSetImpact} compact />
+      )}
+    </>
+  )
+
+  if (!interactive) {
+    return (
+      <li>
+        <div className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border-2 border-border bg-card px-3 py-3">
+          {body}
+        </div>
+      </li>
+    )
+  }
 
   return (
     <li>
       <button
         type="button"
         onClick={onTap}
-        aria-pressed={selected}
-        className={cn(
-          'flex min-h-[52px] w-full touch-pan-y items-center gap-3 rounded-xl border-2 bg-card px-3 py-3 text-left active:scale-[0.98]',
-          selected
-            ? 'border-neon bg-neon/10 shadow-[0_0_16px_rgba(var(--neon-rgb,255,255,0),0.35)]'
-            : swapTarget
-              ? 'border-athletic bg-athletic/10'
-              : 'border-border',
-        )}
+        className="flex min-h-[52px] w-full touch-pan-y items-center gap-3 rounded-xl border-2 border-border bg-card px-3 py-3 text-left active:scale-[0.98] active:border-athletic"
       >
-        <div
-          className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-            onSetImpact ? IMPACT_RING[player.impact] : 'border-border',
-            'bg-secondary text-foreground',
-          )}
-        >
-          {formatJersey(player.number)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="truncate text-base font-bold text-foreground">{displayName}</span>
-            <span className="font-mono text-xs font-bold tabular-nums text-blue-400">
-              {formatPlayingTimeClock(liveSeconds)}
-            </span>
-          </div>
-        </div>
-        {onSetImpact && (
-          <ImpactToggleGroup impact={player.impact} onSetImpact={onSetImpact} compact />
-        )}
+        {body}
       </button>
     </li>
+  )
+}
+
+function SubstituteSheet({
+  title,
+  benchPlayers,
+  sidelineNameMap,
+  clockSeconds,
+  onPickBench,
+  onRemove,
+  onClose,
+}: {
+  title: string
+  benchPlayers: MatchPlayer[]
+  sidelineNameMap: Map<string, string>
+  clockSeconds: number
+  onPickBench: (benchPlayerId: string) => void
+  onRemove?: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+      <button
+        type="button"
+        aria-label="Close"
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="relative z-10 flex max-h-[85vh] w-full max-w-lg flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:rounded-2xl"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h3 className="font-display text-lg font-bold uppercase tracking-wide text-foreground">
+            {title}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-11 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-95"
+            aria-label="Close substitute sheet"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4">
+          {onRemove ? (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="flex min-h-12 w-full touch-manipulation items-center justify-center rounded-xl border-2 border-danger/40 bg-danger/10 px-4 py-3 text-sm font-bold uppercase tracking-wide text-danger active:scale-[0.98]"
+            >
+              Remove Player (Leave Slot Empty)
+            </button>
+          ) : null}
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Bench
+              </h4>
+              <span className="text-xs font-semibold text-muted-foreground">
+                {benchPlayers.length}
+              </span>
+            </div>
+            {benchPlayers.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">No bench players</p>
+            ) : (
+              <ul className="space-y-2">
+                {benchPlayers.map((player) => (
+                  <BenchPlayerRow
+                    key={player.id}
+                    player={player}
+                    displayName={getSidelineName(player, sidelineNameMap)}
+                    clockSeconds={clockSeconds}
+                    onTap={() => onPickBench(player.id)}
+                    actionLabel={onRemove ? 'Swap in' : 'Insert'}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -245,7 +275,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       onSwap,
       onSubIn,
       onSubOut,
-      onReassignPosition,
+      onReassignPosition: _onReassignPosition,
       onSetImpact,
       initialSlotAssignments,
       teamFormat,
@@ -257,6 +287,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       [teamFormat],
     )
     const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>({})
+    const [slotLabelOverrides, setSlotLabelOverrides] = useState<Record<string, string>>({})
     const slotAssignmentsRef = useRef(slotAssignments)
     slotAssignmentsRef.current = slotAssignments
 
@@ -264,7 +295,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       getSlotAssignments: () => slotAssignmentsRef.current,
     }))
 
-    const [selection, setSelection] = useState<TapSelection | null>(null)
+    const [sheet, setSheet] = useState<SubSheetState | null>(null)
     const [flashedPlayerIds, setFlashedPlayerIds] = useState<Set<string>>(new Set())
     const hydratedKeyRef = useRef<string | null>(null)
     const skipOnFieldSyncRef = useRef(false)
@@ -278,33 +309,27 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       () => players.filter((p) => p.attending && p.isOnField),
       [players],
     )
-  const benchPlayers = useMemo(
-    () => players.filter((p) => p.attending && !p.isOnField),
-    [players],
-  )
+    const benchPlayers = useMemo(
+      () => players.filter((p) => p.attending && !p.isOnField),
+      [players],
+    )
 
-  const sidelineNameMap = useMemo(
-    () => buildSidelineNameMap(players.filter((p) => p.attending)),
-    [players],
-  )
+    const sidelineNameMap = useMemo(
+      () => buildSidelineNameMap(players.filter((p) => p.attending)),
+      [players],
+    )
 
-    const selectionLabel = useMemo(() => {
-      if (!selection) return null
-      if (selection.kind === 'bench') {
-        const player = playerById.get(selection.playerId)
-        return player
-          ? formatPlayerLabel(player, sidelineNameMap)
-          : 'Bench player'
-      }
-      if (selection.playerId) {
-        const player = playerById.get(selection.playerId)
-        return player
-          ? formatPlayerLabel(player, sidelineNameMap)
-          : 'Field player'
-      }
-      const slot = slotById.get(selection.slotId)
-      return slot ? `Empty ${slot.label} slot` : 'Empty slot'
-    }, [selection, playerById, slotById, sidelineNameMap])
+    const pitchPlayers = useMemo(
+      () =>
+        players.map((p) => ({
+          id: p.id,
+          name: getSidelineName(p, sidelineNameMap),
+          shortName: getSidelineName(p, sidelineNameMap),
+          number: p.number,
+          minutesLabel: formatPlayingTimeClock(getLiveSecondsPlayed(p, clockSeconds)),
+        })),
+      [players, sidelineNameMap, clockSeconds],
+    )
 
     useEffect(() => {
       return () => {
@@ -313,7 +338,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     }, [])
 
     useEffect(() => {
-      setSelection(null)
+      setSheet(null)
     }, [periodKey, formationId])
 
     useEffect(() => {
@@ -357,21 +382,21 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       })
     }, [onFieldPlayers])
 
+    // Only show on-field occupants on the pitch; empty gaps stay clickable for insert.
+    const displaySlotAssignments = useMemo(() => {
+      const next: Record<string, string | null> = { ...slotAssignments }
+      for (const [slotId, playerId] of Object.entries(next)) {
+        if (!playerId) continue
+        const player = playerById.get(playerId)
+        if (!player?.isOnField) next[slotId] = null
+      }
+      return next
+    }, [slotAssignments, playerById])
+
     const flashPlayers = useCallback((playerIds: string[]) => {
       if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
       setFlashedPlayerIds(new Set(playerIds))
       flashTimeoutRef.current = setTimeout(() => setFlashedPlayerIds(new Set()), 700)
-    }, [])
-
-    const syncSlotForFieldPlayer = useCallback((fieldId: string, slotId: string | null) => {
-      setSlotAssignments((prev) => {
-        const next = { ...prev }
-        for (const [id, assigned] of Object.entries(next)) {
-          if (assigned === fieldId) next[id] = null
-        }
-        if (slotId) next[slotId] = fieldId
-        return next
-      })
     }, [])
 
     const getOnFieldPlayerAtSlot = useCallback(
@@ -384,206 +409,70 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       [slotAssignments, playerById],
     )
 
-    const handleFieldReassign = useCallback(
-      (sourceSlotId: string, targetSlot: FormationSlot, draggedPlayerId: string) => {
-        const occupantId = slotAssignments[targetSlot.id] ?? null
-        const sourceSlot = slotById.get(sourceSlotId)
-        if (!sourceSlot) return
-
-        const targetPosition = slotToTacticalPosition(targetSlot)
-        const updates: PositionReassignUpdate[] = [
-          { playerId: draggedPlayerId, position: targetPosition },
-        ]
-
-        if (occupantId && occupantId !== draggedPlayerId) {
-          updates.push({
-            playerId: occupantId,
-            position: slotToTacticalPosition(sourceSlot),
-          })
-        }
-
-        setSlotAssignments((prev) => ({
-          ...prev,
-          [sourceSlotId]: occupantId && occupantId !== draggedPlayerId ? occupantId : null,
-          [targetSlot.id]: draggedPlayerId,
-        }))
-
-        onReassignPosition(updates)
-        flashPlayers(updates.map((u) => u.playerId))
+    const slotPosition = useCallback(
+      (slotId: string) => {
+        const slot = slotById.get(slotId)
+        if (!slot) return 'UTIL'
+        return resolveSlotLabel(slot, slotLabelOverrides)
       },
-      [slotAssignments, slotById, onReassignPosition, flashPlayers],
+      [slotById, slotLabelOverrides],
     )
 
-    const executeFieldToField = useCallback(
-      (sourceSlotId: string, sourcePlayerId: string, targetSlotId: string) => {
-        const targetSlot = slotById.get(targetSlotId)
-        if (!targetSlot || sourceSlotId === targetSlotId) return
-
-        const targetPlayerId = getOnFieldPlayerAtSlot(targetSlotId)
-        handleFieldReassign(sourceSlotId, targetSlot, sourcePlayerId)
-
-        if (!targetPlayerId) {
-          // Moved into an empty slot — handleFieldReassign already updated assignments.
+    const handleSlotTap = useCallback(
+      (slotId: string) => {
+        const fieldPlayerId = getOnFieldPlayerAtSlot(slotId)
+        if (fieldPlayerId) {
+          setSheet({ mode: 'substitute', slotId, fieldPlayerId })
           return
         }
+        // Empty slot stays clickable so coach can insert later (play down a man).
+        setSheet({ mode: 'insert', slotId })
       },
-      [slotById, getOnFieldPlayerAtSlot, handleFieldReassign],
+      [getOnFieldPlayerAtSlot],
     )
 
-    const executeBenchToField = useCallback(
-      (benchPlayerId: string, targetSlotId: string) => {
-        const targetSlot = slotById.get(targetSlotId)
-        if (!targetSlot) return
+    const closeSheet = useCallback(() => setSheet(null), [])
 
+    const handlePickBench = useCallback(
+      (benchPlayerId: string) => {
+        if (!sheet) return
+        const tacticalPosition = slotPosition(sheet.slotId)
         const benchPlayer = playerById.get(benchPlayerId)
         if (!benchPlayer || benchPlayer.isOnField) return
 
-        const tacticalPosition = slotToTacticalPosition(targetSlot)
-        const occupantId = getOnFieldPlayerAtSlot(targetSlotId)
-
-        if (occupantId) {
-          onSwap(benchPlayerId, occupantId, tacticalPosition)
-          setSlotAssignments((prev) => ({ ...prev, [targetSlotId]: benchPlayerId }))
-          flashPlayers([benchPlayerId, occupantId])
+        if (sheet.mode === 'substitute') {
+          onSwap(benchPlayerId, sheet.fieldPlayerId, tacticalPosition)
+          setSlotAssignments((prev) => ({ ...prev, [sheet.slotId]: benchPlayerId }))
+          flashPlayers([benchPlayerId, sheet.fieldPlayerId])
+          setSheet(null)
           return
         }
 
         if (onFieldPlayers.length >= maxFieldPlayers) return
-
         onSubIn(benchPlayerId, tacticalPosition)
-        setSlotAssignments((prev) => ({ ...prev, [targetSlotId]: benchPlayerId }))
+        setSlotAssignments((prev) => ({ ...prev, [sheet.slotId]: benchPlayerId }))
         flashPlayers([benchPlayerId])
+        setSheet(null)
       },
       [
-        slotById,
+        sheet,
+        slotPosition,
         playerById,
-        getOnFieldPlayerAtSlot,
-        onFieldPlayers.length,
-        maxFieldPlayers,
         onSwap,
         onSubIn,
+        onFieldPlayers.length,
+        maxFieldPlayers,
         flashPlayers,
       ],
     )
 
-    const executeFieldToBench = useCallback(
-      (fieldPlayerId: string, benchPlayerId: string) => {
-        const sourceSlotId = Object.entries(slotAssignments).find(
-          ([, id]) => id === fieldPlayerId,
-        )?.[0]
-        const targetSlot = sourceSlotId ? slotById.get(sourceSlotId) : null
-        if (!targetSlot) return
-
-        const benchPlayer = playerById.get(benchPlayerId)
-        if (!benchPlayer || benchPlayer.isOnField) return
-
-        const tacticalPosition = slotToTacticalPosition(targetSlot)
-        onSwap(benchPlayerId, fieldPlayerId, tacticalPosition)
-        setSlotAssignments((prev) => ({ ...prev, [sourceSlotId!]: benchPlayerId }))
-        flashPlayers([benchPlayerId, fieldPlayerId])
-      },
-      [slotAssignments, slotById, playerById, onSwap, flashPlayers],
-    )
-
-    const executeFieldSubOut = useCallback(
-      (fieldPlayerId: string) => {
-        onSubOut(fieldPlayerId)
-        syncSlotForFieldPlayer(fieldPlayerId, null)
-        flashPlayers([fieldPlayerId])
-      },
-      [onSubOut, syncSlotForFieldPlayer, flashPlayers],
-    )
-
-    const resolvePair = useCallback(
-      (first: TapSelection, second: TapSelection) => {
-        if (first.kind === 'field' && second.kind === 'field') {
-          if (first.playerId && second.playerId) {
-            executeFieldToField(first.slotId, first.playerId, second.slotId)
-            return
-          }
-          if (first.playerId && !second.playerId) {
-            const targetSlot = slotById.get(second.slotId)
-            if (targetSlot) handleFieldReassign(first.slotId, targetSlot, first.playerId)
-            return
-          }
-          if (!first.playerId && second.playerId) {
-            const targetSlot = slotById.get(first.slotId)
-            if (targetSlot) handleFieldReassign(second.slotId, targetSlot, second.playerId)
-            return
-          }
-          return
-        }
-
-        if (first.kind === 'bench' && second.kind === 'field') {
-          executeBenchToField(first.playerId, second.slotId)
-          return
-        }
-
-        if (first.kind === 'field' && second.kind === 'bench') {
-          if (first.playerId) {
-            executeFieldToBench(first.playerId, second.playerId)
-          }
-          return
-        }
-      },
-      [
-        executeFieldToField,
-        slotById,
-        handleFieldReassign,
-        executeBenchToField,
-        executeFieldToBench,
-      ],
-    )
-
-    const isSameSelection = (a: TapSelection, b: TapSelection) => {
-      if (a.kind !== b.kind) return false
-      if (a.kind === 'bench' && b.kind === 'bench') return a.playerId === b.playerId
-      if (a.kind === 'field' && b.kind === 'field') {
-        return a.slotId === b.slotId && a.playerId === b.playerId
-      }
-      return false
-    }
-
-    const handleFieldSlotTap = useCallback(
-      (slotId: string) => {
-        const playerId = getOnFieldPlayerAtSlot(slotId)
-        const next: FieldSelection = { kind: 'field', slotId, playerId }
-
-        if (!selection) {
-          setSelection(next)
-          return
-        }
-
-        if (isSameSelection(selection, next)) {
-          setSelection(null)
-          return
-        }
-
-        resolvePair(selection, next)
-        setSelection(null)
-      },
-      [getOnFieldPlayerAtSlot, selection, resolvePair],
-    )
-
-    const handleBenchPlayerTap = useCallback(
-      (playerId: string) => {
-        const next: BenchSelection = { kind: 'bench', playerId }
-
-        if (!selection) {
-          setSelection(next)
-          return
-        }
-
-        if (isSameSelection(selection, next)) {
-          setSelection(null)
-          return
-        }
-
-        resolvePair(selection, next)
-        setSelection(null)
-      },
-      [selection, resolvePair],
-    )
+    const handleRemovePlayer = useCallback(() => {
+      if (!sheet || sheet.mode !== 'substitute') return
+      onSubOut(sheet.fieldPlayerId)
+      setSlotAssignments((prev) => ({ ...prev, [sheet.slotId]: null }))
+      flashPlayers([sheet.fieldPlayerId])
+      setSheet(null)
+    }, [sheet, onSubOut, flashPlayers])
 
     const handleFormationChange = (nextId: string) => {
       if (nextId === formationId) return
@@ -601,25 +490,37 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         })),
         {
           eligiblePlayerIds: onFieldIds,
-          mapSlotToPosition: slotToTacticalPosition,
+          mapSlotToPosition: (slot) => resolveSlotLabel(slot, slotLabelOverrides),
         },
       )
 
       skipOnFieldSyncRef.current = true
-      setSelection(null)
+      setSheet(null)
       setSlotAssignments(remap.slotAssignments)
+      setSlotLabelOverrides((prev) => {
+        const next: Record<string, string> = {}
+        for (const slot of nextFormation.slots) {
+          if (prev[slot.id]) next[slot.id] = prev[slot.id]
+        }
+        return next
+      })
       onFormationSwitch(nextId, remap)
     }
 
-    const isFieldSelected = (slotId: string, playerId: string | null) =>
-      selection?.kind === 'field' &&
-      selection.slotId === slotId &&
-      selection.playerId === playerId
+    const sheetTitle = useMemo(() => {
+      if (!sheet) return ''
+      if (sheet.mode === 'substitute') {
+        const player = playerById.get(sheet.fieldPlayerId)
+        const name = player ? formatPlayerLabel(player, sidelineNameMap) : 'Player'
+        return `Substitute ${name}`
+      }
+      const slot = slotById.get(sheet.slotId)
+      const label = slot ? resolveSlotLabel(slot, slotLabelOverrides) : 'Slot'
+      return `Insert into ${label}`
+    }, [sheet, playerById, sidelineNameMap, slotById, slotLabelOverrides])
 
-    const isBenchSelected = (playerId: string) =>
-      selection?.kind === 'bench' && selection.playerId === playerId
-
-    const showSwapHint = Boolean(selection)
+    // Highlight flashed players via selectedPlayerId on FormationPitch.
+    const flashedId = flashedPlayerIds.size === 1 ? [...flashedPlayerIds][0] : null
 
     return (
       <div className="space-y-4">
@@ -646,71 +547,46 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           ))}
         </select>
 
-        {showSwapHint ? (
-          <div className="rounded-xl border border-neon/40 bg-neon/10 px-4 py-3 text-sm font-semibold text-foreground">
-            Selected: <span className="text-neon">{selectionLabel}</span>. Tap another player or
-            position to swap.
-            {selection?.kind === 'field' && selection.playerId ? (
-              <button
-                type="button"
-                onClick={() => {
-                  executeFieldSubOut(selection.playerId!)
-                  setSelection(null)
-                }}
-                className="mt-2 flex min-h-[44px] w-full touch-manipulation items-center justify-center rounded-lg border border-border bg-secondary px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
-              >
-                Sub off selected player
-              </button>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Tap a player on the pitch or bench to select, then tap another to swap or reassign.
-          </p>
-        )}
+        <p className="text-sm text-muted-foreground">
+          Tap a player to substitute, or tap an empty slot to insert. Drag is disabled during live
+          play.
+        </p>
 
-        <div className={PITCH_BENCH_LAYOUT_FLOW}>
-          <div className="min-w-0">
-            <SoccerPitchSurface>
-              {formation.slots.map((slot) => {
-                const playerId = slotAssignments[slot.id] ?? null
-                const player = playerId ? (playerById.get(playerId) ?? null) : null
-                const displayPlayer = player?.isOnField ? player : null
-                const effectivePlayerId = displayPlayer?.id ?? null
-                const selected = isFieldSelected(slot.id, effectivePlayerId)
-                const swapTarget = Boolean(selection && !selected)
-
-                return (
-                  <div key={slot.id} className="absolute" style={{ left: `${slot.x}%`, top: `${slot.y}%` }}>
-                    <LivePitchPlayerBadge
-                      player={displayPlayer}
-                      displayName={
-                        displayPlayer
-                          ? getSidelineName(displayPlayer, sidelineNameMap)
-                          : slot.label
-                      }
-                      clockSeconds={clockSeconds}
-                      slotLabel={slot.label}
-                      selected={selected}
-                      swapTarget={swapTarget}
-                      flashed={displayPlayer ? flashedPlayerIds.has(displayPlayer.id) : false}
-                      onTap={() => handleFieldSlotTap(slot.id)}
-                      onSetImpact={
-                        onSetImpact && displayPlayer
-                          ? (impact) => onSetImpact(displayPlayer.id, impact)
-                          : undefined
-                      }
+        <FormationPitch
+          formation={formation}
+          slotAssignments={displaySlotAssignments}
+          players={pitchPlayers}
+          slotLabelOverrides={slotLabelOverrides}
+          selectedPlayerId={flashedId}
+          onAssignPlayer={() => {
+            /* DnD disabled in live mode */
+          }}
+          onSlotTap={handleSlotTap}
+          enableDragDrop={false}
+          pulseInteractive
+          renderOccupiedExtra={
+            onSetImpact
+              ? (playerId) => {
+                  const player = playerById.get(playerId)
+                  if (!player?.isOnField) return null
+                  return (
+                    <ImpactToggleGroup
+                      impact={player.impact}
+                      onSetImpact={(impact) => onSetImpact(player.id, impact)}
+                      compact
                     />
-                  </div>
-                )
-              })}
-            </SoccerPitchSurface>
-          </div>
-
+                  )
+                }
+              : undefined
+          }
+          className={PITCH_BENCH_LAYOUT_FLOW}
+        >
           <div className={PITCH_BENCH_SIDEBAR_FLOW}>
             <div className="rounded-xl border-2 border-dashed border-border bg-secondary/20 p-3">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Bench</h3>
+                <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                  Bench
+                </h3>
                 <span className="text-xs font-semibold text-muted-foreground">
                   {benchPlayers.length} players
                 </span>
@@ -726,9 +602,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                       player={player}
                       displayName={getSidelineName(player, sidelineNameMap)}
                       clockSeconds={clockSeconds}
-                      selected={isBenchSelected(player.id)}
-                      swapTarget={Boolean(selection && !isBenchSelected(player.id))}
-                      onTap={() => handleBenchPlayerTap(player.id)}
                       onSetImpact={
                         onSetImpact ? (impact) => onSetImpact(player.id, impact) : undefined
                       }
@@ -738,7 +611,19 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
               )}
             </div>
           </div>
-        </div>
+        </FormationPitch>
+
+        {sheet ? (
+          <SubstituteSheet
+            title={sheetTitle}
+            benchPlayers={benchPlayers}
+            sidelineNameMap={sidelineNameMap}
+            clockSeconds={clockSeconds}
+            onPickBench={handlePickBench}
+            onRemove={sheet.mode === 'substitute' ? handleRemovePlayer : undefined}
+            onClose={closeSheet}
+          />
+        ) : null}
       </div>
     )
   },

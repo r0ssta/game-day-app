@@ -1176,7 +1176,10 @@ export function useGameDayApp() {
   }, [])
 
   const beginSecondHalf = useCallback(
-    async (slotAssignments?: Record<string, string | null>) => {
+    async (
+      slotAssignments?: Record<string, string | null>,
+      slotLabelOverrides?: Record<string, string> | null,
+    ) => {
       const newClock = initialHalfClock(halfLengthMinutes)
       const formation = matchFormationsRef.current.second
 
@@ -1196,7 +1199,12 @@ export function useGameDayApp() {
       setPlayers((prev) => {
         let linedUp = applySecondHalfLineup(prev, starterIds)
         if (slotAssignments && assignmentIds.length > 0) {
-          linedUp = applySlotAssignmentPositions(linedUp, slotAssignments, formation)
+          linedUp = applySlotAssignmentPositions(
+            linedUp,
+            slotAssignments,
+            formation,
+            slotLabelOverrides,
+          )
         }
         const stamped = stampAllOnField(linedUp, newClock)
 

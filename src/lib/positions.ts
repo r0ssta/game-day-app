@@ -136,9 +136,9 @@ export function displayMatchPosition(value: string): string {
 
   const normalized = value.trim().toUpperCase()
   if (normalized === 'GK') return 'Keeper'
-  if (['CB', 'LB', 'RB', 'DEF', 'LWB', 'RWB'].includes(normalized)) return 'Defender'
+  if (['CB', 'LB', 'RB', 'LCB', 'RCB', 'DEF', 'LWB', 'RWB'].includes(normalized)) return 'Defender'
   if (['CM', 'CDM', 'CAM', 'LM', 'RM', 'MID'].includes(normalized)) return 'Midfielder'
-  if (['CF', 'ST', 'LF', 'RF', 'FW', 'FWD'].includes(normalized)) return 'Forward'
+  if (['CF', 'ST', 'LF', 'RF', 'LW', 'RW', 'FW', 'FWD'].includes(normalized)) return 'Forward'
 
   return value
 }

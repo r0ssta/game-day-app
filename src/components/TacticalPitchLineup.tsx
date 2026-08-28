@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useState, type MutableRefObject } from 'react'
 import { Pencil, Users } from 'lucide-react'
-import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
+import {
+  FormationDraggableHandle,
+  FormationPitch,
+} from '@/components/FormationPitch'
 import {
   buildAssignmentsFromStarters,
   getDefaultFormationId,
   getFormationById,
   getFormationsForFormat,
   remapFormationSlotAssignments,
-  slotToTacticalPosition,
+  resolveSlotLabel,
   type FormationRole,
 } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
@@ -17,7 +20,14 @@ import {
   rosterPositionAbbrev,
 } from '@/lib/positions'
 import { cn } from '@/lib/utils'
-import { PITCH_BENCH_LAYOUT, PITCH_BENCH_LAYOUT_FLOW, PITCH_BENCH_SIDEBAR, PITCH_BENCH_SIDEBAR_FLOW, TOUCH_ICON_BUTTON, TOUCH_ROW } from '@/lib/layout'
+import {
+  PITCH_BENCH_LAYOUT,
+  PITCH_BENCH_LAYOUT_FLOW,
+  PITCH_BENCH_SIDEBAR,
+  PITCH_BENCH_SIDEBAR_FLOW,
+  TOUCH_ICON_BUTTON,
+  TOUCH_ROW,
+} from '@/lib/layout'
 
 export type PitchLineupPlayer = {
   id: string
@@ -52,6 +62,8 @@ type TacticalPitchLineupProps = {
   initialSlotAssignments?: Record<string, string | null>
   assignmentsResetKey?: string | number
   assignmentsRef?: MutableRefObject<Record<string, string | null> | null>
+  /** Optional ref for coach positional label overrides (setup → match tracking). */
+  slotLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
   teamFormat?: TeamFormat
   /**
    * When false, bench/absent lists grow naturally so a parent page can be the only scroller.
@@ -98,98 +110,35 @@ function RosterPositionHint({
   )
 }
 
-function PitchSlotBadge({
-  slotLabel,
-  player,
-  selected,
-  highlighted,
-  onClick,
-  onDragOver,
-  onDrop,
-}: {
-  slotLabel: string
-  player: PitchLineupPlayer | null
-  selected: boolean
-  highlighted: boolean
-  onClick: () => void
-  onDragOver: (e: DragEvent) => void
-  onDrop: (e: DragEvent) => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      className={cn(
-        'absolute flex min-h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 touch-pan-y flex-col items-center transition-transform active:scale-95',
-        highlighted && 'z-10 scale-110',
-      )}
-    >
-      {player ? (
-        <div
-          className={cn(
-            'flex size-14 flex-col items-center justify-center rounded-full border-2 bg-neon text-neon-foreground shadow-lg',
-            selected ? 'border-white ring-2 ring-white/80' : 'border-neon-foreground/30',
-          )}
-        >
-          <span className="font-display text-lg font-black leading-none tabular-nums">
-            {formatJersey(player.number)}
-          </span>
-          <span className="max-w-[52px] truncate text-[9px] font-bold leading-tight">
-            {player.shortName ?? player.name}
-          </span>
-          {player.minutesLabel ? (
-            <span className="mt-0.5 font-mono text-[8px] font-black tabular-nums leading-none text-slate-900">
-              {player.minutesLabel}
-            </span>
-          ) : null}
-        </div>
-      ) : (
-        <div
-          className={cn(
-            'flex size-12 flex-col items-center justify-center rounded-full border-2 border-dashed bg-black/20 text-white/90 backdrop-blur-sm',
-            highlighted ? 'border-white bg-white/20' : 'border-white/60',
-          )}
-        >
-          <span className="text-[10px] font-black uppercase">{slotLabel}</span>
-        </div>
-      )}
-    </button>
-  )
-}
-
 function PoolPlayerChip({
   player,
   selected,
   onSelect,
-  onDragStart,
   onToggleAttending,
   onEdit,
   showAttendingToggle,
+  enableDrag,
 }: {
   player: PitchLineupPlayer
   selected: boolean
   onSelect: () => void
-  onDragStart: (e: DragEvent) => void
   onToggleAttending?: () => void
   onEdit?: () => void
   showAttendingToggle: boolean
+  enableDrag: boolean
 }) {
-  // HTML5 drag blocks touch scrolling on phones; tap-to-assign covers mobile.
-  const allowDrag =
-    typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
-
   return (
     <div
-      draggable={allowDrag}
-      onDragStart={allowDrag ? onDragStart : undefined}
       className={cn(
         'flex touch-pan-y items-center gap-2 rounded-xl border bg-card px-2 py-2 transition-colors',
         selected ? 'border-neon ring-2 ring-neon/40' : 'border-border',
       )}
     >
-      <button type="button" onClick={onSelect} className={`flex min-w-0 flex-1 items-center gap-2 text-left ${TOUCH_ROW}`}>
+      <button
+        type="button"
+        onClick={onSelect}
+        className={`flex min-w-0 flex-1 items-center gap-2 text-left ${TOUCH_ROW}`}
+      >
         <span className="flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-neon/50 bg-neon/10 font-display text-sm font-bold tabular-nums text-neon">
           {formatJersey(player.number)}
         </span>
@@ -226,7 +175,8 @@ function PoolPlayerChip({
           <Pencil className="size-3.5" />
         </button>
       )}
-          {showAttendingToggle && onToggleAttending && (
+      {enableDrag ? <FormationDraggableHandle playerId={player.id} /> : null}
+      {showAttendingToggle && onToggleAttending && (
         <button
           type="button"
           onClick={onToggleAttending}
@@ -256,6 +206,7 @@ export function TacticalPitchLineup({
   initialSlotAssignments,
   assignmentsResetKey,
   assignmentsRef,
+  slotLabelOverridesRef,
   teamFormat,
   constrainLists = true,
 }: TacticalPitchLineupProps) {
@@ -274,11 +225,11 @@ export function TacticalPitchLineup({
     [controlledFormationId, onFormationChange],
   )
   const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>({})
+  const [slotLabelOverrides, setSlotLabelOverrides] = useState<Record<string, string>>({})
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
   const formation = getFormationById(formationId, teamFormat)
-  const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
 
   const assignedPlayerIds = useMemo(
     () => new Set(Object.values(slotAssignments).filter((id): id is string => Boolean(id))),
@@ -297,6 +248,18 @@ export function TacticalPitchLineup({
     [players, attending],
   )
 
+  const pitchPlayers = useMemo(
+    () =>
+      players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        shortName: p.shortName,
+        number: p.number,
+        isGuest: p.isGuest,
+        minutesLabel: p.minutesLabel,
+      })),
+    [players],
+  )
 
   useEffect(() => {
     if (!teamFormat) return
@@ -320,7 +283,7 @@ export function TacticalPitchLineup({
           const slotId = Object.entries(initialSlotAssignments).find(([, id]) => id === player.id)?.[0]
           const slot = formation.slots.find((s) => s.id === slotId)
           if (slot) {
-            onAssignStarter(player.id, slot.role, slotToTacticalPosition(slot))
+            onAssignStarter(player.id, slot.role, resolveSlotLabel(slot, slotLabelOverrides))
           }
         } else {
           onRemoveStarter(player.id)
@@ -345,6 +308,7 @@ export function TacticalPitchLineup({
     }
 
     setSlotAssignments(Object.fromEntries(formation.slots.map((s) => [s.id, null])))
+    setSlotLabelOverrides({})
     // Only re-hydrate when parent explicitly bumps assignmentsResetKey (load preset, reset editor).
     // Do not depend on `players`, `starters`, or `formation` — those change on every assign/render
     // and were wiping drag-and-drop / tap assignments immediately after placement.
@@ -353,6 +317,10 @@ export function TacticalPitchLineup({
   useEffect(() => {
     if (assignmentsRef) assignmentsRef.current = slotAssignments
   }, [assignmentsRef, slotAssignments])
+
+  useEffect(() => {
+    if (slotLabelOverridesRef) slotLabelOverridesRef.current = slotLabelOverrides
+  }, [slotLabelOverridesRef, slotLabelOverrides])
 
   // Drop absent players from pitch slots when attendance flips outside this component.
   useEffect(() => {
@@ -389,11 +357,19 @@ export function TacticalPitchLineup({
         return next
       })
 
-      onAssignStarter(playerId, slot.role, slotToTacticalPosition(slot))
+      onAssignStarter(playerId, slot.role, resolveSlotLabel(slot, slotLabelOverrides))
       setSelectedPlayerId(null)
       setSelectedSlotId(null)
     },
-    [formation.slots, onAssignStarter, onRemoveStarter, assignedPlayerIds.size, maxFieldPlayers, slotAssignments],
+    [
+      formation.slots,
+      onAssignStarter,
+      onRemoveStarter,
+      assignedPlayerIds.size,
+      maxFieldPlayers,
+      slotAssignments,
+      slotLabelOverrides,
+    ],
   )
 
   const removePlayerFromSlot = useCallback(
@@ -428,6 +404,15 @@ export function TacticalPitchLineup({
     setSelectedPlayerId((current) => (current === playerId ? null : playerId))
   }
 
+  const handleSlotLabelChange = (slotId: string, label: string) => {
+    setSlotLabelOverrides((prev) => ({ ...prev, [slotId]: label }))
+    const playerId = slotAssignments[slotId]
+    if (!playerId) return
+    const slot = formation.slots.find((s) => s.id === slotId)
+    if (!slot) return
+    onAssignStarter(playerId, slot.role, label.trim().toUpperCase())
+  }
+
   const handleFormationChange = (nextId: string) => {
     if (nextId === formationId) return
     if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
@@ -441,7 +426,9 @@ export function TacticalPitchLineup({
         matchPosition: p.matchPosition ?? p.meta,
         position: p.primaryPosition,
       })),
-      { mapSlotToPosition: slotToTacticalPosition },
+      {
+        mapSlotToPosition: (slot) => resolveSlotLabel(slot, slotLabelOverrides),
+      },
     )
 
     for (const playerId of assignedPlayerIds) {
@@ -453,11 +440,19 @@ export function TacticalPitchLineup({
       if (!playerId) continue
       const slot = nextFormation.slots.find((s) => s.id === slotId)
       if (!slot) continue
-      onAssignStarter(playerId, slot.role, slotToTacticalPosition(slot))
+      onAssignStarter(playerId, slot.role, resolveSlotLabel(slot, slotLabelOverrides))
     }
 
     setFormationId(nextId)
     setSlotAssignments(remap.slotAssignments)
+    // Drop overrides for slots that no longer exist on the new formation.
+    setSlotLabelOverrides((prev) => {
+      const next: Record<string, string> = {}
+      for (const slot of nextFormation.slots) {
+        if (prev[slot.id]) next[slot.id] = prev[slot.id]
+      }
+      return next
+    })
     setSelectedPlayerId(null)
     setSelectedSlotId(null)
   }
@@ -466,23 +461,6 @@ export function TacticalPitchLineup({
     const slotEntry = Object.entries(slotAssignments).find(([, id]) => id === playerId)
     if (slotEntry) removePlayerFromSlot(slotEntry[0])
     onSetAttending?.(playerId, false)
-  }
-
-  const handleDragStart = (e: DragEvent, playerId: string) => {
-    e.dataTransfer.setData('text/player-id', playerId)
-    e.dataTransfer.effectAllowed = 'move'
-    setSelectedPlayerId(playerId)
-  }
-
-  const handleSlotDragOver = (e: DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleSlotDrop = (e: DragEvent, slotId: string) => {
-    e.preventDefault()
-    const playerId = e.dataTransfer.getData('text/player-id')
-    if (playerId) assignPlayerToSlot(playerId, slotId)
   }
 
   return (
@@ -530,39 +508,23 @@ export function TacticalPitchLineup({
       </div>
 
       <p className="shrink-0 text-xs text-muted-foreground">
-        Tap a player, then tap a position — or drag from the bench onto the pitch.
+        Drag from the bench onto a pitch slot, or tap a player then a position. Tap a position badge
+        to override its label (e.g. CAM → CM).
       </p>
 
-      <div className={constrainLists ? PITCH_BENCH_LAYOUT : PITCH_BENCH_LAYOUT_FLOW}>
-        <div
-          className={cn(
-            'min-w-0 shrink-0',
-            constrainLists && 'md:min-h-0 md:overflow-hidden',
-          )}
-        >
-          <SoccerPitchSurface>
-            {formation.slots.map((slot) => {
-              const playerId = slotAssignments[slot.id]
-              const player = playerId ? (playerById.get(playerId) ?? null) : null
-              const highlighted = Boolean(selectedPlayerId) || selectedSlotId === slot.id
-
-              return (
-                <div key={slot.id} className="absolute" style={{ left: `${slot.x}%`, top: `${slot.y}%` }}>
-                  <PitchSlotBadge
-                    slotLabel={slot.label}
-                    player={player}
-                    selected={playerId === selectedPlayerId}
-                    highlighted={highlighted}
-                    onClick={() => handleSlotClick(slot.id)}
-                    onDragOver={handleSlotDragOver}
-                    onDrop={(e) => handleSlotDrop(e, slot.id)}
-                  />
-                </div>
-              )
-            })}
-          </SoccerPitchSurface>
-        </div>
-
+      <FormationPitch
+        formation={formation}
+        slotAssignments={slotAssignments}
+        players={pitchPlayers}
+        slotLabelOverrides={slotLabelOverrides}
+        selectedPlayerId={selectedPlayerId}
+        selectedSlotId={selectedSlotId}
+        onAssignPlayer={assignPlayerToSlot}
+        onSlotTap={handleSlotClick}
+        onSlotLabelChange={handleSlotLabelChange}
+        enableDragDrop
+        className={constrainLists ? PITCH_BENCH_LAYOUT : PITCH_BENCH_LAYOUT_FLOW}
+      >
         <div className={constrainLists ? PITCH_BENCH_SIDEBAR : PITCH_BENCH_SIDEBAR_FLOW}>
           <div
             className={cn(
@@ -571,11 +533,17 @@ export function TacticalPitchLineup({
             )}
           >
             <div className="mb-2 flex shrink-0 items-center justify-between">
-              <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">Bench / Unassigned</h3>
-              <span className="text-xs font-semibold text-muted-foreground">{poolPlayers.length} players</span>
+              <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">
+                Bench / Unassigned
+              </h3>
+              <span className="text-xs font-semibold text-muted-foreground">
+                {poolPlayers.length} players
+              </span>
             </div>
             {poolPlayers.length === 0 ? (
-              <p className="py-3 text-center text-sm text-muted-foreground">All attending players are on the pitch</p>
+              <p className="py-3 text-center text-sm text-muted-foreground">
+                All attending players are on the pitch
+              </p>
             ) : (
               <ul
                 className={cn(
@@ -589,12 +557,12 @@ export function TacticalPitchLineup({
                       player={player}
                       selected={selectedPlayerId === player.id}
                       onSelect={() => handlePoolSelect(player.id)}
-                      onDragStart={(e) => handleDragStart(e, player.id)}
                       onToggleAttending={
                         onSetAttending ? () => markPlayerAbsent(player.id) : undefined
                       }
                       onEdit={onEditPlayer ? () => onEditPlayer(player.id) : undefined}
                       showAttendingToggle={Boolean(onSetAttending)}
+                      enableDrag
                     />
                   </li>
                 ))}
@@ -624,8 +592,8 @@ export function TacticalPitchLineup({
                       player={player}
                       selected={false}
                       onSelect={() => onSetAttending?.(player.id, true)}
-                      onDragStart={(e) => handleDragStart(e, player.id)}
                       showAttendingToggle={false}
+                      enableDrag={false}
                     />
                   </li>
                 ))}
@@ -637,7 +605,7 @@ export function TacticalPitchLineup({
             </div>
           )}
         </div>
-      </div>
+      </FormationPitch>
     </section>
   )
 }

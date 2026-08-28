@@ -1,5 +1,5 @@
 import { normalizeTacticalMatchPosition } from '@/lib/positions'
-import { getFormationById, slotToTacticalPosition } from '@/lib/formations'
+import { getFormationById, resolveSlotLabel } from '@/lib/formations'
 import type { MatchPlayer, RosterPlayer } from '@/types/match'
 
 type CreateMatchPlayerInput = {
@@ -97,21 +97,25 @@ export function applySlotAssignmentPositions(
   players: MatchPlayer[],
   slotAssignments: Record<string, string | null>,
   formationId: string,
+  slotLabelOverrides?: Record<string, string> | null,
 ): MatchPlayer[] {
   const formation = getFormationById(formationId)
   const slotById = new Map(formation.slots.map((slot) => [slot.id, slot]))
-  const playerSlot = new Map<string, (typeof formation.slots)[number]>()
+  const playerSlot = new Map<string, { slotId: string; slot: (typeof formation.slots)[number] }>()
 
   for (const [slotId, playerId] of Object.entries(slotAssignments)) {
     if (!playerId) continue
     const slot = slotById.get(slotId)
-    if (slot) playerSlot.set(playerId, slot)
+    if (slot) playerSlot.set(playerId, { slotId, slot })
   }
 
   return players.map((player) => {
-    const slot = playerSlot.get(player.id)
-    if (!slot) return player
-    return { ...player, matchPosition: slotToTacticalPosition(slot) }
+    const entry = playerSlot.get(player.id)
+    if (!entry) return player
+    return {
+      ...player,
+      matchPosition: resolveSlotLabel(entry.slot, slotLabelOverrides),
+    }
   })
 }
 

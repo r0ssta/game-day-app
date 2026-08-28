@@ -915,6 +915,7 @@ type SetupScreenProps = {
   setupSlotAssignments?: Record<string, string | null>
   setupPitchKey: number
   setupAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
+  setupLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
   guestAgeGroup: import('@/lib/age-groups').AgeGroup
   onAddGuestFromPool: (playerId: string) => Promise<void>
   loadAgeGroupPool: (ageGroup: import('@/lib/age-groups').AgeGroup) => Promise<import('@/types/database').DbPlayer[]>
@@ -970,6 +971,7 @@ function SetupScreen({
   setupSlotAssignments,
   setupPitchKey,
   setupAssignmentsRef,
+  setupLabelOverridesRef,
   guestAgeGroup,
   onAddGuestFromPool,
   loadAgeGroupPool,
@@ -1261,6 +1263,7 @@ function SetupScreen({
                   initialSlotAssignments={setupSlotAssignments}
                   assignmentsResetKey={setupPitchKey}
                   assignmentsRef={setupAssignmentsRef}
+                  slotLabelOverridesRef={setupLabelOverridesRef}
                   constrainLists={false}
                   players={masterRoster.map((player) => ({
                     id: player.id,
@@ -1337,6 +1340,7 @@ type HalftimeSetupScreenProps = {
   assignmentsResetKey: string | number
   carriedFromFirstHalf: Record<string, boolean>
   halftimeAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
+  halftimeLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
   lineupPresets: { id: string; preset_name: string }[]
   onLoadLineupPreset: (presetId: string) => void
   onAssignSecondHalfStarter: (playerId: string, role: FormationRole, tacticalPosition: string) => void
@@ -1360,6 +1364,7 @@ function HalftimeSetupScreen({
   assignmentsResetKey,
   carriedFromFirstHalf,
   halftimeAssignmentsRef,
+  halftimeLabelOverridesRef,
   lineupPresets,
   onLoadLineupPreset,
   onAssignSecondHalfStarter,
@@ -1425,6 +1430,7 @@ function HalftimeSetupScreen({
           initialSlotAssignments={initialSlotAssignments}
           assignmentsResetKey={assignmentsResetKey}
           assignmentsRef={halftimeAssignmentsRef}
+          slotLabelOverridesRef={halftimeLabelOverridesRef}
           constrainLists={false}
           players={attendingPlayers.map((player) => ({
             id: player.id,
@@ -1993,7 +1999,9 @@ export default function App() {
 
   const livePitchRef = useRef<LiveTacticalPitchHandle>(null)
   const setupAssignmentsRef = useRef<Record<string, string | null> | null>(null)
+  const setupLabelOverridesRef = useRef<Record<string, string> | null>(null)
   const halftimeAssignmentsRef = useRef<Record<string, string | null> | null>(null)
+  const halftimeLabelOverridesRef = useRef<Record<string, string> | null>(null)
 
   const clockSyncRef = useRef({ homeScore, awayScore, seconds, period, periodClockStarted })
 
@@ -2174,6 +2182,7 @@ export default function App() {
         setupAssignmentsRef.current,
       )
       const slotAssignments = setupAssignmentsRef.current
+      const labelOverrides = setupLabelOverridesRef.current
       const resolvedMatchPositions =
         slotAssignments && Object.values(slotAssignments).some(Boolean)
           ? {
@@ -2182,6 +2191,7 @@ export default function App() {
                 slotAssignments,
                 matchFormations.first,
                 activeTeamFormat,
+                labelOverrides,
               ),
             }
           : matchPositions
@@ -2338,6 +2348,7 @@ export default function App() {
   const handleBeginSecondHalf = useCallback(async () => {
     if (!canBeginSecondHalf) return
     const assignments = halftimeAssignmentsRef.current ?? halftimeSlotAssignments
+    const labelOverrides = halftimeLabelOverridesRef.current
     const newClock = halfDurationSeconds(halfLengthMinutes)
 
     const wakePromise =
@@ -2346,7 +2357,7 @@ export default function App() {
           requestWakeLock()
         : Promise.resolve({ active: false, blockedByOs: false, usedFallback: false })
 
-    await beginSecondHalf(assignments)
+    await beginSecondHalf(assignments, labelOverrides)
     if (matchId) {
       syncMatchRecord(matchId, {
         period: '2nd',
@@ -3024,6 +3035,7 @@ export default function App() {
           setupSlotAssignments={setupSlotAssignments}
           setupPitchKey={setupPitchKey}
           setupAssignmentsRef={setupAssignmentsRef}
+          setupLabelOverridesRef={setupLabelOverridesRef}
           guestAgeGroup={resolveTeamAgeGroup(
             teams.find((team) => team.id === activeTeamId)?.age_group,
           )}
@@ -3139,6 +3151,7 @@ export default function App() {
           assignmentsResetKey={`halftime-${matchId ?? 'local'}-${halftimePitchKey}`}
           carriedFromFirstHalf={carriedFromFirstHalf}
           halftimeAssignmentsRef={halftimeAssignmentsRef}
+          halftimeLabelOverridesRef={halftimeLabelOverridesRef}
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadHalftimePreset}
           onAssignSecondHalfStarter={(playerId, _role, tacticalPosition) => {
