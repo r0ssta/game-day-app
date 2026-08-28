@@ -357,3 +357,26 @@
     transform: translateX(-50%);
   }
 }
+
+/** Soft pulse on live pitch minutes when a player hits the long-stint sub cue. */
+@keyframes pitch-sub-cue-time {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.pitch-sub-cue-time {
+  animation: pitch-sub-cue-time 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pitch-sub-cue-time {
+    animation: none;
+    opacity: 1;
+  }
+}
+

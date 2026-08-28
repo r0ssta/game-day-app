@@ -8,3 +8,5 @@ export const ENABLE_SUB_ASSISTANT = false
 export const ENABLE_WAKE_LOCK = true
 /** QA match-clock speed controls (1× / 50× / 100×) — keep off for live game day. */
 export const ENABLE_QA_SPEED = false
+/** Sideline share link + live micro-stats panel — hidden until ready for coaches. */
+export const ENABLE_STAT_TRACKER = false

@@ -159,6 +159,27 @@ export function getLiveSecondsPlayed(player: MatchPlayer, remainingSeconds: numb
   return player.totalSecondsPlayed + currentStint
 }
 
+/** Seconds in the player's current uninterrupted on-field stint (0 if benched). */
+export function getCurrentStintSeconds(player: MatchPlayer, remainingSeconds: number): number {
+  if (!player.isOnField || player.subbedInAt === null) return 0
+  return stintSecondsPlayed(player.subbedInAt, remainingSeconds)
+}
+
+/**
+ * True when an on-field player has been out there for ≥75% of the half without a sub.
+ * Helps coaches spot who is due for rotation.
+ */
+export function needsSubRotationCue(
+  player: MatchPlayer,
+  remainingSeconds: number,
+  halfLengthSeconds: number,
+  threshold = 0.75,
+): boolean {
+  if (!player.isOnField || halfLengthSeconds <= 0) return false
+  const stint = getCurrentStintSeconds(player, remainingSeconds)
+  return stint >= halfLengthSeconds * threshold
+}
+
 export function formatPlayingTimeBadge(totalSeconds: number): string {
   return `${Math.floor(totalSeconds / 60)}m`
 }

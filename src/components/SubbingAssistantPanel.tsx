@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 type SubbingAssistantPanelProps = {
   teamFormat: TeamFormat
   halfLengthMinutes: number
+  totalPeriods?: 2 | 3
   attendingCount: number
   gkPlaysFullHalf: boolean
   onGkPlaysFullHalfChange: (value: boolean) => void
@@ -27,6 +28,7 @@ type SubbingAssistantPanelProps = {
 export function SubbingAssistantPanel({
   teamFormat,
   halfLengthMinutes,
+  totalPeriods = 2,
   attendingCount,
   gkPlaysFullHalf,
   onGkPlaysFullHalfChange,
@@ -37,8 +39,8 @@ export function SubbingAssistantPanel({
 }: SubbingAssistantPanelProps) {
   const [intervalOverrideMinutes, setIntervalOverrideMinutes] = useState<number | null>(null)
 
-  // Drop manual override when format / attendance / frequency / half length change.
-  const suggestionKey = `${teamFormat}|${halfLengthMinutes}|${attendingCount}|${gkPlaysFullHalf}|${subFrequency}`
+  // Drop manual override when format / attendance / frequency / match length change.
+  const suggestionKey = `${teamFormat}|${halfLengthMinutes}|${totalPeriods}|${attendingCount}|${gkPlaysFullHalf}|${subFrequency}`
   useEffect(() => {
     if (!ENABLE_SUB_ASSISTANT) return
     setIntervalOverrideMinutes(null)
@@ -49,6 +51,7 @@ export function SubbingAssistantPanel({
       calculateSubRotationPlan({
         teamFormat,
         halfLengthMinutes,
+        totalPeriods,
         attendingCount,
         gkPlaysFullHalf,
         frequency: subFrequency,
@@ -57,6 +60,7 @@ export function SubbingAssistantPanel({
     [
       teamFormat,
       halfLengthMinutes,
+      totalPeriods,
       attendingCount,
       gkPlaysFullHalf,
       subFrequency,
@@ -76,11 +80,11 @@ export function SubbingAssistantPanel({
 
   const canStep = plan.ok && plan.playersToSwap > 0 && plan.subIntervalMinutes > 0
   const atMin = plan.subIntervalMinutes <= 1
-  const atMax = plan.subIntervalMinutes >= halfLengthMinutes
+  const atMax = plan.subIntervalMinutes >= plan.matchMinutes
 
   const stepInterval = (delta: number) => {
     if (!canStep) return
-    const next = Math.max(1, Math.min(halfLengthMinutes, plan.subIntervalMinutes + delta))
+    const next = Math.max(1, Math.min(plan.matchMinutes, plan.subIntervalMinutes + delta))
     setIntervalOverrideMinutes(next)
   }
 
@@ -98,7 +102,8 @@ export function SubbingAssistantPanel({
             Sub Rotation Assistant
           </h2>
           <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            Equal-play shifts from format, half length, attendance, and sub frequency.
+            Equal-play shifts from format, full match length ({plan.matchMinutes} min), attendance,
+            and sub frequency.
           </p>
         </div>
         <label className="flex shrink-0 items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-foreground">
@@ -108,7 +113,7 @@ export function SubbingAssistantPanel({
             checked={gkPlaysFullHalf}
             onChange={(event) => onGkPlaysFullHalfChange(event.target.checked)}
           />
-          GK full half
+          GK full match
         </label>
       </div>
 
@@ -264,7 +269,7 @@ function SubRotationSummary({
             {Math.max(0, plan.totalRestNeeded).toFixed(1)} min rest per outfield player
             {plan.message ? ` · ${plan.message}` : ''}
             {plan.playersToSwap > 0
-              ? ` · ~${plan.targetWindows} sub window${plan.targetWindows === 1 ? '' : 's'} this half`
+              ? ` · ~${plan.targetWindows} sub window${plan.targetWindows === 1 ? '' : 's'} this match`
               : ''}
           </p>
         ) : (

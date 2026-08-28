@@ -102,6 +102,7 @@ import type {
   MatchPositionsConfig,
   RosterPlayer,
   SetupLineup,
+  TotalPeriods,
 } from '@/types/match'
 import {
   persistActiveTeamId,
@@ -115,8 +116,18 @@ import {
   seasonRosterToPlayers,
 } from '@/lib/season-roster'
 import { applyCardsFromEvents } from '@/lib/match-cards'
+import {
+  defaultPeriodLengthMinutes,
+  periodIndexToCode,
+  resolveCurrentPeriod,
+  resolveMatchFormatDefaults,
+  resolvePeriodLengthMinutes,
+  resolveTotalPeriods,
+  supportsThreePeriodFormat,
+} from '@/lib/match-periods'
 
-const DEFAULT_HALF_LENGTH = 30
+const DEFAULT_TOTAL_PERIODS: TotalPeriods = 2
+const DEFAULT_HALF_LENGTH = defaultPeriodLengthMinutes(DEFAULT_TOTAL_PERIODS)
 
 export function useGameDayApp() {
   const [loading, setLoading] = useState(true)
@@ -137,6 +148,8 @@ export function useGameDayApp() {
   const [awayScore, setAwayScore] = useState(0)
   const [seconds, setSeconds] = useState(0)
   const [period, setPeriod] = useState<MatchPeriod>('1st')
+  const [currentPeriod, setCurrentPeriod] = useState(1)
+  const [totalPeriods, setTotalPeriods] = useState<TotalPeriods>(DEFAULT_TOTAL_PERIODS)
   const [running, setRunning] = useState(false)
   const [periodClockStarted, setPeriodClockStarted] = useState(false)
   const [firstHalfStarterIds, setFirstHalfStarterIds] = useState<string[]>([])
@@ -232,6 +245,19 @@ export function useGameDayApp() {
         : { ...prev, second: formationId },
     )
   }, [])
+
+  const applyMatchPeriodState = useCallback(
+    (match: Pick<DbMatch, 'period' | 'current_period' | 'total_periods' | 'period_length' | 'half_length'>) => {
+      const nextTotal = resolveTotalPeriods(match)
+      const nextCurrent = resolveCurrentPeriod(match)
+      const nextLength = resolvePeriodLengthMinutes(match, DEFAULT_HALF_LENGTH)
+      setTotalPeriods(nextTotal)
+      setCurrentPeriod(nextCurrent)
+      setPeriod(periodIndexToCode(nextCurrent))
+      setHalfLengthMinutes(nextLength)
+    },
+    [],
+  )
 
   const applyRoster = useCallback((roster: RosterPlayer[]) => {
     setMasterRoster(roster)
@@ -345,9 +371,8 @@ export function useGameDayApp() {
               parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
             ),
           )
-          setPeriod(match.period)
+          applyMatchPeriodState(match)
           setPeriodClockStarted(match.period_clock_started)
-          setHalfLengthMinutes(match.half_length)
           setSubIntervalSeconds(match.sub_interval_seconds ?? null)
           setGkPlaysFullHalf(match.gk_plays_full_half !== false)
           setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
@@ -587,7 +612,7 @@ export function useGameDayApp() {
       setLocationType(resolveMatchLocationType(match))
       setTournamentGame(Boolean(match.tournament_game))
       setGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
-      setHalfLengthMinutes(match.half_length > 0 ? match.half_length : DEFAULT_HALF_LENGTH)
+      applyMatchPeriodState(match)
       setMatchDate(match.match_date ?? match.date.slice(0, 10))
       setMatchTime(normalizeMatchTimeForInput(match.match_time))
       const coach =
@@ -597,7 +622,7 @@ export function useGameDayApp() {
       if (coach) setSetupCoachName(coach)
       setAppMode('match_setup')
     },
-    [selectedTeamId, teams],
+    [selectedTeamId, teams, applyMatchPeriodState],
   )
 
   const applyLineupPreset = useCallback(
@@ -1030,6 +1055,7 @@ export function useGameDayApp() {
       tournamentGame: boolean
       goesToPks?: boolean
       halfLength: number
+      totalPeriods?: TotalPeriods
       matchDate: string
       matchTime: string
       attendingPlayers: RosterPlayer[]
@@ -1047,6 +1073,16 @@ export function useGameDayApp() {
 
       let createdMatchId: string | null = null
       const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
+      const allowsThree = supportsThreePeriodFormat({
+        ageGroup: teams.find((t) => t.id === input.teamId)?.age_group,
+        teamFormat: normalizeTeamFormat(teams.find((t) => t.id === input.teamId)?.format),
+      })
+      const matchTotalPeriods: TotalPeriods =
+        input.tournamentGame || !allowsThree
+          ? 2
+          : input.totalPeriods === 3
+            ? 3
+            : 2
 
       try {
         const coachId = await resolveCoachIdForName(input.coachName)
@@ -1061,6 +1097,8 @@ export function useGameDayApp() {
           tournamentGame: input.tournamentGame,
           goesToPks,
           halfLength: input.halfLength,
+          periodLength: input.halfLength,
+          totalPeriods: matchTotalPeriods,
           matchDate: input.matchDate,
           matchTime: input.matchTime,
           subIntervalSeconds: input.subIntervalSeconds ?? null,
@@ -1089,6 +1127,8 @@ export function useGameDayApp() {
         setPkGkPlayerId(null)
         setSeconds(initialHalfClock(input.halfLength))
         setPeriod('1st')
+        setCurrentPeriod(1)
+        setTotalPeriods(matchTotalPeriods)
         setRunning(false)
         setPeriodClockStarted(false)
         setFirstHalfStarterIds(input.firstHalfStarterIds)
@@ -1120,10 +1160,11 @@ export function useGameDayApp() {
         throw err
       }
     },
-    [activeSeason],
+    [activeSeason, teams],
   )
 
-  const enterHalftime = useCallback(
+  /** End the active period and open intermission lineup (PERIOD_X → INTERMISSION). */
+  const enterIntermission = useCallback(
     async (clockSeconds: number, slotAssignments?: Record<string, string | null>) => {
       setRunning(false)
 
@@ -1176,24 +1217,36 @@ export function useGameDayApp() {
       setCarriedFromFirstHalf(carried)
       setHalftimeSecondHalf(toggles)
       setHalftimePitchKey(0)
-      setMatchFormations((prev) => ({ ...prev, second: prev.first }))
+      // Carry the formation that just ended into the next-period lineup editor.
+      setMatchFormations((prev) => {
+        const current =
+          periodRef.current === '1st' ? prev.first : prev.second
+        return { ...prev, second: current }
+      })
+      setPeriodClockStarted(false)
       setAppMode('halftime')
       return nextPlayers
     },
     [matchId, halfLengthMinutes, setRunning, getActiveFormation],
   )
 
+  /** @deprecated Prefer enterIntermission — kept for call sites still using the old name. */
+  const enterHalftime = enterIntermission
+
   const setHalftimeStarter = useCallback((id: string, starts: boolean) => {
     setHalftimeSecondHalf((prev) => ({ ...prev, [id]: starts }))
   }, [])
 
-  const beginSecondHalf = useCallback(
+  /** Start the next period after intermission (INTERMISSION → PERIOD_X+1). */
+  const beginNextPeriod = useCallback(
     async (
       slotAssignments?: Record<string, string | null>,
       slotLabelOverrides?: Record<string, string> | null,
     ) => {
       const newClock = initialHalfClock(halfLengthMinutes)
       const formation = matchFormationsRef.current.second
+      const nextPeriodIndex = Math.min(totalPeriods, currentPeriod + 1)
+      const nextPeriodCode = periodIndexToCode(nextPeriodIndex)
 
       const assignmentIds = slotAssignments
         ? Object.values(slotAssignments).filter((id): id is string => Boolean(id))
@@ -1239,17 +1292,40 @@ export function useGameDayApp() {
       })
 
       setSecondHalfStarterIds([...starterIds])
-      setPeriod('2nd')
+      setCurrentPeriod(nextPeriodIndex)
+      setPeriod(nextPeriodCode)
       setSeconds(newClock)
       setRunning(true)
       setPeriodClockStarted(true)
       if (matchId) {
+        void syncMatchRecord(matchId, {
+          period: nextPeriodCode,
+          current_period: nextPeriodIndex,
+          total_periods: totalPeriods,
+          period_length: halfLengthMinutes,
+          half_length: halfLengthMinutes,
+          clock_seconds: newClock,
+          period_clock_started: true,
+        })
         void mergeMatchTimingContext(matchId, { addedTimeSeconds: 0 })
       }
       setAppMode('match')
     },
-    [halftimeSecondHalf, halfLengthMinutes, matchId, setPeriod, setSeconds, setRunning, setPeriodClockStarted],
+    [
+      halftimeSecondHalf,
+      halfLengthMinutes,
+      matchId,
+      totalPeriods,
+      currentPeriod,
+      setPeriod,
+      setSeconds,
+      setRunning,
+      setPeriodClockStarted,
+    ],
   )
+
+  /** @deprecated Prefer beginNextPeriod */
+  const beginSecondHalf = beginNextPeriod
 
   const finishGame = useCallback(
     async (
@@ -1355,6 +1431,9 @@ export function useGameDayApp() {
     setAwayScore(0)
     setSeconds(0)
     setPeriod('1st')
+    setCurrentPeriod(1)
+    setTotalPeriods(DEFAULT_TOTAL_PERIODS)
+    setHalfLengthMinutes(DEFAULT_HALF_LENGTH)
     setRunning(false)
     setPeriodClockStarted(false)
     setFirstHalfStarterIds([])
@@ -1443,9 +1522,8 @@ export function useGameDayApp() {
         parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
       ),
     )
-    setPeriod(match.period)
+    applyMatchPeriodState(match)
     setPeriodClockStarted(match.period_clock_started)
-    setHalfLengthMinutes(match.half_length)
     setSubIntervalSeconds(match.sub_interval_seconds ?? null)
     setGkPlaysFullHalf(match.gk_plays_full_half !== false)
     setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
@@ -1457,7 +1535,7 @@ export function useGameDayApp() {
     setFirstHalfStarterIds(stats.filter((s) => s.is_first_half_starter).map((s) => s.player_id))
     setSecondHalfStarterIds(stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id))
     setAppMode('recap')
-  }, [])
+  }, [applyMatchPeriodState])
 
   /** @deprecated Use openMatchRecap */
   const openPendingReviewRecap = openMatchRecap
@@ -1576,6 +1654,9 @@ export function useGameDayApp() {
     setSeconds,
     period,
     setPeriod,
+    currentPeriod,
+    totalPeriods,
+    setTotalPeriods,
     running,
     setRunning,
     periodClockStarted,
@@ -1601,7 +1682,9 @@ export function useGameDayApp() {
     setupPitchKey,
     halftimePitchKey,
     enterHalftime,
+    enterIntermission,
     beginSecondHalf,
+    beginNextPeriod,
     finishGame,
     finalizePenaltyShootout,
     returnToHome,

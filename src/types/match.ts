@@ -15,7 +15,10 @@ export type AppMode =
 
 export type ActionType = 'GOAL' | 'ASSIST'
 
-export type MatchPeriod = '1st' | '2nd'
+export type MatchPeriod = '1st' | '2nd' | '3rd'
+
+/** 2 = regulation halves; 3 = periods (e.g. U9/U10 league). */
+export type TotalPeriods = 2 | 3
 
 /** Permanent club-pool player — season team assignment is via season_rosters. */
 export type RosterPlayer = {
@@ -60,7 +63,9 @@ export type MatchSetupConfig = {
   locationType: 'home' | 'away'
   tournamentGame: boolean
   goesToPks: boolean
+  /** Minutes per half/period. */
   halfLengthMinutes: number
+  totalPeriods: TotalPeriods
 }
 
 export type SetupLineup = {

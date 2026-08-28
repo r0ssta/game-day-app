@@ -923,6 +923,9 @@ export async function createMatchRecord(input: {
   tournamentGame: boolean
   goesToPks?: boolean
   halfLength: number
+  /** Minutes per period; defaults to halfLength. */
+  periodLength?: number
+  totalPeriods?: 2 | 3
   matchDate: string
   matchTime: string
   status?: DbMatch['status']
@@ -937,6 +940,8 @@ export async function createMatchRecord(input: {
       : input.matchTime.trim() || null
   const status = input.status ?? 'active'
   const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
+  const periodLength = input.periodLength ?? input.halfLength
+  const totalPeriods = input.totalPeriods === 3 ? 3 : 2
 
   const minimalPayload = {
     team_id: input.teamId,
@@ -945,8 +950,8 @@ export async function createMatchRecord(input: {
     opponent: input.opponent,
     location: input.locationType,
     tournament_game: input.tournamentGame,
-    half_length: input.halfLength,
-    clock_seconds: input.halfLength * 60,
+    half_length: periodLength,
+    clock_seconds: periodLength * 60,
     date: matchDateTimeIso(input.matchDate, input.matchTime),
     status,
   }
@@ -962,6 +967,10 @@ export async function createMatchRecord(input: {
     home_pk_score: 0,
     away_pk_score: 0,
     pk_winner_is_us: null,
+    period_length: periodLength,
+    total_periods: totalPeriods,
+    current_period: 1,
+    period: '1st',
   }
 
   // Try fullest payload first; retry with fewer optional columns when schema is behind.
@@ -976,6 +985,10 @@ export async function createMatchRecord(input: {
     'home_pk_score',
     'away_pk_score',
     'pk_winner_is_us',
+    'period_length',
+    'total_periods',
+    'current_period',
+    'period',
   ] as const
   const payloadAttempts: Array<Record<string, unknown>> = []
 
@@ -1183,6 +1196,10 @@ export async function updateMatchRecord(
       | 'period'
       | 'period_clock_started'
       | 'status'
+      | 'half_length'
+      | 'period_length'
+      | 'total_periods'
+      | 'current_period'
     >
   >,
 ) {

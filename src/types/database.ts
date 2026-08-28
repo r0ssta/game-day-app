@@ -66,6 +66,12 @@ export type DbMatch = {
   match_date: string | null
   match_time: string | null
   half_length: number
+  /** Minutes per period/half. Prefer this over legacy half_length when present. */
+  period_length?: number
+  /** 2 = halves, 3 = periods. */
+  total_periods?: number
+  /** 1-based active period index (1..total_periods). */
+  current_period?: number
   location: string
   location_type?: string | null
   tournament_game: boolean
@@ -79,7 +85,7 @@ export type DbMatch = {
   /** Our goalkeeper for the penalty shootout. */
   pk_gk_player_id?: string | null
   clock_seconds: number
-  period: '1st' | '2nd'
+  period: '1st' | '2nd' | '3rd'
   status: 'active' | 'scheduled' | 'pending_review' | 'completed'
   period_clock_started: boolean
   /** Staff-only post-game notes — not for parent emails. */

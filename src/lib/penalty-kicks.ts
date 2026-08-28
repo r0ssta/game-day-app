@@ -184,10 +184,24 @@ export function shouldResumePenaltyShootout(match: {
   away_score: number
   goes_to_pks?: boolean | null
   pk_winner_is_us?: boolean | null
+  /** When set, last regulation period must match before resuming PKs. */
+  total_periods?: number | null
+  current_period?: number | null
 }): boolean {
+  const totalPeriods = match.total_periods === 3 ? 3 : 2
+  const currentPeriod =
+    typeof match.current_period === 'number' && match.current_period > 0
+      ? match.current_period
+      : match.period === '3rd'
+        ? 3
+        : match.period === '2nd'
+          ? 2
+          : 1
+  const onLastPeriod = currentPeriod >= totalPeriods
+
   return (
     match.status === 'active' &&
-    match.period === '2nd' &&
+    onLastPeriod &&
     !match.period_clock_started &&
     Boolean(match.goes_to_pks) &&
     match.home_score === match.away_score &&

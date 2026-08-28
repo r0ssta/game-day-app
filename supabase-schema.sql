@@ -51,6 +51,9 @@ create table if not exists public.matches (
   match_date date,
   match_time time,
   half_length integer not null default 30 check (half_length > 0),
+  period_length integer not null default 30 check (period_length > 0),
+  total_periods integer not null default 2 check (total_periods in (2, 3)),
+  current_period integer not null default 1 check (current_period >= 1 and current_period <= 3),
   -- Live match fields (required for in-game UI + resume)
   location text not null default '',
   location_type text not null default 'home' check (location_type in ('home', 'away')),
@@ -58,7 +61,7 @@ create table if not exists public.matches (
   home_score integer not null default 0 check (home_score >= 0),
   away_score integer not null default 0 check (away_score >= 0),
   clock_seconds integer not null default 0 check (clock_seconds >= 0),
-  period text not null default '1st' check (period in ('1st', '2nd')),
+  period text not null default '1st' check (period in ('1st', '2nd', '3rd')),
   status text not null default 'active' check (status in ('active', 'scheduled', 'pending_review', 'completed')),
   period_clock_started boolean not null default false,
   internal_coach_notes text,

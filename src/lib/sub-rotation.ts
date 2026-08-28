@@ -1,10 +1,14 @@
+import { totalMatchMinutes } from '@/lib/match-periods'
 import { getMaxFieldPlayersForFormat, type TeamFormat } from '@/lib/team-format'
 
 export type SubFrequency = 'high' | 'medium' | 'low'
 
 export type SubRotationInput = {
   teamFormat: TeamFormat
+  /** Minutes per period/half. */
   halfLengthMinutes: number
+  /** Regulation periods (2 halves or 3 periods). Defaults to 2. */
+  totalPeriods?: number
   attendingCount: number
   gkPlaysFullHalf: boolean
   /** Controls how often the whistle blows for a rotation. */
@@ -21,10 +25,12 @@ export type SubRotationPlan = {
   fieldPositions: number
   availableFieldPlayers: number
   benchSize: number
+  /** totalPeriods × periodLength — regulation match length. */
+  matchMinutes: number
   totalFieldMinutes: number
-  /** Equal-play target minutes on the field this half. */
+  /** Equal-play target minutes on the field for the full match. */
   targetMinutesPerPlayer: number
-  /** Rest each outfield player needs this half (half − target). */
+  /** Rest each outfield player needs over the full match (match − target). */
   totalRestNeeded: number
   frequency: SubFrequency
   /** Frequency-derived window count before any manual override. */
@@ -64,21 +70,23 @@ export function frequencyDisplayLabel(frequency: SubFrequency): string {
 }
 
 /**
- * Target sub windows per half from frequency.
- * Scaled to half length so a 25' half still lands near the coach-facing ranges
- * (Low ~12–15', Medium ~7–10', High ~4–5' on a 30' half).
+ * Target sub windows across the full match from frequency.
+ * Scaled to total regulation minutes so a 25' half (or 18'×3) still lands near
+ * coach-facing ranges (Low ~12–15', Medium ~7–10', High ~4–5' on a 30' half).
  */
-export function targetSubWindows(frequency: SubFrequency, halfLengthMinutes: number): number {
-  const half = Math.max(1, Math.round(halfLengthMinutes))
+export function targetSubWindows(frequency: SubFrequency, matchMinutes: number): number {
+  const match = Math.max(1, Math.round(matchMinutes))
+  // Scale relative to a classic 30' half so 2×30 and 3×18 keep similar cadence.
+  const scale = match / 30
   switch (frequency) {
     case 'low':
-      return Math.max(1, Math.min(2, Math.round(half / 15)))
+      return Math.max(1, Math.min(4, Math.round(2 * scale)))
     case 'medium': {
-      const mid = Math.round(half / 8)
-      return Math.max(3, Math.min(4, mid || 3))
+      const mid = Math.round(3.5 * scale)
+      return Math.max(3, Math.min(8, mid || 3))
     }
     case 'high':
-      return Math.max(5, Math.round(half / 5))
+      return Math.max(5, Math.round(6 * scale))
   }
 }
 
@@ -111,6 +119,7 @@ function emptyPlan(
     | 'fieldPositions'
     | 'availableFieldPlayers'
     | 'benchSize'
+    | 'matchMinutes'
     | 'totalFieldMinutes'
     | 'frequency'
     | 'targetWindows'
@@ -129,6 +138,7 @@ function emptyPlan(
     fieldPositions: partial.fieldPositions,
     availableFieldPlayers: partial.availableFieldPlayers,
     benchSize: partial.benchSize,
+    matchMinutes: partial.matchMinutes,
     totalFieldMinutes: partial.totalFieldMinutes,
     targetMinutesPerPlayer: partial.targetMinutesPerPlayer ?? 0,
     totalRestNeeded: partial.totalRestNeeded ?? 0,
@@ -146,27 +156,34 @@ function emptyPlan(
 
 /**
  * Equal-play substitution plan with a High / Medium / Low frequency modifier.
+ * Targets use full-match minutes (`totalPeriods × periodLength`).
  * Frequency sets how many sub windows to aim for; optional override nudges the
  * interval by whole minutes while rebalancing players-to-swap.
  */
 export function calculateSubRotationPlan(input: SubRotationInput): SubRotationPlan {
   const formatSize = getMaxFieldPlayersForFormat(input.teamFormat)
-  const halfLength = Math.max(1, Math.round(input.halfLengthMinutes))
+  const periodLength = Math.max(1, Math.round(input.halfLengthMinutes))
+  const totalPeriods = Math.max(1, Math.round(input.totalPeriods ?? 2))
+  const matchMinutes = totalMatchMinutes(
+    totalPeriods === 3 ? 3 : 2,
+    periodLength,
+  )
   const attending = Math.max(0, Math.floor(input.attendingCount))
   const gkFull = Boolean(input.gkPlaysFullHalf)
   const frequency: SubFrequency = input.frequency ?? 'medium'
-  const targetWindows = targetSubWindows(frequency, halfLength)
+  const targetWindows = targetSubWindows(frequency, matchMinutes)
 
   const fieldPositions = Math.max(1, formatSize - (gkFull ? 1 : 0))
   const availableFieldPlayers = Math.max(0, attending - (gkFull ? 1 : 0))
   const benchSize = Math.max(0, availableFieldPlayers - fieldPositions)
-  const totalFieldMinutes = fieldPositions * halfLength
+  const totalFieldMinutes = fieldPositions * matchMinutes
 
   const base = {
     formatSize,
     fieldPositions,
     availableFieldPlayers,
     benchSize,
+    matchMinutes,
     totalFieldMinutes,
     frequency,
     targetWindows,
@@ -189,23 +206,23 @@ export function calculateSubRotationPlan(input: SubRotationInput): SubRotationPl
   if (availableFieldPlayers < fieldPositions) {
     return emptyPlan({
       ...base,
-      targetMinutesPerPlayer: halfLength,
+      targetMinutesPerPlayer: matchMinutes,
       totalRestNeeded: 0,
-      suggestedIntervalMinutes: halfLength,
-      subIntervalMinutes: halfLength,
+      suggestedIntervalMinutes: periodLength,
+      subIntervalMinutes: periodLength,
       ok: true,
-      message: 'Fewer outfield players than field spots — everyone can play the full half.',
+      message: 'Fewer outfield players than field spots — everyone can play the full match.',
     })
   }
 
   const targetMinutesPerPlayer = totalFieldMinutes / availableFieldPlayers
-  const totalRestNeeded = halfLength - targetMinutesPerPlayer
-  const suggestedIntervalMinutes = Math.max(1, Math.round(halfLength / targetWindows))
+  const totalRestNeeded = matchMinutes - targetMinutesPerPlayer
+  const suggestedIntervalMinutes = Math.max(1, Math.round(matchMinutes / targetWindows))
 
   const hasOverride =
     input.intervalOverrideMinutes != null && Number.isFinite(input.intervalOverrideMinutes)
   const subIntervalMinutes = hasOverride
-    ? Math.max(1, Math.min(halfLength, Math.round(input.intervalOverrideMinutes as number)))
+    ? Math.max(1, Math.min(matchMinutes, Math.round(input.intervalOverrideMinutes as number)))
     : suggestedIntervalMinutes
 
   const playersToSwap = playersToSwapForInterval({
@@ -219,6 +236,7 @@ export function calculateSubRotationPlan(input: SubRotationInput): SubRotationPl
     fieldPositions,
     availableFieldPlayers,
     benchSize,
+    matchMinutes,
     totalFieldMinutes,
     targetMinutesPerPlayer,
     totalRestNeeded,

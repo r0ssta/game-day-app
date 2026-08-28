@@ -23,7 +23,7 @@ import {
   formatPlayerLabel,
   getSidelineName,
 } from '@/lib/player-names'
-import { formatPlayingTimeClock, getLiveSecondsPlayed } from '@/lib/play-time'
+import { formatPlayingTimeClock, getLiveSecondsPlayed, needsSubRotationCue } from '@/lib/play-time'
 import { cn } from '@/lib/utils'
 import { PITCH_BENCH_LAYOUT_FLOW, PITCH_BENCH_SIDEBAR_FLOW } from '@/lib/layout'
 import type { Impact, MatchPlayer } from '@/types/match'
@@ -46,6 +46,8 @@ export type PositionReassignUpdate = {
 type LiveTacticalPitchProps = {
   players: MatchPlayer[]
   clockSeconds: number
+  /** Half length in minutes — used for the long-stint sub cue. */
+  halfLengthMinutes: number
   maxFieldPlayers: number
   periodKey: string
   formationId: string
@@ -268,6 +270,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     {
       players,
       clockSeconds,
+      halfLengthMinutes,
       maxFieldPlayers,
       periodKey,
       formationId,
@@ -323,6 +326,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       [players],
     )
 
+    const halfLengthSeconds = halfLengthMinutes * 60
+
     const pitchPlayers = useMemo(
       () =>
         players.map((p) => ({
@@ -332,8 +337,9 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           number: p.number,
           minutesLabel: formatPlayingTimeClock(getLiveSecondsPlayed(p, clockSeconds)),
           showYellowCard: p.yellowCardCount === 1 && !p.isSentOff,
+          needsSubCue: needsSubRotationCue(p, clockSeconds, halfLengthSeconds),
         })),
-      [players, sidelineNameMap, clockSeconds],
+      [players, sidelineNameMap, clockSeconds, halfLengthSeconds],
     )
 
     useEffect(() => {
@@ -554,7 +560,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
 
         <p className="text-sm text-muted-foreground">
           Tap a player to substitute, or tap an empty slot to insert. Drag is disabled during live
-          play.
+          play. Amber badges mean a long stint (~75% of the half) — consider a sub.
         </p>
 
         <FormationPitch

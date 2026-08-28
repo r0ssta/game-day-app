@@ -65,6 +65,7 @@ import type { TeamFormat } from '@/lib/team-format'
 import type { SubFrequency } from '@/lib/sub-rotation'
 import {
   ENABLE_QA_SPEED,
+  ENABLE_STAT_TRACKER,
   ENABLE_SUB_ASSISTANT,
   ENABLE_WAKE_LOCK,
 } from '@/lib/feature-flags'
@@ -119,9 +120,23 @@ import type {
   MatchPlayer,
   RosterPlayer,
   SetupLineup,
+  TotalPeriods,
 } from '@/types/match'
 import type { LocationType } from '@/lib/match-location'
 import { formatVenueLabel } from '@/lib/match-location'
+import {
+  defaultPeriodLengthMinutes,
+  endPeriodButtonLabel,
+  formatPeriodLong,
+  formatPeriodShort,
+  intermissionTitle,
+  isIntermissionSetup,
+  periodLengthOptions,
+  resolveMatchFormatDefaults,
+  startNextPeriodButtonLabel,
+  startPeriodButtonLabel,
+  supportsThreePeriodFormat,
+} from '@/lib/match-periods'
 import {
   APP_CONTAINER,
   APP_SHELL,
@@ -131,18 +146,12 @@ import {
   TOUCH_ICON_BUTTON,
 } from '@/lib/layout'
 
-const HALF_LENGTH_OPTIONS = [25, 30, 35, 40, 45]
-
 function nextJerseyNumber(roster: RosterPlayer[]) {
   const used = new Set(roster.map((p) => p.number).filter((n): n is number => n !== null))
   for (let n = 1; n <= 99; n++) {
     if (!used.has(n)) return n
   }
   return roster.length + 1
-}
-
-function periodLabel(period: MatchPeriod) {
-  return period === '1st' ? '1st Half' : '2nd Half'
 }
 
 function MatchCoachSelect({
@@ -292,6 +301,8 @@ type MatchHeaderProps = {
   awayScore: number
   seconds: number
   period: MatchPeriod
+  currentPeriod: number
+  totalPeriods: TotalPeriods
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
@@ -356,7 +367,9 @@ function MatchHeader({
   homeScore,
   awayScore,
   seconds,
-  period,
+  period: _period,
+  currentPeriod,
+  totalPeriods,
   halfLengthMinutes,
   running,
   periodClockStarted,
@@ -377,6 +390,8 @@ function MatchHeader({
   const waitingToStart = !periodClockStarted
   const clockParts = formatMatchClockParts(seconds)
   const showGoalActions = Boolean(periodClockStarted && onLogGoal && onOpponentGoal)
+  const periodBadge = formatPeriodShort(currentPeriod, totalPeriods)
+  const periodReadyLabel = formatPeriodLong(currentPeriod, totalPeriods)
 
   return (
     <header
@@ -443,7 +458,7 @@ function MatchHeader({
                 </span>
               ) : null}
               <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                {periodLabel(period)}
+                {periodBadge}
               </span>
               {wakeLockActive ? (
                 <span
@@ -457,12 +472,12 @@ function MatchHeader({
             </div>
             <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
               {waitingToStart
-                ? `Ready · ${halfReference}`
+                ? `Ready · ${periodReadyLabel} · ${halfReference}`
                 : inAddedTime
                   ? 'Added time'
                   : regulationElapsed
                     ? 'Regulation done'
-                    : `${halfReference} half`}
+                    : `${halfReference} period`}
             </span>
           </div>
 
@@ -477,28 +492,30 @@ function MatchHeader({
         </div>
 
         {showGoalActions ? (
-          <div className={cn('grid gap-2', onLogCard ? 'grid-cols-3' : 'grid-cols-2')}>
-            <button
-              type="button"
-              onClick={onLogGoal}
-              className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl bg-neon px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-neon-foreground shadow-md shadow-neon/25 active:scale-[0.98]"
-            >
-              <Goal className="size-4" strokeWidth={2.5} />
-              Goal
-            </button>
-            <button
-              type="button"
-              onClick={onOpponentGoal}
-              className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
-            >
-              <Shield className="size-4" strokeWidth={2.5} />
-              Opp. Goal
-            </button>
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onLogGoal}
+                className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl bg-neon px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-neon-foreground shadow-md shadow-neon/25 active:scale-[0.98]"
+              >
+                <Goal className="size-4" strokeWidth={2.5} />
+                Goal
+              </button>
+              <button
+                type="button"
+                onClick={onOpponentGoal}
+                className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
+              >
+                <Shield className="size-4" strokeWidth={2.5} />
+                Opp. Goal
+              </button>
+            </div>
             {onLogCard ? (
               <button
                 type="button"
                 onClick={onLogCard}
-                className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-amber-700 active:scale-[0.98]"
+                className="flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-amber-700 active:scale-[0.98]"
               >
                 <SquareAsterisk className="size-4" strokeWidth={2.5} />
                 Log Card
@@ -904,6 +921,10 @@ type SetupScreenProps = {
   onTournamentGameChange: (value: boolean) => void
   goesToPks: boolean
   onGoesToPksChange: (value: boolean) => void
+  totalPeriods: TotalPeriods
+  onTotalPeriodsChange: (value: TotalPeriods) => void
+  /** When false, Match Format is locked to 2 halves (non-U9/U10). */
+  allowThreePeriods: boolean
   halfLengthMinutes: number
   onHalfLengthChange: (value: number) => void
   gkPlaysFullHalf: boolean
@@ -960,6 +981,9 @@ function SetupScreen({
   onTournamentGameChange,
   goesToPks,
   onGoesToPksChange,
+  totalPeriods,
+  onTotalPeriodsChange,
+  allowThreePeriods,
   halfLengthMinutes,
   onHalfLengthChange,
   gkPlaysFullHalf,
@@ -1123,20 +1147,78 @@ function SetupScreen({
               </div>
             ) : null}
 
+            {allowThreePeriods ? (
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Match Format
+                </p>
+                <div
+                  role="radiogroup"
+                  aria-label="Match format"
+                  className="grid grid-cols-2 gap-2"
+                >
+                  {(
+                    [
+                      { value: 2 as TotalPeriods, label: '2 Halves' },
+                      { value: 3 as TotalPeriods, label: '3 Periods' },
+                    ] as const
+                  ).map((option) => {
+                    const selected = totalPeriods === option.value
+                    const locked = tournamentGame
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={locked && option.value !== 2}
+                        onClick={() => {
+                          if (locked) return
+                          onTotalPeriodsChange(option.value)
+                        }}
+                        className={cn(
+                          'min-h-12 touch-manipulation rounded-xl border-2 px-3 py-2 text-center font-display text-sm font-black uppercase tracking-wide transition active:scale-[0.98]',
+                          selected
+                            ? 'border-neon bg-neon/15 text-foreground'
+                            : 'border-border bg-background text-foreground',
+                          locked && option.value !== 2 ? 'cursor-not-allowed opacity-40' : '',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {tournamentGame ? (
+                  <p className="mt-2 text-xs font-semibold text-muted-foreground">
+                    Tournament games use 2 halves.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs font-semibold text-muted-foreground">
+                    U9/U10 league games typically use 3 periods.
+                  </p>
+                )}
+              </div>
+            ) : null}
+
             <div>
               <label
-                htmlFor="half-length"
+                htmlFor="period-length"
                 className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
               >
-                Half Length (minutes)
+                {allowThreePeriods && totalPeriods === 3
+                  ? 'Minutes per period'
+                  : 'Half length (minutes)'}
               </label>
               <select
-                id="half-length"
+                id="period-length"
                 value={halfLengthMinutes}
                 onChange={(e) => onHalfLengthChange(Number(e.target.value))}
                 className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
               >
-                {HALF_LENGTH_OPTIONS.map((mins) => (
+                {periodLengthOptions(
+                  allowThreePeriods && totalPeriods === 3 ? 3 : 2,
+                ).map((mins) => (
                   <option key={mins} value={mins}>
                     {mins} minutes
                   </option>
@@ -1148,6 +1230,7 @@ function SetupScreen({
               <SubbingAssistantPanel
                 teamFormat={activeTeamFormat}
                 halfLengthMinutes={halfLengthMinutes}
+                totalPeriods={allowThreePeriods && totalPeriods === 3 ? 3 : 2}
                 attendingCount={attendingCount}
                 gkPlaysFullHalf={gkPlaysFullHalf}
                 onGkPlaysFullHalfChange={onGkPlaysFullHalfChange}
@@ -1327,7 +1410,7 @@ function SetupScreen({
             className="flex min-h-14 w-full touch-manipulation items-center justify-center gap-3 rounded-xl bg-neon py-5 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="font-display text-2xl font-bold uppercase tracking-wide sm:text-3xl">
-              Ready for 1st Half
+              Ready for {formatPeriodLong(1, totalPeriods)}
             </span>
           </button>
           {!canStartMatch && startMatchBlockReason ? (
@@ -1346,6 +1429,9 @@ type HalftimeSetupScreenProps = {
   opponent: string
   seconds: number
   halfLengthMinutes: number
+  endedPeriod: number
+  nextPeriod: number
+  totalPeriods: TotalPeriods
   players: MatchPlayer[]
   secondHalfFormation: string
   onSetSecondHalfFormation: (formationId: string) => void
@@ -1370,6 +1456,9 @@ function HalftimeSetupScreen({
   opponent,
   seconds,
   halfLengthMinutes,
+  endedPeriod,
+  nextPeriod,
+  totalPeriods,
   players,
   secondHalfFormation,
   onSetSecondHalfFormation,
@@ -1399,13 +1488,16 @@ function HalftimeSetupScreen({
   const firstHalfEndedLabel = firstHalfClock.addedLabel
     ? `${firstHalfClock.regulation} ${firstHalfClock.addedLabel}`
     : firstHalfClock.regulation
+  const title = intermissionTitle(endedPeriod, totalPeriods)
+  const endedLabel = formatPeriodLong(endedPeriod, totalPeriods)
+  const startNextLabel = startNextPeriodButtonLabel(nextPeriod, totalPeriods)
 
   return (
     <main className={APP_SHELL}>
       <div className={`${APP_CONTAINER} space-y-3 pt-4 md:pt-5`}>
         <ScreenHeader
-          title="Halftime Setup"
-          subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · 1st half ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
+          title={title}
+          subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · ${endedLabel} ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
           onHome={onBackToHome}
         />
 
@@ -1479,7 +1571,7 @@ function HalftimeSetupScreen({
             className="flex w-full min-h-14 touch-manipulation items-center justify-center gap-3 rounded-2xl bg-neon py-5 text-neon-foreground shadow-xl shadow-neon/30 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="font-display text-2xl font-black uppercase tracking-wide">
-              Start 2nd Half
+              {startNextLabel}
             </span>
           </button>
         </div>
@@ -1664,23 +1756,25 @@ function StickyMatchActionBar({ children }: { children: ReactNode }) {
 }
 
 function EndPeriodButton({
-  period,
-  onEndFirstHalf,
+  currentPeriod,
+  totalPeriods,
+  onEndPeriod,
   onEndGame,
 }: {
-  period: MatchPeriod
-  onEndFirstHalf: () => void
+  currentPeriod: number
+  totalPeriods: TotalPeriods
+  onEndPeriod: () => void
   onEndGame: () => void
 }) {
-  const isFirstHalf = period === '1st'
+  const isLastPeriod = currentPeriod >= totalPeriods
 
   return (
     <button
       type="button"
-      onClick={isFirstHalf ? onEndFirstHalf : onEndGame}
+      onClick={isLastPeriod ? onEndGame : onEndPeriod}
       className="w-full min-h-14 touch-manipulation rounded-2xl bg-orange-600 py-5 font-display text-2xl font-black uppercase tracking-wider text-white shadow-xl shadow-orange-600/40 transition-transform active:scale-[0.98] active:brightness-95"
     >
-      {isFirstHalf ? 'End 1st Half' : 'End of Game'}
+      {endPeriodButtonLabel(currentPeriod, totalPeriods)}
     </button>
   )
 }
@@ -1717,6 +1811,9 @@ export default function App() {
     seconds,
     setSeconds,
     period,
+    currentPeriod,
+    totalPeriods,
+    setTotalPeriods,
     running,
     setRunning,
     periodClockStarted,
@@ -1789,7 +1886,7 @@ export default function App() {
     setupPitchKey,
     halftimePitchKey,
     enterHalftime,
-    beginSecondHalf,
+    beginNextPeriod,
     finishGame,
     finalizePenaltyShootout,
     returnToHome,
@@ -1924,10 +2021,12 @@ export default function App() {
             break
           }
           if (hasLiveMatch) {
-            const inHalftimeSetup =
-              Object.keys(halftimeSecondHalf).length > 0 &&
-              period === '1st' &&
-              !periodClockStarted
+            const inHalftimeSetup = isIntermissionSetup({
+              periodClockStarted,
+              currentPeriod,
+              totalPeriods,
+              hasIntermissionLineup: Object.keys(halftimeSecondHalf).length > 0,
+            })
             const inPenaltyShootout = shouldResumePenaltyShootout({
               status: 'active',
               period,
@@ -1936,6 +2035,8 @@ export default function App() {
               away_score: awayScore,
               goes_to_pks: matchGoesToPks,
               pk_winner_is_us: pkWinnerIsUs,
+              total_periods: totalPeriods,
+              current_period: currentPeriod,
             })
             setAppMode(
               inHalftimeSetup
@@ -1994,6 +2095,8 @@ export default function App() {
       matchId,
       halftimeSecondHalf,
       period,
+      currentPeriod,
+      totalPeriods,
       periodClockStarted,
       homeScore,
       awayScore,
@@ -2184,6 +2287,26 @@ export default function App() {
     }
   }, [appMode, activeTeamId, setAppMode])
 
+  // U9/U10 league → 3 periods; tournament / older ages → 2 halves.
+  useEffect(() => {
+    if (appMode !== 'match_setup') return
+    const format = resolveMatchFormatDefaults({
+      tournamentGame,
+      ageGroup: activeTeamAgeGroup,
+      teamFormat: activeTeamFormat,
+    })
+    setTotalPeriods(format.totalPeriods)
+    setHalfLengthMinutes(format.periodLengthMinutes)
+  }, [
+    appMode,
+    activeTeamId,
+    activeTeamAgeGroup,
+    activeTeamFormat,
+    tournamentGame,
+    setTotalPeriods,
+    setHalfLengthMinutes,
+  ])
+
   const handleStartMatch = useCallback(async () => {
     if (!canStartMatch || !activeTeamId || startingMatch) return
 
@@ -2217,6 +2340,12 @@ export default function App() {
         (p) => resolvedLineup.attending[p.id] === false,
       )
       const rotationMinutes = setupSubIntervalMinutes
+      const allowsThree = supportsThreePeriodFormat({
+        ageGroup: team.age_group,
+        teamFormat: activeTeamFormat,
+      })
+      const matchTotalPeriods =
+        tournamentGame || !allowsThree ? 2 : totalPeriods === 3 ? 3 : 2
       await beginMatch({
         teamId: activeTeamId,
         teamName: formatTeamDisplayName(team.name, team.age_group),
@@ -2226,6 +2355,7 @@ export default function App() {
         tournamentGame,
         goesToPks,
         halfLength: halfLengthMinutes,
+        totalPeriods: matchTotalPeriods,
         matchDate,
         matchTime,
         attendingPlayers,
@@ -2241,7 +2371,7 @@ export default function App() {
       })
 
       setQaSpeedMultiplier(1)
-      setToast('Ready for 1st half')
+      setToast(`Ready for ${formatPeriodLong(1, matchTotalPeriods)}`)
     } catch (err) {
       setToast(formatSupabaseError(err))
     } finally {
@@ -2260,6 +2390,8 @@ export default function App() {
     tournamentGame,
     goesToPks,
     halfLengthMinutes,
+    totalPeriods,
+    activeTeamFormat,
     matchDate,
     matchTime,
     matchPositions,
@@ -2333,10 +2465,14 @@ export default function App() {
       syncMatchRecord(matchId, {
         period_clock_started: true,
         clock_seconds: seconds,
+        current_period: currentPeriod,
+        total_periods: totalPeriods,
+        period_length: halfLengthMinutes,
+        half_length: halfLengthMinutes,
       })
     }
 
-    const underwayToast = `1st half underway · ${formatClock(seconds)}`
+    const underwayToast = `${formatPeriodLong(currentPeriod, totalPeriods)} underway · ${formatClock(seconds)}`
     if (ENABLE_WAKE_LOCK) {
       // Must run in this click handler — browsers require a user gesture for Wake Lock / NoSleep.
       void requestWakeLock().then((result) => {
@@ -2345,7 +2481,17 @@ export default function App() {
     } else {
       setToast(underwayToast)
     }
-  }, [seconds, matchId, setPlayers, setPeriodClockStarted, setRunning, requestWakeLock])
+  }, [
+    seconds,
+    matchId,
+    setPlayers,
+    setPeriodClockStarted,
+    setRunning,
+    requestWakeLock,
+    currentPeriod,
+    totalPeriods,
+    halfLengthMinutes,
+  ])
 
   const handleEnterHalftime = useCallback(async () => {
     setRunning(false)
@@ -2355,16 +2501,32 @@ export default function App() {
       syncMatchRecord(matchId, {
         period_clock_started: false,
         clock_seconds: persistableClockSeconds(seconds),
+        current_period: currentPeriod,
+        total_periods: totalPeriods,
+        period_length: halfLengthMinutes,
+        half_length: halfLengthMinutes,
       })
     }
-    setToast('Halftime — 2nd half lineup carried over from the field')
-  }, [seconds, matchId, enterHalftime, setRunning])
+    const next = Math.min(totalPeriods, currentPeriod + 1)
+    setToast(
+      `${formatPeriodLong(currentPeriod, totalPeriods)} ended — set ${formatPeriodLong(next, totalPeriods)} lineup`,
+    )
+  }, [
+    seconds,
+    matchId,
+    enterHalftime,
+    setRunning,
+    currentPeriod,
+    totalPeriods,
+    halfLengthMinutes,
+  ])
 
   const handleBeginSecondHalf = useCallback(async () => {
     if (!canBeginSecondHalf) return
     const assignments = halftimeAssignmentsRef.current ?? halftimeSlotAssignments
     const labelOverrides = halftimeLabelOverridesRef.current
     const newClock = halfDurationSeconds(halfLengthMinutes)
+    const nextPeriod = Math.min(totalPeriods, currentPeriod + 1)
 
     const wakePromise =
       ENABLE_WAKE_LOCK
@@ -2372,25 +2534,20 @@ export default function App() {
           requestWakeLock()
         : Promise.resolve({ active: false, blockedByOs: false, usedFallback: false })
 
-    await beginSecondHalf(assignments, labelOverrides)
-    if (matchId) {
-      syncMatchRecord(matchId, {
-        period: '2nd',
-        clock_seconds: newClock,
-        period_clock_started: true,
-      })
-    }
+    // beginNextPeriod persists period / clock / current_period to the match record.
+    await beginNextPeriod(assignments, labelOverrides)
 
-    const underwayToast = `2nd half underway · ${formatClock(newClock)}`
+    const underwayToast = `${formatPeriodLong(nextPeriod, totalPeriods)} underway · ${formatClock(newClock)}`
     const wakeResult = await wakePromise
     setToast(wakeResult.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
   }, [
     canBeginSecondHalf,
     halfLengthMinutes,
-    matchId,
-    beginSecondHalf,
+    beginNextPeriod,
     halftimeSlotAssignments,
     requestWakeLock,
+    currentPeriod,
+    totalPeriods,
   ])
 
   const handleLoadLineupPreset = useCallback(
@@ -3041,6 +3198,12 @@ export default function App() {
         }}
         onViewRecaps={() => setAppMode('recap_history')}
         onResumeMatch={() => {
+          const inHalftimeSetup = isIntermissionSetup({
+            periodClockStarted,
+            currentPeriod,
+            totalPeriods,
+            hasIntermissionLineup: Object.keys(halftimeSecondHalf).length > 0,
+          })
           const inPenaltyShootout = shouldResumePenaltyShootout({
             status: 'active',
             period,
@@ -3049,8 +3212,16 @@ export default function App() {
             away_score: awayScore,
             goes_to_pks: matchGoesToPks,
             pk_winner_is_us: pkWinnerIsUs,
+            total_periods: totalPeriods,
+            current_period: currentPeriod,
           })
-          setAppMode(inPenaltyShootout ? 'penalty_shootout' : 'match')
+          setAppMode(
+            inHalftimeSetup
+              ? 'halftime'
+              : inPenaltyShootout
+                ? 'penalty_shootout'
+                : 'match',
+          )
         }}
       />
     )
@@ -3131,6 +3302,26 @@ export default function App() {
           }}
           goesToPks={goesToPks}
           onGoesToPksChange={setGoesToPks}
+          totalPeriods={totalPeriods}
+          onTotalPeriodsChange={(value) => {
+            if (
+              !supportsThreePeriodFormat({
+                ageGroup: activeTeamAgeGroup,
+                teamFormat: activeTeamFormat,
+              })
+            ) {
+              return
+            }
+            setTotalPeriods(value)
+            const options = periodLengthOptions(value)
+            if (!(options as readonly number[]).includes(halfLengthMinutes)) {
+              setHalfLengthMinutes(defaultPeriodLengthMinutes(value))
+            }
+          }}
+          allowThreePeriods={supportsThreePeriodFormat({
+            ageGroup: activeTeamAgeGroup,
+            teamFormat: activeTeamFormat,
+          })}
           halfLengthMinutes={halfLengthMinutes}
           onHalfLengthChange={setHalfLengthMinutes}
           gkPlaysFullHalf={gkPlaysFullHalf}
@@ -3264,6 +3455,9 @@ export default function App() {
           opponent={matchOpponent}
           seconds={seconds}
           halfLengthMinutes={halfLengthMinutes}
+          endedPeriod={currentPeriod}
+          nextPeriod={Math.min(totalPeriods, currentPeriod + 1)}
+          totalPeriods={totalPeriods}
           players={players}
           secondHalfFormation={matchFormations.second}
           onSetSecondHalfFormation={setSecondHalfFormation}
@@ -3385,6 +3579,8 @@ export default function App() {
         awayScore={awayScore}
         seconds={seconds}
         period={period}
+        currentPeriod={currentPeriod}
+        totalPeriods={totalPeriods}
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
@@ -3394,7 +3590,9 @@ export default function App() {
         onOpponentGoal={() => openGoalWizard('opponent')}
         onLogCard={() => setCardWizardOpen(true)}
         onShareStatTracker={
-          matchId ? () => void handleShareStatTracker() : undefined
+          ENABLE_STAT_TRACKER && matchId
+            ? () => void handleShareStatTracker()
+            : undefined
         }
       />
 
@@ -3403,7 +3601,9 @@ export default function App() {
           <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
         ) : null}
 
-        {matchId ? <SidelineStatsPanel matchId={matchId} players={players} /> : null}
+        {ENABLE_STAT_TRACKER && matchId ? (
+          <SidelineStatsPanel matchId={matchId} players={players} />
+        ) : null}
 
         {ENABLE_SUB_ASSISTANT ? (
           <SubCountdownTimer
@@ -3421,9 +3621,10 @@ export default function App() {
           onFormationSwitch={handleLiveFormationSwitch}
           players={players}
           clockSeconds={seconds}
+          halfLengthMinutes={halfLengthMinutes}
           maxFieldPlayers={maxFieldPlayers}
           teamFormat={activeTeamFormat}
-          initialSlotAssignments={period === '2nd' ? secondHalfSlotAssignments : undefined}
+          initialSlotAssignments={currentPeriod > 1 ? secondHalfSlotAssignments : undefined}
           onSwap={handleLiveSwap}
           onSubIn={handleLiveSubIn}
           onSubOut={handleLiveSubOut}
@@ -3432,12 +3633,16 @@ export default function App() {
       </div>
 
       <StickyMatchActionBar>
-        {!periodClockStarted && period === '1st' ? (
-          <PeriodStartButton label="Start 1st Half" onStart={handleStartFirstHalf} />
+        {!periodClockStarted && currentPeriod === 1 ? (
+          <PeriodStartButton
+            label={startPeriodButtonLabel(1, totalPeriods)}
+            onStart={handleStartFirstHalf}
+          />
         ) : periodClockStarted ? (
           <EndPeriodButton
-            period={period}
-            onEndFirstHalf={() => void handleEnterHalftime()}
+            currentPeriod={currentPeriod}
+            totalPeriods={totalPeriods}
+            onEndPeriod={() => void handleEnterHalftime()}
             onEndGame={handleEndGame}
           />
         ) : null}

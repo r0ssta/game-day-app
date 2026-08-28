@@ -19,7 +19,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
+import { GripVertical, Pencil, X } from 'lucide-react'
 import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
 import {
   TACTICAL_SLOT_LABELS,
@@ -27,6 +27,7 @@ import {
   type Formation,
   type FormationSlot,
 } from '@/lib/formations'
+import { MODAL_OVERLAY } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
 export type FormationPitchPlayer = {
@@ -39,6 +40,8 @@ export type FormationPitchPlayer = {
   minutesLabel?: string
   /** Single yellow card indicator on the pitch badge. */
   showYellowCard?: boolean
+  /** Soft cue that the player is due for a sub (long continuous stint). */
+  needsSubCue?: boolean
 }
 
 type DragType = 'player' | 'slot'
@@ -82,7 +85,7 @@ function clampPercent(value: number, min = 6, max = 94) {
   return Math.min(max, Math.max(min, value))
 }
 
-function SlotLabelPopover({
+function SlotLabelSheet({
   slotId,
   currentLabel,
   onSelect,
@@ -94,34 +97,54 @@ function SlotLabelPopover({
   onClose: () => void
 }) {
   return (
-    <div
-      className="absolute left-1/2 top-full z-40 mt-1 w-44 -translate-x-1/2 rounded-xl border-2 border-border bg-popover p-2 shadow-2xl"
-      onClick={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-label={`Change position for ${slotId}`}
-    >
-      <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-        Position label
-      </p>
-      <div className="grid max-h-48 grid-cols-3 gap-1 overflow-y-auto">
-        {TACTICAL_SLOT_LABELS.map((label) => (
+    <div className={MODAL_OVERLAY} onClick={onClose} role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Change position for ${slotId}`}
+        className="relative z-10 flex max-h-[70vh] w-full max-w-lg flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Position label
+            </p>
+            <h3 className="font-display text-lg font-bold uppercase tracking-wide text-foreground">
+              Rename slot
+            </h3>
+          </div>
           <button
-            key={label}
             type="button"
-            onClick={() => {
-              onSelect(label)
-              onClose()
-            }}
-            className={cn(
-              'min-h-9 touch-manipulation rounded-lg border px-1 text-[11px] font-black uppercase',
-              label === currentLabel
-                ? 'border-neon bg-neon text-neon-foreground'
-                : 'border-border bg-card text-foreground active:bg-secondary',
-            )}
+            onClick={onClose}
+            className="flex size-11 items-center justify-center rounded-lg bg-secondary text-foreground active:scale-95"
+            aria-label="Close"
           >
-            {label}
+            <X className="size-5" />
           </button>
-        ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {TACTICAL_SLOT_LABELS.map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  onSelect(label)
+                  onClose()
+                }}
+                className={cn(
+                  'flex min-h-12 touch-manipulation items-center justify-center rounded-xl border-2 px-2 text-sm font-black uppercase active:scale-[0.98]',
+                  label === currentLabel
+                    ? 'border-neon bg-neon text-neon-foreground'
+                    : 'border-border bg-card text-foreground active:bg-secondary',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -136,7 +159,6 @@ function PitchSlotVisual({
   pulseInteractive,
   allowLabelEdit,
   allowSlotReposition,
-  labelEditorOpen,
   dropHighlight,
   setDroppableRef,
   setRepositionRef,
@@ -146,8 +168,6 @@ function PitchSlotVisual({
   isSlotDragging,
   occupiedExtra,
   onOpenLabelEditor,
-  onCloseLabelEditor,
-  onLabelChange,
   onTap,
 }: {
   slot: FormationSlot
@@ -158,7 +178,7 @@ function PitchSlotVisual({
   pulseInteractive?: boolean
   allowLabelEdit: boolean
   allowSlotReposition: boolean
-  labelEditorOpen: boolean
+  labelEditorOpen?: boolean
   dropHighlight?: boolean
   setDroppableRef?: (node: HTMLElement | null) => void
   /** Draggable node for free repositioning (player badge or empty slot). */
@@ -169,7 +189,7 @@ function PitchSlotVisual({
   isSlotDragging?: boolean
   occupiedExtra?: ReactNode
   onOpenLabelEditor: () => void
-  onCloseLabelEditor: () => void
+  onCloseLabelEditor?: () => void
   onLabelChange?: (label: string) => void
   onTap: () => void
 }) {
@@ -213,8 +233,13 @@ function PitchSlotVisual({
           {player ? (
             <div
               className={cn(
-                'relative flex size-14 flex-col items-center justify-center rounded-full border-2 bg-neon text-neon-foreground shadow-lg',
-                selected ? 'border-white ring-2 ring-white/80' : 'border-neon-foreground/30',
+                'relative flex size-14 flex-col items-center justify-center rounded-full border-2 shadow-lg',
+                player.needsSubCue
+                  ? 'border-amber-500 bg-amber-300 text-slate-900 ring-2 ring-amber-400/45'
+                  : 'bg-neon text-neon-foreground',
+                !player.needsSubCue &&
+                  (selected ? 'border-white ring-2 ring-white/80' : 'border-neon-foreground/30'),
+                player.needsSubCue && selected && 'ring-4 ring-white/70',
                 dropHighlight && 'ring-2 ring-athletic',
               )}
             >
@@ -237,7 +262,15 @@ function PitchSlotVisual({
                 {player.shortName ?? player.name}
               </span>
               {player.minutesLabel ? (
-                <span className="mt-0.5 font-mono text-[8px] font-black tabular-nums leading-none text-slate-900">
+                <span
+                  className={cn(
+                    'mt-0.5 font-mono text-[8px] font-black tabular-nums leading-none',
+                    player.needsSubCue
+                      ? 'pitch-sub-cue-time text-amber-950'
+                      : 'text-slate-900',
+                  )}
+                  title={player.needsSubCue ? 'Long stint — consider a sub' : undefined}
+                >
                   {player.minutesLabel}
                 </span>
               ) : null}
@@ -275,24 +308,16 @@ function PitchSlotVisual({
               e.stopPropagation()
               onOpenLabelEditor()
             }}
-            className="absolute -bottom-1 left-1/2 z-20 -translate-x-1/2 rounded border border-white/40 bg-black/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white"
+            className="absolute left-1/2 top-full z-20 mt-1 flex min-h-11 min-w-[4.5rem] -translate-x-1/2 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-white/50 bg-black/80 px-3 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg active:scale-95"
             aria-label={`Change position label (${label})`}
           >
-            {label}
+            <Pencil className="size-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
+            <span>{label}</span>
           </button>
         ) : player && !occupiedExtra ? (
-          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded bg-black/60 px-1 py-0.5 text-[8px] font-black uppercase text-white">
+          <span className="absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black uppercase text-white">
             {label}
           </span>
-        ) : null}
-
-        {labelEditorOpen && onLabelChange ? (
-          <SlotLabelPopover
-            slotId={slot.id}
-            currentLabel={label}
-            onSelect={onLabelChange}
-            onClose={onCloseLabelEditor}
-          />
         ) : null}
       </div>
     </div>
@@ -530,8 +555,28 @@ export function FormationPitch({
     </div>
   )
 
+  const editingSlot = labelEditorSlotId
+    ? pitchSlots.find((slot) => slot.id === labelEditorSlotId)
+    : null
+  const labelSheet =
+    editingSlot && onSlotLabelChange ? (
+      <SlotLabelSheet
+        slotId={editingSlot.id}
+        currentLabel={resolveSlotLabel(editingSlot, slotLabelOverrides)}
+        onSelect={(next) => onSlotLabelChange(editingSlot.id, next)}
+        onClose={() => setLabelEditorSlotId(null)}
+      />
+    ) : null
+
   // Live / action mode: no DnD context, fixed slots, no reposition handles.
-  if (!enableDragDrop) return content
+  if (!enableDragDrop) {
+    return (
+      <>
+        {content}
+        {labelSheet}
+      </>
+    )
+  }
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -548,6 +593,7 @@ export function FormationPitch({
           </div>
         ) : null}
       </DragOverlay>
+      {labelSheet}
     </DndContext>
   )
 }
