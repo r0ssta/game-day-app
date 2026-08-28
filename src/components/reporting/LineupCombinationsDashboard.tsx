@@ -162,7 +162,7 @@ export function LineupCombinationsDashboard({ analytics }: LineupCombinationsDas
                   tone={entry.plusMinus < 0 ? 'danger' : 'neon'}
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  {entry.players} players · {entry.positivePercent}% positive ratings · {entry.goals}{' '}
+                  {entry.players} players · {entry.positivePercent}% rated 4–5 · {entry.goals}{' '}
                   G · {entry.assists} A
                 </p>
               </li>

@@ -116,6 +116,7 @@ import {
   seasonRosterToPlayers,
 } from '@/lib/season-roster'
 import { applyCardsFromEvents } from '@/lib/match-cards'
+import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import {
   defaultPeriodLengthMinutes,
   periodIndexToCode,
@@ -145,6 +146,10 @@ export function useGameDayApp() {
   const [players, setPlayers] = useState<MatchPlayer[]>([])
   const [homeScore, setHomeScore] = useState(0)
   const [awayScore, setAwayScore] = useState(0)
+  const [homeShots, setHomeShots] = useState(0)
+  const [awayShots, setAwayShots] = useState(0)
+  const [homeSaves, setHomeSaves] = useState(0)
+  const [awaySaves, setAwaySaves] = useState(0)
   const [seconds, setSeconds] = useState(0)
   const [period, setPeriod] = useState<MatchPeriod>('1st')
   const [currentPeriod, setCurrentPeriod] = useState(1)
@@ -350,10 +355,17 @@ export function useGameDayApp() {
             (player) => player.attending,
           )
           let playersWithCards = matchPlayers
+          let shotSaveTotals = {
+            homeShots: 0,
+            awayShots: 0,
+            homeSaves: 0,
+            awaySaves: 0,
+          }
           try {
             const events = await fetchMatchEvents(match.id)
             if (!cancelled) {
               playersWithCards = applyCardsFromEvents(matchPlayers, events)
+              shotSaveTotals = aggregateTeamShotSaveTotals(events)
             }
           } catch (cardErr) {
             console.warn('[bootstrap] could not restore card state', cardErr)
@@ -369,6 +381,10 @@ export function useGameDayApp() {
           setPlayers(playersWithCards)
           setHomeScore(match.home_score)
           setAwayScore(match.away_score)
+          setHomeShots(shotSaveTotals.homeShots)
+          setAwayShots(shotSaveTotals.awayShots)
+          setHomeSaves(shotSaveTotals.homeSaves)
+          setAwaySaves(shotSaveTotals.awaySaves)
           setSeconds(
             restoreMatchClockSeconds(
               match.clock_seconds,
@@ -1136,6 +1152,10 @@ export function useGameDayApp() {
         setPlayers(matchPlayers)
         setHomeScore(0)
         setAwayScore(0)
+        setHomeShots(0)
+        setAwayShots(0)
+        setHomeSaves(0)
+        setAwaySaves(0)
         setHomePkScore(0)
         setAwayPkScore(0)
         setPkWinnerIsUs(null)
@@ -1439,6 +1459,10 @@ export function useGameDayApp() {
     setPlayers([])
     setHomeScore(0)
     setAwayScore(0)
+    setHomeShots(0)
+    setAwayShots(0)
+    setHomeSaves(0)
+    setAwaySaves(0)
     setSeconds(0)
     setPeriod('1st')
     setCurrentPeriod(1)
@@ -1661,6 +1685,14 @@ export function useGameDayApp() {
     setHomeScore,
     awayScore,
     setAwayScore,
+    homeShots,
+    setHomeShots,
+    awayShots,
+    setAwayShots,
+    homeSaves,
+    setHomeSaves,
+    awaySaves,
+    setAwaySaves,
     seconds,
     setSeconds,
     period,

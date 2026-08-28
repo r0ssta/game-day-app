@@ -2,14 +2,21 @@ import { normalizeRecapPosition } from '@/lib/positions'
 import { formatOpponentWithVenue } from '@/lib/match-location'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
+  averagePlayerRatings,
+  clampPlayerRating,
+  DEFAULT_PLAYER_RATING,
+  formatPlayerRating,
+  legacyImpactScoreToRating,
+  type PlayerRating,
+} from '@/lib/player-rating'
+import {
   fetchMatchEvents,
   fetchMatchReviews,
   fetchMatchStatsByMatchId,
   rebuildMatchPlayers,
-  scoreToImpact,
 } from '@/lib/supabase-api'
 import type { DbMatchEvent } from '@/types/database'
-import type { Impact, MatchPlayer, RosterPlayer } from '@/types/match'
+import type { MatchPlayer, RosterPlayer } from '@/types/match'
 
 export type PlayerRecapStats = {
   playerId: string
@@ -17,13 +24,14 @@ export type PlayerRecapStats = {
   positions: string[]
   goals: number
   assists: number
+  saves: number
   yellowCards: number
   redCards: number
 }
 
 export type PositionRecapReview = {
   position: string
-  impact: Impact
+  rating: PlayerRating
   notes: string
 }
 
@@ -35,6 +43,7 @@ export type PlayerRecapReview = {
   positions: string[]
   goals: number
   assists: number
+  saves: number
   yellowCards: number
   redCards: number
   overallReview: PositionRecapReview
@@ -43,7 +52,7 @@ export type PlayerRecapReview = {
 }
 
 export type SavedPositionReview = {
-  impact: Impact
+  rating: PlayerRating
   notes: string
 }
 
@@ -142,6 +151,7 @@ export function aggregatePlayerRecaps(
       totalSeconds: number
       goals: number
       assists: number
+      saves: number
       yellowCards: number
       redCards: number
     }
@@ -153,6 +163,7 @@ export function aggregatePlayerRecaps(
         totalSeconds: 0,
         goals: 0,
         assists: 0,
+        saves: 0,
         yellowCards: 0,
         redCards: 0,
       })
@@ -163,7 +174,18 @@ export function aggregatePlayerRecaps(
   const openStints = new Map<string, number>()
 
   for (const event of timeline) {
-    if (event.event_type === 'opponent_goal' || !event.player_id) continue
+    if (
+      event.event_type === 'opponent_goal' ||
+      event.event_type === 'shot_home' ||
+      event.event_type === 'shot_away' ||
+      event.event_type === 'save_away'
+    ) {
+      continue
+    }
+
+    if (!event.player_id) {
+      continue
+    }
 
     const row = ensure(event.player_id)
 
@@ -188,6 +210,9 @@ export function aggregatePlayerRecaps(
       case 'assist':
         row.assists += 1
         break
+      case 'save_home':
+        row.saves += 1
+        break
       case 'yellow_card':
         row.yellowCards += 1
         break
@@ -205,6 +230,7 @@ export function aggregatePlayerRecaps(
       totalSeconds: 0,
       goals: 0,
       assists: 0,
+      saves: 0,
       yellowCards: 0,
       redCards: 0,
     }
@@ -215,6 +241,7 @@ export function aggregatePlayerRecaps(
       positions: computePlayerPositionsFromTimeline(playerId, timeline, fallbackPosition),
       goals: row.goals,
       assists: row.assists,
+      saves: row.saves,
       yellowCards: row.yellowCards,
       redCards: row.redCards,
     })
@@ -241,24 +268,22 @@ export function formatRecapMinutes(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-function formatImpactSymbol(impact: Impact): string {
-  if (impact === 'positive') return '+'
-  if (impact === 'negative') return '−'
-  return '='
+function formatRatingLabel(rating: PlayerRating): string {
+  return formatPlayerRating(rating, 0)
 }
 
 export function buildPositionReviews(
   playerId: string,
   positions: string[],
   savedReviews: Map<string, SavedPositionReview>,
-  fallbackImpact: Impact,
+  fallbackRating: PlayerRating,
 ): PositionRecapReview[] {
   return positions.map((position) => {
     const saved = savedReviews.get(playerPositionReviewKey(playerId, position))
 
     return {
       position: normalizeRecapPosition(position),
-      impact: saved?.impact ?? fallbackImpact,
+      rating: saved?.rating ?? fallbackRating,
       notes: saved?.notes ?? '',
     }
   })
@@ -291,7 +316,7 @@ export function buildRecapRows(
         playerId,
         positions,
         savedReviews,
-        player.impact,
+        DEFAULT_PLAYER_RATING,
       )
 
       return {
@@ -302,11 +327,12 @@ export function buildRecapRows(
         positions,
         goals: stats?.goals ?? 0,
         assists: stats?.assists ?? 0,
+        saves: stats?.saves ?? 0,
         yellowCards: stats?.yellowCards ?? 0,
         redCards: stats?.redCards ?? 0,
         overallReview: {
           position: OVERALL_REVIEW_POSITION,
-          impact: overallSaved?.impact ?? player.impact,
+          rating: overallSaved?.rating ?? DEFAULT_PLAYER_RATING,
           notes: overallSaved?.notes ?? '',
         },
         positionReviews,
@@ -326,6 +352,7 @@ export function buildRecapSummaryText(input: {
   coachSummary?: string
   qualitativeContextLines?: string[]
   disciplineLines?: string[]
+  teamShotSaveLine?: string | null
   rows: PlayerRecapReview[]
 }): string {
   const coachSummary = input.coachSummary?.trim()
@@ -333,12 +360,14 @@ export function buildRecapSummaryText(input: {
   const venueLine = formatOpponentWithVenue(input.opponent, input.locationType ?? 'home')
   const qualitativeLines = input.qualitativeContextLines ?? []
   const disciplineLines = input.disciplineLines ?? []
+  const teamShotSaveLine = input.teamShotSaveLine?.trim()
   const lines = [
     'POST-GAME RECAP',
     '===============',
     `${input.teamName} · ${venueLine}`,
     `Final Score: ${input.homeScore} – ${input.awayScore}`,
-    ...(coachName ? [`Head Coach: ${coachName}`, ''] : []),
+    ...(teamShotSaveLine ? [`Box Score: ${teamShotSaveLine}`] : []),
+    ...(coachName ? [`Head Coach: ${coachName}`, ''] : ['']),
     ...(coachSummary
       ? ['COACH SUMMARY', '--------------', coachSummary, '']
       : []),
@@ -354,11 +383,11 @@ export function buildRecapSummaryText(input: {
         ? ` · Notes: ${row.overallReview.notes.trim()}`
         : ''
       const ratingLines = [
-        `  Overall: ${formatImpactSymbol(row.overallReview.impact)}${overallNotes}`,
+        `  Overall: ${formatRatingLabel(row.overallReview.rating)}${overallNotes}`,
         ...(row.positionReviews.length > 1
           ? row.positionReviews.map((review) => {
               const notes = review.notes.trim() ? ` · Notes: ${review.notes.trim()}` : ''
-              return `  ${review.position}: ${formatImpactSymbol(review.impact)}${notes}`
+              return `  ${review.position}: ${formatRatingLabel(review.rating)}${notes}`
             })
           : []),
       ]
@@ -366,11 +395,12 @@ export function buildRecapSummaryText(input: {
         row.yellowCards > 0 ? `YC:${row.yellowCards}` : null,
         row.redCards > 0 ? `RC:${row.redCards}` : null,
       ].filter(Boolean)
+      const saveBit = row.saves > 0 ? ` SV:${row.saves}` : ''
 
       return [
         `${row.number !== null ? `#${row.number}` : '—'} ${row.name}`,
         `  ${formatRecapMinutes(row.totalSeconds)} · ${positions}`,
-        `  G:${row.goals} A:${row.assists}${cardBits.length ? ` ${cardBits.join(' ')}` : ''}`,
+        `  G:${row.goals} A:${row.assists}${saveBit}${cardBits.length ? ` ${cardBits.join(' ')}` : ''}`,
         ...(row.sidelineStatsSummary ? [`  Sideline: ${row.sidelineStatsSummary}`] : []),
         ...ratingLines,
       ].join('\n')
@@ -383,15 +413,23 @@ export function indexSavedReviews(
   existingReviews: Array<{
     player_id: string
     position?: string | null
-    impact_score: number
+    rating?: number | null
+    /** @deprecated Legacy column name before 1–5 migration */
+    impact_score?: number | null
     review_notes: string | null
   }>,
 ): Map<string, SavedPositionReview> {
   const savedReviews = new Map<string, SavedPositionReview>()
 
   for (const review of existingReviews) {
+    const raw =
+      typeof review.rating === 'number'
+        ? review.rating
+        : typeof review.impact_score === 'number'
+          ? legacyImpactScoreToRating(review.impact_score)
+          : DEFAULT_PLAYER_RATING
     const payload: SavedPositionReview = {
-      impact: scoreToImpact(review.impact_score),
+      rating: clampPlayerRating(raw),
       notes: review.review_notes ?? '',
     }
     const position = review.position?.trim() || LEGACY_REVIEW_POSITION
@@ -426,20 +464,10 @@ export async function loadHistoricalRecapRows(
   return buildRecapRows(players, eventStats, savedReviews)
 }
 
-export function dominantImpact(counts: {
-  positive: number
-  neutral: number
-  negative: number
-}): Impact {
-  if (counts.positive >= counts.neutral && counts.positive >= counts.negative) {
-    return 'positive'
-  }
-  if (counts.negative >= counts.neutral && counts.negative >= counts.positive) {
-    return 'negative'
-  }
-  return 'neutral'
+export function averageMatchRating(ratings: number[]): number | null {
+  return averagePlayerRatings(ratings)
 }
 
-export function formatAverageRatingLabel(impact: Impact): string {
-  return formatImpactSymbol(impact)
+export function formatAverageRatingLabel(average: number | null): string {
+  return formatPlayerRating(average, 1)
 }

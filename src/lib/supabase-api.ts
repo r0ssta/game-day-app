@@ -39,6 +39,11 @@ import type {
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
 import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
 import {
+  clampPlayerRating,
+  ratingToLegacyImpactScore,
+  type PlayerRating,
+} from '@/lib/player-rating'
+import {
   type AppRole,
   type AssignableAppRole,
   type TeamRole,
@@ -61,6 +66,10 @@ export type MatchEventInput = {
     | 'pk_attempt'
     | 'yellow_card'
     | 'red_card'
+    | 'shot_home'
+    | 'shot_away'
+    | 'save_home'
+    | 'save_away'
     | StatTrackerEventType
     | 'stat_team_log'
   timestamp: number
@@ -1494,7 +1503,7 @@ export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[
 export type PostGameReviewInput = {
   playerId: string
   position: string
-  impact: Impact
+  rating: PlayerRating
   notes: string
 }
 
@@ -1514,7 +1523,7 @@ export async function savePostGameReview(
     match_id: matchId,
     player_id: review.playerId,
     position: normalizeRecapPosition(review.position.trim() || 'Overall'),
-    impact_score: impactToScore(review.impact),
+    rating: clampPlayerRating(review.rating),
     review_notes: review.notes.trim() || null,
     updated_at: now,
   }))
@@ -1527,10 +1536,11 @@ export async function savePostGameReview(
   }
   if (reviewError) {
     if (isMissingColumnError(reviewError)) {
+      // Legacy DBs that still have impact_score instead of rating
       const legacyRows = reviews.map((review) => ({
         match_id: matchId,
         player_id: review.playerId,
-        impact_score: impactToScore(review.impact),
+        impact_score: ratingToLegacyImpactScore(clampPlayerRating(review.rating)),
         review_notes: review.notes.trim() || null,
         updated_at: now,
       }))
@@ -1543,21 +1553,23 @@ export async function savePostGameReview(
     }
   }
 
-  const primaryImpactByPlayer = new Map<string, Impact>()
+  const primaryRatingByPlayer = new Map<string, PlayerRating>()
   for (const review of reviews) {
     if (normalizeRecapPosition(review.position) !== 'Overall') continue
-    primaryImpactByPlayer.set(review.playerId, review.impact)
+    primaryRatingByPlayer.set(review.playerId, clampPlayerRating(review.rating))
   }
   for (const review of reviews) {
-    if (primaryImpactByPlayer.has(review.playerId)) continue
-    primaryImpactByPlayer.set(review.playerId, review.impact)
+    if (primaryRatingByPlayer.has(review.playerId)) continue
+    primaryRatingByPlayer.set(review.playerId, clampPlayerRating(review.rating))
   }
 
   await Promise.all(
-    [...primaryImpactByPlayer.entries()].map(([playerId, impact]) =>
+    [...primaryRatingByPlayer.entries()].map(([playerId, rating]) =>
       supabase
         .from('match_stats')
-        .update({ impact_score: impactToScore(impact) })
+        .update({
+          impact_score: ratingToLegacyImpactScore(rating),
+        })
         .eq('match_id', matchId)
         .eq('player_id', playerId),
     ),

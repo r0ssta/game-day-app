@@ -4,9 +4,14 @@ import './index.css'
 import App from './App.tsx'
 import { AuthScreen } from '@/components/AuthScreen'
 import { PendingAccessScreen } from '@/components/PendingAccessScreen'
+import { ParentHubScreen } from '@/components/ParentHubScreen'
 import { StatTrackerScreen } from '@/components/StatTrackerScreen'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
+import {
+  parseParentHubRoute,
+  registerParentServiceWorker,
+} from '@/lib/parent-hub'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 
@@ -36,9 +41,17 @@ function AuthenticatedApp() {
 
 function Root() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
+  const [parentHubRoute, setParentHubRoute] = useState(() => parseParentHubRoute())
 
   useEffect(() => {
-    const syncRoute = () => setTrackerRoute(parseStatTrackerRoute())
+    void registerParentServiceWorker()
+  }, [])
+
+  useEffect(() => {
+    const syncRoute = () => {
+      setTrackerRoute(parseStatTrackerRoute())
+      setParentHubRoute(parseParentHubRoute())
+    }
     syncRoute()
     window.addEventListener('hashchange', syncRoute)
     window.addEventListener('popstate', syncRoute)
@@ -52,6 +65,8 @@ function Root() {
     <SunlightModeProvider>
       {trackerRoute ? (
         <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
+      ) : parentHubRoute ? (
+        <ParentHubScreen route={parentHubRoute} />
       ) : (
         <AuthProvider>
           <AuthenticatedApp />

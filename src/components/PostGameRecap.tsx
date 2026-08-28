@@ -39,6 +39,10 @@ import {
   savePostGameReview,
 } from '@/lib/supabase-api'
 import {
+  aggregateTeamShotSaveTotals,
+  formatTeamShotSaveLine,
+} from '@/lib/match-shot-save'
+import {
   formatOpponentPrefix,
   formatOpponentWithVenue,
   formatVenueLabel,
@@ -48,50 +52,56 @@ import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { ENABLE_POSITIONAL_RECAP_RATINGS } from '@/lib/feature-flags'
-import type { Impact, MatchPlayer } from '@/types/match'
+import {
+  DEFAULT_PLAYER_RATING,
+  PLAYER_RATINGS,
+  type PlayerRating,
+} from '@/lib/player-rating'
+import type { MatchPlayer } from '@/types/match'
 import type { DbMatch, DbMatchEvent } from '@/types/database'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-const IMPACT_RING: Record<Impact, string> = {
-  neutral: 'border-border text-muted-foreground',
-  positive: 'border-neon text-neon bg-neon/10',
-  negative: 'border-danger text-danger bg-danger/10',
+function ratingRingClass(rating: PlayerRating): string {
+  if (rating >= 4) return 'border-neon text-neon bg-neon/10'
+  if (rating <= 2) return 'border-danger text-danger bg-danger/10'
+  return 'border-athletic text-athletic bg-athletic/10'
 }
 
-function ImpactToggleGroup({
-  impact,
-  onSetImpact,
+function RatingSelectGroup({
+  rating,
+  onSetRating,
   disabled = false,
 }: {
-  impact: Impact
-  onSetImpact: (impact: Impact) => void
+  rating: PlayerRating
+  onSetRating: (rating: PlayerRating) => void
   disabled?: boolean
 }) {
   return (
-    <div className="flex shrink-0 gap-1">
-      {(['negative', 'neutral', 'positive'] as const).map((value) => (
+    <div
+      className="inline-flex w-full max-w-[16rem] shrink-0 overflow-hidden rounded-xl border border-border bg-secondary/40"
+      role="group"
+      aria-label="Player rating 1 to 5"
+    >
+      {PLAYER_RATINGS.map((value) => (
         <button
           key={value}
           type="button"
-          aria-label={`${value} rating`}
+          aria-label={`Rating ${value}`}
+          aria-pressed={rating === value}
           disabled={disabled}
-          onClick={() => onSetImpact(value)}
+          onClick={() => onSetRating(value)}
           className={cn(
-            'flex size-11 min-h-11 min-w-11 touch-manipulation items-center justify-center rounded-md text-sm font-bold active:scale-90',
+            'min-h-11 min-w-0 flex-1 touch-manipulation px-1 py-2 text-sm font-black tabular-nums transition-colors active:scale-[0.98]',
             disabled && 'cursor-default opacity-70 active:scale-100',
-            impact === value
-              ? value === 'positive'
-                ? 'bg-neon text-neon-foreground'
-                : value === 'negative'
-                  ? 'bg-danger text-danger-foreground'
-                  : 'bg-muted-foreground/30 text-foreground'
-              : 'bg-secondary text-muted-foreground',
+            rating === value
+              ? 'bg-neon text-neon-foreground shadow-inner'
+              : 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground',
           )}
         >
-          {value === 'negative' ? '−' : value === 'positive' ? '+' : '='}
+          {value}
         </button>
       ))}
     </div>
@@ -203,14 +213,14 @@ export function PostGameRecap({
         const initialTouchedPositions = new Set<string>()
         for (const row of recapRows) {
           initialReviews[playerOverallReviewKey(row.playerId)] = {
-            impact: row.overallReview.impact,
+            rating: row.overallReview.rating,
             notes: row.overallReview.notes,
           }
           for (const review of row.positionReviews) {
             const key = playerPositionReviewKey(row.playerId, review.position)
             if (!savedReviews.has(key)) continue
             initialReviews[key] = {
-              impact: review.impact,
+              rating: review.rating,
               notes: review.notes,
             }
             initialTouchedPositions.add(key)
@@ -248,6 +258,19 @@ export function PostGameRecap({
     () => disciplineSummaries.map((row) => row.label),
     [disciplineSummaries],
   )
+  const teamShotSaveTotals = useMemo(
+    () => aggregateTeamShotSaveTotals(matchEvents),
+    [matchEvents],
+  )
+  const teamShotSaveLine = useMemo(() => {
+    const hasAny =
+      teamShotSaveTotals.homeShots +
+        teamShotSaveTotals.awayShots +
+        teamShotSaveTotals.homeSaves +
+        teamShotSaveTotals.awaySaves >
+      0
+    return hasAny ? formatTeamShotSaveLine(teamShotSaveTotals) : null
+  }, [teamShotSaveTotals])
 
   const getSavedReview = (
     playerId: string,
@@ -284,7 +307,7 @@ export function PostGameRecap({
     setReviews((prev) => ({
       ...prev,
       [key]: {
-        impact: patch.impact ?? prev[key]?.impact ?? 'neutral',
+        rating: patch.rating ?? prev[key]?.rating ?? DEFAULT_PLAYER_RATING,
         notes: patch.notes ?? prev[key]?.notes ?? '',
       },
     }))
@@ -294,14 +317,14 @@ export function PostGameRecap({
     () =>
       recapRows.flatMap((row) => {
         const overall = getSavedReview(row.playerId, OVERALL_REVIEW_POSITION, {
-          impact: row.overallReview.impact,
+          rating: row.overallReview.rating,
           notes: row.overallReview.notes,
         })
         const entries = [
           {
             playerId: row.playerId,
             position: OVERALL_REVIEW_POSITION,
-            impact: overall.impact,
+            rating: overall.rating,
             notes: overall.notes,
           },
         ]
@@ -312,13 +335,13 @@ export function PostGameRecap({
             if (!touchedPositionReviews.has(key)) continue
 
             const saved = getSavedReview(row.playerId, review.position, {
-              impact: review.impact,
+              rating: review.rating,
               notes: review.notes,
             })
             entries.push({
               playerId: row.playerId,
               position: review.position,
-              impact: saved.impact,
+              rating: saved.rating,
               notes: saved.notes,
             })
           }
@@ -420,7 +443,7 @@ export function PostGameRecap({
       overallReview: {
         ...row.overallReview,
         ...getSavedReview(row.playerId, OVERALL_REVIEW_POSITION, {
-          impact: row.overallReview.impact,
+          rating: row.overallReview.rating,
           notes: row.overallReview.notes,
         }),
       },
@@ -435,7 +458,7 @@ export function PostGameRecap({
         .map((review) => ({
           ...review,
           ...getSavedReview(row.playerId, review.position, {
-            impact: review.impact,
+            rating: review.rating,
             notes: review.notes,
           }),
         })),
@@ -457,6 +480,7 @@ export function PostGameRecap({
         coachSummary,
         qualitativeContextLines,
         disciplineLines,
+        teamShotSaveLine,
         rows: buildSummaryRows(),
       })
 
@@ -481,6 +505,7 @@ export function PostGameRecap({
       coachSummary,
       qualitativeContextLines,
       disciplineLines,
+      teamShotSaveLine,
       rows: buildSummaryRows(),
     })
     const subject = encodeURIComponent(
@@ -501,6 +526,7 @@ export function PostGameRecap({
       coachSummary,
       qualitativeContextLines,
       disciplineLines,
+      teamShotSaveLine,
       rows: buildSummaryRows(),
     })
     void navigator.clipboard.writeText(summary).then(() => onToast('Summary copied'))
@@ -551,7 +577,9 @@ export function PostGameRecap({
 
   return (
     <>
-    <main className={`${APP_SHELL} pb-28 md:pb-32`}>
+    <main
+      className={`${APP_SHELL} pb-[calc(14rem+env(safe-area-inset-bottom))] md:pb-[calc(15rem+env(safe-area-inset-bottom))]`}
+    >
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 text-center">
@@ -651,6 +679,20 @@ export function PostGameRecap({
           readOnly={readOnly}
         />
 
+        {teamShotSaveLine ? (
+          <section className="rounded-xl border border-athletic/40 bg-athletic/5 p-4">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              Box Score
+            </h2>
+            <p className="mt-2 text-sm font-semibold tabular-nums text-foreground">
+              {teamShotSaveLine}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Home (us) – Away (opponent)
+            </p>
+          </section>
+        ) : null}
+
         {disciplineSummaries.length > 0 ? (
           <section className="rounded-xl border border-amber-400/40 bg-amber-400/5 p-4">
             <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
@@ -684,7 +726,7 @@ export function PostGameRecap({
               const positionsLabel = row.positions.length > 0 ? row.positions.join(', ') : '—'
               const multiPosition = row.positionReviews.length > 1
               const overall = getSavedReview(row.playerId, OVERALL_REVIEW_POSITION, {
-                impact: row.overallReview.impact,
+                rating: row.overallReview.rating,
                 notes: row.overallReview.notes,
               })
               const playerMicroStats = microStats.get(row.playerId)
@@ -699,7 +741,7 @@ export function PostGameRecap({
                     <div
                       className={cn(
                         'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-                        IMPACT_RING[overall.impact],
+                        ratingRingClass(overall.rating),
                       )}
                     >
                       {formatJersey(row.number)}
@@ -716,6 +758,7 @@ export function PostGameRecap({
                       </p>
                       <p className="text-xs font-semibold text-muted-foreground">
                         Goals {row.goals} · Assists {row.assists}
+                        {row.saves > 0 ? ` · Saves ${row.saves}` : ''}
                         {row.yellowCards > 0 || row.redCards > 0
                           ? ` · YC ${row.yellowCards} · RC ${row.redCards}`
                           : ''}
@@ -734,11 +777,11 @@ export function PostGameRecap({
                         Overall Performance
                       </p>
                       <div className="flex flex-wrap items-center gap-3">
-                        <ImpactToggleGroup
-                          impact={overall.impact}
+                        <RatingSelectGroup
+                          rating={overall.rating}
                           disabled={readOnly}
-                          onSetImpact={(impact) =>
-                            updateReview(row.playerId, OVERALL_REVIEW_POSITION, { impact })
+                          onSetRating={(rating) =>
+                            updateReview(row.playerId, OVERALL_REVIEW_POSITION, { rating })
                           }
                         />
                         <input
@@ -770,7 +813,7 @@ export function PostGameRecap({
                         {row.positionReviews.map((review) => {
                           const reviewKey = playerPositionReviewKey(row.playerId, review.position)
                           const saved = getSavedReview(row.playerId, review.position, {
-                            impact: review.impact,
+                            rating: review.rating,
                             notes: review.notes,
                           })
                           const isTouched = touchedPositionReviews.has(reviewKey)
@@ -789,11 +832,11 @@ export function PostGameRecap({
                                 <span className="text-sm font-bold text-foreground">
                                   {review.position}
                                 </span>
-                                <ImpactToggleGroup
-                                  impact={saved.impact}
+                                <RatingSelectGroup
+                                  rating={saved.rating}
                                   disabled={readOnly}
-                                  onSetImpact={(impact) =>
-                                    updateReview(row.playerId, review.position, { impact }, {
+                                  onSetRating={(rating) =>
+                                    updateReview(row.playerId, review.position, { rating }, {
                                       markPositionTouched: true,
                                     })
                                   }
@@ -829,7 +872,7 @@ export function PostGameRecap({
           </ul>
         </section>
 
-        <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className={`${APP_CONTAINER} flex flex-col gap-2`}>
             {readOnly ? (
               isCompletedMatch ? (

@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import { formatPlusMinus } from '@/lib/plus-minus'
+import { formatPlayerRating } from '@/lib/player-rating'
 import {
   formatPlayerSeasonHeader,
   formatPositionBreakdownDetail,
@@ -9,22 +10,17 @@ import {
 } from '@/lib/season-reporting'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
-import type { Impact, RosterPlayer } from '@/types/match'
+import type { RosterPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-function formatImpactLabel(impact: Impact) {
-  if (impact === 'positive') return '+'
-  if (impact === 'negative') return '−'
-  return '='
-}
-
-const IMPACT_BADGE: Record<Impact, string> = {
-  positive: 'bg-neon/15 text-neon',
-  neutral: 'bg-secondary text-muted-foreground',
-  negative: 'bg-danger/15 text-danger',
+function ratingBadgeClass(rating: number | null | undefined): string {
+  if (rating == null) return 'bg-secondary text-muted-foreground'
+  if (rating >= 4) return 'bg-neon/15 text-neon'
+  if (rating <= 2) return 'bg-danger/15 text-danger'
+  return 'bg-secondary text-muted-foreground'
 }
 
 type PlayerSeasonProfileViewProps = {
@@ -35,6 +31,11 @@ type PlayerSeasonProfileViewProps = {
 
 export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonProfileViewProps) {
   const header = formatPlayerSeasonHeader(player, stats)
+  const highCount = stats.matchLogs.filter((log) => log.overallRating.rating >= 4).length
+  const midCount = stats.matchLogs.filter(
+    (log) => log.overallRating.rating === 3,
+  ).length
+  const lowCount = stats.matchLogs.filter((log) => log.overallRating.rating <= 2).length
 
   return (
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
@@ -146,23 +147,40 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
             Overall Performance
           </h2>
           <p className="mt-2 text-sm font-semibold text-foreground">
-            Season average: {formatImpactLabel(stats.averageOverallRating)}
+            Season average:{' '}
+            {stats.averageOverallRating != null
+              ? `${formatPlayerRating(stats.averageOverallRating, 1)}/5`
+              : '—'}
+            {stats.ratingSampleSize > 0 ? ` · ${stats.ratingSampleSize} rated` : ''}
           </p>
           <div className="mt-3 flex flex-wrap gap-3">
-            {(['positive', 'neutral', 'negative'] as const).map((impact) => (
-              <div
-                key={impact}
-                className={cn(
-                  'flex min-w-[4.5rem] flex-col items-center rounded-lg px-3 py-2',
-                  IMPACT_BADGE[impact],
-                )}
-              >
-                <span className="font-display text-xl font-black">
-                  {formatImpactLabel(impact)}
-                </span>
-                <span className="text-xs font-bold tabular-nums">{stats.ratingCounts[impact]}</span>
-              </div>
-            ))}
+            <div
+              className={cn(
+                'flex min-w-[4.5rem] flex-col items-center rounded-lg px-3 py-2',
+                'bg-neon/15 text-neon',
+              )}
+            >
+              <span className="font-display text-sm font-black">4–5</span>
+              <span className="text-xs font-bold tabular-nums">{highCount}</span>
+            </div>
+            <div
+              className={cn(
+                'flex min-w-[4.5rem] flex-col items-center rounded-lg px-3 py-2',
+                'bg-secondary text-muted-foreground',
+              )}
+            >
+              <span className="font-display text-sm font-black">3</span>
+              <span className="text-xs font-bold tabular-nums">{midCount}</span>
+            </div>
+            <div
+              className={cn(
+                'flex min-w-[4.5rem] flex-col items-center rounded-lg px-3 py-2',
+                'bg-danger/15 text-danger',
+              )}
+            >
+              <span className="font-display text-sm font-black">1–2</span>
+              <span className="text-xs font-bold tabular-nums">{lowCount}</span>
+            </div>
           </div>
         </section>
 
@@ -224,11 +242,11 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
                     </span>
                     <span
                       className={cn(
-                        'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                        IMPACT_BADGE[entry.impact],
+                        'rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                        ratingBadgeClass(entry.rating),
                       )}
                     >
-                      {formatImpactLabel(entry.impact)}
+                      {entry.rating}/5
                     </span>
                   </div>
                   <p className="mt-2 text-sm leading-relaxed text-foreground">{entry.notes}</p>
@@ -265,21 +283,21 @@ export function PlayerSeasonProfileView({ player, stats, onBack }: PlayerSeasonP
                   <div className="mt-2 flex flex-wrap gap-2">
                     <span
                       className={cn(
-                        'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                        IMPACT_BADGE[log.overallRating.impact],
+                        'rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                        ratingBadgeClass(log.overallRating.rating),
                       )}
                     >
-                      Overall: {formatImpactLabel(log.overallRating.impact)}
+                      Overall: {log.overallRating.rating}/5
                     </span>
                     {log.positionRatings.map((rating) => (
                       <span
                         key={`${log.matchId}-${rating.position}`}
                         className={cn(
-                          'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                          IMPACT_BADGE[rating.impact],
+                          'rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                          ratingBadgeClass(rating.rating),
                         )}
                       >
-                        {rating.position}: {formatImpactLabel(rating.impact)}
+                        {rating.position}: {rating.rating}/5
                       </span>
                     ))}
                   </div>

@@ -64,11 +64,22 @@ import { resolveSetupLineup } from '@/lib/lineup-presets'
 import type { TeamFormat } from '@/lib/team-format'
 import type { SubFrequency } from '@/lib/sub-rotation'
 import {
+  ENABLE_PARENT_HUB,
   ENABLE_QA_SPEED,
   ENABLE_STAT_TRACKER,
   ENABLE_SUB_ASSISTANT,
   ENABLE_WAKE_LOCK,
 } from '@/lib/feature-flags'
+import {
+  buildCardPush,
+  buildFullTimePush,
+  buildGoalPush,
+  buildMatchStartPush,
+  buildPeriodPush,
+  buildSubstitutionPush,
+  notifyWebPush,
+  shareParentHubLink,
+} from '@/lib/parent-hub'
 import {
   applySubIn,
   applySubOut,
@@ -108,6 +119,7 @@ import {
   shouldEnterPenaltyShootout,
   shouldResumePenaltyShootout,
 } from '@/lib/penalty-kicks'
+import { findActiveOnFieldGoalkeeper } from '@/lib/match-shot-save'
 import type { DbMatch } from '@/types/database'
 import {
   buildSidelineNameMap,
@@ -299,6 +311,10 @@ type MatchHeaderProps = {
   opponent: string
   homeScore: number
   awayScore: number
+  homeShots?: number
+  awayShots?: number
+  homeSaves?: number
+  awaySaves?: number
   seconds: number
   period: MatchPeriod
   currentPeriod: number
@@ -313,6 +329,8 @@ type MatchHeaderProps = {
   onHome: () => void
   onLogGoal?: () => void
   onOpponentGoal?: () => void
+  onLogShot?: (side: 'home' | 'away') => void
+  onLogSave?: (side: 'home' | 'away') => void
   onLogCard?: () => void
   onShareStatTracker?: () => void
 }
@@ -366,6 +384,10 @@ function MatchHeader({
   opponent,
   homeScore,
   awayScore,
+  homeShots = 0,
+  awayShots = 0,
+  homeSaves = 0,
+  awaySaves = 0,
   seconds,
   period: _period,
   currentPeriod,
@@ -378,6 +400,8 @@ function MatchHeader({
   onHome,
   onLogGoal,
   onOpponentGoal,
+  onLogShot,
+  onLogSave,
   onLogCard,
   onShareStatTracker,
 }: MatchHeaderProps) {
@@ -390,6 +414,9 @@ function MatchHeader({
   const waitingToStart = !periodClockStarted
   const clockParts = formatMatchClockParts(seconds)
   const showGoalActions = Boolean(periodClockStarted && onLogGoal && onOpponentGoal)
+  const showShotSaveActions = Boolean(periodClockStarted && onLogShot && onLogSave)
+  const showTeamShotSaveLine =
+    homeShots + awayShots + homeSaves + awaySaves > 0 || showShotSaveActions
   const periodBadge = formatPeriodShort(currentPeriod, totalPeriods)
   const periodReadyLabel = formatPeriodLong(currentPeriod, totalPeriods)
 
@@ -491,25 +518,73 @@ function MatchHeader({
           </div>
         </div>
 
+        {showTeamShotSaveLine ? (
+          <p className="text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Shots {homeShots}–{awayShots}
+            <span className="mx-1.5 text-border">·</span>
+            Saves {homeSaves}–{awaySaves}
+          </p>
+        ) : null}
+
         {showGoalActions ? (
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={onLogGoal}
-                className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl bg-neon px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-neon-foreground shadow-md shadow-neon/25 active:scale-[0.98]"
-              >
-                <Goal className="size-4" strokeWidth={2.5} />
-                Goal
-              </button>
-              <button
-                type="button"
-                onClick={onOpponentGoal}
-                className="flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
-              >
-                <Shield className="size-4" strokeWidth={2.5} />
-                Opp. Goal
-              </button>
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={onLogGoal}
+                  className="flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl bg-neon px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-neon-foreground shadow-md shadow-neon/25 active:scale-[0.98]"
+                >
+                  <Goal className="size-4" strokeWidth={2.5} />
+                  Goal
+                </button>
+                {showShotSaveActions ? (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onLogShot?.('home')}
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                    >
+                      + Shot
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLogSave?.('home')}
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                    >
+                      + Save
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={onOpponentGoal}
+                  className="flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-secondary px-2 py-2.5 font-display text-sm font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
+                >
+                  <Shield className="size-4" strokeWidth={2.5} />
+                  Opp. Goal
+                </button>
+                {showShotSaveActions ? (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onLogShot?.('away')}
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                    >
+                      + Shot
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLogSave?.('away')}
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                    >
+                      + Save
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
             {onLogCard ? (
               <button
@@ -947,6 +1022,7 @@ type SetupScreenProps = {
   lineupPresets: { id: string; preset_name: string }[]
   onLoadLineupPreset: (presetId: string) => void
   onBackToHome: () => void
+  onShareParentHub?: () => void
   setupSlotAssignments?: Record<string, string | null>
   setupSlotLabelOverrides?: Record<string, string>
   onSetupSlotAssignmentsChange?: (assignments: Record<string, string | null>) => void
@@ -1009,6 +1085,7 @@ function SetupScreen({
   lineupPresets,
   onLoadLineupPreset,
   onBackToHome,
+  onShareParentHub,
   setupSlotAssignments,
   setupSlotLabelOverrides,
   onSetupSlotAssignmentsChange,
@@ -1045,6 +1122,17 @@ function SetupScreen({
             <p className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {activeTeamFormat} format · {maxFieldPlayers} on field
             </p>
+
+            {onShareParentHub ? (
+              <button
+                type="button"
+                onClick={onShareParentHub}
+                className="flex w-full min-h-12 touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-border bg-card px-4 py-3 text-sm font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
+              >
+                <Share2 className="size-4" strokeWidth={2.5} />
+                Share Team Hub
+              </button>
+            ) : null}
 
             <MatchCoachSelect
               id="head-coach"
@@ -1814,6 +1902,14 @@ export default function App() {
     setHomeScore,
     awayScore,
     setAwayScore,
+    homeShots,
+    setHomeShots,
+    awayShots,
+    setAwayShots,
+    homeSaves,
+    setHomeSaves,
+    awaySaves,
+    setAwaySaves,
     seconds,
     setSeconds,
     period,
@@ -2238,6 +2334,8 @@ export default function App() {
     if (!team) return 'Team'
     return formatTeamDisplayName(team.name, team.age_group)
   })()
+  const activeTeamSlug =
+    teams.find((entry) => entry.id === activeTeamId)?.slug?.trim() || null
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const startMatchBlockReason =
     getSetupLineupBlockReason(setupLineup, maxFieldPlayers) ??
@@ -2445,6 +2543,21 @@ export default function App() {
             clock_seconds: persistableClockSeconds(seconds),
           })
         }
+        if (activeTeamId && !enterPks) {
+          const push = buildFullTimePush({
+            teamName: matchTeamName.trim() || 'Home',
+            opponent: matchOpponent,
+            homeScore,
+            awayScore,
+          })
+          notifyWebPush({
+            eventType: 'full_time',
+            teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+            title: push.title,
+            body: push.body,
+          })
+        }
         setEndTimingOpen(false)
         setToast(
           enterPks
@@ -2459,7 +2572,7 @@ export default function App() {
         setEndingMatch(false)
       }
     },
-    [seconds, matchId, finishGame, homeScore, awayScore, matchGoesToPks],
+    [seconds, matchId, finishGame, homeScore, awayScore, matchGoesToPks, activeTeamId, matchTeamName, matchOpponent],
   )
 
   const handleStartFirstHalf = useCallback(() => {
@@ -2478,6 +2591,24 @@ export default function App() {
         total_periods: totalPeriods,
         period_length: halfLengthMinutes,
         half_length: halfLengthMinutes,
+      })
+    }
+
+    if (activeTeamId) {
+      const starters = players.filter((p) => p.attending && p.isOnField)
+      const push = buildMatchStartPush({
+        teamName: matchTeamName.trim() || 'Home',
+        opponent: matchOpponent,
+        starters,
+        currentPeriod,
+        totalPeriods,
+      })
+      notifyWebPush({
+        eventType: 'match_start',
+        teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+        title: push.title,
+        body: push.body,
       })
     }
 
@@ -2500,6 +2631,10 @@ export default function App() {
     currentPeriod,
     totalPeriods,
     halfLengthMinutes,
+    activeTeamId,
+    players,
+    matchTeamName,
+    matchOpponent,
   ])
 
   const handleEnterHalftime = useCallback(async () => {
@@ -2517,6 +2652,24 @@ export default function App() {
       })
     }
     const next = Math.min(totalPeriods, currentPeriod + 1)
+    if (activeTeamId) {
+      const push = buildPeriodPush({
+        teamName: matchTeamName.trim() || 'Home',
+        opponent: matchOpponent,
+        kind: 'end',
+        period: currentPeriod,
+        totalPeriods,
+        homeScore,
+        awayScore,
+      })
+      notifyWebPush({
+        eventType: 'period_end',
+        teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+        title: push.title,
+        body: push.body,
+      })
+    }
     setToast(
       `${formatPeriodLong(currentPeriod, totalPeriods)} ended — set ${formatPeriodLong(next, totalPeriods)} lineup`,
     )
@@ -2528,6 +2681,11 @@ export default function App() {
     currentPeriod,
     totalPeriods,
     halfLengthMinutes,
+    activeTeamId,
+    matchTeamName,
+    matchOpponent,
+    homeScore,
+    awayScore,
   ])
 
   const handleBeginSecondHalf = useCallback(async () => {
@@ -2546,6 +2704,23 @@ export default function App() {
     // beginNextPeriod persists period / clock / current_period to the match record.
     await beginNextPeriod(assignments, labelOverrides)
 
+    if (activeTeamId) {
+      const push = buildPeriodPush({
+        teamName: matchTeamName.trim() || 'Home',
+        opponent: matchOpponent,
+        kind: 'start',
+        period: nextPeriod,
+        totalPeriods,
+      })
+      notifyWebPush({
+        eventType: 'period_start',
+        teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+        title: push.title,
+        body: push.body,
+      })
+    }
+
     const underwayToast = `${formatPeriodLong(nextPeriod, totalPeriods)} underway · ${formatClock(newClock)}`
     const wakeResult = await wakePromise
     setToast(wakeResult.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
@@ -2557,7 +2732,24 @@ export default function App() {
     requestWakeLock,
     currentPeriod,
     totalPeriods,
+    activeTeamId,
+    matchTeamName,
+    matchOpponent,
   ])
+
+  const handleShareParentHub = useCallback(async () => {
+    if (!activeTeamSlug) {
+      setToast('Team Hub link is not ready yet')
+      return
+    }
+    try {
+      const result = await shareParentHubLink(activeTeamSlug, activeTeamName)
+      setToast(result === 'shared' ? 'Team Hub shared' : 'Team Hub link copied')
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      setToast(err instanceof Error ? err.message : 'Could not share Team Hub link')
+    }
+  }, [activeTeamSlug, activeTeamName])
 
   const handleLoadLineupPreset = useCallback(
     (presetId: string) => {
@@ -2788,12 +2980,39 @@ export default function App() {
               eventNotes: tacticalPosition,
             },
           ])
+          if (activeTeamId) {
+            const push = buildSubstitutionPush({
+              playerLabel: formatPlayerLabel(benchPlayer, sidelineMap),
+              direction: 'ON',
+              currentPeriod,
+              totalPeriods,
+            })
+            notifyWebPush({
+              eventType: 'substitution',
+              teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+              playerId: benchPlayer.id,
+              title: push.title,
+              body: push.body,
+            })
+          }
           setToast(`Sub in · ${formatPlayerLabel(benchPlayer, sidelineMap)}`)
         }
         return next
       })
     },
-    [matchId, players, seconds, halfLengthMinutes, activeFormation, maxFieldPlayers, setPlayers],
+    [
+      matchId,
+      players,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      maxFieldPlayers,
+      setPlayers,
+      activeTeamId,
+      currentPeriod,
+      totalPeriods,
+    ],
   )
 
   const handleLiveSubOut = useCallback(
@@ -2816,12 +3035,38 @@ export default function App() {
               formation: activeFormation,
             },
           ])
+          if (activeTeamId) {
+            const push = buildSubstitutionPush({
+              playerLabel: formatPlayerLabel(fieldPlayer, sidelineMap),
+              direction: 'OFF',
+              currentPeriod,
+              totalPeriods,
+            })
+            notifyWebPush({
+              eventType: 'substitution',
+              teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+              playerId: fieldPlayer.id,
+              title: push.title,
+              body: push.body,
+            })
+          }
           setToast(`Sub out · ${formatPlayerLabel(fieldPlayer, sidelineMap)}`)
         }
         return next
       })
     },
-    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
+    [
+      matchId,
+      players,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      setPlayers,
+      activeTeamId,
+      currentPeriod,
+      totalPeriods,
+    ],
   )
 
   const handleLiveSwap = useCallback(
@@ -2859,6 +3104,36 @@ export default function App() {
               eventNotes: tacticalPosition,
             },
           ])
+          if (activeTeamId) {
+            const offPush = buildSubstitutionPush({
+              playerLabel: formatPlayerLabel(fieldPlayer, sidelineMap),
+              direction: 'OFF',
+              currentPeriod,
+              totalPeriods,
+            })
+            notifyWebPush({
+              eventType: 'substitution',
+              teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+              playerId: fieldPlayer.id,
+              title: offPush.title,
+              body: offPush.body,
+            })
+            const onPush = buildSubstitutionPush({
+              playerLabel: formatPlayerLabel(benchPlayer, sidelineMap),
+              direction: 'ON',
+              currentPeriod,
+              totalPeriods,
+            })
+            notifyWebPush({
+              eventType: 'substitution',
+              teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+              playerId: benchPlayer.id,
+              title: onPush.title,
+              body: onPush.body,
+            })
+          }
           setToast(
             `Sub · ${formatPlayerLabel(benchPlayer, sidelineMap)} for ${formatPlayerLabel(fieldPlayer, sidelineMap)}`,
           )
@@ -2866,7 +3141,17 @@ export default function App() {
         return next
       })
     },
-    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
+    [
+      matchId,
+      players,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      setPlayers,
+      activeTeamId,
+      currentPeriod,
+      totalPeriods,
+    ],
   )
 
   const closeGoalWizard = useCallback(() => {
@@ -2971,6 +3256,21 @@ export default function App() {
         if (updated) syncMatchStat(matchId, updated)
         if (events.length > 0) syncMatchEvents(events)
 
+        if (activeTeamId) {
+          const push = buildCardPush({
+            playerLabel: label,
+            kind: issueRed ? 'red' : 'yellow',
+            isSecondYellow,
+          })
+          notifyWebPush({
+            eventType: 'card',
+            teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+            title: push.title,
+            body: push.body,
+          })
+        }
+
         if (issueRed) {
           setToast(
             isSecondYellow
@@ -2984,7 +3284,7 @@ export default function App() {
         return next
       })
     },
-    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers],
+    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers, activeTeamId],
   )
 
   const commitOpponentGoal = useCallback(
@@ -2997,6 +3297,23 @@ export default function App() {
       setAwayScore((current) => {
         const next = current + 1
         syncMatchRecord(matchId, { away_score: next })
+        if (activeTeamId) {
+          const push = buildGoalPush({
+            teamName: matchTeamName.trim() || 'Home',
+            opponent: matchOpponent,
+            homeScore,
+            awayScore: next,
+            isPk,
+            ourGoal: false,
+          })
+          notifyWebPush({
+            eventType: 'goal',
+            teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+            title: push.title,
+            body: push.body,
+          })
+        }
         setToast(
           isPk
             ? `Opponent PK · ${opponentLabel} ${next}`
@@ -3019,7 +3336,83 @@ export default function App() {
         return next
       })
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore, setPlayers],
+    [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore, setPlayers, activeTeamId, matchTeamName, homeScore, activeTeamSlug],
+  )
+
+  const commitTeamShot = useCallback(
+    (side: 'home' | 'away') => {
+      if (!matchId || !periodClockStarted) return
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventType = side === 'home' ? 'shot_home' : 'shot_away'
+      if (side === 'home') {
+        setHomeShots((n) => n + 1)
+      } else {
+        setAwayShots((n) => n + 1)
+      }
+      syncMatchEvent({
+        matchId,
+        eventType,
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        playerId: null,
+      })
+      setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+    },
+    [
+      matchId,
+      periodClockStarted,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      setHomeShots,
+      setAwayShots,
+    ],
+  )
+
+  const commitTeamSave = useCallback(
+    (side: 'home' | 'away') => {
+      if (!matchId || !periodClockStarted) return
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+
+      if (side === 'away') {
+        setAwaySaves((n) => n + 1)
+        syncMatchEvent({
+          matchId,
+          eventType: 'save_away',
+          timestamp: eventTimestamp,
+          formation: activeFormation,
+          playerId: null,
+        })
+        setToast('Save · Away')
+        return
+      }
+
+      const gk = findActiveOnFieldGoalkeeper(players)
+      setHomeSaves((n) => n + 1)
+      syncMatchEvent({
+        matchId,
+        eventType: 'save_home',
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        playerId: gk?.id ?? null,
+      })
+      if (gk) {
+        const label = formatPlayerFullName(gk.firstName, gk.lastName)
+        setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
+      } else {
+        setToast('Save · Home (no GK on pitch)')
+      }
+    },
+    [
+      matchId,
+      periodClockStarted,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      players,
+      setHomeSaves,
+      setAwaySaves,
+    ],
   )
 
   const commitOurGoal = useCallback(
@@ -3058,11 +3451,28 @@ export default function App() {
         !isPk && assistPlayerId ? players.find((p) => p.id === assistPlayerId) : null
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const scorerLabel = formatPlayerLabel(scorer, sidelineMap)
-      const detail = isPk
-        ? 'PK'
-        : assistPlayer
-          ? formatPlayerLabel(assistPlayer, sidelineMap)
-          : 'Unassisted'
+      const assistLabel = assistPlayer ? formatPlayerLabel(assistPlayer, sidelineMap) : null
+      const detail = isPk ? 'PK' : assistLabel ? assistLabel : 'Unassisted'
+
+      if (activeTeamId) {
+        const push = buildGoalPush({
+          teamName: matchTeamName.trim() || 'Home',
+          opponent: matchOpponent,
+          homeScore: homeScore + 1,
+          awayScore,
+          scorerLabel,
+          assistLabel,
+          isPk,
+          ourGoal: true,
+        })
+        notifyWebPush({
+          eventType: 'goal',
+          teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+          title: push.title,
+          body: push.body,
+        })
+      }
 
       setToast(`Goal · ${scorerLabel} (${detail})`)
       closeGoalWizard()
@@ -3076,6 +3486,11 @@ export default function App() {
       setHomeScore,
       setPlayers,
       closeGoalWizard,
+      activeTeamId,
+      matchTeamName,
+      matchOpponent,
+      homeScore,
+      awayScore,
     ],
   )
 
@@ -3353,6 +3768,7 @@ export default function App() {
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadLineupPreset}
           onBackToHome={() => setAppMode('home')}
+          onShareParentHub={ENABLE_PARENT_HUB ? () => void handleShareParentHub() : undefined}
           setupSlotAssignments={setupSlotAssignments}
           setupSlotLabelOverrides={setupSlotLabelOverrides}
           onSetupSlotAssignmentsChange={setSetupSlotAssignments}
@@ -3539,6 +3955,22 @@ export default function App() {
               awayPkScore: awayPk,
               pkWinnerIsUs: weWon,
             })
+            if (activeTeamId) {
+              const push = buildFullTimePush({
+                teamName: matchTeamName.trim() || 'Home',
+                opponent: matchOpponent,
+                homeScore,
+                awayScore,
+                pkNote: `PKs ${homePk}–${awayPk} (${weWon ? 'W' : 'L'})`,
+              })
+              notifyWebPush({
+                eventType: 'full_time',
+                teamId: activeTeamId,
+            teamSlug: activeTeamSlug,
+                title: push.title,
+                body: push.body,
+              })
+            }
             setToast(
               weWon
                 ? `Won on PKs ${homePk}–${awayPk}`
@@ -3589,6 +4021,10 @@ export default function App() {
         opponent={matchOpponent}
         homeScore={homeScore}
         awayScore={awayScore}
+        homeShots={homeShots}
+        awayShots={awayShots}
+        homeSaves={homeSaves}
+        awaySaves={awaySaves}
         seconds={seconds}
         period={period}
         currentPeriod={currentPeriod}
@@ -3600,6 +4036,8 @@ export default function App() {
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}
         onOpponentGoal={() => openGoalWizard('opponent')}
+        onLogShot={commitTeamShot}
+        onLogSave={commitTeamSave}
         onLogCard={() => setCardWizardOpen(true)}
         onShareStatTracker={
           ENABLE_STAT_TRACKER && matchId

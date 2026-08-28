@@ -50,8 +50,11 @@ function PlayerRow({
           G · {stats.assists} A · {stats.yellowCards} YC · {stats.redCards} RC
         </span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
-          Overall +{stats.ratingCounts.positive} / ={stats.ratingCounts.neutral} / −
-          {stats.ratingCounts.negative}
+          Avg rating{' '}
+          {stats.averageOverallRating != null
+            ? `${stats.averageOverallRating.toFixed(1)}/5`
+            : '—'}{' '}
+          · {stats.ratingSampleSize} rated
         </span>
       </span>
       <span

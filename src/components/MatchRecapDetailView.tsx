@@ -23,22 +23,23 @@ import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import type { DbMatch, DbMatchEvent } from '@/types/database'
-import type { Impact, RosterPlayer } from '@/types/match'
+import type { RosterPlayer } from '@/types/match'
+import type { PlayerRating } from '@/lib/player-rating'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-function formatImpactLabel(impact: Impact) {
-  if (impact === 'positive') return '+'
-  if (impact === 'negative') return '−'
-  return '='
+function ratingRingClass(rating: PlayerRating): string {
+  if (rating >= 4) return 'border-neon text-neon bg-neon/10'
+  if (rating <= 2) return 'border-danger text-danger bg-danger/10'
+  return 'border-border text-muted-foreground'
 }
 
-const IMPACT_RING: Record<Impact, string> = {
-  neutral: 'border-border text-muted-foreground',
-  positive: 'border-neon text-neon bg-neon/10',
-  negative: 'border-danger text-danger bg-danger/10',
+function ratingBadgeClass(rating: PlayerRating): string {
+  if (rating >= 4) return 'bg-neon/15 text-neon'
+  if (rating <= 2) return 'bg-danger/15 text-danger'
+  return 'bg-secondary text-muted-foreground'
 }
 
 type MatchRecapDetailViewProps = {
@@ -274,7 +275,7 @@ export function MatchRecapDetailView({
                         <div
                           className={cn(
                             'flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
-                            IMPACT_RING[row.overallReview.impact],
+                            ratingRingClass(row.overallReview.rating),
                           )}
                         >
                           {formatJersey(row.number)}
@@ -289,6 +290,7 @@ export function MatchRecapDetailView({
                           <p className="mt-0.5 text-xs text-muted-foreground">{positionsLabel}</p>
                           <p className="text-xs font-semibold text-muted-foreground">
                             Goals {row.goals} · Assists {row.assists}
+                            {row.saves > 0 ? ` · Saves ${row.saves}` : ''}
                             {row.yellowCards > 0 || row.redCards > 0
                               ? ` · YC ${row.yellowCards} · RC ${row.redCards}`
                               : ''}
@@ -301,15 +303,11 @@ export function MatchRecapDetailView({
                                 </span>
                                 <span
                                   className={cn(
-                                    'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                                    row.overallReview.impact === 'positive'
-                                      ? 'bg-neon/15 text-neon'
-                                      : row.overallReview.impact === 'negative'
-                                        ? 'bg-danger/15 text-danger'
-                                        : 'bg-secondary text-muted-foreground',
+                                    'rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                                    ratingBadgeClass(row.overallReview.rating),
                                   )}
                                 >
-                                  {formatImpactLabel(row.overallReview.impact)}
+                                  {row.overallReview.rating}/5
                                 </span>
                               </div>
                               {row.overallReview.notes.trim() ? (
@@ -339,15 +337,11 @@ export function MatchRecapDetailView({
                                       </span>
                                       <span
                                         className={cn(
-                                          'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                                          review.impact === 'positive'
-                                            ? 'bg-neon/15 text-neon'
-                                            : review.impact === 'negative'
-                                              ? 'bg-danger/15 text-danger'
-                                              : 'bg-secondary text-muted-foreground',
+                                          'rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                                          ratingBadgeClass(review.rating),
                                         )}
                                       >
-                                        {formatImpactLabel(review.impact)}
+                                        {review.rating}/5
                                       </span>
                                     </div>
                                     {review.notes.trim() ? (

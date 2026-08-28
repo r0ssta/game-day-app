@@ -1,0 +1,7 @@
+# Parent Hub / Web Push Edge Function config
+
+[functions.subscribe-web-push]
+verify_jwt = false
+
+[functions.send-web-push]
+verify_jwt = true

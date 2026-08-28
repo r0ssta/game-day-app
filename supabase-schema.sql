@@ -8,11 +8,16 @@
 create table if not exists public.teams (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  slug text not null,
+  brand_color text not null default '#12141c',
+  logo_url text,
   format text not null default '9v9' check (format in ('7v7', '9v9', '11v11')),
   primary_coach_name text not null default '',
   age_group text,
   active_status boolean not null default true,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint teams_slug_unique unique (slug),
+  constraint teams_brand_color_hex_check check (brand_color ~* '^#[0-9a-f]{6}$')
 );
 
 create unique index if not exists teams_name_active_unique
@@ -79,14 +84,22 @@ create table if not exists public.match_events (
   event_type text not null check (event_type in (
     'goal', 'assist', 'sub_in', 'sub_out', 'position_change', 'opponent_goal', 'formation_change',
     'stat_shot_on_target', 'stat_shot_off_target', 'stat_goal', 'stat_assist', 'stat_dribble',
-    'stat_tackle', 'stat_save', 'stat_pass', 'stat_key_pass', 'stat_team_log'
+    'stat_tackle', 'stat_save', 'stat_pass', 'stat_key_pass', 'stat_team_log',
+    'pk_attempt', 'yellow_card', 'red_card',
+    'shot_home', 'shot_away', 'save_home', 'save_away'
   )),
   timestamp integer not null check (timestamp >= 0),
   event_notes text,
   formation text,
   assist_player_id uuid references public.players (id) on delete set null,
   created_at timestamptz not null default now(),
-  constraint match_events_player_required_check check (event_type in ('opponent_goal', 'formation_change', 'stat_team_log') or player_id is not null)
+  constraint match_events_player_required_check check (
+    event_type in (
+      'opponent_goal', 'formation_change', 'stat_team_log', 'pk_attempt',
+      'shot_home', 'shot_away', 'save_home', 'save_away'
+    )
+    or player_id is not null
+  )
 );
 
 create table if not exists public.match_stats (
@@ -127,7 +140,7 @@ create table if not exists public.match_reviews (
   match_id uuid not null references public.matches (id) on delete cascade,
   player_id uuid not null references public.players (id) on delete cascade,
   position text not null default 'Overall',
-  impact_score integer not null default 0 check (impact_score between -1 and 1),
+  rating integer not null default 3 check (rating between 1 and 5),
   review_notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

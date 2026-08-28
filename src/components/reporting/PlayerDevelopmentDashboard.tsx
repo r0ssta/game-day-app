@@ -7,10 +7,11 @@ function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-const IMPACT_BADGE: Record<'positive' | 'neutral' | 'negative', string> = {
-  positive: 'bg-neon/15 text-neon',
-  neutral: 'bg-secondary text-muted-foreground',
-  negative: 'bg-danger/15 text-danger',
+function ratingBadgeClass(rating: number | null | undefined): string {
+  if (rating == null) return 'bg-secondary text-muted-foreground'
+  if (rating >= 4) return 'bg-neon/15 text-neon'
+  if (rating <= 2) return 'bg-danger/15 text-danger'
+  return 'bg-secondary text-muted-foreground'
 }
 
 type PlayerDevelopmentDashboardProps = {
@@ -18,7 +19,7 @@ type PlayerDevelopmentDashboardProps = {
 }
 
 export function PlayerDevelopmentDashboard({ analytics }: PlayerDevelopmentDashboardProps) {
-  const summary = `${analytics.teamPositivePercent}% team positive · ${analytics.players.length} rated players`
+  const summary = `${analytics.teamHighRatingPercent}% rated 4–5 · ${analytics.players.length} rated players`
 
   return (
     <AnalyticsModule
@@ -30,10 +31,10 @@ export function PlayerDevelopmentDashboard({ analytics }: PlayerDevelopmentDashb
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-border bg-secondary/30 p-3">
           <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Team Positive Rate
+            Team 4–5 Rate
           </p>
           <p className="mt-1 font-display text-xl font-black tabular-nums text-neon">
-            {analytics.teamPositivePercent}%
+            {analytics.teamHighRatingPercent}%
           </p>
         </div>
         <div className="rounded-lg border border-border bg-secondary/30 p-3">
@@ -56,17 +57,17 @@ export function PlayerDevelopmentDashboard({ analytics }: PlayerDevelopmentDashb
                     #{formatJersey(entry.jersey)} {entry.name}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {entry.matchesPlayed} matches · {entry.overallPositivePercent}% positive overall
+                    {entry.matchesPlayed} matches · {entry.overallHighRatingPercent}% rated 4–5
                     · versatility {entry.versatilityScore}
                   </p>
                 </div>
                 <span
                   className={cn(
-                    'rounded px-2 py-0.5 text-xs font-bold',
-                    IMPACT_BADGE[entry.averageOverallRating],
+                    'rounded px-2 py-0.5 text-xs font-bold tabular-nums',
+                    ratingBadgeClass(entry.averageOverallRating),
                   )}
                 >
-                  Avg {formatImpactSymbol(entry.averageOverallRating)}
+                  Avg {formatImpactSymbol(entry.averageOverallRating)}/5
                 </span>
               </div>
 
@@ -82,7 +83,7 @@ export function PlayerDevelopmentDashboard({ analytics }: PlayerDevelopmentDashb
                     <li key={role.position} className="text-xs text-muted-foreground">
                       <span className="font-semibold text-foreground">{role.position}</span>
                       {' · '}
-                      {role.positivePercent}% positive across {role.matchCount} rated match
+                      {role.highRatingPercent}% rated 4–5 across {role.matchCount} rated match
                       {role.matchCount === 1 ? '' : 'es'}
                     </li>
                   ))}
@@ -100,11 +101,11 @@ export function PlayerDevelopmentDashboard({ analytics }: PlayerDevelopmentDashb
                         key={point.matchId}
                         title={`${point.dateLabel} vs ${point.opponent}`}
                         className={cn(
-                          'rounded px-1.5 py-0.5 text-[10px] font-bold',
-                          IMPACT_BADGE[point.impact],
+                          'rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                          ratingBadgeClass(point.rating),
                         )}
                       >
-                        {formatImpactSymbol(point.impact)}
+                        {point.rating}
                       </span>
                     ))}
                   </div>

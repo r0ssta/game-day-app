@@ -10,7 +10,9 @@ import {
   type SeasonReportData,
 } from '@/lib/season-reporting'
 import type { DbMatch } from '@/types/database'
-import type { Impact, RosterPlayer } from '@/types/match'
+import type { RosterPlayer } from '@/types/match'
+import type { PlayerRating } from '@/lib/player-rating'
+import { formatPlayerRating } from '@/lib/player-rating'
 import type { LineupCombinationAnalytics } from '@/lib/lineup-analytics'
 import { matchResultBucket } from '@/lib/penalty-kicks'
 
@@ -72,7 +74,7 @@ export type RatingTrajectoryPoint = {
   matchId: string
   dateLabel: string
   opponent: string
-  impact: Impact
+  rating: PlayerRating
 }
 
 export type PlayerDevelopmentEntry = {
@@ -80,17 +82,18 @@ export type PlayerDevelopmentEntry = {
   name: string
   jersey: number | null
   matchesPlayed: number
-  overallPositivePercent: number
-  averageOverallRating: Impact
+  /** Share of overall ratings that are 4 or 5. */
+  overallHighRatingPercent: number
+  averageOverallRating: number | null
   versatilityScore: number
   uniquePositions: string[]
-  roleSummaries: Array<{ position: string; positivePercent: number; matchCount: number }>
+  roleSummaries: Array<{ position: string; highRatingPercent: number; matchCount: number }>
   ratingTrajectory: RatingTrajectoryPoint[]
 }
 
 export type PlayerDevelopmentAnalytics = {
   players: PlayerDevelopmentEntry[]
-  teamPositivePercent: number
+  teamHighRatingPercent: number
   ratedMatchCount: number
 }
 
@@ -117,11 +120,6 @@ export type SeasonAnalytics = {
   plusMinus: PlusMinusAnalytics
   lineupCombinations: LineupCombinationAnalytics
   completedMatchCount: number
-}
-
-function positivePercent(counts: { positive: number; neutral: number; negative: number }): number {
-  const total = counts.positive + counts.neutral + counts.negative
-  return total > 0 ? Math.round((counts.positive / total) * 100) : 0
 }
 
 function matchMonthKey(match: DbMatch): string {
@@ -290,9 +288,7 @@ export function buildPlayerDevelopmentAnalytics(
 ): PlayerDevelopmentAnalytics {
   const matchSortKey = new Map(matches.map((match) => [match.id, getMatchSortTimestamp(match)]))
 
-  let teamPositive = 0
-  let teamNeutral = 0
-  let teamNegative = 0
+  let teamHigh = 0
   let ratedMatchCount = 0
 
   const players: PlayerDevelopmentEntry[] = roster
@@ -300,10 +296,9 @@ export function buildPlayerDevelopmentAnalytics(
       const stats = playerStats.get(player.id) ?? emptyPlayerSeasonStats(player.id)
       if (stats.matchesPlayed === 0) return null
 
-      teamPositive += stats.ratingCounts.positive
-      teamNeutral += stats.ratingCounts.neutral
-      teamNegative += stats.ratingCounts.negative
-      ratedMatchCount += stats.ratingCounts.positive + stats.ratingCounts.neutral + stats.ratingCounts.negative
+      const highCount = stats.matchLogs.filter((log) => log.overallRating.rating >= 4).length
+      teamHigh += highCount
+      ratedMatchCount += stats.ratingSampleSize
 
       const ratingTrajectory = [...stats.matchLogs]
         .sort(
@@ -314,24 +309,28 @@ export function buildPlayerDevelopmentAnalytics(
           matchId: log.matchId,
           dateLabel: log.dateLabel,
           opponent: log.opponent,
-          impact: log.overallRating.impact,
+          rating: log.overallRating.rating,
         }))
 
       const uniquePositions = [...new Set([...stats.positionsPlayed, ...stats.positionBreakdown.map((r) => r.position)])]
       const versatilityScore = uniquePositions.length + stats.positionBreakdown.length
+      const overallHighRatingPercent =
+        stats.ratingSampleSize > 0
+          ? Math.round((highCount / stats.ratingSampleSize) * 100)
+          : 0
 
       return {
         playerId: player.id,
         name: formatPlayerFullName(player.firstName, player.lastName),
         jersey: player.number,
         matchesPlayed: stats.matchesPlayed,
-        overallPositivePercent: positivePercent(stats.ratingCounts),
+        overallHighRatingPercent,
         averageOverallRating: stats.averageOverallRating,
         versatilityScore,
         uniquePositions,
         roleSummaries: stats.positionBreakdown.map((role) => ({
           position: role.position,
-          positivePercent: role.positivePercent,
+          highRatingPercent: role.highRatingPercent,
           matchCount: role.matchCount,
         })),
         ratingTrajectory,
@@ -340,17 +339,15 @@ export function buildPlayerDevelopmentAnalytics(
     .filter((entry): entry is PlayerDevelopmentEntry => entry !== null)
     .sort(
       (a, b) =>
-        b.overallPositivePercent - a.overallPositivePercent ||
+        (b.averageOverallRating ?? 0) - (a.averageOverallRating ?? 0) ||
+        b.overallHighRatingPercent - a.overallHighRatingPercent ||
         b.versatilityScore - a.versatilityScore,
     )
 
   return {
     players,
-    teamPositivePercent: positivePercent({
-      positive: teamPositive,
-      neutral: teamNeutral,
-      negative: teamNegative,
-    }),
+    teamHighRatingPercent:
+      ratedMatchCount > 0 ? Math.round((teamHigh / ratedMatchCount) * 100) : 0,
     ratedMatchCount,
   }
 }
@@ -400,10 +397,8 @@ export function buildSeasonAnalytics(data: SeasonReportData, roster: RosterPlaye
   }
 }
 
-export function formatImpactSymbol(impact: Impact): string {
-  if (impact === 'positive') return '+'
-  if (impact === 'negative') return '−'
-  return '='
+export function formatImpactSymbol(rating: number | null | undefined): string {
+  return formatPlayerRating(rating, 1)
 }
 
 export function formatMinutesLabel(seconds: number): string {

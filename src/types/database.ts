@@ -1,6 +1,12 @@
 export type DbTeam = {
   id: string
   name: string
+  /** URL-safe unique key for public Parent Hub (`/hub/:slug`). */
+  slug: string
+  /** Hex theme used by the dynamic PWA manifest (`#rrggbb`). */
+  brand_color: string
+  /** Optional Home Screen icon URL; falls back to club crest when null. */
+  logo_url: string | null
   format: string
   age_group?: string | null
   primary_coach_name?: string
@@ -135,6 +141,10 @@ export type DbMatchEvent = {
     | 'pk_attempt'
     | 'yellow_card'
     | 'red_card'
+    | 'shot_home'
+    | 'shot_away'
+    | 'save_home'
+    | 'save_away'
   timestamp: number
   event_notes: string | null
   formation: string | null
@@ -181,7 +191,8 @@ export type DbMatchReview = {
   match_id: string
   player_id: string
   position: string
-  impact_score: number
+  /** Post-match evaluation on a 1–5 scale. */
+  rating: number
   review_notes: string | null
   created_at: string
   updated_at: string
@@ -219,6 +230,18 @@ export type DbTeamMember = {
   created_at: string
 }
 
+export type DbWebPushSubscription = {
+  id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  team_id: string
+  target_player_id: string | null
+  user_agent: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type DbStaffInvite = {
   id: string
   email: string
@@ -237,7 +260,18 @@ export type DbStaffInvite = {
 export type Database = {
   public: {
     Tables: {
-      teams: { Row: DbTeam; Insert: Omit<DbTeam, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbTeam> }
+      teams: {
+        Row: DbTeam
+        Insert: Omit<DbTeam, 'id' | 'created_at' | 'slug' | 'brand_color' | 'logo_url'> & {
+          id?: string
+          created_at?: string
+          /** Omitted → DB trigger allocates from name */
+          slug?: string
+          brand_color?: string
+          logo_url?: string | null
+        }
+        Update: Partial<DbTeam>
+      }
       coaches: { Row: DbCoach; Insert: Omit<DbCoach, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbCoach> }
       players: { Row: DbPlayer; Insert: Omit<DbPlayer, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbPlayer> }
       matches: { Row: DbMatch; Insert: Partial<DbMatch> & Pick<DbMatch, 'team_id'>; Update: Partial<DbMatch> }
@@ -246,6 +280,15 @@ export type Database = {
       match_reviews: { Row: DbMatchReview; Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchReview> }
       match_stat_trackers: { Row: DbMatchStatTracker; Insert: Omit<DbMatchStatTracker, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStatTracker> }
       lineup_presets: { Row: DbLineupPreset; Insert: Omit<DbLineupPreset, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbLineupPreset> }
+      web_push_subscriptions: {
+        Row: DbWebPushSubscription
+        Insert: Omit<DbWebPushSubscription, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<DbWebPushSubscription>
+      }
       user_roles: { Row: DbUserRole; Insert: Omit<DbUserRole, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbUserRole> }
       profiles: { Row: DbProfile; Insert: Omit<DbProfile, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbProfile> }
       team_members: { Row: DbTeamMember; Insert: Omit<DbTeamMember, 'created_at'> & { created_at?: string }; Update: Partial<DbTeamMember> }

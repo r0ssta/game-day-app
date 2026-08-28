@@ -4,13 +4,18 @@ import { formatPlayerFullName } from '@/lib/player-names'
 import { displayMatchPosition } from '@/lib/positions'
 import {
   aggregatePlayerRecaps,
-  dominantImpact,
   formatAverageRatingLabel,
   formatRecapMinutes,
   isOverallReviewPosition,
   OVERALL_REVIEW_POSITION,
   resolvePlayerPositions,
 } from '@/lib/match-recap'
+import {
+  clampPlayerRating,
+  DEFAULT_PLAYER_RATING,
+  legacyImpactScoreToRating,
+  type PlayerRating,
+} from '@/lib/player-rating'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import {
   computeLineupCombinationAnalytics,
@@ -23,11 +28,10 @@ import {
   fetchMatchReviews,
   fetchMatchStatsByMatchId,
   rebuildMatchPlayers,
-  scoreToImpact,
 } from '@/lib/supabase-api'
 import { matchResultBucket } from '@/lib/penalty-kicks'
 import type { DbMatch } from '@/types/database'
-import type { Impact, RosterPlayer } from '@/types/match'
+import type { RosterPlayer } from '@/types/match'
 
 export type SeasonRecord = {
   wins: number
@@ -41,9 +45,11 @@ export type SeasonRecord = {
 export type PlayerPositionRatingStats = {
   position: string
   matchCount: number
-  ratingCounts: { positive: number; neutral: number; negative: number }
-  averageRating: Impact
-  positivePercent: number
+  ratingSum: number
+  ratingSampleSize: number
+  averageRating: number | null
+  /** Share of ratings that are 4 or 5. */
+  highRatingPercent: number
 }
 
 export type PlayerMatchLog = {
@@ -57,8 +63,8 @@ export type PlayerMatchLog = {
   yellowCards: number
   redCards: number
   plusMinus: number
-  overallRating: { impact: Impact; notes: string }
-  positionRatings: Array<{ position: string; impact: Impact; notes: string }>
+  overallRating: { rating: PlayerRating; notes: string }
+  positionRatings: Array<{ position: string; rating: PlayerRating; notes: string }>
   positions: string[]
 }
 
@@ -75,15 +81,16 @@ export type PlayerSeasonStats = {
   positionsPlayed: string[]
   primaryPositionPlayed: string
   secondaryPositionPlayed: string
-  ratingCounts: { positive: number; neutral: number; negative: number }
-  averageOverallRating: Impact
+  ratingSum: number
+  ratingSampleSize: number
+  averageOverallRating: number | null
   positionBreakdown: PlayerPositionRatingStats[]
   feedbackHistory: Array<{
     matchId: string
     opponent: string
     dateLabel: string
     position: string
-    impact: Impact
+    rating: PlayerRating
     notes: string
   }>
   matchLogs: PlayerMatchLog[]
@@ -161,8 +168,9 @@ export function emptyPlayerSeasonStats(playerId: string): PlayerSeasonStats {
     positionsPlayed: [],
     primaryPositionPlayed: '—',
     secondaryPositionPlayed: '—',
-    ratingCounts: { positive: 0, neutral: 0, negative: 0 },
-    averageOverallRating: 'neutral',
+    ratingSum: 0,
+    ratingSampleSize: 0,
+    averageOverallRating: null,
     positionBreakdown: [],
     feedbackHistory: [],
     matchLogs: [],
@@ -180,31 +188,41 @@ function topPositions(counts: Map<string, number>): [string, string] {
   return [sorted[0]?.[0] ?? '—', sorted[1]?.[0] ?? '—']
 }
 
-function positiveRatingPercent(counts: {
-  positive: number
-  neutral: number
-  negative: number
-}): number {
-  const total = counts.positive + counts.neutral + counts.negative
-  return total > 0 ? Math.round((counts.positive / total) * 100) : 0
+function highRatingPercent(sum: number, sampleSize: number, highCount: number): number {
+  return sampleSize > 0 ? Math.round((highCount / sampleSize) * 100) : 0
 }
 
 function ensurePositionBreakdown(
-  map: Map<string, PlayerPositionRatingStats>,
+  map: Map<string, PlayerPositionRatingStats & { highCount?: number }>,
   position: string,
-): PlayerPositionRatingStats {
+): PlayerPositionRatingStats & { highCount: number } {
   const existing = map.get(position)
-  if (existing) return existing
+  if (existing) {
+    return existing as PlayerPositionRatingStats & { highCount: number }
+  }
 
-  const created: PlayerPositionRatingStats = {
+  const created: PlayerPositionRatingStats & { highCount: number } = {
     position,
     matchCount: 0,
-    ratingCounts: { positive: 0, neutral: 0, negative: 0 },
-    averageRating: 'neutral',
-    positivePercent: 0,
+    ratingSum: 0,
+    ratingSampleSize: 0,
+    averageRating: null,
+    highRatingPercent: 0,
+    highCount: 0,
   }
   map.set(position, created)
   return created
+}
+
+function reviewRatingFromRow(review: {
+  rating?: number | null
+  impact_score?: number | null
+}): PlayerRating {
+  if (typeof review.rating === 'number') return clampPlayerRating(review.rating)
+  if (typeof review.impact_score === 'number') {
+    return legacyImpactScoreToRating(review.impact_score)
+  }
+  return DEFAULT_PLAYER_RATING
 }
 
 export async function loadSeasonReport(
@@ -256,13 +274,16 @@ export async function loadSeasonReport(
           firstHalfStarterIds,
         }),
       )
-      const reviewsByPlayerPosition = new Map<string, Array<{ position: string; impact: Impact; notes: string }>>()
+      const reviewsByPlayerPosition = new Map<
+        string,
+        Array<{ position: string; rating: PlayerRating; notes: string }>
+      >()
 
       for (const review of reviews) {
         const position = review.position?.trim() || 'Overall'
         const payload = {
           position,
-          impact: scoreToImpact(review.impact_score),
+          rating: reviewRatingFromRow(review),
           notes: review.review_notes ?? '',
         }
         const bucket = reviewsByPlayerPosition.get(review.player_id) ?? []
@@ -295,7 +316,7 @@ export async function loadSeasonReport(
           savedReviews.find((review) => isOverallReviewPosition(review.position)) ??
           (savedReviews.length === 1 ? savedReviews[0] : null) ?? {
             position: OVERALL_REVIEW_POSITION,
-            impact: scoreToImpact(stat.impact_score),
+            rating: legacyImpactScoreToRating(stat.impact_score),
             notes: '',
           }
         const roleReviews = savedReviews.filter((review) => !isOverallReviewPosition(review.position))
@@ -307,7 +328,8 @@ export async function loadSeasonReport(
         entry.yellowCards += yellowCards
         entry.redCards += redCards
         entry.plusMinus += plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0
-        entry.ratingCounts[overallReview.impact] += 1
+        entry.ratingSum += overallReview.rating
+        entry.ratingSampleSize += 1
 
         const posMap = positionCounts.get(stat.player_id)!
         for (const position of positions) {
@@ -319,7 +341,9 @@ export async function loadSeasonReport(
 
         for (const rating of roleReviews) {
           const breakdown = ensurePositionBreakdown(breakdownMap, rating.position)
-          breakdown.ratingCounts[rating.impact] += 1
+          breakdown.ratingSum += rating.rating
+          breakdown.ratingSampleSize += 1
+          if (rating.rating >= 4) breakdown.highCount += 1
 
           const seenMatches = ratedMatches.get(rating.position) ?? new Set<string>()
           if (!seenMatches.has(match.id)) {
@@ -334,7 +358,7 @@ export async function loadSeasonReport(
               opponent: match.opponent.trim() || 'Opponent',
               dateLabel,
               position: rating.position,
-              impact: rating.impact,
+              rating: rating.rating,
               notes: rating.notes.trim(),
             })
           }
@@ -346,7 +370,7 @@ export async function loadSeasonReport(
             opponent: match.opponent.trim() || 'Opponent',
             dateLabel,
             position: OVERALL_REVIEW_POSITION,
-            impact: overallReview.impact,
+            rating: overallReview.rating,
             notes: overallReview.notes.trim(),
           })
         }
@@ -363,7 +387,7 @@ export async function loadSeasonReport(
           redCards,
           plusMinus: plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0,
           overallRating: {
-            impact: overallReview.impact,
+            rating: overallReview.rating,
             notes: overallReview.notes,
           },
           positionRatings: roleReviews,
@@ -385,14 +409,28 @@ export async function loadSeasonReport(
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name)
 
+    entry.averageOverallRating =
+      entry.ratingSampleSize > 0 ? entry.ratingSum / entry.ratingSampleSize : null
+
     const breakdownMap = positionBreakdownMaps.get(entry.playerId) ?? new Map()
-    entry.averageOverallRating = dominantImpact(entry.ratingCounts)
     entry.positionBreakdown = [...breakdownMap.values()]
-      .map((item) => ({
-        ...item,
-        averageRating: dominantImpact(item.ratingCounts),
-        positivePercent: positiveRatingPercent(item.ratingCounts),
-      }))
+      .map((item) => {
+        const withHigh = item as PlayerPositionRatingStats & { highCount?: number }
+        const highCount = withHigh.highCount ?? 0
+        return {
+          position: item.position,
+          matchCount: item.matchCount,
+          ratingSum: item.ratingSum,
+          ratingSampleSize: item.ratingSampleSize,
+          averageRating:
+            item.ratingSampleSize > 0 ? item.ratingSum / item.ratingSampleSize : null,
+          highRatingPercent: highRatingPercent(
+            item.ratingSum,
+            item.ratingSampleSize,
+            highCount,
+          ),
+        }
+      })
       .sort((a, b) => b.matchCount - a.matchCount || a.position.localeCompare(b.position))
   }
 
@@ -418,9 +456,9 @@ function buildPositionEfficiencyFromPlayerStats(
     string,
     {
       plusMinus: number
-      positive: number
-      neutral: number
-      negative: number
+      ratingSum: number
+      ratingSampleSize: number
+      highCount: number
       players: Set<string>
       goals: number
       assists: number
@@ -441,20 +479,26 @@ function buildPositionEfficiencyFromPlayerStats(
     if (positions.length === 0) continue
 
     const share = 1 / positions.length
+    const highShare =
+      stats.ratingSampleSize > 0
+        ? (stats.matchLogs.filter((log) => log.overallRating.rating >= 4).length /
+            stats.ratingSampleSize) *
+          share
+        : 0
     for (const position of positions) {
       const bucket = buckets.get(position) ?? {
         plusMinus: 0,
-        positive: 0,
-        neutral: 0,
-        negative: 0,
+        ratingSum: 0,
+        ratingSampleSize: 0,
+        highCount: 0,
         players: new Set<string>(),
         goals: 0,
         assists: 0,
       }
       bucket.plusMinus += stats.plusMinus * share
-      bucket.positive += stats.ratingCounts.positive * share
-      bucket.neutral += stats.ratingCounts.neutral * share
-      bucket.negative += stats.ratingCounts.negative * share
+      bucket.ratingSum += stats.ratingSum * share
+      bucket.ratingSampleSize += stats.ratingSampleSize * share
+      bucket.highCount += highShare * stats.ratingSampleSize
       bucket.players.add(player.id)
       bucket.goals += stats.goals * share
       bucket.assists += stats.assists * share
@@ -464,11 +508,11 @@ function buildPositionEfficiencyFromPlayerStats(
 
   return [...buckets.entries()]
     .map(([position, bucket]) => {
-      const rated = bucket.positive + bucket.neutral + bucket.negative
+      const rated = bucket.ratingSampleSize
       return {
         position,
         plusMinus: Math.round(bucket.plusMinus * 10) / 10,
-        positivePercent: rated > 0 ? Math.round((bucket.positive / rated) * 100) : 0,
+        positivePercent: rated > 0 ? Math.round((bucket.highCount / rated) * 100) : 0,
         players: bucket.players.size,
         goals: Math.round(bucket.goals * 10) / 10,
         assists: Math.round(bucket.assists * 10) / 10,
@@ -493,10 +537,11 @@ export function formatPlayerSeasonHeader(player: RosterPlayer, stats: PlayerSeas
 }
 
 export function formatPositionBreakdownLine(stats: PlayerPositionRatingStats): string {
-  return `Performance as ${stats.position}: ${stats.positivePercent}% positive ratings`
+  const avg = formatAverageRatingLabel(stats.averageRating)
+  return `Performance as ${stats.position}: avg ${avg}/5`
 }
 
 export function formatPositionBreakdownDetail(stats: PlayerPositionRatingStats): string {
   const matchLabel = stats.matchCount === 1 ? 'match' : 'matches'
-  return `${stats.matchCount} ${matchLabel} · ${stats.positivePercent}% positive (Avg: ${formatAverageRatingLabel(stats.averageRating)})`
+  return `${stats.matchCount} ${matchLabel} · ${stats.highRatingPercent}% rated 4–5 (Avg: ${formatAverageRatingLabel(stats.averageRating)}/5)`
 }

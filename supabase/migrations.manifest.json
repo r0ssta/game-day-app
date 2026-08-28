@@ -39,6 +39,11 @@
     "supabase-app-team-roles-migration.sql",
     "supabase-app-team-role-grants-migration.sql",
     "supabase-parent-recap-migration.sql",
-    "supabase-sub-rotation-migration.sql"
+    "supabase-sub-rotation-migration.sql",
+    "supabase-web-push-migration.sql",
+    "supabase-team-slug-migration.sql",
+    "supabase-team-pwa-branding-migration.sql",
+    "supabase-match-shot-save-migration.sql",
+    "supabase-match-review-rating-migration.sql"
   ]
 }

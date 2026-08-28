@@ -1,5 +1,7 @@
 import type { DbMatch } from '@/types/database'
 
+type MatchScheduleFields = Pick<DbMatch, 'date' | 'match_date' | 'match_time'>
+
 /** YYYY-MM-DD for <input type="date"> */
 export function defaultMatchDate(): string {
   const now = new Date()
@@ -34,7 +36,7 @@ export function normalizeMatchTimeForInput(value: string | null | undefined): st
 }
 
 /** Sort key for completed-match lists (newest first). */
-export function getMatchSortTimestamp(match: DbMatch): number {
+export function getMatchSortTimestamp(match: MatchScheduleFields): number {
   const date = match.match_date ?? match.date.slice(0, 10)
   const time = normalizeMatchTimeForInput(match.match_time ?? undefined)
   const parsed = new Date(`${date}T${time}:00`)
@@ -43,7 +45,10 @@ export function getMatchSortTimestamp(match: DbMatch): number {
   return Number.isNaN(fallback.getTime()) ? 0 : fallback.getTime()
 }
 
-export function formatMatchDisplayDateTime(match: DbMatch): { dateLabel: string; timeLabel: string } {
+export function formatMatchDisplayDateTime(match: MatchScheduleFields): {
+  dateLabel: string
+  timeLabel: string
+} {
   const dateStr = match.match_date ?? match.date.slice(0, 10)
   const timeStr = match.match_time ? normalizeMatchTimeForInput(match.match_time) : null
 
