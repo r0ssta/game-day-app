@@ -30,13 +30,15 @@ function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-function ratingRingClass(rating: PlayerRating): string {
+function ratingRingClass(rating: PlayerRating | null): string {
+  if (rating == null) return 'border-border text-muted-foreground'
   if (rating >= 4) return 'border-neon text-neon bg-neon/10'
   if (rating <= 2) return 'border-danger text-danger bg-danger/10'
   return 'border-border text-muted-foreground'
 }
 
-function ratingBadgeClass(rating: PlayerRating): string {
+function ratingBadgeClass(rating: PlayerRating | null): string {
+  if (rating == null) return 'bg-secondary text-muted-foreground'
   if (rating >= 4) return 'bg-neon/15 text-neon'
   if (rating <= 2) return 'bg-danger/15 text-danger'
   return 'bg-secondary text-muted-foreground'
@@ -307,7 +309,9 @@ export function MatchRecapDetailView({
                                     ratingBadgeClass(row.overallReview.rating),
                                   )}
                                 >
-                                  {row.overallReview.rating}/5
+                                  {row.overallReview.rating != null
+                                    ? `${row.overallReview.rating}/5`
+                                    : '—'}
                                 </span>
                               </div>
                               {row.overallReview.notes.trim() ? (
@@ -341,7 +345,7 @@ export function MatchRecapDetailView({
                                           ratingBadgeClass(review.rating),
                                         )}
                                       >
-                                        {review.rating}/5
+                                        {review.rating != null ? `${review.rating}/5` : '—'}
                                       </span>
                                     </div>
                                     {review.notes.trim() ? (

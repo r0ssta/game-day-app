@@ -65,8 +65,6 @@ type FormationPitchProps = {
    * Default true (setup / halftime).
    */
   enableDragDrop?: boolean
-  /** Pulse slots to show they are tappable (live). */
-  pulseInteractive?: boolean
   /**
    * Content rendered beside/under the pitch, inside the DnD context when enabled.
    * Use this for custom bench UIs (attendance, edit, impact, etc.).
@@ -158,7 +156,6 @@ function PitchSlotVisual({
   player,
   selected,
   highlighted,
-  pulseInteractive,
   allowLabelEdit,
   allowSlotReposition,
   dropHighlight,
@@ -177,7 +174,6 @@ function PitchSlotVisual({
   player: FormationPitchPlayer | null
   selected: boolean
   highlighted: boolean
-  pulseInteractive?: boolean
   allowLabelEdit: boolean
   allowSlotReposition: boolean
   labelEditorOpen?: boolean
@@ -219,7 +215,6 @@ function PitchSlotVisual({
             allowSlotReposition ? 'touch-none cursor-grab active:cursor-grabbing' : 'touch-pan-y',
             highlighted && 'z-10 scale-110',
             dropHighlight && 'scale-110',
-            pulseInteractive && 'animate-pulse',
             isSlotDragging && 'ring-2 ring-athletic ring-offset-2 ring-offset-transparent',
           )}
           aria-label={
@@ -276,9 +271,7 @@ function PitchSlotVisual({
                 <span
                   className={cn(
                     'mt-0.5 font-mono text-[8px] font-black tabular-nums leading-none',
-                    player.needsSubCue
-                      ? 'pitch-sub-cue-time text-amber-950'
-                      : 'text-slate-900',
+                    player.needsSubCue ? 'text-amber-950' : 'text-slate-900',
                   )}
                   title={player.needsSubCue ? 'Long stint — consider a sub' : undefined}
                 >
@@ -433,7 +426,6 @@ export function FormationPitch({
   onSlotLabelChange,
   renderOccupiedExtra,
   enableDragDrop = true,
-  pulseInteractive = false,
   children,
   className,
 }: FormationPitchProps) {
@@ -532,8 +524,7 @@ export function FormationPitch({
             label,
             player,
             selected: playerId === selectedPlayerId,
-            highlighted: Boolean(selectedPlayerId) || selectedSlotId === slot.id,
-            pulseInteractive,
+            highlighted: playerId === selectedPlayerId || selectedSlotId === slot.id,
             allowLabelEdit: Boolean(onSlotLabelChange),
             allowSlotReposition: enableDragDrop,
             labelEditorOpen: labelEditorSlotId === slot.id,

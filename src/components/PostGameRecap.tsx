@@ -53,7 +53,6 @@ import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { ENABLE_POSITIONAL_RECAP_RATINGS } from '@/lib/feature-flags'
 import {
-  DEFAULT_PLAYER_RATING,
   PLAYER_RATINGS,
   type PlayerRating,
 } from '@/lib/player-rating'
@@ -64,7 +63,8 @@ function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-function ratingRingClass(rating: PlayerRating): string {
+function ratingRingClass(rating: PlayerRating | null): string {
+  if (rating == null) return 'border-border text-muted-foreground bg-secondary/40'
   if (rating >= 4) return 'border-neon text-neon bg-neon/10'
   if (rating <= 2) return 'border-danger text-danger bg-danger/10'
   return 'border-athletic text-athletic bg-athletic/10'
@@ -75,8 +75,8 @@ function RatingSelectGroup({
   onSetRating,
   disabled = false,
 }: {
-  rating: PlayerRating
-  onSetRating: (rating: PlayerRating) => void
+  rating: PlayerRating | null
+  onSetRating: (rating: PlayerRating | null) => void
   disabled?: boolean
 }) {
   return (
@@ -92,7 +92,7 @@ function RatingSelectGroup({
           aria-label={`Rating ${value}`}
           aria-pressed={rating === value}
           disabled={disabled}
-          onClick={() => onSetRating(value)}
+          onClick={() => onSetRating(rating === value ? null : value)}
           className={cn(
             'min-h-11 min-w-0 flex-1 touch-manipulation px-1 py-2 text-sm font-black tabular-nums transition-colors active:scale-[0.98]',
             disabled && 'cursor-default opacity-70 active:scale-100',
@@ -212,9 +212,12 @@ export function PostGameRecap({
         const initialReviews: Record<string, SavedPositionReview> = {}
         const initialTouchedPositions = new Set<string>()
         for (const row of recapRows) {
-          initialReviews[playerOverallReviewKey(row.playerId)] = {
-            rating: row.overallReview.rating,
-            notes: row.overallReview.notes,
+          const overallKey = playerOverallReviewKey(row.playerId)
+          if (savedReviews.has(overallKey)) {
+            initialReviews[overallKey] = {
+              rating: row.overallReview.rating,
+              notes: row.overallReview.notes,
+            }
           }
           for (const review of row.positionReviews) {
             const key = playerPositionReviewKey(row.playerId, review.position)
@@ -307,7 +310,7 @@ export function PostGameRecap({
     setReviews((prev) => ({
       ...prev,
       [key]: {
-        rating: patch.rating ?? prev[key]?.rating ?? DEFAULT_PLAYER_RATING,
+        rating: patch.rating !== undefined ? patch.rating : (prev[key]?.rating ?? null),
         notes: patch.notes ?? prev[key]?.notes ?? '',
       },
     }))
@@ -320,14 +323,21 @@ export function PostGameRecap({
           rating: row.overallReview.rating,
           notes: row.overallReview.notes,
         })
-        const entries = [
-          {
+        const entries: Array<{
+          playerId: string
+          position: string
+          rating: PlayerRating
+          notes: string
+        }> = []
+
+        if (overall.rating != null) {
+          entries.push({
             playerId: row.playerId,
             position: OVERALL_REVIEW_POSITION,
             rating: overall.rating,
             notes: overall.notes,
-          },
-        ]
+          })
+        }
 
         if (row.positionReviews.length > 1) {
           for (const review of row.positionReviews) {
@@ -338,6 +348,7 @@ export function PostGameRecap({
               rating: review.rating,
               notes: review.notes,
             })
+            if (saved.rating == null) continue
             entries.push({
               playerId: row.playerId,
               position: review.position,
@@ -714,7 +725,8 @@ export function PostGameRecap({
               Player Review
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Rate overall match performance for every player.
+              Rate overall match performance for every player. Nothing is selected until you tap a
+              score — tap again to clear.
               {ENABLE_POSITIONAL_RECAP_RATINGS
                 ? ' Position breakdowns are optional and only saved when you interact with a role rating.'
                 : ''}
@@ -776,7 +788,7 @@ export function PostGameRecap({
                       <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                         Overall Performance
                       </p>
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
                         <RatingSelectGroup
                           rating={overall.rating}
                           disabled={readOnly}
@@ -795,7 +807,7 @@ export function PostGameRecap({
                           }
                           placeholder="Overall notes / comments"
                           className={cn(
-                            'min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
+                            'w-full min-w-0 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30 md:flex-1',
                             readOnly && 'cursor-default bg-secondary/30',
                           )}
                         />
@@ -828,7 +840,7 @@ export function PostGameRecap({
                                   : 'border-border bg-secondary/20',
                               )}
                             >
-                              <div className="flex flex-wrap items-center gap-3">
+                              <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
                                 <span className="text-sm font-bold text-foreground">
                                   {review.position}
                                 </span>

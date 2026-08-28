@@ -4,7 +4,6 @@ import { formatPlayerFullName } from '@/lib/player-names'
 import {
   averagePlayerRatings,
   clampPlayerRating,
-  DEFAULT_PLAYER_RATING,
   formatPlayerRating,
   legacyImpactScoreToRating,
   type PlayerRating,
@@ -31,7 +30,7 @@ export type PlayerRecapStats = {
 
 export type PositionRecapReview = {
   position: string
-  rating: PlayerRating
+  rating: PlayerRating | null
   notes: string
 }
 
@@ -52,7 +51,7 @@ export type PlayerRecapReview = {
 }
 
 export type SavedPositionReview = {
-  rating: PlayerRating
+  rating: PlayerRating | null
   notes: string
 }
 
@@ -268,7 +267,8 @@ export function formatRecapMinutes(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-function formatRatingLabel(rating: PlayerRating): string {
+function formatRatingLabel(rating: PlayerRating | null): string {
+  if (rating == null) return 'Unrated'
   return formatPlayerRating(rating, 0)
 }
 
@@ -276,7 +276,7 @@ export function buildPositionReviews(
   playerId: string,
   positions: string[],
   savedReviews: Map<string, SavedPositionReview>,
-  fallbackRating: PlayerRating,
+  fallbackRating: PlayerRating | null = null,
 ): PositionRecapReview[] {
   return positions.map((position) => {
     const saved = savedReviews.get(playerPositionReviewKey(playerId, position))
@@ -312,12 +312,7 @@ export function buildRecapRows(
       const stats = eventStats.get(playerId)
       const positions = resolvePlayerPositions(stats, player)
       const overallSaved = savedReviews.get(playerOverallReviewKey(playerId))
-      const positionReviews = buildPositionReviews(
-        playerId,
-        positions,
-        savedReviews,
-        DEFAULT_PLAYER_RATING,
-      )
+      const positionReviews = buildPositionReviews(playerId, positions, savedReviews, null)
 
       return {
         playerId,
@@ -332,7 +327,7 @@ export function buildRecapRows(
         redCards: stats?.redCards ?? 0,
         overallReview: {
           position: OVERALL_REVIEW_POSITION,
-          rating: overallSaved?.rating ?? DEFAULT_PLAYER_RATING,
+          rating: overallSaved?.rating ?? null,
           notes: overallSaved?.notes ?? '',
         },
         positionReviews,
@@ -427,9 +422,9 @@ export function indexSavedReviews(
         ? review.rating
         : typeof review.impact_score === 'number'
           ? legacyImpactScoreToRating(review.impact_score)
-          : DEFAULT_PLAYER_RATING
+          : null
     const payload: SavedPositionReview = {
-      rating: clampPlayerRating(raw),
+      rating: raw == null ? null : clampPlayerRating(raw),
       notes: review.review_notes ?? '',
     }
     const position = review.position?.trim() || LEGACY_REVIEW_POSITION
