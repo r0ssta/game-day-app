@@ -32,7 +32,7 @@ import {
   getDefaultFormationId,
   isFormationValidForFormat,
 } from '@/lib/formations'
-import { applyPresetToSetup, applyPresetToHalftime, validatePresetFormation } from '@/lib/lineup-presets'
+import { applyPresetToSetup, applyPresetToHalftime, buildFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
 import {
   normalizeTeamFormat,
   type TeamFormat,
@@ -157,6 +157,9 @@ export function useGameDayApp() {
   const [halftimeSlotAssignments, setHalftimeSlotAssignments] = useState<
     Record<string, string | null>
   >({})
+  const [halftimeSlotLabelOverrides, setHalftimeSlotLabelOverrides] = useState<
+    Record<string, string>
+  >({})
   const [secondHalfSlotAssignments, setSecondHalfSlotAssignments] = useState<
     Record<string, string | null>
   >({})
@@ -167,6 +170,9 @@ export function useGameDayApp() {
   const [teamRoster, setTeamRoster] = useState<RosterPlayer[]>([])
   const [setupSlotAssignments, setSetupSlotAssignments] = useState<
     Record<string, string | null> | undefined
+  >(undefined)
+  const [setupSlotLabelOverrides, setSetupSlotLabelOverrides] = useState<
+    Record<string, string> | undefined
   >(undefined)
   const [setupPitchKey, setSetupPitchKey] = useState(0)
   const [halftimePitchKey, setHalftimePitchKey] = useState(0)
@@ -633,6 +639,7 @@ export function useGameDayApp() {
       setMatchPositions(applied.matchPositions)
       setFirstHalfFormation(applied.formationId)
       setSetupSlotAssignments(applied.slotAssignments)
+      setSetupSlotLabelOverrides(applied.slotLabelOverrides)
       setSetupPitchKey((k) => k + 1)
     },
     [masterRoster, setFirstHalfFormation, teams, selectedTeamId],
@@ -647,6 +654,7 @@ export function useGameDayApp() {
 
       setMatchFormations((prev) => ({ ...prev, second: applied.formationId }))
       setHalftimeSlotAssignments(applied.slotAssignments)
+      setHalftimeSlotLabelOverrides(applied.slotLabelOverrides)
       setHalftimeSecondHalf(applied.starters)
       setPlayers((prev) =>
         prev.map((player) => {
@@ -665,12 +673,17 @@ export function useGameDayApp() {
       presetName: string
       formationId: string
       slotAssignments: Record<string, string | null>
+      slotLabelOverrides?: Record<string, string>
     }) => {
       if (!selectedTeamId) throw new Error('Select a team first')
       const team = teams.find((t) => t.id === selectedTeamId)
       const format = normalizeTeamFormat(team?.format)
       validatePresetFormation(input.formationId, format)
-      const formationJson = { formationId: input.formationId, slotAssignments: input.slotAssignments }
+      const formationJson = buildFormationJson(
+        input.formationId,
+        input.slotAssignments,
+        input.slotLabelOverrides,
+      )
       if (input.presetId) {
         await updateLineupPreset(input.presetId, {
           presetName: input.presetName,
@@ -704,6 +717,7 @@ export function useGameDayApp() {
       setSetupLineup({ attending: {}, startFirstHalf: {} })
       setMatchPositions({})
       setSetupSlotAssignments(undefined)
+      setSetupSlotLabelOverrides(undefined)
       setSetupPitchKey((k) => k + 1)
       const team = teams.find((t) => t.id === teamId)
       const format = normalizeTeamFormat(team?.format)
@@ -751,6 +765,7 @@ export function useGameDayApp() {
         second: isFormationValidForFormat(prev.second, format) ? prev.second : defaultFormation,
       }))
       setSetupSlotAssignments(undefined)
+      setSetupSlotLabelOverrides(undefined)
       setSetupPitchKey((k) => k + 1)
       return updated
     },
@@ -784,6 +799,7 @@ export function useGameDayApp() {
           second: isFormationValidForFormat(prev.second, format) ? prev.second : defaultFormation,
         }))
         setSetupSlotAssignments(undefined)
+        setSetupSlotLabelOverrides(undefined)
         setSetupPitchKey((k) => k + 1)
       }
       return updated
@@ -861,6 +877,7 @@ export function useGameDayApp() {
         second: isFormationValidForFormat(prev.second, format) ? prev.second : defaultFormation,
       }))
       setSetupSlotAssignments(undefined)
+      setSetupSlotLabelOverrides(undefined)
       setSetupPitchKey((k) => k + 1)
     },
     [selectedTeamId],
@@ -1439,9 +1456,11 @@ export function useGameDayApp() {
     setSecondHalfStarterIds([])
     setHalftimeSecondHalf({})
     setHalftimeSlotAssignments({})
+    setHalftimeSlotLabelOverrides({})
     setSecondHalfSlotAssignments({})
     setCarriedFromFirstHalf({})
     setSetupSlotAssignments(undefined)
+    setSetupSlotLabelOverrides(undefined)
     setSetupPitchKey((k) => k + 1)
     setHalftimePitchKey(0)
     setMatchTeamName('')
@@ -1665,6 +1684,7 @@ export function useGameDayApp() {
     halftimeSecondHalf,
     setHalftimeStarter,
     halftimeSlotAssignments,
+    halftimeSlotLabelOverrides,
     secondHalfSlotAssignments,
     setSecondHalfSlotAssignments,
     carriedFromFirstHalf,
@@ -1678,6 +1698,7 @@ export function useGameDayApp() {
     removeLineupPreset,
     setPlayerActive,
     setupSlotAssignments,
+    setupSlotLabelOverrides,
     setupPitchKey,
     halftimePitchKey,
     enterHalftime,

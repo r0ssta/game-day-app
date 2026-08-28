@@ -103,6 +103,7 @@ type TeamManagementScreenProps = {
     presetName: string
     formationId: string
     slotAssignments: Record<string, string | null>
+    slotLabelOverrides?: Record<string, string>
   }) => Promise<void>
   onDeletePreset: (presetId: string) => Promise<void>
   primaryCoachName: string
@@ -641,6 +642,7 @@ function TeamLineupsTab({
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const defaultFormationId = getDefaultFormationId(activeTeamFormat)
   const assignmentsRef = useRef<Record<string, string | null> | null>(null)
+  const labelOverridesRef = useRef<Record<string, string> | null>(null)
   const [presetName, setPresetName] = useState('')
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null)
   const [formationId, setFormationId] = useState(defaultFormationId)
@@ -648,6 +650,9 @@ function TeamLineupsTab({
   const [assignmentsKey, setAssignmentsKey] = useState(0)
   const [initialSlotAssignments, setInitialSlotAssignments] = useState<
     Record<string, string | null> | undefined
+  >(undefined)
+  const [initialSlotLabelOverrides, setInitialSlotLabelOverrides] = useState<
+    Record<string, string> | undefined
   >(undefined)
   const [saving, setSaving] = useState(false)
 
@@ -664,6 +669,7 @@ function TeamLineupsTab({
     setFormationId(defaultFormationId)
     setStarters({})
     setInitialSlotAssignments(undefined)
+    setInitialSlotLabelOverrides(undefined)
     setAssignmentsKey((k) => k + 1)
   }, [defaultFormationId])
 
@@ -690,6 +696,7 @@ function TeamLineupsTab({
     setFormationId(parsed.formationId)
     setStarters(nextStarters)
     setInitialSlotAssignments(parsed.slotAssignments)
+    setInitialSlotLabelOverrides(parsed.slotLabelOverrides ?? {})
     setAssignmentsKey((k) => k + 1)
   }
 
@@ -707,6 +714,7 @@ function TeamLineupsTab({
         presetName: trimmed,
         formationId,
         slotAssignments: assignmentsRef.current ?? {},
+        slotLabelOverrides: labelOverridesRef.current ?? {},
       })
       onToast(editingPresetId ? 'Preset updated' : 'Preset saved')
       resetEditor()
@@ -782,6 +790,7 @@ function TeamLineupsTab({
             onFormationChange={(id) => {
               setFormationId(id)
               setInitialSlotAssignments(undefined)
+              setInitialSlotLabelOverrides(undefined)
             }}
             players={activeRoster.map((player) => ({
               id: player.id,
@@ -796,8 +805,10 @@ function TeamLineupsTab({
             maxFieldPlayers={maxFieldPlayers}
             teamFormat={activeTeamFormat}
             initialSlotAssignments={initialSlotAssignments}
+            initialSlotLabelOverrides={initialSlotLabelOverrides}
             assignmentsResetKey={assignmentsKey}
             assignmentsRef={assignmentsRef}
+            slotLabelOverridesRef={labelOverridesRef}
             onAssignStarter={(playerId) => setStarters((prev) => ({ ...prev, [playerId]: true }))}
             onRemoveStarter={(playerId) => setStarters((prev) => ({ ...prev, [playerId]: false }))}
           />

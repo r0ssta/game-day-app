@@ -60,6 +60,8 @@ type TacticalPitchLineupProps = {
   onFormationChange?: (formationId: string) => void
   hydrateFromStarters?: boolean
   initialSlotAssignments?: Record<string, string | null>
+  /** Restored coach positional label overrides when loading a saved preset. */
+  initialSlotLabelOverrides?: Record<string, string>
   assignmentsResetKey?: string | number
   assignmentsRef?: MutableRefObject<Record<string, string | null> | null>
   /** Optional ref for coach positional label overrides (setup → match tracking). */
@@ -204,6 +206,7 @@ export function TacticalPitchLineup({
   onFormationChange,
   hydrateFromStarters = false,
   initialSlotAssignments,
+  initialSlotLabelOverrides,
   assignmentsResetKey,
   assignmentsRef,
   slotLabelOverridesRef,
@@ -269,8 +272,10 @@ export function TacticalPitchLineup({
   }, [availableFormations, formationId, setFormationId, teamFormat])
 
   useEffect(() => {
+    const restoredOverrides = initialSlotLabelOverrides ?? {}
     if (initialSlotAssignments) {
       setSlotAssignments(initialSlotAssignments)
+      setSlotLabelOverrides(restoredOverrides)
       setSelectedPlayerId(null)
       setSelectedSlotId(null)
 
@@ -283,7 +288,7 @@ export function TacticalPitchLineup({
           const slotId = Object.entries(initialSlotAssignments).find(([, id]) => id === player.id)?.[0]
           const slot = formation.slots.find((s) => s.id === slotId)
           if (slot) {
-            onAssignStarter(player.id, slot.role, resolveSlotLabel(slot, slotLabelOverrides))
+            onAssignStarter(player.id, slot.role, resolveSlotLabel(slot, restoredOverrides))
           }
         } else {
           onRemoveStarter(player.id)
@@ -304,6 +309,7 @@ export function TacticalPitchLineup({
           starters,
         ),
       )
+      setSlotLabelOverrides(restoredOverrides)
       return
     }
 

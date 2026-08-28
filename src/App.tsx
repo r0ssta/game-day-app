@@ -948,6 +948,7 @@ type SetupScreenProps = {
   onLoadLineupPreset: (presetId: string) => void
   onBackToHome: () => void
   setupSlotAssignments?: Record<string, string | null>
+  setupSlotLabelOverrides?: Record<string, string>
   setupPitchKey: number
   setupAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
   setupLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
@@ -1007,6 +1008,7 @@ function SetupScreen({
   onLoadLineupPreset,
   onBackToHome,
   setupSlotAssignments,
+  setupSlotLabelOverrides,
   setupPitchKey,
   setupAssignmentsRef,
   setupLabelOverridesRef,
@@ -1358,6 +1360,7 @@ function SetupScreen({
                   formationId={firstHalfFormation}
                   onFormationChange={onSetFirstHalfFormation}
                   initialSlotAssignments={setupSlotAssignments}
+                  initialSlotLabelOverrides={setupSlotLabelOverrides}
                   assignmentsResetKey={setupPitchKey}
                   assignmentsRef={setupAssignmentsRef}
                   slotLabelOverridesRef={setupLabelOverridesRef}
@@ -1437,6 +1440,7 @@ type HalftimeSetupScreenProps = {
   onSetSecondHalfFormation: (formationId: string) => void
   secondHalfStarters: Record<string, boolean>
   initialSlotAssignments?: Record<string, string | null>
+  initialSlotLabelOverrides?: Record<string, string>
   assignmentsResetKey: string | number
   carriedFromFirstHalf: Record<string, boolean>
   halftimeAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
@@ -1464,6 +1468,7 @@ function HalftimeSetupScreen({
   onSetSecondHalfFormation,
   secondHalfStarters,
   initialSlotAssignments,
+  initialSlotLabelOverrides,
   assignmentsResetKey,
   carriedFromFirstHalf,
   halftimeAssignmentsRef,
@@ -1534,6 +1539,7 @@ function HalftimeSetupScreen({
           formationId={secondHalfFormation}
           onFormationChange={onSetSecondHalfFormation}
           initialSlotAssignments={initialSlotAssignments}
+          initialSlotLabelOverrides={initialSlotLabelOverrides}
           assignmentsResetKey={assignmentsResetKey}
           assignmentsRef={halftimeAssignmentsRef}
           slotLabelOverridesRef={halftimeLabelOverridesRef}
@@ -1871,6 +1877,7 @@ export default function App() {
     halftimeSecondHalf,
     setHalftimeStarter,
     halftimeSlotAssignments,
+    halftimeSlotLabelOverrides,
     secondHalfSlotAssignments,
     carriedFromFirstHalf,
     lineupPresets,
@@ -1883,6 +1890,7 @@ export default function App() {
     removeLineupPreset,
     setPlayerActive,
     setupSlotAssignments,
+    setupSlotLabelOverrides,
     setupPitchKey,
     halftimePitchKey,
     enterHalftime,
@@ -3345,6 +3353,7 @@ export default function App() {
           onLoadLineupPreset={handleLoadLineupPreset}
           onBackToHome={() => setAppMode('home')}
           setupSlotAssignments={setupSlotAssignments}
+          setupSlotLabelOverrides={setupSlotLabelOverrides}
           setupPitchKey={setupPitchKey}
           setupAssignmentsRef={setupAssignmentsRef}
           setupLabelOverridesRef={setupLabelOverridesRef}
@@ -3463,6 +3472,7 @@ export default function App() {
           onSetSecondHalfFormation={setSecondHalfFormation}
           secondHalfStarters={halftimeSecondHalf}
           initialSlotAssignments={halftimeSlotAssignments}
+          initialSlotLabelOverrides={halftimeSlotLabelOverrides}
           assignmentsResetKey={`halftime-${matchId ?? 'local'}-${halftimePitchKey}`}
           carriedFromFirstHalf={carriedFromFirstHalf}
           halftimeAssignmentsRef={halftimeAssignmentsRef}
