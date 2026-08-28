@@ -188,7 +188,7 @@ function topPositions(counts: Map<string, number>): [string, string] {
   return [sorted[0]?.[0] ?? '—', sorted[1]?.[0] ?? '—']
 }
 
-function highRatingPercent(sum: number, sampleSize: number, highCount: number): number {
+function highRatingPercent(sampleSize: number, highCount: number): number {
   return sampleSize > 0 ? Math.round((highCount / sampleSize) * 100) : 0
 }
 
@@ -424,11 +424,7 @@ export async function loadSeasonReport(
           ratingSampleSize: item.ratingSampleSize,
           averageRating:
             item.ratingSampleSize > 0 ? item.ratingSum / item.ratingSampleSize : null,
-          highRatingPercent: highRatingPercent(
-            item.ratingSum,
-            item.ratingSampleSize,
-            highCount,
-          ),
+          highRatingPercent: highRatingPercent(item.ratingSampleSize, highCount),
         }
       })
       .sort((a, b) => b.matchCount - a.matchCount || a.position.localeCompare(b.position))
