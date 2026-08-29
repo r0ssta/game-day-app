@@ -85,6 +85,11 @@ function clampPercent(value: number, min = 6, max = 94) {
   return Math.min(max, Math.max(min, value))
 }
 
+/** Bottom-third slots: put labels/extras above so they stay tappable above the match footer. */
+function isBottomPitchSlot(y: number) {
+  return y >= 72
+}
+
 function SlotLabelSheet({
   slotId,
   currentLabel,
@@ -191,6 +196,11 @@ function PitchSlotVisual({
   onLabelChange?: (label: string) => void
   onTap: () => void
 }) {
+  const chromeAbove = isBottomPitchSlot(slot.y)
+  const chromePositionClass = chromeAbove
+    ? 'absolute left-1/2 bottom-full mb-1 -translate-x-1/2'
+    : 'absolute left-1/2 top-full mt-1 -translate-x-1/2'
+
   return (
     <div
       ref={setDroppableRef}
@@ -298,7 +308,7 @@ function PitchSlotVisual({
 
         {occupiedExtra ? (
           <div
-            className="absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2"
+            className={cn(chromePositionClass, 'z-10')}
             onClick={(e) => e.stopPropagation()}
           >
             {occupiedExtra}
@@ -312,14 +322,22 @@ function PitchSlotVisual({
               e.stopPropagation()
               onOpenLabelEditor()
             }}
-            className="absolute left-1/2 top-full z-20 mt-1 flex min-h-11 min-w-[4.5rem] -translate-x-1/2 touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-white/50 bg-black/80 px-3 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg active:scale-95"
+            className={cn(
+              chromePositionClass,
+              'z-20 flex min-h-11 min-w-[4.5rem] touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-white/50 bg-black/80 px-3 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg active:scale-95',
+            )}
             aria-label={`Change position label (${label})`}
           >
             <Pencil className="size-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
             <span>{label}</span>
           </button>
         ) : player && !occupiedExtra ? (
-          <span className="absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black uppercase text-white">
+          <span
+            className={cn(
+              chromePositionClass,
+              'rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black uppercase text-white',
+            )}
+          >
             {label}
           </span>
         ) : null}
@@ -484,7 +502,7 @@ export function FormationPitch({
             ? {
                 ...slot,
                 x: clampPercent(slot.x + dxPct),
-                y: clampPercent(slot.y + dyPct),
+                y: clampPercent(slot.y + dyPct, 8, 86),
               }
             : slot,
         ),

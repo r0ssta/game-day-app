@@ -4143,7 +4143,7 @@ export default function App() {
         }
       />
 
-      <div className={`${APP_CONTAINER} min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain pt-4 pb-36 md:space-y-6 md:pt-5 md:pb-40`}>
+      <div className={`${APP_CONTAINER} min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain pt-4 pb-40 md:space-y-6 md:pt-5 md:pb-44`}>
         {ENABLE_QA_SPEED ? (
           <QaSpeedControls speed={qaSpeedMultiplier} onSpeedChange={setQaSpeedMultiplier} />
         ) : null}
