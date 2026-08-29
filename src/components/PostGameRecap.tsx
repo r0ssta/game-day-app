@@ -34,6 +34,7 @@ import {
 import {
   fetchMatchById,
   fetchMatchEvents,
+  backfillMissingGoalShots,
   fetchMatchReviews,
   finalizeMatchReview,
   savePostGameReview,
@@ -177,10 +178,9 @@ export function PostGameRecap({
       setLoading(true)
       setLoadError(null)
       try {
-        const [events, loadedMatch] = await Promise.all([
-          fetchMatchEvents(matchId),
-          fetchMatchById(matchId),
-        ])
+        const loadedMatch = await fetchMatchById(matchId)
+        await backfillMissingGoalShots(matchId)
+        const events = await fetchMatchEvents(matchId)
         if (cancelled) return
 
         if (loadedMatch?.internal_coach_notes) {

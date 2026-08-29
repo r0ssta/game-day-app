@@ -79,6 +79,7 @@ import {
   markMatchPendingReview,
   rebuildMatchPlayers,
   fetchMatchEvents,
+  backfillMissingGoalShots,
   resolveCoachIdForName,
   resolveMatchCoachName,
   syncMatchRecord,
@@ -376,6 +377,10 @@ export function useGameDayApp() {
             if (!cancelled) {
               playersWithCards = applyCardsFromEvents(matchPlayers, events)
               shotSaveTotals = aggregateTeamShotSaveTotals(events)
+            }
+            const backfill = await backfillMissingGoalShots(match.id)
+            if (!cancelled && backfill.inserted > 0) {
+              shotSaveTotals = backfill.totals
             }
           } catch (cardErr) {
             console.warn('[bootstrap] could not restore card state', cardErr)
@@ -1435,7 +1440,11 @@ export function useGameDayApp() {
 
   /** End the active period and open intermission lineup (PERIOD_X → INTERMISSION). */
   const enterIntermission = useCallback(
-    async (clockSeconds: number, slotAssignments?: Record<string, string | null>) => {
+    async (
+      clockSeconds: number,
+      slotAssignments?: Record<string, string | null>,
+      slotLabelOverrides?: Record<string, string>,
+    ) => {
       setRunning(false)
 
       if (matchId) {
@@ -1481,6 +1490,9 @@ export function useGameDayApp() {
       })
 
       if (slotAssignments) setHalftimeSlotAssignments(slotAssignments)
+      if (slotLabelOverrides && Object.keys(slotLabelOverrides).length > 0) {
+        setHalftimeSlotLabelOverrides(slotLabelOverrides)
+      }
       setHalftimeSecondHalf(toggles)
       setHalftimePitchKey(0)
       // Carry the formation that just ended into the next-period lineup editor.

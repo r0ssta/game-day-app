@@ -64,6 +64,7 @@ type LiveTacticalPitchProps = {
 
 export type LiveTacticalPitchHandle = {
   getSlotAssignments: () => Record<string, string | null>
+  getSlotLabelOverrides: () => Record<string, string>
 }
 
 type SubSheetState =
@@ -299,9 +300,12 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     const [slotLabelOverrides, setSlotLabelOverrides] = useState<Record<string, string>>({})
     const slotAssignmentsRef = useRef(slotAssignments)
     slotAssignmentsRef.current = slotAssignments
+    const slotLabelOverridesRef = useRef(slotLabelOverrides)
+    slotLabelOverridesRef.current = slotLabelOverrides
 
     useImperativeHandle(ref, () => ({
       getSlotAssignments: () => slotAssignmentsRef.current,
+      getSlotLabelOverrides: () => slotLabelOverridesRef.current,
     }))
 
     const [sheet, setSheet] = useState<SubSheetState | null>(null)

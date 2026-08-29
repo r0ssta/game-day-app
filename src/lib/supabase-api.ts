@@ -24,6 +24,7 @@ import {
   type QualitativeContext,
 } from '@/lib/qualitative-context'
 import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEventType, type StatTrackerRosterPlayer, rosterPlayerFromDb } from '@/lib/stat-tracker'
+import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import type {
   DbCoach,
   DbLineupPreset,
@@ -1368,6 +1369,79 @@ export async function insertMatchEvents(events: MatchEventInput[]) {
     }
   }
   await insertMatchEventRows(events.map((event) => matchEventToRow(event)))
+}
+
+export async function deleteMatchEvent(eventId: string) {
+  const { error } = await supabase.from('match_events').delete().eq('id', eventId)
+  if (error) throw error
+}
+
+/** Most recent regulation goal for the given side, if any. */
+export function findLastGoalEvent(
+  events: DbMatchEvent[],
+  side: 'home' | 'away',
+): DbMatchEvent | null {
+  const eventType = side === 'home' ? 'goal' : 'opponent_goal'
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.event_type === eventType) return event
+  }
+  return null
+}
+
+/** Shot logged at the same half timestamp as a goal (auto-shot pairing). */
+export function findPairedGoalShotEvent(
+  events: DbMatchEvent[],
+  goalEvent: DbMatchEvent,
+): DbMatchEvent | null {
+  const shotType = goalEvent.event_type === 'goal' ? 'shot_home' : 'shot_away'
+  return (
+    events.find(
+      (event) =>
+        event.event_type === shotType && event.timestamp === goalEvent.timestamp,
+    ) ?? null
+  )
+}
+
+/**
+ * Insert missing shot_home / shot_away rows for goals logged before auto-shot existed.
+ * Returns refreshed shot/save totals after any inserts.
+ */
+export async function backfillMissingGoalShots(matchId: string) {
+  const events = await fetchMatchEvents(matchId)
+  const inserts: MatchEventInput[] = []
+
+  for (const event of events) {
+    if (event.event_type === 'goal') {
+      if (!findPairedGoalShotEvent(events, event)) {
+        inserts.push({
+          matchId,
+          eventType: 'shot_home',
+          timestamp: event.timestamp,
+          formation: event.formation ?? '',
+          playerId: null,
+        })
+      }
+    } else if (event.event_type === 'opponent_goal') {
+      if (!findPairedGoalShotEvent(events, event)) {
+        inserts.push({
+          matchId,
+          eventType: 'shot_away',
+          timestamp: event.timestamp,
+          formation: event.formation ?? '',
+          playerId: null,
+        })
+      }
+    }
+  }
+
+  if (inserts.length > 0) {
+    await insertMatchEvents(inserts)
+    const refreshed = await fetchMatchEvents(matchId)
+    return { inserted: inserts.length, totals: aggregateTeamShotSaveTotals(refreshed) }
+  }
+
+  return { inserted: 0, totals: aggregateTeamShotSaveTotals(events) }
 }
 
 export async function fetchMatchById(matchId: string): Promise<DbMatch | null> {
