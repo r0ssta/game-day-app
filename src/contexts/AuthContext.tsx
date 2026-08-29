@@ -32,7 +32,10 @@ type AuthContextValue = {
   role: AppRole | null
   appRole: AppRole | null
   teamMemberships: TeamMembership[]
+  /** True while reading the persisted auth session (blocks the login gate). */
   loading: boolean
+  /** True while roles / team memberships load after sign-in. */
+  accessLoading: boolean
   isAuthenticated: boolean
   isActiveStaff: boolean
   canAccessClubAdmin: boolean
@@ -52,6 +55,9 @@ type AuthContextValue = {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+/** Never leave coaches stuck on the splash — unblock after this many ms. */
+const SESSION_BOOTSTRAP_TIMEOUT_MS = 4_000
 
 async function fetchUserAppRole(userId: string): Promise<AppRole | null> {
   const { data, error } = await supabase
@@ -107,8 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [role, setRole] = useState<AppRole | null>(null)
   const [teamMemberships, setTeamMemberships] = useState<TeamMembership[]>([])
-  const [loading, setLoading] = useState(true)
-  const [sessionReady, setSessionReady] = useState(false)
+  const [sessionLoading, setSessionLoading] = useState(true)
+  const [accessLoading, setAccessLoading] = useState(false)
 
   const loadAccess = useCallback(async (userId: string | undefined | null) => {
     if (!userId) {
@@ -126,64 +132,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshRole = useCallback(async () => {
     const userId = (await supabase.auth.getUser()).data.user?.id
-    await loadAccess(userId)
+    setAccessLoading(true)
+    try {
+      await loadAccess(userId)
+    } finally {
+      setAccessLoading(false)
+    }
   }, [loadAccess])
 
-  // Read the persisted session once, then keep session/user in sync. Never call
-  // postgREST or RPC from inside onAuthStateChange — that deadlocks supabase-js
-  // and leaves the app stuck on "Checking session…" (supabase/auth-js#762).
+  // Session bootstrap: sync callback only (never postgREST/RPC here — supabase/auth-js#762).
   useEffect(() => {
     let cancelled = false
+    let finished = false
 
-    void (async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession()
-        if (cancelled) return
-        if (error) {
-          console.warn('[auth] getSession failed', error.message)
-        }
-        const nextSession = data.session ?? null
-        setSession(nextSession)
-        setUser(nextSession?.user ?? null)
-      } catch (err) {
-        console.warn('[auth] session bootstrap failed', err)
-      } finally {
-        if (!cancelled) setSessionReady(true)
-      }
-    })()
+    const finishSessionBootstrap = () => {
+      if (cancelled || finished) return
+      finished = true
+      setSessionLoading(false)
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      console.warn('[auth] session bootstrap timed out — continuing without blocking')
+      finishSessionBootstrap()
+    }, SESSION_BOOTSTRAP_TIMEOUT_MS)
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession)
       setUser(nextSession?.user ?? null)
+      finishSessionBootstrap()
     })
 
     return () => {
       cancelled = true
+      window.clearTimeout(timeoutId)
       subscription.unsubscribe()
     }
   }, [])
 
   useEffect(() => {
-    if (!sessionReady) return
+    if (sessionLoading) return
 
     let cancelled = false
     void (async () => {
-      setLoading(true)
+      setAccessLoading(true)
       try {
         await loadAccess(user?.id ?? null)
       } catch (err) {
         console.warn('[auth] failed to load access', err)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setAccessLoading(false)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [sessionReady, user?.id, loadAccess])
+  }, [sessionLoading, user?.id, loadAccess])
 
   const sendLoginOtp = useCallback(async (email: string) => {
     const trimmed = email.trim()
@@ -254,7 +260,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       appRole: role,
       teamMemberships,
-      loading,
+      loading: sessionLoading,
+      accessLoading,
       isAuthenticated: Boolean(session?.user),
       isActiveStaff: isActiveAppRole(role),
       canAccessClubAdmin: canAccessClubAdmin(role),
@@ -274,7 +281,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       role,
       teamMemberships,
-      loading,
+      sessionLoading,
+      accessLoading,
       getTeamRole,
       canDeleteMatchesForTeam,
       canUseSprocketForTeam,

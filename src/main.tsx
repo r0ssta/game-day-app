@@ -38,7 +38,7 @@ function bootstrapParentHubRoute() {
 }
 
 function AuthenticatedApp() {
-  const { loading, isAuthenticated, isActiveStaff } = useAuth()
+  const { loading, accessLoading, isAuthenticated, isActiveStaff } = useAuth()
 
   if (loading) {
     return (
@@ -52,7 +52,8 @@ function AuthenticatedApp() {
     return <AuthScreen />
   }
 
-  if (!isActiveStaff) {
+  // Signed-in coaches should reach the app quickly — don't block kickoff on role RPCs.
+  if (!accessLoading && !isActiveStaff) {
     return <PendingAccessScreen />
   }
 
