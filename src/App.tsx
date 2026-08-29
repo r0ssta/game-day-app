@@ -1121,7 +1121,7 @@ function SetupScreen({
 
   return (
     <main className={APP_SHELL}>
-      <div className={`${APP_CONTAINER} space-y-3 pt-4 md:pt-5`}>
+      <div className={`${APP_CONTAINER} space-y-3 pt-4 pb-40 md:pt-5 md:pb-44`}>
         <ScreenHeader
           title="Game Day Setup"
           subtitle={`Pre-game lineup and match details for ${activeTeamName}.`}
@@ -1230,6 +1230,173 @@ function SetupScreen({
             </div>
 
             <HomeAwayToggle value={locationType} onChange={onLocationTypeChange} />
+
+            {masterRoster.length > 0 ? (
+              <div
+                aria-label="Attendance tracker"
+                className="attendance-tracker rounded-2xl border-2 border-border bg-card p-3"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h2 className="font-display text-sm font-black uppercase tracking-wide text-foreground">
+                    Attendance Tracker
+                  </h2>
+                  <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    {attendingCount}/{masterRoster.length} attending
+                  </span>
+                </div>
+                <ul className="space-y-2">
+                  {masterRoster.map((player) => {
+                    const isAttending = setupLineup.attending[player.id] !== false
+                    return (
+                      <li
+                        key={player.id}
+                        className="flex items-center gap-2 rounded-xl border-2 border-border bg-background px-3 py-2"
+                      >
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-neon/40 bg-neon/10 font-display text-sm font-bold tabular-nums text-neon">
+                          {player.number ?? '—'}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
+                          {formatPlayerFullName(player.firstName, player.lastName)}
+                        </span>
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            type="button"
+                            aria-pressed={isAttending}
+                            onClick={() => onSetAttending(player.id, true)}
+                            className={cn(
+                              'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
+                              isAttending
+                                ? 'border-neon bg-neon text-neon-foreground'
+                                : 'border-border bg-secondary text-muted-foreground',
+                            )}
+                          >
+                            Attending
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={!isAttending}
+                            onClick={() => onSetAttending(player.id, false)}
+                            className={cn(
+                              'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
+                              !isAttending
+                                ? 'border-foreground bg-foreground text-background'
+                                : 'border-border bg-secondary text-muted-foreground',
+                            )}
+                          >
+                            Absent
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ) : null}
+
+            <section aria-label="Lineup builder" className="space-y-3 pb-2">
+              {rosterLoading ? (
+                <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+                  Loading roster…
+                </p>
+              ) : masterRoster.length === 0 ? (
+                <div className="space-y-3">
+                  <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+                    No players on this team’s season roster yet. Add players in Team Management, or
+                    add one below for this match.
+                  </p>
+                  <AddPlayerToRoster
+                    selectedTeamId={activeTeamId}
+                    ageGroup={guestAgeGroup}
+                    excludePlayerIds={masterRoster.map((player) => player.id)}
+                    loadAgeGroupPool={loadAgeGroupPool}
+                    onAddFromPool={onAddGuestFromPool}
+                    suggestedJersey={suggestedJersey}
+                    onAdd={onAddPlayer}
+                  />
+                </div>
+              ) : (
+                <>
+                  <p className="rounded-xl border border-neon/30 bg-neon/5 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                    Starting lineup is empty until you drag players from the bench onto the pitch.
+                  </p>
+                  {lineupPresets.length > 0 && (
+                    <div>
+                      <label
+                        htmlFor="load-lineup-preset"
+                        className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
+                      >
+                        Load Lineup Preset
+                      </label>
+                      <select
+                        id="load-lineup-preset"
+                        value={selectedPresetId}
+                        onChange={(e) => {
+                          const presetId = e.target.value
+                          setSelectedPresetId(presetId)
+                          if (presetId) onLoadLineupPreset(presetId)
+                        }}
+                        className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+                      >
+                        <option value="">Choose a saved lineup…</option>
+                        {lineupPresets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.preset_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <TacticalPitchLineup
+                    key={`${activeTeamId ?? 'no-team'}-${setupPitchKey}`}
+                    title="1st Half Lineup"
+                    formationId={firstHalfFormation}
+                    onFormationChange={onSetFirstHalfFormation}
+                    initialSlotAssignments={setupSlotAssignments}
+                    initialSlotLabelOverrides={setupSlotLabelOverrides}
+                    assignmentsResetKey={setupPitchKey}
+                    assignmentsRef={setupAssignmentsRef}
+                    slotLabelOverridesRef={setupLabelOverridesRef}
+                    onSlotAssignmentsChange={onSetupSlotAssignmentsChange}
+                    onSlotLabelOverridesChange={onSetupSlotLabelOverridesChange}
+                    constrainLists={false}
+                    players={masterRoster.map((player) => ({
+                      id: player.id,
+                      name: formatPlayerFullName(player.firstName, player.lastName),
+                      shortName: setupLineup.attending[player.id]
+                        ? getSidelineName(player, sidelineNameMap)
+                        : formatPlayerFullName(player.firstName, player.lastName),
+                      number: player.number,
+                      isGuest: player.isGuest,
+                      primaryPosition: player.primaryPosition,
+                      secondaryPosition: player.secondaryPosition,
+                      meta: `Roster: ${player.position}`,
+                    }))}
+                    attending={setupLineup.attending}
+                    starters={setupLineup.startFirstHalf}
+                    maxFieldPlayers={maxFieldPlayers}
+                    teamFormat={activeTeamFormat}
+                    onAssignStarter={(playerId, _role: FormationRole, tacticalPosition) => {
+                      onSetStartFirstHalf(playerId, true)
+                      onSetMatchPosition(playerId, tacticalPosition)
+                    }}
+                    onRemoveStarter={(playerId) => onSetStartFirstHalf(playerId, false)}
+                    onSetAttending={onSetAttending}
+                    onEditPlayer={onEditPlayer}
+                  />
+
+                  <AddPlayerToRoster
+                    selectedTeamId={activeTeamId}
+                    ageGroup={guestAgeGroup}
+                    excludePlayerIds={masterRoster.map((player) => player.id)}
+                    loadAgeGroupPool={loadAgeGroupPool}
+                    onAddFromPool={onAddGuestFromPool}
+                    suggestedJersey={suggestedJersey}
+                    onAdd={onAddPlayer}
+                  />
+                </>
+              )}
+            </section>
 
             <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
               <span className="text-sm font-bold text-foreground">Tournament Game</span>
@@ -1369,169 +1536,6 @@ function SetupScreen({
                 onIntervalMinutesChange={onSetupSubIntervalMinutesChange}
               />
             ) : null}
-
-            {masterRoster.length > 0 ? (
-              <div
-                aria-label="Attendance tracker"
-                className="attendance-tracker rounded-2xl border-2 border-border bg-card p-3"
-              >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h2 className="font-display text-sm font-black uppercase tracking-wide text-foreground">
-                    Attendance Tracker
-                  </h2>
-                  <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                    {attendingCount}/{masterRoster.length} attending
-                  </span>
-                </div>
-                <ul className="space-y-2">
-                  {masterRoster.map((player) => {
-                    const isAttending = setupLineup.attending[player.id] !== false
-                    return (
-                      <li
-                        key={player.id}
-                        className="flex items-center gap-2 rounded-xl border-2 border-border bg-background px-3 py-2"
-                      >
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-neon/40 bg-neon/10 font-display text-sm font-bold tabular-nums text-neon">
-                          {player.number ?? '—'}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
-                          {formatPlayerFullName(player.firstName, player.lastName)}
-                        </span>
-                        <div className="flex shrink-0 gap-1">
-                          <button
-                            type="button"
-                            aria-pressed={isAttending}
-                            onClick={() => onSetAttending(player.id, true)}
-                            className={cn(
-                              'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
-                              isAttending
-                                ? 'border-neon bg-neon text-neon-foreground'
-                                : 'border-border bg-secondary text-muted-foreground',
-                            )}
-                          >
-                            Attending
-                          </button>
-                          <button
-                            type="button"
-                            aria-pressed={!isAttending}
-                            onClick={() => onSetAttending(player.id, false)}
-                            className={cn(
-                              'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
-                              !isAttending
-                                ? 'border-foreground bg-foreground text-background'
-                                : 'border-border bg-secondary text-muted-foreground',
-                            )}
-                          >
-                            Absent
-                          </button>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            ) : null}
-
-          <section aria-label="Lineup builder" className="space-y-3 pb-2">
-            {rosterLoading ? (
-              <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-                Loading roster…
-              </p>
-            ) : masterRoster.length === 0 ? (
-              <div className="space-y-3">
-                <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-                  No players on this team yet. Add a player below to get started.
-                </p>
-                <AddPlayerToRoster
-                  selectedTeamId={activeTeamId}
-                  ageGroup={guestAgeGroup}
-                  excludePlayerIds={masterRoster.map((player) => player.id)}
-                  loadAgeGroupPool={loadAgeGroupPool}
-                  onAddFromPool={onAddGuestFromPool}
-                  suggestedJersey={suggestedJersey}
-                  onAdd={onAddPlayer}
-                />
-              </div>
-            ) : (
-              <>
-                {lineupPresets.length > 0 && (
-                  <div>
-                    <label
-                      htmlFor="load-lineup-preset"
-                      className="mb-2 block text-xs font-bold uppercase tracking-widest text-muted-foreground"
-                    >
-                      Load Lineup Preset
-                    </label>
-                    <select
-                      id="load-lineup-preset"
-                      value={selectedPresetId}
-                      onChange={(e) => {
-                        const presetId = e.target.value
-                        setSelectedPresetId(presetId)
-                        if (presetId) onLoadLineupPreset(presetId)
-                      }}
-                      className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
-                    >
-                      <option value="">Choose a saved lineup…</option>
-                      {lineupPresets.map((preset) => (
-                        <option key={preset.id} value={preset.id}>
-                          {preset.preset_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <TacticalPitchLineup
-                  key={`${activeTeamId ?? 'no-team'}-${setupPitchKey}`}
-                  title="1st Half Lineup"
-                  formationId={firstHalfFormation}
-                  onFormationChange={onSetFirstHalfFormation}
-                  initialSlotAssignments={setupSlotAssignments}
-                  initialSlotLabelOverrides={setupSlotLabelOverrides}
-                  assignmentsResetKey={setupPitchKey}
-                  assignmentsRef={setupAssignmentsRef}
-                  slotLabelOverridesRef={setupLabelOverridesRef}
-                  onSlotAssignmentsChange={onSetupSlotAssignmentsChange}
-                  onSlotLabelOverridesChange={onSetupSlotLabelOverridesChange}
-                  constrainLists={false}
-                  players={masterRoster.map((player) => ({
-                    id: player.id,
-                    name: formatPlayerFullName(player.firstName, player.lastName),
-                    shortName: setupLineup.attending[player.id]
-                      ? getSidelineName(player, sidelineNameMap)
-                      : formatPlayerFullName(player.firstName, player.lastName),
-                    number: player.number,
-                    isGuest: player.isGuest,
-                    primaryPosition: player.primaryPosition,
-                    secondaryPosition: player.secondaryPosition,
-                    meta: `Roster: ${player.position}`,
-                  }))}
-                  attending={setupLineup.attending}
-                  starters={setupLineup.startFirstHalf}
-                  maxFieldPlayers={maxFieldPlayers}
-                  teamFormat={activeTeamFormat}
-                  onAssignStarter={(playerId, _role: FormationRole, tacticalPosition) => {
-                    onSetStartFirstHalf(playerId, true)
-                    onSetMatchPosition(playerId, tacticalPosition)
-                  }}
-                  onRemoveStarter={(playerId) => onSetStartFirstHalf(playerId, false)}
-                  onSetAttending={onSetAttending}
-                  onEditPlayer={onEditPlayer}
-                />
-
-                <AddPlayerToRoster
-                  selectedTeamId={activeTeamId}
-                  ageGroup={guestAgeGroup}
-                  excludePlayerIds={masterRoster.map((player) => player.id)}
-                  loadAgeGroupPool={loadAgeGroupPool}
-                  onAddFromPool={onAddGuestFromPool}
-                  suggestedJersey={suggestedJersey}
-                  onAdd={onAddPlayer}
-                />
-              </>
-            )}
-          </section>
       </div>
 
       <div className="sticky bottom-0 z-20 space-y-2 border-t-2 border-border bg-background/95 px-4 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/90 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
@@ -2139,7 +2143,6 @@ export default function App() {
   )
 
   const teamSwitchDisabled =
-    hasLiveMatch ||
     appMode === 'match' ||
     appMode === 'halftime' ||
     appMode === 'penalty_shootout'
@@ -2162,7 +2165,7 @@ export default function App() {
       activeTeamId={activeTeamId}
       onTeamChange={setActiveTeamId}
       disabled={teamSwitchDisabled}
-      disabledReason={teamSwitchDisabled ? 'Team locked during live match' : undefined}
+      disabledReason={teamSwitchDisabled ? 'Team locked during the live match' : undefined}
     />
   )
 

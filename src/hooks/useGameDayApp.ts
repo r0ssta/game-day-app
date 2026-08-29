@@ -520,7 +520,7 @@ export function useGameDayApp() {
         await loadTeamRoster(selectedTeamId)
       } catch (err) {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to load roster')
+          console.warn('[match_setup] roster load failed', err)
         }
       }
     })()
