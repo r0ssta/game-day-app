@@ -14,6 +14,7 @@ import {
 } from '@/lib/qualitative-context'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { fetchMatchEvents, resolveMatchCoachName } from '@/lib/supabase-api'
+import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import {
   formatOpponentPrefix,
   formatVenueLabel,
@@ -67,6 +68,7 @@ export function MatchRecapDetailView({
   const [events, setEvents] = useState<DbMatchEvent[]>([])
   const [parentRecapOpen, setParentRecapOpen] = useState(false)
   const [matchState, setMatchState] = useState(match)
+  const [removingGoal, setRemovingGoal] = useState<'home' | 'away' | null>(null)
 
   const { dateLabel, timeLabel } = formatMatchDisplayDateTime(matchState)
   const headCoach = resolveMatchCoachName(matchState, null)
@@ -110,6 +112,31 @@ export function MatchRecapDetailView({
 
   const toast = onToast ?? (() => {})
 
+  const handleRemoveGoal = async (side: 'home' | 'away') => {
+    setRemovingGoal(side)
+    try {
+      const result = await removeLastGoalForMatch(match.id, side)
+      setMatchState((current) => ({
+        ...current,
+        home_score: result.homeScore,
+        away_score: result.awayScore,
+      }))
+      const matchEvents = await fetchMatchEvents(match.id)
+      setEvents(matchEvents)
+      const recapRows = await loadHistoricalRecapRows(match.id, match.half_length, roster)
+      setRows(recapRows)
+      toast(side === 'home' ? 'Removed our goal' : 'Removed opponent goal')
+    } catch (err) {
+      toast(
+        err instanceof Error && err.message === 'No goal to remove'
+          ? 'No goal to remove'
+          : 'Could not remove goal — try again',
+      )
+    } finally {
+      setRemovingGoal(null)
+    }
+  }
+
   return (
     <>
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
@@ -144,6 +171,28 @@ export function MatchRecapDetailView({
                   {formatVenueLabel(locationType)}
                 </span>
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {matchState.home_score > 0 ? (
+                  <button
+                    type="button"
+                    disabled={removingGoal !== null}
+                    onClick={() => void handleRemoveGoal('home')}
+                    className="min-h-9 touch-manipulation rounded-lg border border-neon/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98] disabled:opacity-50"
+                  >
+                    Undo our goal
+                  </button>
+                ) : null}
+                {matchState.away_score > 0 ? (
+                  <button
+                    type="button"
+                    disabled={removingGoal !== null}
+                    onClick={() => void handleRemoveGoal('away')}
+                    className="min-h-9 touch-manipulation rounded-lg border border-border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98] disabled:opacity-50"
+                  >
+                    Undo opponent goal
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
           {onHome ? <BackToHomeButton onClick={onHome} /> : null}

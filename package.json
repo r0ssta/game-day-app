@@ -11,7 +11,8 @@
     "db:migrate": "node scripts/run-migrations.mjs",
     "db:migrate:status": "node scripts/run-migrations.mjs --status",
     "db:migrate:baseline": "node scripts/run-migrations.mjs --baseline",
-    "auth:otp-template": "node scripts/update-otp-email-template.mjs"
+    "auth:otp-template": "node scripts/update-otp-email-template.mjs",
+    "db:fix-u13-maroon": "node scripts/fix-u13-maroon-final-score.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -115,10 +115,6 @@ import {
   ensureStatTrackerToken,
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
-  fetchMatchEvents,
-  deleteMatchEvent,
-  findLastGoalEvent,
-  findPairedGoalShotEvent,
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
 import {
@@ -127,6 +123,7 @@ import {
   shouldResumePenaltyShootout,
 } from '@/lib/penalty-kicks'
 import { findActiveOnFieldGoalkeeper } from '@/lib/match-shot-save'
+import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import type { DbMatch } from '@/types/database'
 import {
   buildSidelineNameMap,
@@ -3544,52 +3541,28 @@ export default function App() {
       if (!matchId) return
 
       try {
-        const events = await fetchMatchEvents(matchId)
-        const goalEvent = findLastGoalEvent(events, side)
-        if (!goalEvent) {
-          setToast('No goal to remove')
-          return
+        const result = await removeLastGoalForMatch(matchId, side)
+        setHomeScore(result.homeScore)
+        setAwayScore(result.awayScore)
+
+        if (result.removedPairedShot) {
+          if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
+          else setAwayShots((n) => Math.max(0, n - 1))
         }
 
-        const pairedShot = findPairedGoalShotEvent(events, goalEvent)
-        await deleteMatchEvent(goalEvent.id)
-        if (pairedShot) {
-          await deleteMatchEvent(pairedShot.id)
+        if (appMode === 'match') {
+          setPlayers((prev) => applyPlusMinusDelta(prev, side === 'home' ? -1 : 1))
         }
 
-        if (side === 'home') {
-          setHomeScore((current) => {
-            const next = Math.max(0, current - 1)
-            syncMatchRecord(matchId, { home_score: next })
-            return next
-          })
-          if (pairedShot) setHomeShots((n) => Math.max(0, n - 1))
-          setPlayers((prev) => {
-            const next = applyPlusMinusDelta(prev, -1)
-            syncMatchStats(matchId, next)
-            return next
-          })
-          setToast('Removed our goal')
-        } else {
-          setAwayScore((current) => {
-            const next = Math.max(0, current - 1)
-            syncMatchRecord(matchId, { away_score: next })
-            return next
-          })
-          if (pairedShot) setAwayShots((n) => Math.max(0, n - 1))
-          setPlayers((prev) => {
-            const next = applyPlusMinusDelta(prev, 1)
-            syncMatchStats(matchId, next)
-            return next
-          })
-          setToast('Removed opponent goal')
-        }
+        setToast(side === 'home' ? 'Removed our goal' : 'Removed opponent goal')
       } catch (err) {
         console.error('[removeLastGoal]', err)
-        setToast('Could not remove goal — try again')
+        setToast(err instanceof Error && err.message === 'No goal to remove'
+          ? 'No goal to remove'
+          : 'Could not remove goal — try again')
       }
     },
-    [matchId, setHomeScore, setAwayScore, setHomeShots, setAwayShots, setPlayers, setToast],
+    [matchId, appMode, setHomeScore, setAwayScore, setHomeShots, setAwayShots, setPlayers, setToast],
   )
 
   const commitOpponentGoal = useCallback(
@@ -4367,6 +4340,7 @@ export default function App() {
           onFinalize={() => void handleFinalizeRecap()}
           onDeleteMatch={handleDeleteMatch}
           canDeleteMatches={canDeleteMatches}
+          onRemoveGoal={removeLastGoal}
           onHome={handleExitRecap}
           onToast={setToast}
         />

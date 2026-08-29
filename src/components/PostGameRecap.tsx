@@ -127,6 +127,7 @@ type PostGameRecapProps = {
   onFinalize: () => void
   onDeleteMatch?: (matchId: string) => Promise<void>
   canDeleteMatches?: boolean
+  onRemoveGoal?: (side: 'home' | 'away') => Promise<void>
   onToast: (message: string) => void
   onHome?: () => void
 }
@@ -148,6 +149,7 @@ export function PostGameRecap({
   onFinalize,
   onDeleteMatch,
   canDeleteMatches = false,
+  onRemoveGoal,
   onToast,
   onHome,
 }: PostGameRecapProps) {
@@ -248,6 +250,27 @@ export function PostGameRecap({
       cancelled = true
     }
   }, [matchId, halfLengthMinutes, players])
+
+  const reloadRecapEvents = useCallback(async () => {
+    const events = await fetchMatchEvents(matchId)
+    setMatchEvents(events)
+    const recapStats = aggregatePlayerRecaps(
+      events,
+      halfLengthMinutes * 60,
+      new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
+    )
+    setEventStats(recapStats)
+    setMicroStats(aggregateMicroStats(events))
+  }, [matchId, halfLengthMinutes, players])
+
+  const handleRemoveGoal = useCallback(
+    async (side: 'home' | 'away') => {
+      if (!onRemoveGoal) return
+      await onRemoveGoal(side)
+      await reloadRecapEvents()
+    },
+    [onRemoveGoal, reloadRecapEvents],
+  )
 
   const recapRows = useMemo(
     () => buildRecapRows(players, eventStats, new Map(Object.entries(reviews))),
@@ -619,6 +642,28 @@ export function PostGameRecap({
               <p className="mt-1 text-xs font-semibold text-muted-foreground">
                 Head Coach: {coachName.trim()}
               </p>
+            ) : null}
+            {onRemoveGoal ? (
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                {homeScore > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleRemoveGoal('home')}
+                    className="min-h-9 touch-manipulation rounded-lg border border-neon/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98]"
+                  >
+                    Undo our goal
+                  </button>
+                ) : null}
+                {awayScore > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleRemoveGoal('away')}
+                    className="min-h-9 touch-manipulation rounded-lg border border-border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
+                  >
+                    Undo opponent goal
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             {matchTimingLabel ? (
               <p className="mt-2 text-xs font-bold uppercase tracking-wide text-athletic">
