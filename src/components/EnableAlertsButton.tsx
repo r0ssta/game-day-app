@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CheckCircle2, Loader2 } from 'lucide-react'
+import { Bell, CheckCircle2, Loader2, RefreshCw } from 'lucide-react'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
-  getLocalPushEnabled,
-  hasActivePushSubscription,
-  needsPushSyncMigration,
+  getPushServerSynced,
   setLocalPushEnabled,
   subscribeParentWebPush,
+  syncExistingParentWebPush,
   type ParentHubPlayer,
 } from '@/lib/parent-hub'
 import {
@@ -26,6 +25,9 @@ type EnableAlertsButtonProps = {
  *
  * Visible in normal browser tabs on Android / desktop (Web Push works without install).
  * On iOS, only shown from an installed Home Screen / standalone launch — Apple requires it.
+ *
+ * Important: creating a new PushSubscription on iOS requires a user gesture. We never call
+ * pushManager.subscribe() from useEffect — only upsert an existing sub, or wait for a tap.
  */
 export function EnableAlertsButton({ teamId, players, className }: EnableAlertsButtonProps) {
   const [canOffer, setCanOffer] = useState(() => canOfferParentWebPush())
@@ -68,27 +70,23 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
     setChecking(true)
     void (async () => {
       try {
-        // A local PushSubscription alone is NOT enough — earlier Edge Function
-        // failures left the phone subscribed with nothing saved in Supabase.
-        // Re-upsert whenever we think alerts should be on, or a local sub exists.
-        const locallyMarked = getLocalPushEnabled(teamId)
-        const hasLocalSub = await hasActivePushSubscription()
-        if (!locallyMarked && !hasLocalSub) return
-
-        await subscribeParentWebPush({
-          teamId,
-          targetPlayerId: null,
-          // One-time refresh after the "enabled locally but never saved" bug.
-          forceRefresh: needsPushSyncMigration(),
-        })
+        // Safe without a gesture: only re-save an existing browser subscription.
+        const synced = await syncExistingParentWebPush({ teamId })
         if (cancelled) return
-        setLocalPushEnabled(teamId, true)
-        setEnabled(true)
+        if (synced) {
+          setLocalPushEnabled(teamId, true)
+          setEnabled(true)
+          return
+        }
+        // Do not trust stale localStorage — phone may say enabled with nothing on the server.
+        if (getPushServerSynced(teamId)) {
+          setLocalPushEnabled(teamId, false)
+        }
+        setEnabled(false)
       } catch (err) {
         if (cancelled) return
-        // Clear the false "enabled" state so the user can tap Enable again.
-        setLocalPushEnabled(teamId, false)
         setEnabled(false)
+        setLocalPushEnabled(teamId, false)
         setError(err instanceof Error ? err.message : 'Could not sync alerts')
       } finally {
         if (!cancelled) setChecking(false)
@@ -114,6 +112,8 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
       setLocalPushEnabled(teamId, true)
       setEnabled(true)
     } catch (err) {
+      setLocalPushEnabled(teamId, false)
+      setEnabled(false)
       setError(err instanceof Error ? err.message : 'Could not enable alerts')
     } finally {
       setBusy(false)
@@ -136,15 +136,27 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
 
   if (enabled) {
     return (
-      <div
-        className={cn(
-          'flex min-h-14 items-center justify-center gap-2 rounded-xl border border-neon/40 bg-neon/10 px-4 text-sm font-bold text-foreground',
-          className,
-        )}
-        role="status"
-      >
-        <CheckCircle2 className="size-5 text-neon" aria-hidden />
-        Alerts Enabled
+      <div className={cn('space-y-2', className)}>
+        <div
+          className="flex min-h-14 items-center justify-center gap-2 rounded-xl border border-neon/40 bg-neon/10 px-4 text-sm font-bold text-foreground"
+          role="status"
+        >
+          <CheckCircle2 className="size-5 text-neon" aria-hidden />
+          Alerts Enabled
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onEnable()}
+          className="flex w-full min-h-11 touch-manipulation items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-muted-foreground disabled:opacity-50"
+        >
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <RefreshCw className="size-4" aria-hidden />
+          )}
+          {busy ? 'Reconnecting…' : 'Reconnect alerts'}
+        </button>
       </div>
     )
   }

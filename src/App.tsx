@@ -2402,10 +2402,41 @@ export default function App() {
 
   useEffect(() => {
     if (!toast) return
-    const durationMs = toast === WAKE_LOCK_BLOCKED_TOAST ? 5000 : 2200
+    const durationMs =
+      toast === WAKE_LOCK_BLOCKED_TOAST || toast.startsWith('Parent alerts') ? 5000 : 2200
     const id = setTimeout(() => setToast(null), durationMs)
     return () => clearTimeout(id)
   }, [toast])
+
+  useEffect(() => {
+    const onPushResult = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          ok?: boolean
+          recipients?: number
+          sent?: number
+          failed?: number
+          status?: number
+        }>
+      ).detail
+      if (!detail) return
+      if (!detail.ok) {
+        setToast(`Parent alerts failed to send (${detail.status ?? 'error'})`)
+        return
+      }
+      if ((detail.recipients ?? 0) === 0) {
+        setToast(
+          'Parent alerts: no devices subscribed — open Hub on the phone and tap Enable Alerts',
+        )
+        return
+      }
+      if ((detail.sent ?? 0) === 0 && (detail.failed ?? 0) > 0) {
+        setToast('Parent alerts: delivery failed — tap Reconnect alerts on the Hub')
+      }
+    }
+    window.addEventListener('vvfc-web-push-result', onPushResult)
+    return () => window.removeEventListener('vvfc-web-push-result', onPushResult)
+  }, [])
 
   useEffect(() => {
     if (appMode === 'club_admin' && !canAccessClubAdmin) {

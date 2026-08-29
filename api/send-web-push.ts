@@ -99,7 +99,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Failed to load subscriptions' })
     }
 
-    const subscriptions = (rows ?? []) as SubscriptionRow[]
+    const subscriptions = ((rows ?? []) as SubscriptionRow[]).filter((row) => {
+      // Ignore leftover probe rows so coaches don't think a send "worked".
+      try {
+        const host = new URL(row.endpoint).hostname
+        return host !== 'example.com' && !host.endsWith('.example')
+      } catch {
+        return false
+      }
+    })
     if (subscriptions.length === 0) {
       return res.status(200).json({ ok: true, sent: 0, failed: 0, pruned: 0, recipients: 0 })
     }

@@ -377,9 +377,9 @@ function pushEnabledStorageKey(teamId: string) {
   return `vvfc-push-enabled:${teamId}`
 }
 
-/** Bump when subscribe/VAPID plumbing changes so home-screen hubs force a fresh endpoint. */
-const PUSH_SYNC_VERSION = '2'
-const PUSH_SYNC_VERSION_KEY = 'vvfc-push-sync-version'
+function pushServerSyncedKey(teamId: string) {
+  return `vvfc-push-server-synced:${teamId}`
+}
 
 export function getLocalPushEnabled(teamId: string): boolean {
   try {
@@ -389,35 +389,39 @@ export function getLocalPushEnabled(teamId: string): boolean {
   }
 }
 
+export function getPushServerSynced(teamId: string): boolean {
+  try {
+    return localStorage.getItem(pushServerSyncedKey(teamId)) === '1'
+  } catch {
+    return false
+  }
+}
+
 export function setLocalPushEnabled(teamId: string, enabled: boolean) {
   try {
     if (enabled) {
       localStorage.setItem(pushEnabledStorageKey(teamId), '1')
-      localStorage.setItem(PUSH_SYNC_VERSION_KEY, PUSH_SYNC_VERSION)
-    } else localStorage.removeItem(pushEnabledStorageKey(teamId))
+      localStorage.setItem(pushServerSyncedKey(teamId), '1')
+    } else {
+      localStorage.removeItem(pushEnabledStorageKey(teamId))
+      localStorage.removeItem(pushServerSyncedKey(teamId))
+    }
   } catch {
     // ignore quota / private mode
   }
 }
 
+/** Kept for older imports; always false — migration is handled by server-sync flags. */
 export function needsPushSyncMigration(): boolean {
-  try {
-    return localStorage.getItem(PUSH_SYNC_VERSION_KEY) !== PUSH_SYNC_VERSION
-  } catch {
-    return true
-  }
+  return false
 }
 
 /** True when this browser already has an active PushSubscription. */
 export async function hasActivePushSubscription(): Promise<boolean> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false
   try {
-    const registration =
-      (await navigator.serviceWorker.getRegistration('/hub/')) ??
-      (await navigator.serviceWorker.getRegistration()) ??
-      (await registerParentServiceWorker())
+    const registration = await resolveHubPushRegistration()
     if (!registration) return false
-    await navigator.serviceWorker.ready
     const existing = await registration.pushManager.getSubscription()
     return Boolean(existing)
   } catch {
@@ -425,10 +429,53 @@ export async function hasActivePushSubscription(): Promise<boolean> {
   }
 }
 
+async function resolveHubPushRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator)) return null
+  const existing =
+    (await navigator.serviceWorker.getRegistration('/hub/')) ??
+    (await navigator.serviceWorker.getRegistration())
+  if (existing) {
+    await navigator.serviceWorker.ready
+    return existing
+  }
+  return registerParentServiceWorker()
+}
+
 /**
- * Persist a PushSubscription to Supabase. By default reuses an existing browser
- * subscription; pass `forceRefresh: true` from the Enable button so we bind to
- * the current VAPID key after failed/old saves.
+ * If the browser already has a PushSubscription, upsert it to Supabase.
+ * Does NOT call pushManager.subscribe() — safe to run without a user gesture on iOS.
+ * Returns true when a row was saved.
+ */
+export async function syncExistingParentWebPush(input: {
+  teamId: string
+  targetPlayerId?: string | null
+}): Promise<boolean> {
+  if (!VAPID_PUBLIC_KEY) return false
+  if (!('Notification' in window) || Notification.permission !== 'granted') return false
+
+  const registration = await resolveHubPushRegistration()
+  if (!registration) return false
+  const subscription = await registration.pushManager.getSubscription()
+  if (!subscription) return false
+
+  const json = subscription.toJSON()
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return false
+
+  const { error } = await supabase.rpc('subscribe_parent_web_push', {
+    p_team_id: input.teamId,
+    p_endpoint: json.endpoint,
+    p_p256dh: json.keys.p256dh,
+    p_auth: json.keys.auth,
+    p_target_player_id: input.targetPlayerId ?? null,
+    p_user_agent: navigator.userAgent,
+  })
+  if (error) throw error
+  return true
+}
+
+/**
+ * Create/refresh a PushSubscription and persist it. Must run from a user gesture
+ * on iOS (button tap) — do not call from useEffect.
  */
 export async function subscribeParentWebPush(input: {
   teamId: string
@@ -449,11 +496,12 @@ export async function subscribeParentWebPush(input: {
     throw new Error('Notification permission was not granted.')
   }
 
-  const registration =
-    (await navigator.serviceWorker.getRegistration('/hub/')) ??
-    (await navigator.serviceWorker.getRegistration()) ??
-    (await registerParentServiceWorker())
-  if (!registration) throw new Error('Service worker could not be registered.')
+  const registration = await resolveHubPushRegistration()
+  if (!registration) {
+    throw new Error(
+      'Service worker could not be registered. Close the hub fully, reopen it from the Home Screen icon, then try again.',
+    )
+  }
 
   await navigator.serviceWorker.ready
 
@@ -479,7 +527,7 @@ export async function subscribeParentWebPush(input: {
     throw new Error('Push subscription was incomplete.')
   }
 
-  const { error } = await supabase.rpc('subscribe_parent_web_push', {
+  const { data, error } = await supabase.rpc('subscribe_parent_web_push', {
     p_team_id: input.teamId,
     p_endpoint: json.endpoint,
     p_p256dh: json.keys.p256dh,
@@ -488,6 +536,9 @@ export async function subscribeParentWebPush(input: {
     p_user_agent: navigator.userAgent,
   })
   if (error) throw error
+  if (!data || (typeof data === 'object' && 'ok' in data && !(data as { ok?: boolean }).ok)) {
+    throw new Error('Server did not confirm the push subscription.')
+  }
 }
 
 export type WebPushEventType =
@@ -544,10 +595,39 @@ export function notifyWebPush(input: {
         }),
       })
 
+      const detail = await response.text().catch(() => '')
       if (!response.ok) {
-        const detail = await response.text().catch(() => '')
         console.warn('[web-push]', input.eventType, response.status, detail)
+        window.dispatchEvent(
+          new CustomEvent('vvfc-web-push-result', {
+            detail: { ok: false, eventType: input.eventType, status: response.status },
+          }),
+        )
+        return
       }
+
+      let parsed: { recipients?: number; sent?: number; failed?: number } = {}
+      try {
+        parsed = JSON.parse(detail) as typeof parsed
+      } catch {
+        // ignore
+      }
+      const recipients = parsed.recipients ?? 0
+      const sent = parsed.sent ?? 0
+      if (recipients === 0 || sent === 0) {
+        console.warn('[web-push] no devices delivered', input.eventType, parsed)
+      }
+      window.dispatchEvent(
+        new CustomEvent('vvfc-web-push-result', {
+          detail: {
+            ok: true,
+            eventType: input.eventType,
+            recipients,
+            sent,
+            failed: parsed.failed ?? 0,
+          },
+        }),
+      )
     } catch (err) {
       console.warn('[web-push]', input.eventType, err)
     }
