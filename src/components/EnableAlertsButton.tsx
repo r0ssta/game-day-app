@@ -4,6 +4,7 @@ import { formatPlayerFullName } from '@/lib/player-names'
 import {
   getLocalPushEnabled,
   hasActivePushSubscription,
+  needsPushSyncMigration,
   setLocalPushEnabled,
   subscribeParentWebPush,
   type ParentHubPlayer,
@@ -67,15 +68,28 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
     setChecking(true)
     void (async () => {
       try {
-        if (getLocalPushEnabled(teamId)) {
-          if (!cancelled) setEnabled(true)
-          return
-        }
-        const active = await hasActivePushSubscription()
-        if (!cancelled && active) {
-          setLocalPushEnabled(teamId, true)
-          setEnabled(true)
-        }
+        // A local PushSubscription alone is NOT enough — earlier Edge Function
+        // failures left the phone subscribed with nothing saved in Supabase.
+        // Re-upsert whenever we think alerts should be on, or a local sub exists.
+        const locallyMarked = getLocalPushEnabled(teamId)
+        const hasLocalSub = await hasActivePushSubscription()
+        if (!locallyMarked && !hasLocalSub) return
+
+        await subscribeParentWebPush({
+          teamId,
+          targetPlayerId: null,
+          // One-time refresh after the "enabled locally but never saved" bug.
+          forceRefresh: needsPushSyncMigration(),
+        })
+        if (cancelled) return
+        setLocalPushEnabled(teamId, true)
+        setEnabled(true)
+      } catch (err) {
+        if (cancelled) return
+        // Clear the false "enabled" state so the user can tap Enable again.
+        setLocalPushEnabled(teamId, false)
+        setEnabled(false)
+        setError(err instanceof Error ? err.message : 'Could not sync alerts')
       } finally {
         if (!cancelled) setChecking(false)
       }
@@ -95,6 +109,7 @@ export function EnableAlertsButton({ teamId, players, className }: EnableAlertsB
       await subscribeParentWebPush({
         teamId,
         targetPlayerId: targetPlayerId || null,
+        forceRefresh: true,
       })
       setLocalPushEnabled(teamId, true)
       setEnabled(true)

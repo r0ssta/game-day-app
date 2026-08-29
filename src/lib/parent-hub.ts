@@ -377,6 +377,10 @@ function pushEnabledStorageKey(teamId: string) {
   return `vvfc-push-enabled:${teamId}`
 }
 
+/** Bump when subscribe/VAPID plumbing changes so home-screen hubs force a fresh endpoint. */
+const PUSH_SYNC_VERSION = '2'
+const PUSH_SYNC_VERSION_KEY = 'vvfc-push-sync-version'
+
 export function getLocalPushEnabled(teamId: string): boolean {
   try {
     return localStorage.getItem(pushEnabledStorageKey(teamId)) === '1'
@@ -387,10 +391,20 @@ export function getLocalPushEnabled(teamId: string): boolean {
 
 export function setLocalPushEnabled(teamId: string, enabled: boolean) {
   try {
-    if (enabled) localStorage.setItem(pushEnabledStorageKey(teamId), '1')
-    else localStorage.removeItem(pushEnabledStorageKey(teamId))
+    if (enabled) {
+      localStorage.setItem(pushEnabledStorageKey(teamId), '1')
+      localStorage.setItem(PUSH_SYNC_VERSION_KEY, PUSH_SYNC_VERSION)
+    } else localStorage.removeItem(pushEnabledStorageKey(teamId))
   } catch {
     // ignore quota / private mode
+  }
+}
+
+export function needsPushSyncMigration(): boolean {
+  try {
+    return localStorage.getItem(PUSH_SYNC_VERSION_KEY) !== PUSH_SYNC_VERSION
+  } catch {
+    return true
   }
 }
 
@@ -399,6 +413,7 @@ export async function hasActivePushSubscription(): Promise<boolean> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false
   try {
     const registration =
+      (await navigator.serviceWorker.getRegistration('/hub/')) ??
       (await navigator.serviceWorker.getRegistration()) ??
       (await registerParentServiceWorker())
     if (!registration) return false
@@ -410,9 +425,15 @@ export async function hasActivePushSubscription(): Promise<boolean> {
   }
 }
 
+/**
+ * Persist a PushSubscription to Supabase. By default reuses an existing browser
+ * subscription; pass `forceRefresh: true` from the Enable button so we bind to
+ * the current VAPID key after failed/old saves.
+ */
 export async function subscribeParentWebPush(input: {
   teamId: string
   targetPlayerId: string | null
+  forceRefresh?: boolean
 }): Promise<void> {
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     throw new Error('Push notifications are not supported in this browser.')
@@ -429,14 +450,23 @@ export async function subscribeParentWebPush(input: {
   }
 
   const registration =
+    (await navigator.serviceWorker.getRegistration('/hub/')) ??
     (await navigator.serviceWorker.getRegistration()) ??
     (await registerParentServiceWorker())
   if (!registration) throw new Error('Service worker could not be registered.')
 
   await navigator.serviceWorker.ready
 
-  // Reuse an existing subscription when possible; otherwise create one with our VAPID key.
   let subscription = await registration.pushManager.getSubscription()
+  if (input.forceRefresh && subscription) {
+    try {
+      await subscription.unsubscribe()
+    } catch {
+      // continue — subscribe() below will replace when possible
+    }
+    subscription = null
+  }
+
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
