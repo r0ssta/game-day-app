@@ -599,6 +599,10 @@ export function useGameDayApp() {
     }
   }, [selectedTeamId])
 
+  useEffect(() => {
+    void refreshScheduledMatches()
+  }, [refreshScheduledMatches])
+
   const createScheduledMatch = useCallback(
     async (input: {
       opponent: string
