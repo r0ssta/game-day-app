@@ -121,12 +121,33 @@ export function HomeScreen({
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Loading…
                 </span>
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  disabled={!teamReady}
+                  onClick={onScheduleNewGame}
+                  className="text-[10px] font-bold uppercase tracking-wide text-neon disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  + Add
+                </button>
+              )}
             </div>
             {scheduledMatches.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No upcoming games yet. Preload a match to lock in opponent, time, and lineup.
-              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  No upcoming games yet. Preload opponent, kickoff time, and lineup here — without
+                  going live.
+                </p>
+                <button
+                  type="button"
+                  disabled={!teamReady}
+                  onClick={onScheduleNewGame}
+                  className="flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-neon px-3 py-2.5 text-sm font-black uppercase tracking-wide text-neon-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ClipboardList className="size-4" aria-hidden />
+                  Schedule New Game
+                </button>
+              </div>
             ) : (
               <ul className="space-y-3">
                 {scheduledMatches.map((match) => {
@@ -155,6 +176,11 @@ export function HomeScreen({
                         <Play className="size-4" aria-hidden />
                         {busy ? 'Starting…' : 'Start Live Match'}
                       </button>
+                      {hasActiveMatch ? (
+                        <p className="mt-2 text-center text-[11px] font-semibold text-muted-foreground">
+                          Finish or resume the live match before starting another.
+                        </p>
+                      ) : null}
                     </li>
                   )
                 })}
@@ -162,14 +188,16 @@ export function HomeScreen({
             )}
           </section>
 
-          <HomeActionButton
-            icon={<ClipboardList className="size-7" strokeWidth={2.5} />}
-            title="Schedule New Game"
-            description="Preload opponent, kickoff, and starting lineup"
-            variant="primary"
-            disabled={!teamReady || hasActiveMatch}
-            onClick={onScheduleNewGame}
-          />
+          {scheduledMatches.length > 0 ? (
+            <HomeActionButton
+              icon={<ClipboardList className="size-7" strokeWidth={2.5} />}
+              title="Schedule Another Game"
+              description="Preload opponent, kickoff, and starting lineup"
+              variant="primary"
+              disabled={!teamReady}
+              onClick={onScheduleNewGame}
+            />
+          ) : null}
 
           <HomeActionButton
             icon={<Users className="size-7 text-athletic" strokeWidth={2.5} />}

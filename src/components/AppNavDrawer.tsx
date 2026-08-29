@@ -61,10 +61,10 @@ export function buildAppNavItems(input: {
     },
     {
       id: 'active_match',
-      label: 'Active Match / Lineup',
+      label: input.hasLiveMatch ? 'Active Match / Lineup' : 'Schedule / Setup Match',
       description: input.hasLiveMatch
         ? 'Return to the live match or halftime setup'
-        : 'Pre-game setup and lineup',
+        : 'Preload a game or open pre-game lineup',
       icon: Play,
       disabled: teamDisabled,
       active: input.activeSection === 'active_match',
