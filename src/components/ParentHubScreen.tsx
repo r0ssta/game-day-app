@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Radio, ScrollText } from 'lucide-react'
+import { CalendarDays, ChevronRight, Radio, ScrollText } from 'lucide-react'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { EnableAlertsButton } from '@/components/EnableAlertsButton'
 import { InstallPrompt } from '@/components/InstallPrompt'
+import { ParentFinishedMatchDetail } from '@/components/ParentFinishedMatchDetail'
 import { formatTeamDisplayName } from '@/lib/age-groups'
 import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-schedule'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
@@ -13,6 +14,7 @@ import {
   fetchParentLiveEvents,
   filterParentLiveTimeline,
   formatParentEventLine,
+  isParentHubFinishedMatch,
   isParentHubLiveEventType,
   shouldShowParentLiveEvent,
   type ParentHubMatch,
@@ -343,7 +345,13 @@ function LiveTab({
   )
 }
 
-function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
+function ScheduleTab({
+  matches,
+  onSelectMatch,
+}: {
+  matches: ParentHubMatch[]
+  onSelectMatch: (match: ParentHubMatch) => void
+}) {
   const sorted = useMemo(
     () => [...matches].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a)),
     [matches],
@@ -361,13 +369,11 @@ function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
     <ul className="space-y-2">
       {sorted.map((match) => {
         const when = formatMatchDisplayDateTime(match)
-        const isDone = match.status === 'final' || match.status === 'pending_review'
+        const isDone = isParentHubFinishedMatch(match.status)
         const isLive = match.status === 'live'
-        return (
-          <li
-            key={match.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3"
-          >
+        const isSelectable = isDone
+        const row = (
+          <>
             <div className="min-w-0">
               <p className="truncate font-bold text-foreground">
                 vs {match.opponent || 'Opponent'}
@@ -377,7 +383,7 @@ function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
                 {isLive ? ' · LIVE' : ''}
               </p>
             </div>
-            <div className="shrink-0 text-right">
+            <div className="flex shrink-0 items-center gap-2 text-right">
               {isDone || isLive ? (
                 <Scoreline match={match} />
               ) : (
@@ -385,7 +391,33 @@ function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
                   Upcoming
                 </span>
               )}
+              {isSelectable ? (
+                <ChevronRight className="size-4 text-muted-foreground" strokeWidth={2.25} />
+              ) : null}
             </div>
+          </>
+        )
+
+        if (isSelectable) {
+          return (
+            <li key={match.id}>
+              <button
+                type="button"
+                onClick={() => onSelectMatch(match)}
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3 text-left active:scale-[0.99]"
+              >
+                {row}
+              </button>
+            </li>
+          )
+        }
+
+        return (
+          <li
+            key={match.id}
+            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3"
+          >
+            {row}
           </li>
         )
       })}
@@ -393,46 +425,60 @@ function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
   )
 }
 
-function RecapsTab({ matches }: { matches: ParentHubMatch[] }) {
-  const recaps = useMemo(
+function RecapsTab({
+  matches,
+  onSelectMatch,
+}: {
+  matches: ParentHubMatch[]
+  onSelectMatch: (match: ParentHubMatch) => void
+}) {
+  const finished = useMemo(
     () =>
       matches
-        .filter(
-          (m) =>
-            (m.status === 'final' || m.status === 'pending_review') &&
-            Boolean(m.parent_facing_recap?.trim()),
-        )
+        .filter((m) => isParentHubFinishedMatch(m.status))
         .sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a)),
     [matches],
   )
 
-  if (recaps.length === 0) {
+  if (finished.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        Recaps will appear here after coaches publish a parent summary.
+        Finished matches will appear here with player stats and coach recaps.
       </p>
     )
   }
 
   return (
     <ul className="space-y-3">
-      {recaps.map((match) => {
+      {finished.map((match) => {
         const when = formatMatchDisplayDateTime(match)
+        const recap = match.parent_facing_recap?.trim() ?? ''
         return (
-          <li key={match.id} className="rounded-xl border border-border bg-card px-4 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-display text-xl font-bold uppercase text-foreground">
-                  vs {match.opponent || 'Opponent'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {when.dateLabel} · Final <Scoreline match={match} />
-                </p>
+          <li key={match.id}>
+            <button
+              type="button"
+              onClick={() => onSelectMatch(match)}
+              className="w-full rounded-xl border border-border bg-card px-4 py-4 text-left active:scale-[0.99]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-display text-xl font-bold uppercase text-foreground">
+                    vs {match.opponent || 'Opponent'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {when.dateLabel} · Final · <Scoreline match={match} />
+                  </p>
+                </div>
+                <ChevronRight className="mt-1 size-5 shrink-0 text-muted-foreground" strokeWidth={2.25} />
               </div>
-            </div>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-              {match.parent_facing_recap?.trim()}
-            </p>
+              {recap ? (
+                <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                  {recap}
+                </p>
+              ) : (
+                <p className="mt-3 text-sm font-semibold text-neon">View player stats</p>
+              )}
+            </button>
           </li>
         )
       })}
@@ -444,6 +490,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
   const [hub, setHub] = useState<ParentHubPayload | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tab, setTab] = useState<TabId>('live')
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
 
   // Point at the dynamic team manifest as soon as we know the slug (Vite stand-in for layout.tsx).
   useEffect(() => {
@@ -505,6 +552,16 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
     ? formatTeamDisplayName(hub.teamName, hub.ageGroup)
     : 'Team Hub'
 
+  const selectedMatch = useMemo(
+    () => hub?.matches.find((match) => match.id === selectedMatchId) ?? null,
+    [hub, selectedMatchId],
+  )
+
+  const handleSelectFinishedMatch = useCallback((match: ParentHubMatch) => {
+    if (!isParentHubFinishedMatch(match.status)) return
+    setSelectedMatchId(match.id)
+  }, [])
+
   const tabs: { id: TabId; label: string; icon: typeof Radio }[] = [
     { id: 'live', label: 'Live', icon: Radio },
     { id: 'schedule', label: 'Schedule', icon: CalendarDays },
@@ -522,7 +579,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
               {teamLabel}
             </h1>
-            <p className="text-sm text-muted-foreground">Live scores · schedule · recaps</p>
+            <p className="text-sm text-muted-foreground">Live scores · schedule · match stats</p>
           </div>
           {hub ? <EnableAlertsButton teamId={hub.teamId} players={hub.players} /> : null}
         </div>
@@ -536,17 +593,29 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             </p>
           ) : !hub ? (
             <p className="text-sm font-semibold text-muted-foreground">Loading team…</p>
+          ) : selectedMatch && isParentHubFinishedMatch(selectedMatch.status) ? (
+            <ParentFinishedMatchDetail
+              match={selectedMatch}
+              players={hub.players}
+              opponent={selectedMatch.opponent}
+              onBack={() => setSelectedMatchId(null)}
+            />
           ) : tab === 'live' ? (
             <LiveTab hub={hub} matches={hub.matches} />
           ) : tab === 'schedule' ? (
-            <ScheduleTab matches={hub.matches} />
+            <ScheduleTab matches={hub.matches} onSelectMatch={handleSelectFinishedMatch} />
           ) : (
-            <RecapsTab matches={hub.matches} />
+            <RecapsTab matches={hub.matches} onSelectMatch={handleSelectFinishedMatch} />
           )}
         </div>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
+      <nav
+        className={cn(
+          'fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur',
+          selectedMatch ? 'hidden' : undefined,
+        )}
+      >
         <div className={`${APP_CONTAINER} grid grid-cols-3 gap-1`}>
           {tabs.map(({ id, label, icon: Icon }) => {
             const active = tab === id
