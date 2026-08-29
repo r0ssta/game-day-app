@@ -174,11 +174,11 @@ export function HomeScreen({
                         className="mt-3 flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-neon px-3 py-2.5 text-sm font-black uppercase tracking-wide text-neon-foreground disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Play className="size-4" aria-hidden />
-                        {busy ? 'Starting…' : 'Start Live Match'}
+                        {busy ? 'Opening…' : 'Get Ready for Game'}
                       </button>
                       {hasActiveMatch ? (
                         <p className="mt-2 text-center text-[11px] font-semibold text-muted-foreground">
-                          Finish or resume the live match before starting another.
+                          Finish or resume the live match before opening another.
                         </p>
                       ) : null}
                     </li>

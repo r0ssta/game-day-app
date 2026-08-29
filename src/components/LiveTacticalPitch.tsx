@@ -16,6 +16,7 @@ import {
   remapFormationSlotAssignments,
   resolveSlotLabel,
   type FormationRemapResult,
+  type FormationSlot,
 } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
 import {
@@ -68,6 +69,11 @@ export type LiveTacticalPitchHandle = {
 type SubSheetState =
   | { mode: 'substitute'; slotId: string; fieldPlayerId: string }
   | { mode: 'insert'; slotId: string }
+
+type FieldSelection = {
+  slotId: string
+  playerId: string
+}
 
 function ImpactToggleGroup({
   impact,
@@ -278,7 +284,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       onSwap,
       onSubIn,
       onSubOut,
-      onReassignPosition: _onReassignPosition,
+      onReassignPosition,
       onSetImpact,
       initialSlotAssignments,
       teamFormat,
@@ -299,6 +305,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     }))
 
     const [sheet, setSheet] = useState<SubSheetState | null>(null)
+    const [selection, setSelection] = useState<FieldSelection | null>(null)
     const [flashedPlayerIds, setFlashedPlayerIds] = useState<Set<string>>(new Set())
     const hydratedKeyRef = useRef<string | null>(null)
     const skipOnFieldSyncRef = useRef(false)
@@ -350,6 +357,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
 
     useEffect(() => {
       setSheet(null)
+      setSelection(null)
     }, [periodKey, formationId])
 
     useEffect(() => {
@@ -429,18 +437,80 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       [slotById, slotLabelOverrides],
     )
 
+    const handleFieldReassign = useCallback(
+      (sourceSlotId: string, targetSlot: FormationSlot, movedPlayerId: string) => {
+        const occupantId = slotAssignments[targetSlot.id] ?? null
+        const sourceSlot = slotById.get(sourceSlotId)
+        if (!sourceSlot) return
+
+        const targetPosition = resolveSlotLabel(targetSlot, slotLabelOverrides)
+        const updates: PositionReassignUpdate[] = [
+          { playerId: movedPlayerId, position: targetPosition },
+        ]
+
+        if (occupantId && occupantId !== movedPlayerId) {
+          updates.push({
+            playerId: occupantId,
+            position: resolveSlotLabel(sourceSlot, slotLabelOverrides),
+          })
+        }
+
+        setSlotAssignments((prev) => ({
+          ...prev,
+          [sourceSlotId]: occupantId && occupantId !== movedPlayerId ? occupantId : null,
+          [targetSlot.id]: movedPlayerId,
+        }))
+
+        onReassignPosition(updates)
+        flashPlayers(updates.map((u) => u.playerId))
+      },
+      [slotAssignments, slotById, slotLabelOverrides, onReassignPosition, flashPlayers],
+    )
+
     const handleSlotTap = useCallback(
       (slotId: string) => {
         const fieldPlayerId = getOnFieldPlayerAtSlot(slotId)
-        if (fieldPlayerId) {
-          setSheet({ mode: 'substitute', slotId, fieldPlayerId })
+
+        if (selection) {
+          if (selection.slotId === slotId) {
+            // Second tap on the same player opens the substitute sheet.
+            setSheet({
+              mode: 'substitute',
+              slotId: selection.slotId,
+              fieldPlayerId: selection.playerId,
+            })
+            setSelection(null)
+            return
+          }
+
+          const targetSlot = slotById.get(slotId)
+          if (targetSlot) {
+            handleFieldReassign(selection.slotId, targetSlot, selection.playerId)
+          }
+          setSelection(null)
           return
         }
-        // Empty slot stays clickable so coach can insert later (play down a man).
+
+        if (fieldPlayerId) {
+          setSelection({ slotId, playerId: fieldPlayerId })
+          return
+        }
+
+        // Empty slot with no selection — insert from bench.
         setSheet({ mode: 'insert', slotId })
       },
-      [getOnFieldPlayerAtSlot],
+      [getOnFieldPlayerAtSlot, selection, slotById, handleFieldReassign],
     )
+
+    const openSubstituteForSelection = useCallback(() => {
+      if (!selection) return
+      setSheet({
+        mode: 'substitute',
+        slotId: selection.slotId,
+        fieldPlayerId: selection.playerId,
+      })
+      setSelection(null)
+    }, [selection])
 
     const closeSheet = useCallback(() => setSheet(null), [])
 
@@ -485,6 +555,21 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       setSheet(null)
     }, [sheet, onSubOut, flashPlayers])
 
+    const handleBenchTapWhileSelected = useCallback(
+      (benchPlayerId: string) => {
+        if (!selection) return
+        const tacticalPosition = slotPosition(selection.slotId)
+        const benchPlayer = playerById.get(benchPlayerId)
+        if (!benchPlayer || benchPlayer.isOnField) return
+
+        onSwap(benchPlayerId, selection.playerId, tacticalPosition)
+        setSlotAssignments((prev) => ({ ...prev, [selection.slotId]: benchPlayerId }))
+        flashPlayers([benchPlayerId, selection.playerId])
+        setSelection(null)
+      },
+      [selection, slotPosition, playerById, onSwap, flashPlayers],
+    )
+
     const handleFormationChange = (nextId: string) => {
       if (nextId === formationId) return
       if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
@@ -507,6 +592,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
 
       skipOnFieldSyncRef.current = true
       setSheet(null)
+      setSelection(null)
       setSlotAssignments(remap.slotAssignments)
       setSlotLabelOverrides((prev) => {
         const next: Record<string, string> = {}
@@ -530,8 +616,10 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       return `Insert into ${label}`
     }, [sheet, playerById, sidelineNameMap, slotById, slotLabelOverrides])
 
-    // Highlight flashed players via selectedPlayerId on FormationPitch.
-    const flashedId = flashedPlayerIds.size === 1 ? [...flashedPlayerIds][0] : null
+    // Highlight selection or a brief flash after a move/sub.
+    const highlightedPlayerId =
+      selection?.playerId ?? (flashedPlayerIds.size === 1 ? [...flashedPlayerIds][0] : null)
+    const selectedPlayer = selection ? playerById.get(selection.playerId) : null
 
     return (
       <div className="space-y-4">
@@ -559,18 +647,44 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         </select>
 
         <p className="text-sm text-muted-foreground">
-          Tap a player to substitute, or tap an empty slot to insert. Drag is disabled during live
-          play. Amber badges mean a long stint (~75% of the half) — consider a sub.
+          Tap a player, then tap another slot to move or swap positions. Tap the same player again
+          (or Substitute) to bring someone on. Amber badges mean a long stint (~75% of the half).
         </p>
+
+        {selection && selectedPlayer ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-neon/40 bg-neon/10 px-3 py-2">
+            <p className="min-w-0 flex-1 text-xs font-semibold text-foreground">
+              Selected{' '}
+              <span className="font-bold">
+                {formatPlayerLabel(selectedPlayer, sidelineNameMap)}
+              </span>
+              — tap a slot to move, or substitute.
+            </p>
+            <button
+              type="button"
+              onClick={openSubstituteForSelection}
+              className="min-h-10 shrink-0 touch-manipulation rounded-lg bg-neon px-3 py-2 text-xs font-black uppercase tracking-wide text-neon-foreground active:scale-[0.98]"
+            >
+              Substitute
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelection(null)}
+              className="min-h-10 shrink-0 touch-manipulation rounded-lg border border-border bg-card px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
 
         <FormationPitch
           formation={formation}
           slotAssignments={displaySlotAssignments}
           players={pitchPlayers}
           slotLabelOverrides={slotLabelOverrides}
-          selectedPlayerId={flashedId}
+          selectedPlayerId={highlightedPlayerId}
           onAssignPlayer={() => {
-            /* DnD disabled in live mode */
+            /* DnD disabled in live mode — use tap-to-move instead */
           }}
           onSlotTap={handleSlotTap}
           enableDragDrop={false}
@@ -612,6 +726,10 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                       player={player}
                       displayName={getSidelineName(player, sidelineNameMap)}
                       clockSeconds={clockSeconds}
+                      onTap={
+                        selection ? () => handleBenchTapWhileSelected(player.id) : undefined
+                      }
+                      actionLabel={selection ? 'Swap in' : undefined}
                       onSetImpact={
                         onSetImpact ? (impact) => onSetImpact(player.id, impact) : undefined
                       }

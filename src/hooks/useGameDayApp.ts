@@ -1310,8 +1310,8 @@ export function useGameDayApp() {
   )
 
   /**
-   * Promote a scheduled match to live, start the period clock, and hydrate coach UI.
-   * Caller should fire the kickoff parent push after this resolves.
+   * Promote a scheduled match to live and open the 1st-half ready screen.
+   * Clock, stints, and kickoff push start only when the coach taps Start Half.
    */
   const startLiveMatch = useCallback(
     async (scheduledMatchId: string) => {
@@ -1364,7 +1364,7 @@ export function useGameDayApp() {
       const halfLen = match.period_length ?? match.half_length
       const clock = initialHalfClock(halfLen)
       await syncMatchRecord(match.id, {
-        period_clock_started: true,
+        period_clock_started: false,
         clock_seconds: clock,
         current_period: 1,
         period: '1st',
@@ -1395,8 +1395,8 @@ export function useGameDayApp() {
       setPeriod('1st')
       setCurrentPeriod(1)
       setTotalPeriods(matchTotalPeriods)
-      setRunning(true)
-      setPeriodClockStarted(true)
+      setRunning(false)
+      setPeriodClockStarted(false)
       setFirstHalfStarterIds(starterIds)
       setSecondHalfStarterIds([])
       setHalftimeSecondHalf({})

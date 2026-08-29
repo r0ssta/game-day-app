@@ -87,6 +87,7 @@ import {
   applySubstitution,
   formatPlayingTimeBadge,
   stampAllOnField,
+  stampOnFieldAtClock,
 } from '@/lib/play-time'
 import {
   elapsedInHalf,
@@ -2617,7 +2618,7 @@ export default function App() {
     try {
       await schedulePreloadedMatch(payload)
       setQaSpeedMultiplier(1)
-      setToast('Match scheduled — use Start Live Match on Home when ready')
+      setToast('Match scheduled — use Get Ready for Game on Home when it is time')
     } catch (err) {
       setToast(formatSupabaseError(err))
     } finally {
@@ -2659,33 +2660,15 @@ export default function App() {
       if (hasLiveMatch || startingLiveMatchId) return
       setStartingLiveMatchId(scheduledMatchId)
       try {
-        const started = await startLiveMatch(scheduledMatchId)
-        const push = buildMatchStartPush({
-          teamName: started.teamName,
-          opponent: started.opponent,
-          starters: started.starters.map((p) => ({
-            firstName: p.firstName,
-            lastName: p.lastName,
-            number: p.number,
-          })),
-          currentPeriod: started.currentPeriod,
-          totalPeriods: started.totalPeriods,
-        })
-        notifyWebPush({
-          eventType: 'match_start',
-          teamId: started.teamId,
-          teamSlug: activeTeamSlug,
-          title: push.title,
-          body: push.body,
-        })
-        setToast('Live match started — parents notified')
+        const opened = await startLiveMatch(scheduledMatchId)
+        setToast(`Ready for ${formatPeriodLong(1, opened.totalPeriods)}`)
       } catch (err) {
         setToast(formatSupabaseError(err))
       } finally {
         setStartingLiveMatchId(null)
       }
     },
-    [hasLiveMatch, startingLiveMatchId, startLiveMatch, activeTeamSlug],
+    [hasLiveMatch, startingLiveMatchId, startLiveMatch],
   )
 
   const handleConfirmLiveDeleteMatch = useCallback(async () => {
@@ -3895,13 +3878,22 @@ export default function App() {
             total_periods: totalPeriods,
             current_period: currentPeriod,
           })
-          setAppMode(
-            inHalftimeSetup
-              ? 'halftime'
-              : inPenaltyShootout
-                ? 'penalty_shootout'
-                : 'match',
-          )
+          if (!inHalftimeSetup && !inPenaltyShootout) {
+            if (periodClockStarted) {
+              setRunning(true)
+              setPlayers((prev) => {
+                const stamped = stampOnFieldAtClock(prev, seconds)
+                const needsPersist = stamped.some(
+                  (player, index) => player.subbedInAt !== prev[index]?.subbedInAt,
+                )
+                if (matchId && needsPersist) syncMatchStats(matchId, stamped)
+                return stamped
+              })
+            }
+            setAppMode('match')
+            return
+          }
+          setAppMode(inHalftimeSetup ? 'halftime' : 'penalty_shootout')
         }}
       />
     )

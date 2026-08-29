@@ -1,6 +1,7 @@
 import type { MatchPeriod, MatchPlayer } from '@/types/match'
 import { formatOpponentWithVenue } from '@/lib/match-location'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { getLiveSecondsPlayed } from '@/lib/play-time'
 
 export type MatchSummaryData = {
   teamName: string
@@ -34,11 +35,7 @@ export function buildMatchSummaryText(data: MatchSummaryData): string {
       .filter((p) => p.attending)
       .sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
       .map((p) => {
-        const totalSeconds =
-          p.totalSecondsPlayed +
-          (p.isOnField && p.subbedInAt !== null
-            ? Math.max(0, data.clockSeconds - p.subbedInAt)
-            : 0)
+        const totalSeconds = getLiveSecondsPlayed(p, data.clockSeconds)
         return `${p.number !== null ? `#${p.number}` : '—'} ${formatPlayerFullName(p.firstName, p.lastName)} (${p.matchPosition}) · ${Math.floor(totalSeconds / 60)}m · impact: ${p.impact}`
       }),
   ]
