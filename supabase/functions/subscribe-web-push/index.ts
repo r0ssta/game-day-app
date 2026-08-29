@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse } from '../_shared/web-push.ts'
 
 type SubscribeBody = {
@@ -10,6 +10,36 @@ type SubscribeBody = {
     keys?: { p256dh?: string; auth?: string }
   }
   userAgent?: string | null
+}
+
+function resolveServiceRoleKey(): string {
+  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim()
+  if (legacy) return legacy
+
+  const raw = Deno.env.get('SUPABASE_SECRET_KEYS')?.trim()
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw) as Record<string, string>
+    return (
+      parsed.default?.trim() ||
+      parsed.service_role?.trim() ||
+      Object.values(parsed).find((value) => typeof value === 'string' && value.trim())?.trim() ||
+      ''
+    )
+  } catch {
+    return ''
+  }
+}
+
+function createAdminClient(): SupabaseClient {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const serviceKey = resolveServiceRoleKey()
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error('Server misconfigured (missing admin API key)')
+  }
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 }
 
 Deno.serve(async (req) => {
@@ -38,19 +68,17 @@ Deno.serve(async (req) => {
       )
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if (!supabaseUrl || !serviceKey) {
-      return jsonResponse({ error: 'Server misconfigured' }, 500)
-    }
+    const admin = createAdminClient()
 
-    const admin = createClient(supabaseUrl, serviceKey)
-
-    const { data: team } = await admin
+    const { data: team, error: teamError } = await admin
       .from('teams')
       .select('id')
       .eq('id', teamId)
       .maybeSingle()
+    if (teamError) {
+      console.error('[subscribe-web-push] team lookup', teamError)
+      return jsonResponse({ error: 'Could not verify team' }, 500)
+    }
     if (!team) return jsonResponse({ error: 'Team not found' }, 404)
 
     if (targetPlayerId) {

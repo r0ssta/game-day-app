@@ -449,13 +449,13 @@ export async function subscribeParentWebPush(input: {
     throw new Error('Push subscription was incomplete.')
   }
 
-  const { error } = await supabase.functions.invoke('subscribe-web-push', {
-    body: {
-      teamId: input.teamId,
-      targetPlayerId: input.targetPlayerId,
-      subscription: json,
-      userAgent: navigator.userAgent,
-    },
+  const { error } = await supabase.rpc('subscribe_parent_web_push', {
+    p_team_id: input.teamId,
+    p_endpoint: json.endpoint,
+    p_p256dh: json.keys.p256dh,
+    p_auth: json.keys.auth,
+    p_target_player_id: input.targetPlayerId,
+    p_user_agent: navigator.userAgent,
   })
   if (error) throw error
 }
