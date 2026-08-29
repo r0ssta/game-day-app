@@ -108,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null)
   const [teamMemberships, setTeamMemberships] = useState<TeamMembership[]>([])
   const [loading, setLoading] = useState(true)
+  const [sessionReady, setSessionReady] = useState(false)
 
   const loadAccess = useCallback(async (userId: string | undefined | null) => {
     if (!userId) {
@@ -128,39 +129,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadAccess(userId)
   }, [loadAccess])
 
+  // Read the persisted session once, then keep session/user in sync. Never call
+  // postgREST or RPC from inside onAuthStateChange — that deadlocks supabase-js
+  // and leaves the app stuck on "Checking session…" (supabase/auth-js#762).
   useEffect(() => {
     let cancelled = false
 
     void (async () => {
-      setLoading(true)
-      const { data } = await supabase.auth.getSession()
-      if (cancelled) return
-
-      const nextSession = data.session ?? null
-      const nextUser = nextSession?.user ?? null
-      setSession(nextSession)
-      setUser(nextUser)
-      await loadAccess(nextUser?.id)
-      if (!cancelled) setLoading(false)
+      try {
+        const { data, error } = await supabase.auth.getSession()
+        if (cancelled) return
+        if (error) {
+          console.warn('[auth] getSession failed', error.message)
+        }
+        const nextSession = data.session ?? null
+        setSession(nextSession)
+        setUser(nextSession?.user ?? null)
+      } catch (err) {
+        console.warn('[auth] session bootstrap failed', err)
+      } finally {
+        if (!cancelled) setSessionReady(true)
+      }
     })()
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      void (async () => {
-        setSession(nextSession)
-        const nextUser = nextSession?.user ?? null
-        setUser(nextUser)
-        await loadAccess(nextUser?.id)
-        setLoading(false)
-      })()
+      setSession(nextSession)
+      setUser(nextSession?.user ?? null)
     })
 
     return () => {
       cancelled = true
       subscription.unsubscribe()
     }
-  }, [loadAccess])
+  }, [])
+
+  useEffect(() => {
+    if (!sessionReady) return
+
+    let cancelled = false
+    void (async () => {
+      setLoading(true)
+      try {
+        await loadAccess(user?.id ?? null)
+      } catch (err) {
+        console.warn('[auth] failed to load access', err)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionReady, user?.id, loadAccess])
 
   const sendLoginOtp = useCallback(async (email: string) => {
     const trimmed = email.trim()
