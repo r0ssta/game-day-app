@@ -488,7 +488,7 @@ export async function fetchActiveSeason(): Promise<DbSeason | null> {
   const { data, error } = await supabase
     .from('seasons')
     .select('*')
-    .eq('status', 'live')
+    .eq('status', 'active' satisfies SeasonStatus)
     .maybeSingle()
   if (error) throw error
   return data
