@@ -200,7 +200,7 @@ export function shouldResumePenaltyShootout(match: {
   const onLastPeriod = currentPeriod >= totalPeriods
 
   return (
-    match.status === 'active' &&
+    match.status === 'live' &&
     onLastPeriod &&
     !match.period_clock_started &&
     Boolean(match.goes_to_pks) &&

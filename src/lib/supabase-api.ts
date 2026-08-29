@@ -465,7 +465,7 @@ export async function fetchPlayerMatchAppearances(
   for (const raw of data ?? []) {
     const row = raw as DbMatchStat & { matches: DbMatch | DbMatch[] | null }
     const match = Array.isArray(row.matches) ? row.matches[0] : row.matches
-    if (!match || match.status !== 'completed') continue
+    if (!match || match.status !== 'final') continue
     const { matches: _matches, ...stat } = row
     rows.push({ stat, match })
   }
@@ -488,7 +488,7 @@ export async function fetchActiveSeason(): Promise<DbSeason | null> {
   const { data, error } = await supabase
     .from('seasons')
     .select('*')
-    .eq('status', 'active')
+    .eq('status', 'live')
     .maybeSingle()
   if (error) throw error
   return data
@@ -957,7 +957,7 @@ export async function createMatchRecord(input: {
     input.matchTime.trim().length === 5
       ? `${input.matchTime.trim()}:00`
       : input.matchTime.trim() || null
-  const status = input.status ?? 'active'
+  const status = input.status ?? 'scheduled'
   const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
   const periodLength = input.periodLength ?? input.halfLength
   const totalPeriods = input.totalPeriods === 3 ? 3 : 2
@@ -1122,7 +1122,9 @@ export async function createMatchStats(
   matchPositions: Record<string, string>,
   formation: string,
   absentPlayers: RosterPlayer[] = [],
+  options?: { writeStartingLineupEvents?: boolean },
 ): Promise<MatchPlayer[]> {
+  const writeStartingLineupEvents = options?.writeStartingLineupEvents !== false
   const firstSet = new Set(firstHalfStarterIds)
   const attendingIds = new Set(attendingPlayers.map((player) => player.id))
 
@@ -1169,17 +1171,89 @@ export async function createMatchStats(
       }),
     )
 
-  await insertMatchEventRows(starterEvents)
+  if (writeStartingLineupEvents) {
+    await insertMatchEventRows(starterEvents)
+  }
 
   // Live match state only needs attending players on the pitch/bench.
   return matchPlayers.filter((player) => player.attending)
+}
+
+/** Persist kickoff starter events for a match that was preloaded without them. */
+export async function ensureStartingLineupEvents(
+  matchId: string,
+  players: MatchPlayer[],
+  formation: string,
+): Promise<void> {
+  const { count, error } = await supabase
+    .from('match_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('match_id', matchId)
+    .eq('event_type', 'sub_in')
+    .eq('timestamp', 0)
+  if (error) throw error
+  if ((count ?? 0) > 0) return
+
+  const starterEvents = players
+    .filter((p) => p.attending && p.isOnField)
+    .map((p) =>
+      matchEventToRow({
+        matchId,
+        playerId: p.id,
+        eventType: 'sub_in',
+        timestamp: 0,
+        formation,
+        eventNotes: startingLineupNote(p.matchPosition),
+      }),
+    )
+  await insertMatchEventRows(starterEvents)
+}
+
+export async function promoteScheduledMatchToLive(matchId: string): Promise<DbMatch> {
+  const { data, error } = await supabase
+    .from('matches')
+    .update({
+      status: 'live',
+      period_clock_started: true,
+      current_period: 1,
+      period: '1st',
+    })
+    .eq('id', matchId)
+    .eq('status', 'scheduled')
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function fetchMatchBundleById(matchId: string): Promise<ActiveMatchBundle | null> {
+  const { data: match, error: matchError } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('id', matchId)
+    .maybeSingle()
+
+  if (matchError) throw matchError
+  if (!match) return null
+
+  const [{ data: team }, { data: coach }, { data: stats }] = await Promise.all([
+    supabase.from('teams').select('*').eq('id', match.team_id).single(),
+    match.coach_id
+      ? supabase.from('coaches').select('*').eq('id', match.coach_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase.from('match_stats').select('*').eq('match_id', match.id),
+  ])
+
+  if (!team || !stats) return null
+
+  return { match, team, coach: coach ?? null, stats }
 }
 
 export async function fetchActiveMatch(): Promise<ActiveMatchBundle | null> {
   const { data: match, error: matchError } = await supabase
     .from('matches')
     .select('*')
-    .eq('status', 'active')
+    .eq('status', 'live')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -1389,7 +1463,7 @@ export async function markMatchPendingReview(matchId: string) {
 export async function completeMatch(matchId: string) {
   const { error } = await supabase
     .from('matches')
-    .update({ status: 'completed' })
+    .update({ status: 'final' })
     .eq('id', matchId)
   if (error) throw error
 }
@@ -1468,7 +1542,7 @@ export async function fetchRecapEligibleMatchesByTeamId(teamId: string): Promise
     .from('matches')
     .select('*')
     .eq('team_id', teamId)
-    .in('status', ['pending_review', 'completed'])
+    .in('status', ['pending_review', 'final'])
     .order('date', { ascending: false })
   if (error) throw error
   return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
@@ -1479,7 +1553,7 @@ export async function fetchCompletedMatchesByTeamId(teamId: string): Promise<DbM
     .from('matches')
     .select('*')
     .eq('team_id', teamId)
-    .eq('status', 'completed')
+    .eq('status', 'final')
     .order('date', { ascending: false })
   if (error) throw error
   return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
@@ -1590,7 +1664,7 @@ export async function fetchPlayerSeasonRatingTrend(
 
     const match = Array.isArray(row.matches) ? row.matches[0] : row.matches
     if (!match || match.team_id !== teamId) continue
-    if (match.status !== 'completed' && match.status !== 'pending_review') continue
+    if (match.status !== 'final' && match.status !== 'pending_review') continue
 
     const rating =
       typeof row.rating === 'number'

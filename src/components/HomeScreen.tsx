@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
-import { BarChart3, ClipboardList, FileText, Users } from 'lucide-react'
+import { type ReactNode } from 'react'
+import { BarChart3, ClipboardList, FileText, Play, Users } from 'lucide-react'
 import { TeamSelector } from '@/components/AppNavigation'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
+import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import type { DbMatch } from '@/types/database'
 
 type NamedEntity = { id: string; name: string }
@@ -19,7 +20,11 @@ type HomeScreenProps = {
   onCompleteMatchRecap: () => void
   pendingReviewMatches: DbMatch[]
   onOpenPendingReview: (matchId: string) => void
-  onNewGame: () => void
+  scheduledMatches: DbMatch[]
+  scheduledLoading?: boolean
+  onScheduleNewGame: () => void
+  onStartLiveMatch: (matchId: string) => void
+  startingLiveMatchId?: string | null
   onTeamManagement: () => void
   onReporting: () => void
   onViewRecaps: () => void
@@ -37,7 +42,11 @@ export function HomeScreen({
   onCompleteMatchRecap,
   pendingReviewMatches,
   onOpenPendingReview,
-  onNewGame,
+  scheduledMatches,
+  scheduledLoading,
+  onScheduleNewGame,
+  onStartLiveMatch,
+  startingLiveMatchId,
   onTeamManagement,
   onReporting,
   onViewRecaps,
@@ -93,7 +102,7 @@ export function HomeScreen({
               className="w-full rounded-2xl border-2 border-neon bg-neon/10 px-6 py-5 text-left shadow-lg shadow-neon/10 active:scale-[0.98]"
             >
               <span className="font-display text-lg font-black uppercase tracking-wide text-neon">
-                Resume Active Match
+                Resume Live Match
               </span>
               {activeMatchLabel ? (
                 <span className="mt-1 block text-sm font-semibold text-foreground">
@@ -103,13 +112,63 @@ export function HomeScreen({
             </button>
           )}
 
+          <section className="rounded-2xl border border-border bg-card px-4 py-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Scheduled
+              </h2>
+              {scheduledLoading ? (
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Loading…
+                </span>
+              ) : null}
+            </div>
+            {scheduledMatches.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No upcoming games yet. Preload a match to lock in opponent, time, and lineup.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {scheduledMatches.map((match) => {
+                  const when = formatMatchDisplayDateTime(match)
+                  const busy = startingLiveMatchId === match.id
+                  return (
+                    <li
+                      key={match.id}
+                      className="rounded-xl border border-border bg-background px-3 py-3"
+                    >
+                      <p className="font-display text-lg font-bold uppercase text-foreground">
+                        vs {match.opponent || 'Opponent'}
+                      </p>
+                      <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                        {when.dateLabel} · {when.timeLabel}
+                        {match.location_type === 'home' || match.location_type === 'away'
+                          ? ` · ${match.location_type === 'home' ? 'Home' : 'Away'}`
+                          : ''}
+                      </p>
+                      <button
+                        type="button"
+                        disabled={hasActiveMatch || busy}
+                        onClick={() => onStartLiveMatch(match.id)}
+                        className="mt-3 flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-neon px-3 py-2.5 text-sm font-black uppercase tracking-wide text-neon-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Play className="size-4" aria-hidden />
+                        {busy ? 'Starting…' : 'Start Live Match'}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </section>
+
           <HomeActionButton
             icon={<ClipboardList className="size-7" strokeWidth={2.5} />}
-            title="New Game"
-            description="Pre-game setup and lineup for the active team"
+            title="Schedule New Game"
+            description="Preload opponent, kickoff, and starting lineup"
             variant="primary"
-            disabled={!teamReady}
-            onClick={onNewGame}
+            disabled={!teamReady || hasActiveMatch}
+            onClick={onScheduleNewGame}
           />
 
           <HomeActionButton
@@ -197,8 +256,8 @@ function HomeActionButton({
         <span
           className={
             isPrimary
-              ? 'mt-0.5 block text-sm font-semibold text-neon-foreground/80'
-              : 'mt-0.5 block text-sm font-semibold text-muted-foreground'
+              ? 'mt-1 block text-sm font-semibold text-neon-foreground/80'
+              : 'mt-1 block text-sm text-muted-foreground'
           }
         >
           {description}

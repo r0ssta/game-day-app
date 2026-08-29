@@ -1017,9 +1017,12 @@ type SetupScreenProps = {
   onSetStartFirstHalf: (id: string, starts: boolean) => void
   onSetMatchPosition: (id: string, position: string) => void
   onEditPlayer: (id: string) => void
-  onStartMatch: () => void
+  onScheduleMatch: () => void
+  onStartLiveNow: () => void
   canStartMatch: boolean
   startMatchBlockReason: string | null
+  schedulingMatch?: boolean
+  startingMatch?: boolean
   attendingCount: number
   lineupPresets: { id: string; preset_name: string }[]
   onLoadLineupPreset: (presetId: string) => void
@@ -1081,9 +1084,12 @@ function SetupScreen({
   onSetStartFirstHalf,
   onSetMatchPosition,
   onEditPlayer,
-  onStartMatch,
+  onScheduleMatch,
+  onStartLiveNow,
   canStartMatch,
   startMatchBlockReason,
+  schedulingMatch,
+  startingMatch,
   attendingCount,
   lineupPresets,
   onLoadLineupPreset,
@@ -1529,22 +1535,35 @@ function SetupScreen({
       </div>
 
       <div className="sticky bottom-0 z-20 space-y-2 border-t-2 border-border bg-background/95 px-4 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/90 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
-        <div className="mx-auto w-full max-w-md md:max-w-2xl lg:max-w-4xl">
+        <div className="mx-auto w-full max-w-md space-y-2 md:max-w-2xl lg:max-w-4xl">
           <button
             type="button"
-            onClick={onStartMatch}
-            disabled={!canStartMatch}
+            onClick={onScheduleMatch}
+            disabled={!canStartMatch || schedulingMatch || startingMatch}
             className="flex min-h-14 w-full touch-manipulation items-center justify-center gap-3 rounded-xl bg-neon py-5 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="font-display text-2xl font-bold uppercase tracking-wide sm:text-3xl">
-              Ready for {formatPeriodLong(1, totalPeriods)}
+              {schedulingMatch ? 'Saving…' : 'Schedule Match'}
             </span>
+          </button>
+          <button
+            type="button"
+            onClick={onStartLiveNow}
+            disabled={!canStartMatch || schedulingMatch || startingMatch}
+            className="flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-border bg-card py-3 text-sm font-black uppercase tracking-wide text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {startingMatch ? 'Starting…' : 'Start Live Now'}
           </button>
           {!canStartMatch && startMatchBlockReason ? (
             <p className="text-center text-sm font-semibold text-muted-foreground">
               {startMatchBlockReason}
             </p>
-          ) : null}
+          ) : (
+            <p className="text-center text-xs text-muted-foreground">
+              Schedule saves lineup without going live. Start Live Now opens the match screen
+              immediately.
+            </p>
+          )}
         </div>
       </div>
     </main>
@@ -2045,6 +2064,8 @@ export default function App() {
     assignPlayerToSeasonRoster,
     updatePlayer,
     beginMatch,
+    schedulePreloadedMatch,
+    startLiveMatch,
     setPlayerAttending,
     setStartFirstHalf,
     setSetupMatchPosition,
@@ -2099,6 +2120,8 @@ export default function App() {
   const [endingMatch, setEndingMatch] = useState(false)
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
+  const [schedulingMatch, setSchedulingMatch] = useState(false)
+  const [startingLiveMatchId, setStartingLiveMatchId] = useState<string | null>(null)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
   const [navOpen, setNavOpen] = useState(false)
   const [reportingTab, setReportingTab] = useState<ReportingTab>('matches')
@@ -2163,7 +2186,7 @@ export default function App() {
               hasIntermissionLineup: Object.keys(halftimeSecondHalf).length > 0,
             })
             const inPenaltyShootout = shouldResumePenaltyShootout({
-              status: 'active',
+              status: 'live',
               period,
               period_clock_started: periodClockStarted,
               home_score: homeScore,
@@ -2475,71 +2498,117 @@ export default function App() {
     setHalfLengthMinutes,
   ])
 
-  const handleStartMatch = useCallback(async () => {
-    if (!canStartMatch || !activeTeamId || startingMatch) return
-
+  const buildSetupMatchPayload = useCallback(() => {
+    if (!activeTeamId) return null
     const team = teams.find((t) => t.id === activeTeamId)
-    if (!team) return
+    if (!team) return null
+
+    const resolvedLineup = resolveSetupLineup(setupLineup, setupAssignmentsRef.current)
+    const slotAssignments = setupAssignmentsRef.current
+    const labelOverrides = setupLabelOverridesRef.current
+    const resolvedMatchPositions =
+      slotAssignments && Object.values(slotAssignments).some(Boolean)
+        ? {
+            ...matchPositions,
+            ...matchPositionsFromSlotAssignments(
+              slotAssignments,
+              matchFormations.first,
+              activeTeamFormat,
+              labelOverrides,
+            ),
+          }
+        : matchPositions
+    const attendingPlayers = masterRoster.filter(
+      (p) => resolvedLineup.attending[p.id] !== false,
+    )
+    const absentPlayers = masterRoster.filter(
+      (p) => resolvedLineup.attending[p.id] === false,
+    )
+    const rotationMinutes = setupSubIntervalMinutes
+    const allowsThree = supportsThreePeriodFormat({
+      ageGroup: team.age_group,
+      teamFormat: activeTeamFormat,
+    })
+    const matchTotalPeriods =
+      tournamentGame || !allowsThree ? 2 : totalPeriods === 3 ? 3 : 2
+
+    return {
+      teamId: activeTeamId,
+      teamName: formatTeamDisplayName(team.name, team.age_group),
+      coachName: setupCoachName.trim(),
+      opponent,
+      locationType,
+      tournamentGame,
+      goesToPks,
+      halfLength: halfLengthMinutes,
+      totalPeriods: matchTotalPeriods as 2 | 3,
+      matchDate,
+      matchTime,
+      attendingPlayers,
+      absentPlayers,
+      firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
+      matchPositions: resolvedMatchPositions,
+      firstHalfFormation: matchFormations.first,
+      subIntervalSeconds:
+        ENABLE_SUB_ASSISTANT && rotationMinutes != null && rotationMinutes > 0
+          ? rotationMinutes * 60
+          : null,
+      gkPlaysFullHalf,
+    }
+  }, [
+    activeTeamId,
+    teams,
+    setupLineup,
+    matchPositions,
+    matchFormations.first,
+    activeTeamFormat,
+    masterRoster,
+    setupSubIntervalMinutes,
+    tournamentGame,
+    totalPeriods,
+    setupCoachName,
+    opponent,
+    locationType,
+    goesToPks,
+    halfLengthMinutes,
+    matchDate,
+    matchTime,
+    gkPlaysFullHalf,
+  ])
+
+  const handleScheduleMatch = useCallback(async () => {
+    if (!canStartMatch || schedulingMatch || startingMatch) return
+    const payload = buildSetupMatchPayload()
+    if (!payload) return
+
+    setSchedulingMatch(true)
+    try {
+      await schedulePreloadedMatch(payload)
+      setQaSpeedMultiplier(1)
+      setToast('Match scheduled — use Start Live Match on Home when ready')
+    } catch (err) {
+      setToast(formatSupabaseError(err))
+    } finally {
+      setSchedulingMatch(false)
+    }
+  }, [
+    canStartMatch,
+    schedulingMatch,
+    startingMatch,
+    buildSetupMatchPayload,
+    schedulePreloadedMatch,
+  ])
+
+  const handleStartMatch = useCallback(async () => {
+    if (!canStartMatch || startingMatch || schedulingMatch) return
+    const payload = buildSetupMatchPayload()
+    if (!payload) return
 
     setStartingMatch(true)
     try {
-      const resolvedLineup = resolveSetupLineup(
-        setupLineup,
-        setupAssignmentsRef.current,
-      )
-      const slotAssignments = setupAssignmentsRef.current
-      const labelOverrides = setupLabelOverridesRef.current
-      const resolvedMatchPositions =
-        slotAssignments && Object.values(slotAssignments).some(Boolean)
-          ? {
-              ...matchPositions,
-              ...matchPositionsFromSlotAssignments(
-                slotAssignments,
-                matchFormations.first,
-                activeTeamFormat,
-                labelOverrides,
-              ),
-            }
-          : matchPositions
-      const attendingPlayers = masterRoster.filter(
-        (p) => resolvedLineup.attending[p.id] !== false,
-      )
-      const absentPlayers = masterRoster.filter(
-        (p) => resolvedLineup.attending[p.id] === false,
-      )
-      const rotationMinutes = setupSubIntervalMinutes
-      const allowsThree = supportsThreePeriodFormat({
-        ageGroup: team.age_group,
-        teamFormat: activeTeamFormat,
-      })
-      const matchTotalPeriods =
-        tournamentGame || !allowsThree ? 2 : totalPeriods === 3 ? 3 : 2
-      await beginMatch({
-        teamId: activeTeamId,
-        teamName: formatTeamDisplayName(team.name, team.age_group),
-        coachName: setupCoachName.trim(),
-        opponent,
-        locationType,
-        tournamentGame,
-        goesToPks,
-        halfLength: halfLengthMinutes,
-        totalPeriods: matchTotalPeriods,
-        matchDate,
-        matchTime,
-        attendingPlayers,
-        absentPlayers,
-        firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
-        matchPositions: resolvedMatchPositions,
-        firstHalfFormation: matchFormations.first,
-        subIntervalSeconds:
-          ENABLE_SUB_ASSISTANT && rotationMinutes != null && rotationMinutes > 0
-            ? rotationMinutes * 60
-            : null,
-        gkPlaysFullHalf,
-      })
-
+      await beginMatch(payload)
       setQaSpeedMultiplier(1)
-      setToast(`Ready for ${formatPeriodLong(1, matchTotalPeriods)}`)
+      setToast(`Live match ready · ${formatPeriodLong(1, payload.totalPeriods)}`)
     } catch (err) {
       setToast(formatSupabaseError(err))
     } finally {
@@ -2547,27 +2616,45 @@ export default function App() {
     }
   }, [
     canStartMatch,
-    activeTeamId,
-    setupCoachName,
     startingMatch,
-    teams,
-    setupLineup,
-    masterRoster,
-    opponent,
-    locationType,
-    tournamentGame,
-    goesToPks,
-    halfLengthMinutes,
-    totalPeriods,
-    activeTeamFormat,
-    matchDate,
-    matchTime,
-    matchPositions,
-    matchFormations,
-    gkPlaysFullHalf,
-    setupSubIntervalMinutes,
+    schedulingMatch,
+    buildSetupMatchPayload,
     beginMatch,
   ])
+
+  const handleStartLiveScheduledMatch = useCallback(
+    async (scheduledMatchId: string) => {
+      if (hasLiveMatch || startingLiveMatchId) return
+      setStartingLiveMatchId(scheduledMatchId)
+      try {
+        const started = await startLiveMatch(scheduledMatchId)
+        const push = buildMatchStartPush({
+          teamName: started.teamName,
+          opponent: started.opponent,
+          starters: started.starters.map((p) => ({
+            firstName: p.firstName,
+            lastName: p.lastName,
+            number: p.number,
+          })),
+          currentPeriod: started.currentPeriod,
+          totalPeriods: started.totalPeriods,
+        })
+        notifyWebPush({
+          eventType: 'match_start',
+          teamId: started.teamId,
+          teamSlug: activeTeamSlug,
+          title: push.title,
+          body: push.body,
+        })
+        setToast('Live match started — parents notified')
+      } catch (err) {
+        setToast(formatSupabaseError(err))
+      } finally {
+        setStartingLiveMatchId(null)
+      }
+    },
+    [hasLiveMatch, startingLiveMatchId, startLiveMatch, activeTeamSlug],
+  )
 
   const handleConfirmLiveDeleteMatch = useCallback(async () => {
     if (!matchId) return
@@ -3708,8 +3795,12 @@ export default function App() {
         onCompleteMatchRecap={() => setAppMode('recap')}
         pendingReviewMatches={visiblePendingReviewMatches}
         onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
+        scheduledMatches={scheduledMatches}
+        scheduledLoading={scheduledLoading}
+        onScheduleNewGame={() => setAppMode('match_setup')}
+        onStartLiveMatch={(id) => void handleStartLiveScheduledMatch(id)}
+        startingLiveMatchId={startingLiveMatchId}
         onTeamManagement={() => setAppMode('team')}
-        onNewGame={() => setAppMode('match_setup')}
         onReporting={() => {
           setReportingTab('matches')
           setAppMode('reporting')
@@ -3723,7 +3814,7 @@ export default function App() {
             hasIntermissionLineup: Object.keys(halftimeSecondHalf).length > 0,
           })
           const inPenaltyShootout = shouldResumePenaltyShootout({
-            status: 'active',
+            status: 'live',
             period,
             period_clock_started: periodClockStarted,
             home_score: homeScore,
@@ -3855,9 +3946,18 @@ export default function App() {
           onSetStartFirstHalf={setStartFirstHalf}
           onSetMatchPosition={setSetupMatchPosition}
           onEditPlayer={openEditPlayer}
-          onStartMatch={() => void handleStartMatch()}
-          canStartMatch={canStartMatch && !startingMatch}
-          startMatchBlockReason={startingMatch ? 'Getting ready…' : startMatchBlockReason}
+          onScheduleMatch={() => void handleScheduleMatch()}
+          onStartLiveNow={() => void handleStartMatch()}
+          canStartMatch={canStartMatch && !startingMatch && !schedulingMatch}
+          startMatchBlockReason={
+            schedulingMatch
+              ? 'Saving scheduled match…'
+              : startingMatch
+                ? 'Getting ready…'
+                : startMatchBlockReason
+          }
+          schedulingMatch={schedulingMatch}
+          startingMatch={startingMatch}
           attendingCount={attendingCount}
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadLineupPreset}
@@ -4098,7 +4198,7 @@ export default function App() {
           pkWinnerIsUs={pkWinnerIsUs}
           halfLengthMinutes={halfLengthMinutes}
           players={players}
-          isCompletedMatch={matchStatus === 'completed'}
+          isCompletedMatch={matchStatus === 'final'}
           onFinalize={() => void handleFinalizeRecap()}
           onDeleteMatch={handleDeleteMatch}
           canDeleteMatches={canDeleteMatches}

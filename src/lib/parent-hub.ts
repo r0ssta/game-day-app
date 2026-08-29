@@ -27,7 +27,7 @@ export type ParentHubPlayer = {
 export type ParentHubMatch = {
   id: string
   opponent: string
-  status: 'active' | 'scheduled' | 'pending_review' | 'completed'
+  status: 'scheduled' | 'live' | 'pending_review' | 'final'
   match_date: string | null
   match_time: string | null
   date: string
@@ -45,6 +45,7 @@ export type ParentHubMatch = {
   period_clock_started: boolean
   clock_seconds: number
   parent_facing_recap: string | null
+  starters?: ParentHubPlayer[]
 }
 
 export type ParentHubPayload = {
@@ -256,7 +257,19 @@ function normalizeParentHubPayload(data: unknown): ParentHubPayload {
     brandColor: payload.brandColor ?? null,
     logoUrl: payload.logoUrl ?? null,
     players: Array.isArray(payload.players) ? payload.players : [],
-    matches: Array.isArray(payload.matches) ? payload.matches : [],
+    matches: Array.isArray(payload.matches)
+      ? payload.matches.map((match) => ({
+          ...match,
+          starters: Array.isArray(match.starters)
+            ? match.starters.map((player) => ({
+                id: player.id,
+                firstName: player.firstName,
+                lastName: player.lastName,
+                number: player.number ?? null,
+              }))
+            : [],
+        }))
+      : [],
   }
 }
 

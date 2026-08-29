@@ -92,7 +92,7 @@ export type DbMatch = {
   pk_gk_player_id?: string | null
   clock_seconds: number
   period: '1st' | '2nd' | '3rd'
-  status: 'active' | 'scheduled' | 'pending_review' | 'completed'
+  status: 'scheduled' | 'live' | 'pending_review' | 'final'
   period_clock_started: boolean
   /** Staff-only post-game notes — not for parent emails. */
   internal_coach_notes: string | null
@@ -114,6 +114,8 @@ export type QualitativeContextJson = {
   oppositionStrength?: string | null
   endedOnTime?: boolean | null
   addedTimeSeconds?: number
+  /** Formation id saved when a match is preloaded as scheduled. */
+  preloadFormation?: string | null
 }
 
 export type DbMatchEvent = {

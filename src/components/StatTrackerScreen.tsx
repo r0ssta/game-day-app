@@ -174,7 +174,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
   const [awayScore, setAwayScore] = useState(0)
   const [clockSeconds, setClockSeconds] = useState(0)
   const [period, setPeriod] = useState<MatchPeriod>('1st')
-  const [matchStatus, setMatchStatus] = useState<'active' | 'scheduled' | 'pending_review' | 'completed'>('active')
+  const [matchStatus, setMatchStatus] = useState<'scheduled' | 'live' | 'pending_review' | 'final'>('live')
   const [roster, setRoster] = useState<StatTrackerRosterPlayer[]>([])
   const [pendingAction, setPendingAction] = useState<StatTrackerEventType | null>(null)
   const [logging, setLogging] = useState(false)
@@ -283,7 +283,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
   }, [toast])
 
   const completeLog = async (playerId: string | null, anonymous: boolean) => {
-    if (!pendingAction || logging || matchStatus !== 'active') return
+    if (!pendingAction || logging || matchStatus !== 'live') return
 
     setLogging(true)
     try {
@@ -358,7 +358,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
           <p className="mt-2 font-display text-3xl font-black tabular-nums text-foreground">
             {homeScore} – {awayScore}
           </p>
-          {matchStatus !== 'active' ? (
+          {matchStatus !== 'live' ? (
             <p className="mt-2 text-xs font-semibold text-danger">
               Match ended — stats can no longer be logged.
             </p>
@@ -380,7 +380,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
               <button
                 key={action.eventType}
                 type="button"
-                disabled={logging || matchStatus !== 'active'}
+                disabled={logging || matchStatus !== 'live'}
                 onClick={() => setPendingAction(action.eventType)}
                 className={cn(
                   'flex min-h-[5.5rem] flex-col items-start justify-between rounded-2xl border px-4 py-4 text-left font-display shadow-lg transition-transform active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50',

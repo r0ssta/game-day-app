@@ -46,6 +46,89 @@ function Scoreline({ match }: { match: ParentHubMatch }) {
   return <span className="font-mono text-base font-black tabular-nums text-foreground">{score}</span>
 }
 
+function kickoffDate(match: ParentHubMatch): Date | null {
+  const ts = getMatchSortTimestamp(match)
+  if (!Number.isFinite(ts) || ts <= 0) return null
+  return new Date(ts)
+}
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return 'Kickoff soon'
+  const totalSec = Math.floor(ms / 1000)
+  const days = Math.floor(totalSec / 86400)
+  const hours = Math.floor((totalSec % 86400) / 3600)
+  const minutes = Math.floor((totalSec % 3600) / 60)
+  const seconds = totalSec % 60
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
+  const when = formatMatchDisplayDateTime(match)
+  const kickoff = kickoffDate(match)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const remainingMs = kickoff ? kickoff.getTime() - now : 0
+  const starters = match.starters ?? []
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-neon/40 bg-neon/10 px-4 py-4">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-neon">Upcoming</p>
+        <p className="mt-1 font-display text-2xl font-bold uppercase text-foreground">
+          vs {match.opponent || 'Opponent'}
+        </p>
+        <p className="mt-1 text-sm font-semibold text-muted-foreground">
+          {when.dateLabel} · {when.timeLabel}
+          {match.location_type === 'home' || match.location_type === 'away'
+            ? ` · ${match.location_type === 'home' ? 'Home' : 'Away'}`
+            : ''}
+        </p>
+        <p className="mt-4 font-display text-3xl font-black tabular-nums tracking-wide text-foreground">
+          {kickoff ? formatCountdown(remainingMs) : 'Kickoff TBD'}
+        </p>
+        <p className="mt-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          Until kickoff
+        </p>
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          Starting lineup
+        </h3>
+        {starters.length === 0 ? (
+          <p className="rounded-xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+            Lineup will appear once the coach preloads the match.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {starters.map((player) => {
+              const name = formatPlayerFullName(player.firstName, player.lastName)
+              const label = player.number != null ? `#${player.number} ${name}` : name
+              return (
+                <li
+                  key={player.id}
+                  className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground"
+                >
+                  {label}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function LiveTab({
   hub,
   matches,
@@ -54,7 +137,7 @@ function LiveTab({
   matches: ParentHubMatch[]
 }) {
   const liveMatch = useMemo(
-    () => matches.find((m) => m.status === 'active') ?? null,
+    () => matches.find((m) => m.status === 'live') ?? null,
     [matches],
   )
   const nextScheduled = useMemo(() => {
@@ -190,22 +273,7 @@ function LiveTab({
         </p>
       )
     }
-    const when = formatMatchDisplayDateTime(nextScheduled)
-    return (
-      <div className="space-y-3">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-          Next Match
-        </p>
-        <div className="rounded-xl border border-border bg-card px-4 py-4">
-          <p className="font-display text-2xl font-bold uppercase text-foreground">
-            vs {nextScheduled.opponent || 'Opponent'}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {when.dateLabel} · {when.timeLabel}
-          </p>
-        </div>
-      </div>
-    )
+    return <ScheduledKickoffCard match={nextScheduled} />
   }
 
   const timeline = buildParentTimelineRows(events)
@@ -279,8 +347,8 @@ function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
     <ul className="space-y-2">
       {sorted.map((match) => {
         const when = formatMatchDisplayDateTime(match)
-        const isDone = match.status === 'completed' || match.status === 'pending_review'
-        const isLive = match.status === 'active'
+        const isDone = match.status === 'final' || match.status === 'pending_review'
+        const isLive = match.status === 'live'
         return (
           <li
             key={match.id}
@@ -317,7 +385,7 @@ function RecapsTab({ matches }: { matches: ParentHubMatch[] }) {
       matches
         .filter(
           (m) =>
-            (m.status === 'completed' || m.status === 'pending_review') &&
+            (m.status === 'final' || m.status === 'pending_review') &&
             Boolean(m.parent_facing_recap?.trim()),
         )
         .sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a)),

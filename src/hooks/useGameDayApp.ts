@@ -14,6 +14,7 @@ import {
 import {
   defaultMatchDate,
   defaultMatchTime,
+  getMatchSortTimestamp,
   normalizeMatchTimeForInput,
 } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
@@ -53,7 +54,11 @@ import {
   deleteMatchRecord,
   deleteLineupPreset,
   dbPlayerToRoster,
+  ensureStartingLineupEvents,
   fetchActiveMatch,
+  fetchMatchBundleById,
+  promoteScheduledMatchToLive,
+  saveQualitativeContext,
   fetchActiveSeason,
   fetchAgeGroupPoolPlayers,
   fetchPlayersByIds,
@@ -377,7 +382,7 @@ export function useGameDayApp() {
           resolvedTeamId = match.team_id
           setMasterRoster(roster)
           setMatchId(match.id)
-          setMatchStatus('active')
+          setMatchStatus('live')
           setAppMode('home')
           setPlayers(playersWithCards)
           setHomeScore(match.home_score)
@@ -1135,6 +1140,7 @@ export function useGameDayApp() {
           matchTime: input.matchTime,
           subIntervalSeconds: input.subIntervalSeconds ?? null,
           gkPlaysFullHalf: input.gkPlaysFullHalf ?? true,
+          status: 'live',
         })
         createdMatchId = match.id
 
@@ -1148,7 +1154,7 @@ export function useGameDayApp() {
         )
 
         setMatchId(match.id)
-        setMatchStatus('active')
+        setMatchStatus('live')
         setAppMode('match')
         setPlayers(matchPlayers)
         setHomeScore(0)
@@ -1197,6 +1203,220 @@ export function useGameDayApp() {
       }
     },
     [activeSeason, teams],
+  )
+
+  /** Preload a fixture + lineup as `scheduled` — no clock, events, or parent push. */
+  const schedulePreloadedMatch = useCallback(
+    async (input: {
+      teamId: string
+      coachName: string
+      opponent: string
+      locationType: LocationType
+      tournamentGame: boolean
+      goesToPks?: boolean
+      halfLength: number
+      totalPeriods?: TotalPeriods
+      matchDate: string
+      matchTime: string
+      attendingPlayers: RosterPlayer[]
+      absentPlayers?: RosterPlayer[]
+      firstHalfStarterIds: string[]
+      matchPositions: Record<string, string>
+      firstHalfFormation: string
+      subIntervalSeconds?: number | null
+      gkPlaysFullHalf?: boolean
+    }) => {
+      const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
+      const allowsThree = supportsThreePeriodFormat({
+        ageGroup: teams.find((t) => t.id === input.teamId)?.age_group,
+        teamFormat: normalizeTeamFormat(teams.find((t) => t.id === input.teamId)?.format),
+      })
+      const matchTotalPeriods: TotalPeriods =
+        input.tournamentGame || !allowsThree
+          ? 2
+          : input.totalPeriods === 3
+            ? 3
+            : 2
+
+      let createdMatchId: string | null = null
+      try {
+        const coachId = await resolveCoachIdForName(input.coachName)
+        if (!activeSeason) throw new Error('No active season — create one in Club Admin')
+        const match = await createMatchRecord({
+          teamId: input.teamId,
+          seasonId: activeSeason.id,
+          coachId,
+          coachName: input.coachName,
+          opponent: input.opponent,
+          locationType: input.locationType,
+          tournamentGame: input.tournamentGame,
+          goesToPks,
+          halfLength: input.halfLength,
+          periodLength: input.halfLength,
+          totalPeriods: matchTotalPeriods,
+          matchDate: input.matchDate,
+          matchTime: input.matchTime,
+          subIntervalSeconds: input.subIntervalSeconds ?? null,
+          gkPlaysFullHalf: input.gkPlaysFullHalf ?? true,
+          status: 'scheduled',
+        })
+        createdMatchId = match.id
+
+        await createMatchStats(
+          match.id,
+          input.attendingPlayers,
+          input.firstHalfStarterIds,
+          input.matchPositions,
+          input.firstHalfFormation,
+          input.absentPlayers ?? [],
+          { writeStartingLineupEvents: false },
+        )
+
+        await saveQualitativeContext(match.id, {
+          preloadFormation: input.firstHalfFormation,
+        })
+
+        setScheduledMatches((prev) =>
+          [...prev.filter((row) => row.id !== match.id), match].sort(
+            (a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b),
+          ),
+        )
+        setAppMode('home')
+        return match.id
+      } catch (err) {
+        if (createdMatchId) {
+          try {
+            await deleteMatchRecord(createdMatchId)
+          } catch (cleanupErr) {
+            console.error('[schedulePreloadedMatch] rollback failed', cleanupErr)
+          }
+        }
+        throw err
+      }
+    },
+    [activeSeason, teams],
+  )
+
+  /**
+   * Promote a scheduled match to live, start the period clock, and hydrate coach UI.
+   * Caller should fire the kickoff parent push after this resolves.
+   */
+  const startLiveMatch = useCallback(
+    async (scheduledMatchId: string) => {
+      const existingLive = await fetchActiveMatch()
+      if (existingLive && existingLive.match.id !== scheduledMatchId) {
+        throw new Error('Finish or resume the current live match before starting another.')
+      }
+
+      const promoted =
+        existingLive?.match.id === scheduledMatchId
+          ? existingLive.match
+          : await promoteScheduledMatchToLive(scheduledMatchId)
+
+      const bundle = await fetchMatchBundleById(promoted.id)
+      if (!bundle) throw new Error('Could not load the scheduled match')
+
+      const { match, team, coach, stats } = bundle
+      const seasonIdForRoster = match.season_id ?? activeSeason?.id ?? null
+      const entries = seasonIdForRoster
+        ? await fetchSeasonRosterPlayers(seasonIdForRoster, match.team_id, {
+            includeInactive: true,
+          })
+        : []
+      const roster = seasonRosterToPlayers(entries, match.team_id)
+      const rosterIds = new Set(roster.map((p) => p.id))
+      const missingIds = stats
+        .map((s) => s.player_id)
+        .filter((id) => id && !rosterIds.has(id))
+      if (missingIds.length > 0) {
+        const guests = await fetchPlayersByIds(missingIds)
+        for (const guest of guests) {
+          roster.push(poolPlayerToGuestRoster(guest, match.team_id))
+        }
+      }
+
+      const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) => player.attending)
+      const rawContext =
+        match.qualitative_context && typeof match.qualitative_context === 'object'
+          ? (match.qualitative_context as Record<string, unknown>)
+          : null
+      const preloadFormation =
+        typeof rawContext?.preloadFormation === 'string' ? rawContext.preloadFormation.trim() : ''
+      const formation =
+        preloadFormation ||
+        matchFormations.first ||
+        getDefaultFormationId(normalizeTeamFormat(team.format)) ||
+        DEFAULT_FORMATION_ID
+
+      await ensureStartingLineupEvents(match.id, matchPlayers, formation)
+      const halfLen = match.period_length ?? match.half_length
+      const clock = initialHalfClock(halfLen)
+      await syncMatchRecord(match.id, {
+        period_clock_started: true,
+        clock_seconds: clock,
+        current_period: 1,
+        period: '1st',
+      })
+
+      const starterIds = matchPlayers.filter((p) => p.isOnField).map((p) => p.id)
+      const matchTotalPeriods: TotalPeriods = match.total_periods === 3 ? 3 : 2
+
+      setSelectedTeamId(match.team_id)
+      setMasterRoster(roster)
+      setMatchId(match.id)
+      setMatchStatus('live')
+      setAppMode('match')
+      setPlayers(matchPlayers)
+      setHomeScore(match.home_score)
+      setAwayScore(match.away_score)
+      setHomeShots(0)
+      setAwayShots(0)
+      setHomeSaves(0)
+      setAwaySaves(0)
+      setHomePkScore(match.home_pk_score ?? 0)
+      setAwayPkScore(match.away_pk_score ?? 0)
+      setPkWinnerIsUs(match.pk_winner_is_us)
+      setPkGkPlayerId(match.pk_gk_player_id ?? null)
+      setSeconds(clock)
+      setPeriod('1st')
+      setCurrentPeriod(1)
+      setTotalPeriods(matchTotalPeriods)
+      setRunning(true)
+      setPeriodClockStarted(true)
+      setFirstHalfStarterIds(starterIds)
+      setSecondHalfStarterIds([])
+      setHalftimeSecondHalf({})
+      setMatchFormations({
+        first: formation,
+        second: formation,
+      })
+      setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
+      setMatchCoachName(
+        match.coach_name?.trim() ||
+          coach?.name?.trim() ||
+          team.primary_coach_name?.trim() ||
+          '',
+      )
+      setMatchOpponent(match.opponent)
+      setMatchLocationType(resolveMatchLocationType(match))
+      setMatchTournamentGame(Boolean(match.tournament_game))
+      setMatchGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
+      setHalfLengthMinutes(halfLen)
+      setSubIntervalSeconds(match.sub_interval_seconds ?? null)
+      setGkPlaysFullHalf(match.gk_plays_full_half !== false)
+      setScheduledMatches((prev) => prev.filter((row) => row.id !== match.id))
+
+      return {
+        matchId: match.id,
+        teamId: match.team_id,
+        teamName: formatTeamDisplayName(team.name, team.age_group),
+        opponent: match.opponent,
+        starters: matchPlayers.filter((p) => p.isOnField),
+        currentPeriod: 1,
+        totalPeriods: matchTotalPeriods,
+      }
+    },
+    [activeSeason, matchFormations.first],
   )
 
   /** End the active period and open intermission lineup (PERIOD_X → INTERMISSION). */
@@ -1422,7 +1642,7 @@ export function useGameDayApp() {
           })
         }
         setPeriodClockStarted(false)
-        setMatchStatus('active')
+        setMatchStatus('live')
         setAppMode('penalty_shootout')
         return
       }
@@ -1524,7 +1744,7 @@ export function useGameDayApp() {
     if (!bundle) throw new Error('Match not found')
 
     const { match, team, coach, stats } = bundle
-    if (match.status !== 'pending_review' && match.status !== 'completed') {
+    if (match.status !== 'pending_review' && match.status !== 'final') {
       throw new Error('Recap is only available for finished matches')
     }
 
@@ -1740,7 +1960,7 @@ export function useGameDayApp() {
     openMatchRecap,
     openPendingReviewRecap,
     matchStatus,
-    hasLiveMatch: matchStatus === 'active' && Boolean(matchId),
+    hasLiveMatch: matchStatus === 'live' && Boolean(matchId),
     hasPendingRecap: matchStatus === 'pending_review' && Boolean(matchId),
     selectedTeamId,
     activeTeamId: selectedTeamId,
@@ -1808,6 +2028,8 @@ export function useGameDayApp() {
     addGuestFromPool,
     updatePlayer,
     beginMatch,
+    schedulePreloadedMatch,
+    startLiveMatch,
     endMatch,
     setSetupMatchPosition,
     createSeasonRecord,
