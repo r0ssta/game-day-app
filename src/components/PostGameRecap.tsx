@@ -41,6 +41,7 @@ import {
 import {
   aggregateTeamShotSaveTotals,
   formatTeamShotSaveLine,
+  hasTeamShotSaveTotals,
 } from '@/lib/match-shot-save'
 import {
   formatOpponentPrefix,
@@ -266,13 +267,9 @@ export function PostGameRecap({
     [matchEvents],
   )
   const teamShotSaveLine = useMemo(() => {
-    const hasAny =
-      teamShotSaveTotals.homeShots +
-        teamShotSaveTotals.awayShots +
-        teamShotSaveTotals.homeSaves +
-        teamShotSaveTotals.awaySaves >
-      0
-    return hasAny ? formatTeamShotSaveLine(teamShotSaveTotals) : null
+    return hasTeamShotSaveTotals(teamShotSaveTotals)
+      ? formatTeamShotSaveLine(teamShotSaveTotals)
+      : null
   }, [teamShotSaveTotals])
 
   const getSavedReview = (

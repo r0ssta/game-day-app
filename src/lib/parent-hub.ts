@@ -938,6 +938,10 @@ export function formatParentEventLine(
       return `${minute} Save · ${name !== 'Player' ? name : 'Home'}`
     case 'save_away':
       return `${minute} Save · ${opponentLabel}`
+    case 'corner_home':
+      return `${minute} Corner · Home`
+    case 'corner_away':
+      return `${minute} Corner · ${opponentLabel}`
     default:
       return `${minute} ${event.eventType}`
   }
@@ -955,6 +959,8 @@ export const PARENT_HUB_LIVE_EVENT_TYPES = [
   'shot_away',
   'save_home',
   'save_away',
+  'corner_home',
+  'corner_away',
 ] as const
 
 export type ParentHubLiveEventType = (typeof PARENT_HUB_LIVE_EVENT_TYPES)[number]

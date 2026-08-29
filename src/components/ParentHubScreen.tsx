@@ -21,6 +21,11 @@ import {
   type ParentLiveEvent,
 } from '@/lib/parent-hub'
 import {
+  aggregateTeamShotSaveTotals,
+  formatTeamShotSaveLine,
+  hasTeamShotSaveTotals,
+} from '@/lib/match-shot-save'
+import {
   applyParentHubManifestLink,
   applyParentHubPwaHead,
   rememberParentHubSlug,
@@ -277,6 +282,10 @@ function LiveTab({
   }
 
   const timeline = buildParentTimelineRows(events)
+  const teamBoxScore = useMemo(() => aggregateTeamShotSaveTotals(events), [events])
+  const teamBoxScoreLine = hasTeamShotSaveTotals(teamBoxScore)
+    ? formatTeamShotSaveLine(teamBoxScore)
+    : null
 
   return (
     <div className="space-y-4">
@@ -291,6 +300,11 @@ function LiveTab({
             {liveMatchState.period_clock_started ? 'In progress' : 'Warmup / break'}
           </span>
         </div>
+        {teamBoxScoreLine ? (
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            {teamBoxScoreLine}
+          </p>
+        ) : null}
       </div>
 
       <div>

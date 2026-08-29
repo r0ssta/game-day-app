@@ -86,7 +86,7 @@ create table if not exists public.match_events (
     'stat_shot_on_target', 'stat_shot_off_target', 'stat_goal', 'stat_assist', 'stat_dribble',
     'stat_tackle', 'stat_save', 'stat_pass', 'stat_key_pass', 'stat_team_log',
     'pk_attempt', 'yellow_card', 'red_card',
-    'shot_home', 'shot_away', 'save_home', 'save_away'
+    'shot_home', 'shot_away', 'save_home', 'save_away', 'corner_home', 'corner_away'
   )),
   timestamp integer not null check (timestamp >= 0),
   event_notes text,
@@ -96,7 +96,7 @@ create table if not exists public.match_events (
   constraint match_events_player_required_check check (
     event_type in (
       'opponent_goal', 'formation_change', 'stat_team_log', 'pk_attempt',
-      'shot_home', 'shot_away', 'save_home', 'save_away'
+      'shot_home', 'shot_away', 'save_home', 'save_away', 'corner_home', 'corner_away'
     )
     or player_id is not null
   )

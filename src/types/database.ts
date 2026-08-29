@@ -147,6 +147,8 @@ export type DbMatchEvent = {
     | 'shot_away'
     | 'save_home'
     | 'save_away'
+    | 'corner_home'
+    | 'corner_away'
   timestamp: number
   event_notes: string | null
   formation: string | null

@@ -177,7 +177,9 @@ export function aggregatePlayerRecaps(
       event.event_type === 'opponent_goal' ||
       event.event_type === 'shot_home' ||
       event.event_type === 'shot_away' ||
-      event.event_type === 'save_away'
+      event.event_type === 'save_away' ||
+      event.event_type === 'corner_home' ||
+      event.event_type === 'corner_away'
     ) {
       continue
     }

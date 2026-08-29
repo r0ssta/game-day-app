@@ -156,6 +156,8 @@ export function useGameDayApp() {
   const [awayShots, setAwayShots] = useState(0)
   const [homeSaves, setHomeSaves] = useState(0)
   const [awaySaves, setAwaySaves] = useState(0)
+  const [homeCorners, setHomeCorners] = useState(0)
+  const [awayCorners, setAwayCorners] = useState(0)
   const [seconds, setSeconds] = useState(0)
   const [period, setPeriod] = useState<MatchPeriod>('1st')
   const [currentPeriod, setCurrentPeriod] = useState(1)
@@ -366,6 +368,8 @@ export function useGameDayApp() {
             awayShots: 0,
             homeSaves: 0,
             awaySaves: 0,
+            homeCorners: 0,
+            awayCorners: 0,
           }
           try {
             const events = await fetchMatchEvents(match.id)
@@ -391,6 +395,8 @@ export function useGameDayApp() {
           setAwayShots(shotSaveTotals.awayShots)
           setHomeSaves(shotSaveTotals.homeSaves)
           setAwaySaves(shotSaveTotals.awaySaves)
+          setHomeCorners(shotSaveTotals.homeCorners)
+          setAwayCorners(shotSaveTotals.awayCorners)
           setSeconds(
             restoreMatchClockSeconds(
               match.clock_seconds,
@@ -1163,6 +1169,8 @@ export function useGameDayApp() {
         setAwayShots(0)
         setHomeSaves(0)
         setAwaySaves(0)
+        setHomeCorners(0)
+        setAwayCorners(0)
         setHomePkScore(0)
         setAwayPkScore(0)
         setPkWinnerIsUs(null)
@@ -1373,6 +1381,8 @@ export function useGameDayApp() {
       setAwayShots(0)
       setHomeSaves(0)
       setAwaySaves(0)
+      setHomeCorners(0)
+      setAwayCorners(0)
       setHomePkScore(match.home_pk_score ?? 0)
       setAwayPkScore(match.away_pk_score ?? 0)
       setPkWinnerIsUs(match.pk_winner_is_us)
@@ -1686,6 +1696,8 @@ export function useGameDayApp() {
     setAwayShots(0)
     setHomeSaves(0)
     setAwaySaves(0)
+    setHomeCorners(0)
+    setAwayCorners(0)
     setSeconds(0)
     setPeriod('1st')
     setCurrentPeriod(1)
@@ -1916,6 +1928,10 @@ export function useGameDayApp() {
     setHomeSaves,
     awaySaves,
     setAwaySaves,
+    homeCorners,
+    setHomeCorners,
+    awayCorners,
+    setAwayCorners,
     seconds,
     setSeconds,
     period,

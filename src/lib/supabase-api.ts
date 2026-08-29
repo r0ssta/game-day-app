@@ -78,6 +78,8 @@ export type MatchEventInput = {
     | 'shot_away'
     | 'save_home'
     | 'save_away'
+    | 'corner_home'
+    | 'corner_away'
     | StatTrackerEventType
     | 'stat_team_log'
   timestamp: number
@@ -1342,6 +1344,8 @@ const PLAYER_OPTIONAL_EVENT_TYPES = new Set([
   'shot_away',
   'save_home',
   'save_away',
+  'corner_home',
+  'corner_away',
   'pk_attempt',
 ])
 

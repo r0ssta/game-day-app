@@ -317,6 +317,8 @@ type MatchHeaderProps = {
   awayShots?: number
   homeSaves?: number
   awaySaves?: number
+  homeCorners?: number
+  awayCorners?: number
   seconds: number
   period: MatchPeriod
   currentPeriod: number
@@ -333,6 +335,7 @@ type MatchHeaderProps = {
   onOpponentGoal?: () => void
   onLogShot?: (side: 'home' | 'away') => void
   onLogSave?: (side: 'home' | 'away') => void
+  onLogCorner?: (side: 'home' | 'away') => void
   onLogCard?: () => void
   onShareStatTracker?: () => void
 }
@@ -390,6 +393,8 @@ function MatchHeader({
   awayShots = 0,
   homeSaves = 0,
   awaySaves = 0,
+  homeCorners = 0,
+  awayCorners = 0,
   seconds,
   period: _period,
   currentPeriod,
@@ -404,6 +409,7 @@ function MatchHeader({
   onOpponentGoal,
   onLogShot,
   onLogSave,
+  onLogCorner,
   onLogCard,
   onShareStatTracker,
 }: MatchHeaderProps) {
@@ -416,9 +422,12 @@ function MatchHeader({
   const waitingToStart = !periodClockStarted
   const clockParts = formatMatchClockParts(seconds)
   const showGoalActions = Boolean(periodClockStarted && onLogGoal && onOpponentGoal)
-  const showShotSaveActions = Boolean(periodClockStarted && onLogShot && onLogSave)
+  const showShotSaveActions = Boolean(
+    periodClockStarted && onLogShot && onLogSave && onLogCorner,
+  )
   const showTeamShotSaveLine =
-    homeShots + awayShots + homeSaves + awaySaves > 0 || showShotSaveActions
+    homeShots + awayShots + homeSaves + awaySaves + homeCorners + awayCorners > 0 ||
+    showShotSaveActions
   const periodBadge = formatPeriodShort(currentPeriod, totalPeriods)
   const periodReadyLabel = formatPeriodLong(currentPeriod, totalPeriods)
 
@@ -525,6 +534,8 @@ function MatchHeader({
             Shots {homeShots}–{awayShots}
             <span className="mx-1.5 text-border">·</span>
             Saves {homeSaves}–{awaySaves}
+            <span className="mx-1.5 text-border">·</span>
+            Corners {homeCorners}–{awayCorners}
           </p>
         ) : null}
 
@@ -541,20 +552,27 @@ function MatchHeader({
                   Goal
                 </button>
                 {showShotSaveActions ? (
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1.5">
                     <button
                       type="button"
                       onClick={() => onLogShot?.('home')}
-                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1 py-2 text-[10px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
                     >
                       + Shot
                     </button>
                     <button
                       type="button"
                       onClick={() => onLogSave?.('home')}
-                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1 py-2 text-[10px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
                     >
                       + Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLogCorner?.('home')}
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1 py-2 text-[10px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                    >
+                      + Corner
                     </button>
                   </div>
                 ) : null}
@@ -569,20 +587,27 @@ function MatchHeader({
                   Opp. Goal
                 </button>
                 {showShotSaveActions ? (
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1.5">
                     <button
                       type="button"
                       onClick={() => onLogShot?.('away')}
-                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1 py-2 text-[10px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
                     >
                       + Shot
                     </button>
                     <button
                       type="button"
                       onClick={() => onLogSave?.('away')}
-                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1.5 py-2 text-[11px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1 py-2 text-[10px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
                     >
                       + Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLogCorner?.('away')}
+                      className="flex min-h-10 touch-manipulation items-center justify-center rounded-lg border border-border bg-card px-1 py-2 text-[10px] font-black uppercase tracking-wide text-foreground active:scale-[0.98]"
+                    >
+                      + Corner
                     </button>
                   </div>
                 ) : null}
@@ -1963,6 +1988,10 @@ export default function App() {
     setHomeSaves,
     awaySaves,
     setAwaySaves,
+    homeCorners,
+    setHomeCorners,
+    awayCorners,
+    setAwayCorners,
     seconds,
     setSeconds,
     period,
@@ -3540,6 +3569,45 @@ export default function App() {
     ],
   )
 
+  const commitTeamCorner = useCallback(
+    (side: 'home' | 'away') => {
+      if (!matchId || !periodClockStarted) return
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventType = side === 'home' ? 'corner_home' : 'corner_away'
+      if (side === 'home') {
+        setHomeCorners((n) => n + 1)
+      } else {
+        setAwayCorners((n) => n + 1)
+      }
+      void insertMatchEvent({
+        matchId,
+        eventType,
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        playerId: null,
+      })
+        .then(() => {
+          setToast(side === 'home' ? 'Corner · Home' : 'Corner · Away')
+        })
+        .catch((err) => {
+          if (side === 'home') setHomeCorners((n) => Math.max(0, n - 1))
+          else setAwayCorners((n) => Math.max(0, n - 1))
+          console.error('[commitTeamCorner]', err)
+          setToast('Could not save corner — try again')
+        })
+    },
+    [
+      matchId,
+      periodClockStarted,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      setHomeCorners,
+      setAwayCorners,
+      setToast,
+    ],
+  )
+
   const commitTeamSave = useCallback(
     (side: 'home' | 'away') => {
       if (!matchId || !periodClockStarted) return
@@ -4225,6 +4293,8 @@ export default function App() {
         awayShots={awayShots}
         homeSaves={homeSaves}
         awaySaves={awaySaves}
+        homeCorners={homeCorners}
+        awayCorners={awayCorners}
         seconds={seconds}
         period={period}
         currentPeriod={currentPeriod}
@@ -4238,6 +4308,7 @@ export default function App() {
         onOpponentGoal={() => openGoalWizard('opponent')}
         onLogShot={commitTeamShot}
         onLogSave={commitTeamSave}
+        onLogCorner={commitTeamCorner}
         onLogCard={() => setCardWizardOpen(true)}
         onShareStatTracker={
           ENABLE_STAT_TRACKER && matchId
