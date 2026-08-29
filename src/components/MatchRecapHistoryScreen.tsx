@@ -119,8 +119,7 @@ export function MatchRecapHistoryScreen({
                 QA Recap Access
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Open any finished match to view ratings, sideline stats, and qualitative context.
-                Completed recaps open in read-only mode — tap Edit to update notes anytime.
+                Completed recaps open ready to edit — update ratings, notes, and parent recap anytime.
                 {canDeleteMatches
                   ? ' Use Delete Game to wipe a match and all linked events for testing.'
                   : ''}
@@ -211,7 +210,7 @@ export function MatchRecapHistoryScreen({
                         onClick={() => onOpenRecap(match.id)}
                         className="min-h-11 touch-manipulation rounded-xl border-2 border-neon bg-neon px-4 py-3 text-xs font-bold uppercase tracking-wide text-neon-foreground active:scale-[0.98]"
                       >
-                        View Recap
+                        {match.status === 'pending_review' ? 'Complete Report' : 'Edit Report'}
                       </button>
                       {canDeleteMatches && onDeleteMatch ? (
                         <button

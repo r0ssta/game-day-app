@@ -1850,6 +1850,27 @@ export async function savePostGameReview(
   )
 }
 
+/** Persist coach notes, ratings, qualitative context, and optional parent recap for any finished match. */
+export async function saveMatchReport(
+  matchId: string,
+  input: {
+    reviews: PostGameReviewInput[]
+    internalCoachNotes?: string
+    qualitativeContext?: Record<string, unknown> | null
+    parentFacingRecap?: string
+  },
+) {
+  await savePostGameReview(
+    matchId,
+    input.reviews,
+    input.internalCoachNotes,
+    input.qualitativeContext,
+  )
+  if (input.parentFacingRecap !== undefined) {
+    await saveParentFacingRecap(matchId, input.parentFacingRecap)
+  }
+}
+
 /** Fire-and-forget background sync helpers */
 export function syncMatchRecord(
   matchId: string,

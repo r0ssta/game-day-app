@@ -106,7 +106,7 @@ export function PreviousMatchesTab({
                     onClick={() => onOpenMatchRecap(match.id)}
                     className="min-h-11 shrink-0 touch-manipulation rounded-xl border-2 border-neon bg-neon px-4 py-3 text-xs font-bold uppercase tracking-wide text-neon-foreground active:scale-[0.98]"
                   >
-                    View Recap
+                    Edit Report
                   </button>
                 </div>
               </article>

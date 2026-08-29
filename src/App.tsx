@@ -4337,6 +4337,10 @@ export default function App() {
           halfLengthMinutes={halfLengthMinutes}
           players={players}
           isCompletedMatch={matchStatus === 'final'}
+          openInEditMode={
+            matchStatus === 'final' &&
+            (recapReturnMode === 'recap_history' || recapReturnMode === 'reporting')
+          }
           onFinalize={() => void handleFinalizeRecap()}
           onDeleteMatch={handleDeleteMatch}
           canDeleteMatches={canDeleteMatches}

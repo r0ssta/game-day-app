@@ -37,7 +37,7 @@ import {
   backfillMissingGoalShots,
   fetchMatchReviews,
   finalizeMatchReview,
-  savePostGameReview,
+  saveMatchReport,
 } from '@/lib/supabase-api'
 import {
   aggregateTeamShotSaveTotals,
@@ -124,6 +124,8 @@ type PostGameRecapProps = {
   halfLengthMinutes: number
   players: MatchPlayer[]
   isCompletedMatch?: boolean
+  /** When true, open directly in edit mode (saved/final reports). */
+  openInEditMode?: boolean
   onFinalize: () => void
   onDeleteMatch?: (matchId: string) => Promise<void>
   canDeleteMatches?: boolean
@@ -146,6 +148,7 @@ export function PostGameRecap({
   halfLengthMinutes,
   players,
   isCompletedMatch = false,
+  openInEditMode = false,
   onFinalize,
   onDeleteMatch,
   canDeleteMatches = false,
@@ -153,7 +156,9 @@ export function PostGameRecap({
   onToast,
   onHome,
 }: PostGameRecapProps) {
-  const [readOnly, setReadOnly] = useState(isCompletedMatch)
+  const [readOnly, setReadOnly] = useState(isCompletedMatch && !openInEditMode)
+  const readOnlyRef = useRef(readOnly)
+  const loadedMatchIdRef = useRef<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -164,6 +169,7 @@ export function PostGameRecap({
   const [reviews, setReviews] = useState<Record<string, SavedPositionReview>>({})
   const [touchedPositionReviews, setTouchedPositionReviews] = useState<Set<string>>(() => new Set())
   const [coachSummary, setCoachSummary] = useState('')
+  const [parentFacingRecap, setParentFacingRecap] = useState('')
   const [matchRecord, setMatchRecord] = useState<DbMatch | null>(null)
   const [matchEvents, setMatchEvents] = useState<DbMatchEvent[]>([])
   const [parentRecapOpen, setParentRecapOpen] = useState(false)
@@ -190,6 +196,7 @@ export function PostGameRecap({
         }
         if (loadedMatch) {
           setMatchRecord(loadedMatch)
+          setParentFacingRecap(loadedMatch.parent_facing_recap?.trim() ?? '')
         }
         setMatchEvents(events)
         if (loadedMatch?.qualitative_context) {
@@ -411,18 +418,49 @@ export function PostGameRecap({
     return null
   }, [qualitativeContext])
 
-  const saveDraft = useCallback(async () => {
-    await savePostGameReview(matchId, reviewPayload, coachSummary, qualitativePayload)
+  const persistReport = useCallback(async () => {
+    await saveMatchReport(matchId, {
+      reviews: reviewPayload,
+      internalCoachNotes: coachSummary,
+      qualitativeContext: qualitativePayload,
+      parentFacingRecap,
+    })
     setDraftSavedAt(Date.now())
-  }, [matchId, reviewPayload, coachSummary, qualitativePayload])
+    setMatchRecord((prev) =>
+      prev
+        ? {
+            ...prev,
+            internal_coach_notes: coachSummary.trim() || null,
+            parent_facing_recap: parentFacingRecap.trim() || null,
+            qualitative_context: qualitativePayload,
+          }
+        : prev,
+    )
+  }, [
+    matchId,
+    reviewPayload,
+    coachSummary,
+    qualitativePayload,
+    parentFacingRecap,
+  ])
+
+  const saveDraft = useCallback(async () => {
+    await persistReport()
+  }, [persistReport])
 
   useEffect(() => {
     saveDraftRef.current = saveDraft
   }, [saveDraft])
 
   useEffect(() => {
-    setReadOnly(isCompletedMatch)
-  }, [matchId, isCompletedMatch])
+    readOnlyRef.current = readOnly
+  }, [readOnly])
+
+  useEffect(() => {
+    if (loadedMatchIdRef.current === matchId) return
+    loadedMatchIdRef.current = matchId
+    setReadOnly(isCompletedMatch && !openInEditMode)
+  }, [matchId, isCompletedMatch, openInEditMode])
 
   useEffect(() => {
     if (loading || readOnly) return
@@ -436,6 +474,7 @@ export function PostGameRecap({
 
   useEffect(() => {
     return () => {
+      if (readOnlyRef.current) return
       void saveDraftRef.current().catch((err) => {
         console.warn('[PostGameRecap] draft save on exit failed', err)
       })
@@ -458,11 +497,11 @@ export function PostGameRecap({
   const handleSaveChanges = async () => {
     setSaving(true)
     try {
-      await savePostGameReview(matchId, reviewPayload, coachSummary, qualitativePayload)
-      onToast('Recap updated')
+      await persistReport()
+      onToast('Report saved')
       setReadOnly(true)
     } catch (err) {
-      onToast(err instanceof Error ? err.message : 'Failed to save recap')
+      onToast(err instanceof Error ? err.message : 'Failed to save report')
     } finally {
       setSaving(false)
     }
@@ -498,7 +537,12 @@ export function PostGameRecap({
   const handleFinalize = async () => {
     setSaving(true)
     try {
-      await savePostGameReview(matchId, reviewPayload, coachSummary, qualitativePayload)
+      await saveMatchReport(matchId, {
+        reviews: reviewPayload,
+        internalCoachNotes: coachSummary,
+        qualitativeContext: qualitativePayload,
+        parentFacingRecap,
+      })
       await finalizeMatchReview(matchId)
 
       const summary = buildRecapSummaryText({
@@ -619,7 +663,7 @@ export function PostGameRecap({
             </h1>
             {isCompletedMatch ? (
               <p className="mt-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                {readOnly ? 'Viewing saved recap' : 'Editing saved recap'}
+                {readOnly ? 'Saved report — tap Edit to update' : 'Editing saved report'}
               </p>
             ) : null}
             <p className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -691,14 +735,16 @@ export function PostGameRecap({
               onClick={() => setReadOnly((value) => !value)}
               className="min-h-11 touch-manipulation rounded-xl border-2 border-border bg-card px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-foreground active:scale-[0.98]"
             >
-              {readOnly ? 'Edit Recap' : 'Switch to View Only'}
+              {readOnly ? 'Edit Report' : 'View Only'}
             </button>
           </div>
         ) : null}
 
         {!readOnly && draftSavedAt ? (
           <p className="text-center text-xs font-semibold text-muted-foreground">
-            Draft saved — finalize when your review is complete.
+            {isCompletedMatch
+              ? `Saved ${new Date(draftSavedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+              : 'Draft saved — finalize when your review is complete.'}
           </p>
         ) : null}
 
@@ -719,6 +765,30 @@ export function PostGameRecap({
             readOnly={readOnly}
             rows={5}
             placeholder="How did we play? What worked well? What should we focus on in training?"
+            className={cn(
+              'w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
+              readOnly && 'cursor-default bg-secondary/30',
+            )}
+          />
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-4">
+          <label
+            htmlFor="parent-facing-recap"
+            className="mb-2 block font-display text-sm font-bold uppercase tracking-wide text-foreground"
+          >
+            Parent-Facing Recap
+          </label>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Summary shared with families via email or the parent hub. Edit anytime after saving.
+          </p>
+          <textarea
+            id="parent-facing-recap"
+            value={parentFacingRecap}
+            onChange={(e) => setParentFacingRecap(e.target.value)}
+            readOnly={readOnly}
+            rows={4}
+            placeholder="Optional recap text for parents (also editable in Generate Parent Recap Email)"
             className={cn(
               'w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
               readOnly && 'cursor-default bg-secondary/30',
@@ -935,7 +1005,7 @@ export function PostGameRecap({
                   onClick={() => setReadOnly(false)}
                   className="w-full rounded-xl border-2 border-neon bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98]"
                 >
-                  Edit Recap
+                  Edit Report
                 </button>
               ) : null
             ) : isCompletedMatch ? (
@@ -945,7 +1015,7 @@ export function PostGameRecap({
                 disabled={saving}
                 className="w-full rounded-xl bg-neon py-4 font-display text-xl font-black uppercase tracking-wide text-neon-foreground shadow-lg shadow-neon/20 active:scale-[0.98] disabled:opacity-50"
               >
-                {saving ? 'Saving…' : 'Save Changes'}
+                {saving ? 'Saving…' : 'Save Report'}
               </button>
             ) : (
               <button
@@ -1014,11 +1084,12 @@ export function PostGameRecap({
           players={players}
           onClose={() => setParentRecapOpen(false)}
           onToast={onToast}
-          onParentFacingRecapSaved={(value) =>
+          onParentFacingRecapSaved={(value) => {
+            setParentFacingRecap(value)
             setMatchRecord((prev) =>
               prev ? { ...prev, parent_facing_recap: value || null } : prev,
             )
-          }
+          }}
         />
       ) : null}
     </main>
