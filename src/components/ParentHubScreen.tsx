@@ -8,14 +8,13 @@ import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-s
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
-  assignParentEventPeriodIndexes,
+  buildParentTimelineRows,
   fetchParentHub,
   fetchParentLiveEvents,
   filterParentLiveTimeline,
   formatParentEventLine,
   isParentHubLiveEventType,
   shouldShowParentLiveEvent,
-  sortParentLiveTimelineNewestFirst,
   type ParentHubMatch,
   type ParentHubPayload,
   type ParentHubRoute,
@@ -209,8 +208,7 @@ function LiveTab({
     )
   }
 
-  const timeline = sortParentLiveTimelineNewestFirst(events)
-  const periodById = assignParentEventPeriodIndexes(events)
+  const timeline = buildParentTimelineRows(events)
 
   return (
     <div className="space-y-4">
@@ -237,14 +235,23 @@ function LiveTab({
           </p>
         ) : (
           <ul className="space-y-2">
-            {timeline.map((event) => (
+            {timeline.map((row) => (
               <li
-                key={event.id}
+                key={row.id}
                 className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground"
               >
-                {formatParentEventLine(event, liveMatchState.opponent, {
-                  periodIndex: periodById.get(event.id) ?? 1,
-                })}
+                {row.kind === 'lineup' ? (
+                  <div>
+                    <p>{row.label}</p>
+                    <p className="mt-1 text-xs font-medium leading-relaxed text-muted-foreground">
+                      {row.players.join(' · ')}
+                    </p>
+                  </div>
+                ) : (
+                  formatParentEventLine(row.event, liveMatchState.opponent, {
+                    periodIndex: row.periodIndex,
+                  })
+                )}
               </li>
             ))}
           </ul>

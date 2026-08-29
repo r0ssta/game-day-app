@@ -578,8 +578,8 @@ export function buildMatchStartPush(input: {
       ? input.starters.map(playerLabel).join(', ')
       : 'TBD'
   return {
-    title: `${input.teamName} · Kickoff`,
-    body: `${period} underway vs ${input.opponent || 'Opponent'}. XI: ${lineup}`,
+    title: `${input.teamName} · Starting lineup`,
+    body: `${period} vs ${input.opponent || 'Opponent'}: ${lineup}`,
   }
 }
 
@@ -591,12 +591,22 @@ export function buildPeriodPush(input: {
   totalPeriods: TotalPeriods
   homeScore?: number
   awayScore?: number
+  /** When set on period start, included as one grouped lineup notice (never per-player). */
+  starters?: NamedPlayer[]
 }): { title: string; body: string } {
   const label = formatPeriodLong(input.period, input.totalPeriods)
   if (input.kind === 'start') {
+    const lineup =
+      input.starters && input.starters.length > 0
+        ? input.starters.map(playerLabel).join(', ')
+        : null
     return {
-      title: `${input.teamName} · ${label}`,
-      body: `${label} underway vs ${input.opponent || 'Opponent'}.`,
+      title: lineup
+        ? `${input.teamName} · ${label} lineup`
+        : `${input.teamName} · ${label}`,
+      body: lineup
+        ? `${label} vs ${input.opponent || 'Opponent'}: ${lineup}`
+        : `${label} underway vs ${input.opponent || 'Opponent'}.`,
     }
   }
   return {
@@ -720,6 +730,81 @@ export function assignParentEventPeriodIndexes(
   return periodById
 }
 
+function formatLineupPlayerChip(event: ParentLiveEvent): string {
+  const name = event.playerName?.trim() || 'Player'
+  const withNumber =
+    event.jersey != null ? `#${event.jersey} ${name}` : name
+  const position = parseStartingLineupPosition(event.eventNotes)
+  return position ? `${withNumber} (${position})` : withNumber
+}
+
+export type ParentTimelineRow =
+  | {
+      kind: 'event'
+      id: string
+      sortAt: string
+      periodIndex: number
+      event: ParentLiveEvent
+    }
+  | {
+      kind: 'lineup'
+      id: string
+      sortAt: string
+      periodIndex: number
+      label: string
+      players: string[]
+    }
+
+/**
+ * Collapse per-player starting-lineup `sub_in` rows into one timeline card per
+ * period so parents see a single "Starting lineup" notice, not nine.
+ */
+export function buildParentTimelineRows(events: ParentLiveEvent[]): ParentTimelineRow[] {
+  const filtered = filterParentLiveTimeline(events)
+  const periodById = assignParentEventPeriodIndexes(filtered)
+  const lineupByPeriod = new Map<number, ParentLiveEvent[]>()
+  const other: ParentLiveEvent[] = []
+
+  for (const event of filtered) {
+    if (isStartingLineupEvent(event.eventType, event.eventNotes, event.timestamp)) {
+      const period = periodById.get(event.id) ?? 1
+      const bucket = lineupByPeriod.get(period) ?? []
+      bucket.push(event)
+      lineupByPeriod.set(period, bucket)
+      continue
+    }
+    other.push(event)
+  }
+
+  const rows: ParentTimelineRow[] = other.map((event) => ({
+    kind: 'event' as const,
+    id: event.id,
+    sortAt: event.createdAt,
+    periodIndex: periodById.get(event.id) ?? 1,
+    event,
+  }))
+
+  for (const [periodIndex, lineupEvents] of lineupByPeriod) {
+    const chrono = [...lineupEvents].sort(
+      (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+    )
+    const newest = chrono[chrono.length - 1]!
+    const label = periodIndex > 1 ? `${periodIndex}H lineup` : 'Starting lineup'
+    rows.push({
+      kind: 'lineup',
+      id: `lineup-${periodIndex}-${chrono[0]!.id}`,
+      sortAt: newest.createdAt,
+      periodIndex,
+      label,
+      players: chrono.map(formatLineupPlayerChip),
+    })
+  }
+
+  return rows.sort(
+    (a, b) => b.sortAt.localeCompare(a.sortAt) || b.id.localeCompare(a.id),
+  )
+}
+
 export function formatParentEventLine(
   event: ParentLiveEvent,
   opponent: string,
@@ -787,7 +872,7 @@ export function isParentHubLiveEventType(value: string): value is ParentHubLiveE
 
 /**
  * Parent timeline rules:
- * - Show kickoff/period starters as "Starting lineup · name · position"
+ * - Collapse kickoff/period starters into one grouped "Starting lineup" card
  * - Hide period-end mass sub-offs
  * - Hide legacy untagged kickoff sub_out noise
  */

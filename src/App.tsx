@@ -2735,12 +2735,20 @@ export default function App() {
     await beginNextPeriod(assignments, labelOverrides)
 
     if (activeTeamId) {
+      const assignmentIds = assignments
+        ? Object.values(assignments).filter((id): id is string => Boolean(id))
+        : []
+      const starters =
+        assignmentIds.length > 0
+          ? players.filter((p) => assignmentIds.includes(p.id))
+          : players.filter((p) => p.attending && halftimeSecondHalf[p.id])
       const push = buildPeriodPush({
         teamName: matchTeamName.trim() || 'Home',
         opponent: matchOpponent,
         kind: 'start',
         period: nextPeriod,
         totalPeriods,
+        starters,
       })
       notifyWebPush({
         eventType: 'period_start',
@@ -2759,10 +2767,13 @@ export default function App() {
     halfLengthMinutes,
     beginNextPeriod,
     halftimeSlotAssignments,
+    halftimeSecondHalf,
+    players,
     requestWakeLock,
     currentPeriod,
     totalPeriods,
     activeTeamId,
+    activeTeamSlug,
     matchTeamName,
     matchOpponent,
   ])
