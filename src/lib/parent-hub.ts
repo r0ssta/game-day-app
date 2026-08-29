@@ -298,6 +298,9 @@ export async function registerParentServiceWorker(): Promise<ServiceWorkerRegist
   // Parent Hub SW must only control /hub/* — never the coach login at /.
   if (!parseParentHubRoute()) return null
   try {
+    // Old root-scoped workers can keep serving a stale shell (missing VAPID) on /hub/*.
+    await unregisterRootScopedParentServiceWorker({ force: true })
+
     const { Workbox } = await import('workbox-window')
     const wb = new Workbox('/sw.js', { scope: '/hub/' })
     let waitingForUpdate = false
@@ -313,6 +316,8 @@ export async function registerParentServiceWorker(): Promise<ServiceWorkerRegist
     })
 
     const registration = await wb.register({ immediate: true })
+    // Pull the latest precache even when an older hub SW is already active.
+    void registration?.update()
     return registration ?? (await navigator.serviceWorker.ready)
   } catch (err) {
     console.warn('[sw] register failed', err)
@@ -321,24 +326,48 @@ export async function registerParentServiceWorker(): Promise<ServiceWorkerRegist
 }
 
 /**
- * Coach app lives at `/`. Older builds registered a root-scoped SW + "Team Hub"
- * manifest that captured parent links and opened Staff Login. Clear that here.
+ * Remove root-scoped service workers that used to control the whole origin.
+ * Those installs cache an old app shell and can keep showing Staff Login / missing
+ * VAPID errors on Parent Hub routes.
  */
-export async function unregisterRootScopedParentServiceWorker(): Promise<void> {
+export async function unregisterRootScopedParentServiceWorker(
+  options?: { force?: boolean },
+): Promise<void> {
   if (!('serviceWorker' in navigator)) return
-  if (parseParentHubRoute()) return
+  // On coach routes always clean up. On hub routes, only when force-registering.
+  if (parseParentHubRoute() && !options?.force) return
   try {
     const registrations = await navigator.serviceWorker.getRegistrations()
     const origin = window.location.origin
+    let removedRoot = false
     await Promise.all(
       registrations.map(async (registration) => {
         const scope = registration.scope.replace(/\/$/, '') || origin
-        // Unregister only root-scoped workers (…/ ), keep /hub/ workers alone.
+        // Unregister only root-scoped workers (…/), keep /hub/ workers alone.
         if (scope === origin) {
+          removedRoot = true
           await registration.unregister()
         }
       }),
     )
+    if (removedRoot && 'caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(
+        keys
+          .filter((key) => /workbox|precache|parent-hub/i.test(key))
+          .map((key) => caches.delete(key)),
+      )
+      // One-shot reload so the next paint uses network assets + hub-scoped SW.
+      const flag = 'vvfc-hub-sw-cache-bust'
+      try {
+        if (!sessionStorage.getItem(flag)) {
+          sessionStorage.setItem(flag, '1')
+          window.location.reload()
+        }
+      } catch {
+        // ignore storage failures
+      }
+    }
   } catch (err) {
     console.warn('[sw] unregister root scope failed', err)
   }
@@ -389,7 +418,9 @@ export async function subscribeParentWebPush(input: {
     throw new Error('Push notifications are not supported in this browser.')
   }
   if (!VAPID_PUBLIC_KEY) {
-    throw new Error('Missing VITE_VAPID_PUBLIC_KEY — add it to .env.local')
+    throw new Error(
+      'Push is not configured on this deployment (missing VAPID public key). Try a hard refresh, or reopen the hub from the shared link.',
+    )
   }
 
   const permission = await Notification.requestPermission()
