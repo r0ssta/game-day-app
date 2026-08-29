@@ -26,6 +26,11 @@ applySunlightMode(readSunlightMode())
 // Must run before Auth mounts — captured PWA links may land on / with target in launchQueue.
 installParentHubLaunchConsumer()
 
+// Drop legacy root-scoped SW before first paint so coaches don't load a cached broken shell.
+if (!parseStatTrackerRoute() && !parseParentHubRoute()) {
+  void unregisterRootScopedParentServiceWorker()
+}
+
 /** Resolve hub route before React mounts so we never flash Staff Login. */
 function bootstrapParentHubRoute() {
   restoreStandaloneParentHubPath()
