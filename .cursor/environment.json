@@ -1,0 +1,17 @@
+{
+  "name": "game-day-app",
+  "install": "npm ci && npx playwright install --with-deps chromium",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npm run dev -- --host 127.0.0.1 --port 5173",
+      "description": "Vite dev server for the Game Day app (Parent Hub). Serves the SPA and the local /api/manifest middleware on http://127.0.0.1:5173. Requires VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY secrets to load team data."
+    }
+  ],
+  "ports": [
+    {
+      "name": "vite dev server",
+      "port": 5173
+    }
+  ]
+}
