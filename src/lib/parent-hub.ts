@@ -14,6 +14,8 @@ import {
   isStandalonePwa,
   readRememberedParentHubSlug,
 } from '@/lib/parent-hub-pwa'
+import { ParentHubPayloadSchema } from '@/schemas'
+import { parseDbRow } from '@/lib/zod-parse'
 
 /** Public VAPID key — must be set as VITE_VAPID_PUBLIC_KEY (see `.env.local`). */
 export const VAPID_PUBLIC_KEY =
@@ -249,29 +251,27 @@ export function installParentHubLaunchConsumer(): void {
 }
 
 function normalizeParentHubPayload(data: unknown): ParentHubPayload {
-  const payload = data as ParentHubPayload
-  if (!payload?.teamId) throw new Error('Team hub not found')
+  const parsed = parseDbRow(ParentHubPayloadSchema, data, 'parentHub')
+  if (!parsed?.teamId) throw new Error('Team hub not found')
   return {
-    teamId: payload.teamId,
-    teamSlug: payload.teamSlug || '',
-    teamName: payload.teamName,
-    ageGroup: payload.ageGroup ?? null,
-    brandColor: payload.brandColor ?? null,
-    logoUrl: payload.logoUrl ?? null,
-    players: Array.isArray(payload.players) ? payload.players : [],
-    matches: Array.isArray(payload.matches)
-      ? payload.matches.map((match) => ({
-          ...match,
-          starters: Array.isArray(match.starters)
-            ? match.starters.map((player) => ({
-                id: player.id,
-                firstName: player.firstName,
-                lastName: player.lastName,
-                number: player.number ?? null,
-              }))
-            : [],
-        }))
-      : [],
+    teamId: parsed.teamId,
+    teamSlug: parsed.teamSlug || '',
+    teamName: parsed.teamName,
+    ageGroup: parsed.ageGroup ?? null,
+    brandColor: parsed.brandColor ?? null,
+    logoUrl: parsed.logoUrl ?? null,
+    players: parsed.players ?? [],
+    matches: (parsed.matches ?? []).map((match) => ({
+      ...match,
+      starters: Array.isArray(match.starters)
+        ? match.starters.map((player) => ({
+            id: player.id,
+            firstName: player.firstName,
+            lastName: player.lastName,
+            number: player.number ?? null,
+          }))
+        : [],
+    })),
   }
 }
 

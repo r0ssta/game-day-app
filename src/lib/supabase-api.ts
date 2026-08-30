@@ -61,6 +61,13 @@ import {
   isTeamRole,
 } from '@/lib/staff-roles'
 import { type AgeGroup, formatForAgeGroup } from '@/lib/age-groups'
+import {
+  EvaluationSchema,
+  MatchSchema,
+  PlayerSchema,
+  TeamSchema,
+} from '@/schemas'
+import { parseDbRow, parseDbRows } from '@/lib/zod-parse'
 
 export type MatchEventInput = {
   matchId: string
@@ -285,7 +292,7 @@ export async function fetchTeams(options?: {
   if (!options?.includeArchived) query = query.eq('active_status', true)
   const { data, error } = await query
   if (error) throw error
-  return data ?? []
+  return parseDbRows(TeamSchema, data, 'teams')
 }
 
 export async function fetchTeamsByIds(teamIds: string[]): Promise<DbTeam[]> {
@@ -293,7 +300,7 @@ export async function fetchTeamsByIds(teamIds: string[]): Promise<DbTeam[]> {
   if (unique.length === 0) return []
   const { data, error } = await supabase.from('teams').select('*').in('id', unique)
   if (error) throw error
-  return data ?? []
+  return parseDbRows(TeamSchema, data, 'teamsByIds')
 }
 
 export async function fetchCoaches(): Promise<DbCoach[]> {
@@ -336,8 +343,9 @@ export async function fetchSeasonRosterPlayers(
 
   const rows = (data ?? []) as Array<DbSeasonRoster & { players: DbPlayer | DbPlayer[] | null }>
   return rows
-    .map((row) => {
-      const player = Array.isArray(row.players) ? row.players[0] : row.players
+    .map((row, index) => {
+      const rawPlayer = Array.isArray(row.players) ? row.players[0] : row.players
+      const player = parseDbRow(PlayerSchema, rawPlayer, `seasonRoster[${index}].player`)
       if (!player) return null
       if (!options?.includeInactive && !player.active_status) return null
       const { players: _players, ...roster } = row
@@ -356,7 +364,7 @@ export async function fetchPlayersByIds(playerIds: string[]): Promise<DbPlayer[]
   if (unique.length === 0) return []
   const { data, error } = await supabase.from('players').select('*').in('id', unique)
   if (error) throw error
-  return data ?? []
+  return parseDbRows(PlayerSchema, data, 'playersByIds')
 }
 
 export async function fetchAgeGroupPoolPlayers(
@@ -365,11 +373,9 @@ export async function fetchAgeGroupPoolPlayers(
 ): Promise<DbPlayer[]> {
   let query = supabase.from('players').select('*').eq('age_group', ageGroup)
   if (!options?.includeInactive) query = query.eq('active_status', true)
-  const { data, error } = await query
-    .order('last_name')
-    .order('first_name')
+  const { data, error } = await query.order('last_name').order('first_name')
   if (error) throw error
-  return data ?? []
+  return parseDbRows(PlayerSchema, data, 'ageGroupPoolPlayers')
 }
 
 /** Map of player_id → team_id for primary season roster assignments. */
@@ -399,7 +405,7 @@ export async function fetchClubPlayers(options?: {
   if (options?.ageGroup) query = query.eq('age_group', options.ageGroup)
   const { data, error } = await query.order('last_name').order('first_name')
   if (error) throw error
-  return data ?? []
+  return parseDbRows(PlayerSchema, data, 'clubPlayers')
 }
 
 export type SeasonRosterHistoryRow = {
@@ -424,7 +430,11 @@ export async function fetchSeasonRosterHistoryForPlayer(
       teams: DbTeam | DbTeam[] | null
       seasons: DbSeason | DbSeason[] | null
     }
-    const team = Array.isArray(row.teams) ? row.teams[0] : row.teams
+    const team = parseDbRow(
+      TeamSchema,
+      Array.isArray(row.teams) ? row.teams[0] : row.teams,
+      'seasonRosterHistory.team',
+    )
     const season = Array.isArray(row.seasons) ? row.seasons[0] : row.seasons
     if (!team || !season) continue
     rows.push({
@@ -1115,7 +1125,9 @@ export async function fetchScheduledMatchesByTeamId(teamId: string): Promise<DbM
     .eq('status', 'scheduled')
     .order('date', { ascending: true })
   if (error) throw error
-  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b))
+  return parseDbRows(MatchSchema, data, 'scheduledMatches').sort(
+    (a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b),
+  )
 }
 
 export async function createMatchStats(
@@ -1230,16 +1242,17 @@ export async function promoteScheduledMatchToLive(matchId: string): Promise<DbMa
 }
 
 export async function fetchMatchBundleById(matchId: string): Promise<ActiveMatchBundle | null> {
-  const { data: match, error: matchError } = await supabase
+  const { data: matchRaw, error: matchError } = await supabase
     .from('matches')
     .select('*')
     .eq('id', matchId)
     .maybeSingle()
 
   if (matchError) throw matchError
+  const match = parseDbRow(MatchSchema, matchRaw, 'matchBundle.match')
   if (!match) return null
 
-  const [{ data: team }, { data: coach }, { data: stats }] = await Promise.all([
+  const [{ data: teamRaw }, { data: coach }, { data: stats }] = await Promise.all([
     supabase.from('teams').select('*').eq('id', match.team_id).single(),
     match.coach_id
       ? supabase.from('coaches').select('*').eq('id', match.coach_id).maybeSingle()
@@ -1247,13 +1260,14 @@ export async function fetchMatchBundleById(matchId: string): Promise<ActiveMatch
     supabase.from('match_stats').select('*').eq('match_id', match.id),
   ])
 
+  const team = parseDbRow(TeamSchema, teamRaw, 'matchBundle.team')
   if (!team || !stats) return null
 
   return { match, team, coach: coach ?? null, stats }
 }
 
 export async function fetchActiveMatch(): Promise<ActiveMatchBundle | null> {
-  const { data: match, error: matchError } = await supabase
+  const { data: matchRaw, error: matchError } = await supabase
     .from('matches')
     .select('*')
     .eq('status', 'live')
@@ -1262,9 +1276,10 @@ export async function fetchActiveMatch(): Promise<ActiveMatchBundle | null> {
     .maybeSingle()
 
   if (matchError) throw matchError
+  const match = parseDbRow(MatchSchema, matchRaw, 'activeMatch.match')
   if (!match) return null
 
-  const [{ data: team }, { data: coach }, { data: stats }] = await Promise.all([
+  const [{ data: teamRaw }, { data: coach }, { data: stats }] = await Promise.all([
     supabase.from('teams').select('*').eq('id', match.team_id).single(),
     match.coach_id
       ? supabase.from('coaches').select('*').eq('id', match.coach_id).maybeSingle()
@@ -1272,6 +1287,7 @@ export async function fetchActiveMatch(): Promise<ActiveMatchBundle | null> {
     supabase.from('match_stats').select('*').eq('match_id', match.id),
   ])
 
+  const team = parseDbRow(TeamSchema, teamRaw, 'activeMatch.team')
   if (!team || !stats) return null
 
   return { match, team, coach: coach ?? null, stats }
@@ -1447,7 +1463,7 @@ export async function backfillMissingGoalShots(matchId: string) {
 export async function fetchMatchById(matchId: string): Promise<DbMatch | null> {
   const { data, error } = await supabase.from('matches').select('*').eq('id', matchId).maybeSingle()
   if (error) throw error
-  return data
+  return parseDbRow(MatchSchema, data, 'matchById')
 }
 
 export async function saveInternalCoachNotes(matchId: string, internalCoachNotes: string) {
@@ -1589,20 +1605,23 @@ export async function fetchPendingReviewMatchesByTeamId(teamId: string): Promise
     .eq('status', 'pending_review')
     .order('date', { ascending: false })
   if (error) throw error
-  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
+  return parseDbRows(MatchSchema, data, 'pendingReviewMatches').sort(
+    (a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a),
+  )
 }
 
 export async function fetchMatchRecapBundle(matchId: string): Promise<ActiveMatchBundle | null> {
-  const { data: match, error: matchError } = await supabase
+  const { data: matchRaw, error: matchError } = await supabase
     .from('matches')
     .select('*')
     .eq('id', matchId)
     .maybeSingle()
 
   if (matchError) throw matchError
+  const match = parseDbRow(MatchSchema, matchRaw, 'matchRecapBundle.match')
   if (!match) return null
 
-  const [{ data: team }, { data: coach }, { data: stats }] = await Promise.all([
+  const [{ data: teamRaw }, { data: coach }, { data: stats }] = await Promise.all([
     supabase.from('teams').select('*').eq('id', match.team_id).single(),
     match.coach_id
       ? supabase.from('coaches').select('*').eq('id', match.coach_id).maybeSingle()
@@ -1610,6 +1629,7 @@ export async function fetchMatchRecapBundle(matchId: string): Promise<ActiveMatc
     supabase.from('match_stats').select('*').eq('match_id', match.id),
   ])
 
+  const team = parseDbRow(TeamSchema, teamRaw, 'matchRecapBundle.team')
   if (!team || !stats) return null
 
   return { match, team, coach: coach ?? null, stats }
@@ -1623,7 +1643,9 @@ export async function fetchRecapEligibleMatchesByTeamId(teamId: string): Promise
     .in('status', ['pending_review', 'final'])
     .order('date', { ascending: false })
   if (error) throw error
-  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
+  return parseDbRows(MatchSchema, data, 'recapEligibleMatches').sort(
+    (a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a),
+  )
 }
 
 export async function fetchCompletedMatchesByTeamId(teamId: string): Promise<DbMatch[]> {
@@ -1634,7 +1656,9 @@ export async function fetchCompletedMatchesByTeamId(teamId: string): Promise<DbM
     .eq('status', 'final')
     .order('date', { ascending: false })
   if (error) throw error
-  return [...(data ?? [])].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
+  return parseDbRows(MatchSchema, data, 'completedMatches').sort(
+    (a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a),
+  )
 }
 
 export async function fetchMatchStatsByMatchId(matchId: string): Promise<DbMatchStat[]> {
@@ -1661,7 +1685,7 @@ export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[
     .from('match_reviews')
     .select('*')
     .eq('match_id', matchId)
-  if (!error) return data ?? []
+  if (!error) return parseDbRows(EvaluationSchema, data, 'matchReviews')
   if (isOptionalTableError(error)) {
     console.warn('[fetchMatchReviews] match_reviews unavailable:', formatSupabaseError(error))
     return []

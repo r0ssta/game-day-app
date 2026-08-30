@@ -4,14 +4,16 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { parentHubManifestApiPlugin } from './vite-plugin-parent-hub-manifest.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
+    parentHubManifestApiPlugin(mode),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
@@ -37,4 +39,4 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-})
+}))

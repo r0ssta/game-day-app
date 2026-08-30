@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ScreenHeader } from '@/components/AppNavigation'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { PlayerBreakdownsTab } from '@/components/reporting/PlayerBreakdownsTab'
 import { PlayerSeasonProfileView } from '@/components/reporting/PlayerSeasonProfileView'
 import { PreviousMatchesTab } from '@/components/reporting/PreviousMatchesTab'
@@ -105,12 +106,18 @@ export function ReportingScreen({
       emptyPlayerSeasonStats(selectedPlayerId)
 
     return (
-      <PlayerSeasonProfileView
-        player={selectedPlayer}
-        stats={stats}
-        teamId={activeTeamId}
-        onBack={() => setSelectedPlayerId(null)}
-      />
+      <ErrorBoundary
+        sectionLabel="Player Profile"
+        resetKey={selectedPlayerId}
+        className="min-h-dvh bg-background"
+      >
+        <PlayerSeasonProfileView
+          player={selectedPlayer}
+          stats={stats}
+          teamId={activeTeamId}
+          onBack={() => setSelectedPlayerId(null)}
+        />
+      </ErrorBoundary>
     )
   }
 

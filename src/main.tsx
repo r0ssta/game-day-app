@@ -5,9 +5,11 @@ import App from './App.tsx'
 import { AuthScreen } from '@/components/AuthScreen'
 import { PendingAccessScreen } from '@/components/PendingAccessScreen'
 import { ParentHubScreen } from '@/components/ParentHubScreen'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { StatTrackerScreen } from '@/components/StatTrackerScreen'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
+import { initSentry } from '@/lib/sentry'
 import {
   installParentHubLaunchConsumer,
   parseParentHubRoute,
@@ -21,6 +23,8 @@ import {
 } from '@/lib/parent-hub-pwa'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
+
+initSentry()
 
 applySunlightMode(readSunlightMode())
 // Must run before Auth mounts — captured PWA links may land on / with target in launchQueue.
@@ -98,7 +102,15 @@ function Root() {
       {trackerRoute ? (
         <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
       ) : parentHubRoute ? (
-        <ParentHubScreen route={parentHubRoute} />
+        <ErrorBoundary
+          sectionLabel="Parent Hub"
+          resetKey={
+            parentHubRoute.kind === 'slug' ? parentHubRoute.slug : parentHubRoute.teamId
+          }
+          className="min-h-dvh bg-background"
+        >
+          <ParentHubScreen route={parentHubRoute} />
+        </ErrorBoundary>
       ) : (
         <AuthProvider>
           <AuthenticatedApp />

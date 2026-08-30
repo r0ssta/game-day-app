@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { EndMatchTimingModal } from '@/components/EndMatchTimingModal'
 import { CardWizardModal } from '@/components/CardWizardModal'
 import { GoalWizardModal, type GoalWizardStep, type GoalWizardTeam } from '@/components/GoalWizardModal'
@@ -4353,6 +4354,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary sectionLabel="Live Match" resetKey={matchId} className="min-h-0 flex-1">
     <main className={APP_SHELL_LOCKED}>
       <MatchHeader
         pinned
@@ -4496,6 +4498,7 @@ export default function App() {
         onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
       />
     </main>
+    </ErrorBoundary>
   )
   }
 
