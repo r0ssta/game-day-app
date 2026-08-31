@@ -76,7 +76,6 @@ import {
   buildFullTimePush,
   buildMatchStartPush,
   buildPeriodPush,
-  buildSubstitutionPush,
   notifyWebPush,
   buildParentHubUrl,
   shareParentHubLink,
@@ -115,7 +114,7 @@ import {
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
-import { apiLogCard, apiLogGoal, apiLogTeamEvent } from '@/lib/match-api'
+import { apiLogCard, apiLogGoal, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { cn } from '@/lib/utils'
@@ -3211,44 +3210,42 @@ export default function App() {
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
+      const previousPlayers = players
 
-      setPlayers((prev) => {
-        const next = applySubIn(prev, benchId, seconds).map((p) =>
-          p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
-        )
-        const benchPlayer = next.find((p) => p.id === benchId)
-        if (benchPlayer) {
-          syncMatchStat(matchId, benchPlayer)
-          syncMatchEvents([
-            {
+      const next = applySubIn(players, benchId, seconds).map((p) =>
+        p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
+      )
+      const benchPlayer = next.find((p) => p.id === benchId)
+      if (!benchPlayer) return
+
+      setPlayers(next)
+      const label = formatPlayerLabel(benchPlayer, sidelineMap)
+      setToast(`Sub in · ${label}`)
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogSubstitution({
               matchId,
-              playerId: benchPlayer.id,
-              eventType: 'sub_in',
+              kind: 'in',
               timestamp: eventTimestamp,
               formation: activeFormation,
-              eventNotes: tacticalPosition,
-            },
-          ])
-          if (activeTeamId) {
-            const push = buildSubstitutionPush({
-              playerLabel: formatPlayerLabel(benchPlayer, sidelineMap),
-              direction: 'ON',
+              benchPlayerId: benchPlayer.id,
+              tacticalPosition,
+              benchSubbedInAt: benchPlayer.subbedInAt,
+              benchPlayerLabel: label,
               currentPeriod,
               totalPeriods,
-            })
-            notifyMatchPush({
-              eventType: 'substitution',
-              teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-              playerId: benchPlayer.id,
-              title: push.title,
-              body: push.body,
-            })
-          }
-          setToast(`Sub in · ${formatPlayerLabel(benchPlayer, sidelineMap)}`)
-        }
-        return next
-      })
+              teamSlug: activeTeamSlug,
+            }),
+          )
+        },
+        {
+          label: 'handleLiveSubIn',
+          onRevert: () => setPlayers(previousPlayers),
+          onErrorToast: () => setToast('Could not save sub — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3258,9 +3255,11 @@ export default function App() {
       activeFormation,
       maxFieldPlayers,
       setPlayers,
-      activeTeamId,
       currentPeriod,
       totalPeriods,
+      activeTeamSlug,
+      runOptimisticSync,
+      setToast,
     ],
   )
 
@@ -3269,41 +3268,39 @@ export default function App() {
       if (!matchId) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
+      const previousPlayers = players
 
-      setPlayers((prev) => {
-        const next = applySubOut(prev, fieldId, seconds)
-        const fieldPlayer = next.find((p) => p.id === fieldId)
-        if (fieldPlayer) {
-          syncMatchStat(matchId, fieldPlayer)
-          syncMatchEvents([
-            {
+      const next = applySubOut(players, fieldId, seconds)
+      const fieldPlayer = next.find((p) => p.id === fieldId)
+      if (!fieldPlayer) return
+
+      setPlayers(next)
+      const label = formatPlayerLabel(fieldPlayer, sidelineMap)
+      setToast(`Sub out · ${label}`)
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogSubstitution({
               matchId,
-              playerId: fieldPlayer.id,
-              eventType: 'sub_out',
+              kind: 'out',
               timestamp: eventTimestamp,
               formation: activeFormation,
-            },
-          ])
-          if (activeTeamId) {
-            const push = buildSubstitutionPush({
-              playerLabel: formatPlayerLabel(fieldPlayer, sidelineMap),
-              direction: 'OFF',
+              fieldPlayerId: fieldPlayer.id,
+              fieldTotalSecondsPlayed: fieldPlayer.totalSecondsPlayed,
+              fieldPlayerLabel: label,
               currentPeriod,
               totalPeriods,
-            })
-            notifyMatchPush({
-              eventType: 'substitution',
-              teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-              playerId: fieldPlayer.id,
-              title: push.title,
-              body: push.body,
-            })
-          }
-          setToast(`Sub out · ${formatPlayerLabel(fieldPlayer, sidelineMap)}`)
-        }
-        return next
-      })
+              teamSlug: activeTeamSlug,
+            }),
+          )
+        },
+        {
+          label: 'handleLiveSubOut',
+          onRevert: () => setPlayers(previousPlayers),
+          onErrorToast: () => setToast('Could not save sub — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3312,9 +3309,11 @@ export default function App() {
       halfLengthMinutes,
       activeFormation,
       setPlayers,
-      activeTeamId,
       currentPeriod,
       totalPeriods,
+      activeTeamSlug,
+      runOptimisticSync,
+      setToast,
     ],
   )
 
@@ -3325,70 +3324,47 @@ export default function App() {
       if (!bench || bench.isSentOff) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
+      const previousPlayers = players
 
-      setPlayers((prev) => {
-        const next = applySubstitution(prev, benchId, fieldId, seconds).map((p) =>
-          p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
-        )
-        const benchPlayer = next.find((p) => p.id === benchId)
-        const fieldPlayer = next.find((p) => p.id === fieldId)
+      const next = applySubstitution(players, benchId, fieldId, seconds).map((p) =>
+        p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
+      )
+      const benchPlayer = next.find((p) => p.id === benchId)
+      const fieldPlayer = next.find((p) => p.id === fieldId)
+      if (!benchPlayer || !fieldPlayer) return
 
-        if (benchPlayer && fieldPlayer) {
-          syncMatchStat(matchId, benchPlayer)
-          syncMatchStat(matchId, fieldPlayer)
-          syncMatchEvents([
-            {
+      setPlayers(next)
+      const onLabel = formatPlayerLabel(benchPlayer, sidelineMap)
+      const offLabel = formatPlayerLabel(fieldPlayer, sidelineMap)
+      setToast(`Sub · ${onLabel} for ${offLabel}`)
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogSubstitution({
               matchId,
-              playerId: fieldPlayer.id,
-              eventType: 'sub_out',
+              kind: 'swap',
               timestamp: eventTimestamp,
               formation: activeFormation,
-            },
-            {
-              matchId,
-              playerId: benchPlayer.id,
-              eventType: 'sub_in',
-              timestamp: eventTimestamp,
-              formation: activeFormation,
-              eventNotes: tacticalPosition,
-            },
-          ])
-          if (activeTeamId) {
-            const offPush = buildSubstitutionPush({
-              playerLabel: formatPlayerLabel(fieldPlayer, sidelineMap),
-              direction: 'OFF',
+              benchPlayerId: benchPlayer.id,
+              fieldPlayerId: fieldPlayer.id,
+              tacticalPosition,
+              benchSubbedInAt: benchPlayer.subbedInAt,
+              fieldTotalSecondsPlayed: fieldPlayer.totalSecondsPlayed,
+              benchPlayerLabel: onLabel,
+              fieldPlayerLabel: offLabel,
               currentPeriod,
               totalPeriods,
-            })
-            notifyMatchPush({
-              eventType: 'substitution',
-              teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-              playerId: fieldPlayer.id,
-              title: offPush.title,
-              body: offPush.body,
-            })
-            const onPush = buildSubstitutionPush({
-              playerLabel: formatPlayerLabel(benchPlayer, sidelineMap),
-              direction: 'ON',
-              currentPeriod,
-              totalPeriods,
-            })
-            notifyMatchPush({
-              eventType: 'substitution',
-              teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-              playerId: benchPlayer.id,
-              title: onPush.title,
-              body: onPush.body,
-            })
-          }
-          setToast(
-            `Sub · ${formatPlayerLabel(benchPlayer, sidelineMap)} for ${formatPlayerLabel(fieldPlayer, sidelineMap)}`,
+              teamSlug: activeTeamSlug,
+            }),
           )
-        }
-        return next
-      })
+        },
+        {
+          label: 'handleLiveSwap',
+          onRevert: () => setPlayers(previousPlayers),
+          onErrorToast: () => setToast('Could not save sub — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3397,9 +3373,11 @@ export default function App() {
       halfLengthMinutes,
       activeFormation,
       setPlayers,
-      activeTeamId,
       currentPeriod,
       totalPeriods,
+      activeTeamSlug,
+      runOptimisticSync,
+      setToast,
     ],
   )
 

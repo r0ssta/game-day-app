@@ -4,6 +4,7 @@ import type {
   FinalizeReviewInput,
   LogCardInput,
   LogGoalInput,
+  LogSubstitutionInput,
   LogTeamEventInput,
   MatchActionResult,
 } from '@/schemas/match-actions'
@@ -76,6 +77,12 @@ export async function apiLogCard(
   input: LogCardInput,
 ): Promise<MatchActionResult<{ isSecondYellow: boolean; issueRed: boolean }>> {
   return postMatchAction('/api/match/log-card', input)
+}
+
+export async function apiLogSubstitution(
+  input: LogSubstitutionInput,
+): Promise<MatchActionResult<{ kind: LogSubstitutionInput['kind'] }>> {
+  return postMatchAction('/api/match/log-substitution', input)
 }
 
 export async function apiEndRegulation(
