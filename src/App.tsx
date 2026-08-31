@@ -100,15 +100,13 @@ import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
 import {
   syncMatchClock,
-  syncMatchEvents,
   syncMatchRecord,
-  syncMatchStat,
   syncMatchStats,
   ensureStatTrackerToken,
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
-import { apiLogCard, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
+import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { cn } from '@/lib/utils'
@@ -3107,62 +3105,23 @@ export default function App() {
     (nextFormationId: string, remap: FormationRemapResult) => {
       if (!matchId) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const previousFormationId = activeFormation
       const previousLabel = getFormationLabel(activeFormation)
       const nextLabel = getFormationLabel(nextFormationId)
+      const previousPlayers = players
 
       setActiveFormation(nextFormationId)
 
-      syncMatchEvents([
-        {
-          matchId,
-          eventType: 'formation_change',
-          timestamp: eventTimestamp,
-          formation: nextFormationId,
-          eventNotes: `${previousLabel} → ${nextLabel}`,
-        },
-      ])
-
+      let nextPlayers = players
       if (remap.positionUpdates.length > 0 || remap.overflowPlayerIds.length > 0) {
-        setPlayers((prev) => {
-          let next = prev.map((player) => {
-            const update = remap.positionUpdates.find((u) => u.playerId === player.id)
-            return update ? { ...player, matchPosition: update.position } : player
-          })
-
-          for (const update of remap.positionUpdates) {
-            const updated = next.find((p) => p.id === update.playerId)
-            if (updated) syncMatchStat(matchId, updated)
-            syncMatchEvents([
-              {
-                matchId,
-                playerId: update.playerId,
-                eventType: 'position_change',
-                timestamp: eventTimestamp,
-                eventNotes: update.position,
-                formation: nextFormationId,
-              },
-            ])
-          }
-
-          for (const playerId of remap.overflowPlayerIds) {
-            next = applySubOut(next, playerId, seconds)
-            const fieldPlayer = next.find((p) => p.id === playerId)
-            if (fieldPlayer) {
-              syncMatchStat(matchId, fieldPlayer)
-              syncMatchEvents([
-                {
-                  matchId,
-                  playerId: fieldPlayer.id,
-                  eventType: 'sub_out',
-                  timestamp: eventTimestamp,
-                  formation: nextFormationId,
-                },
-              ])
-            }
-          }
-
-          return next
+        nextPlayers = players.map((player) => {
+          const update = remap.positionUpdates.find((u) => u.playerId === player.id)
+          return update ? { ...player, matchPosition: update.position } : player
         })
+        for (const playerId of remap.overflowPlayerIds) {
+          nextPlayers = applySubOut(nextPlayers, playerId, seconds)
+        }
+        setPlayers(nextPlayers)
       }
 
       const overflowNote =
@@ -3170,43 +3129,86 @@ export default function App() {
           ? ` · ${remap.overflowPlayerIds.length} to bench`
           : ''
       setToast(`Formation · ${nextLabel}${overflowNote}`)
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogFormation({
+              matchId,
+              kind: 'switch',
+              timestamp: eventTimestamp,
+              formation: nextFormationId,
+              previousLabel,
+              nextLabel,
+              positionUpdates: remap.positionUpdates,
+              overflowPlayers: remap.overflowPlayerIds.map((playerId) => {
+                const player = nextPlayers.find((p) => p.id === playerId)
+                return {
+                  playerId,
+                  totalSecondsPlayed: player?.totalSecondsPlayed ?? 0,
+                }
+              }),
+            }),
+          )
+        },
+        {
+          label: 'handleLiveFormationSwitch',
+          onRevert: () => {
+            setActiveFormation(previousFormationId)
+            setPlayers(previousPlayers)
+          },
+          onErrorToast: () => setToast('Could not save formation — try again'),
+        },
+      )
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, players, setActiveFormation, setPlayers],
+    [
+      matchId,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      players,
+      setActiveFormation,
+      setPlayers,
+      runOptimisticSync,
+    ],
   )
 
   const handleLiveReassignPosition = useCallback(
     (updates: PositionReassignUpdate[]) => {
       if (!matchId || updates.length === 0) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const previousPlayers = players
 
-      setPlayers((prev) => {
-        const next = prev.map((player) => {
-          const update = updates.find((u) => u.playerId === player.id)
-          return update ? { ...player, matchPosition: update.position } : player
-        })
-
-        for (const update of updates) {
-          const updated = next.find((p) => p.id === update.playerId)
-          if (updated) syncMatchStat(matchId, updated)
-          syncMatchEvents([
-            {
-              matchId,
-              playerId: update.playerId,
-              eventType: 'position_change',
-              timestamp: eventTimestamp,
-              eventNotes: update.position,
-              formation: activeFormation,
-            },
-          ])
-        }
-
-        return next
+      const nextPlayers = players.map((player) => {
+        const update = updates.find((u) => u.playerId === player.id)
+        return update ? { ...player, matchPosition: update.position } : player
       })
+      setPlayers(nextPlayers)
 
       const labels = updates.map((u) => u.position).join(' · ')
       setToast(`Position · ${labels}`)
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogFormation({
+              matchId,
+              kind: 'reassign',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              positionUpdates: updates,
+              overflowPlayers: [],
+            }),
+          )
+        },
+        {
+          label: 'handleLiveReassignPosition',
+          onRevert: () => setPlayers(previousPlayers),
+          onErrorToast: () => setToast('Could not save positions — try again'),
+        },
+      )
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, setPlayers],
+    [matchId, seconds, halfLengthMinutes, activeFormation, players, setPlayers, runOptimisticSync],
   )
 
   const handleLiveSubIn = useCallback(

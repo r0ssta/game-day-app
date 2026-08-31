@@ -4,6 +4,7 @@ import type {
   FinalizePkInput,
   FinalizeReviewInput,
   LogCardInput,
+  LogFormationInput,
   LogGoalInput,
   LogPeriodInput,
   LogPkAttemptInput,
@@ -84,6 +85,12 @@ export async function apiLogCard(
   input: LogCardInput,
 ): Promise<MatchActionResult<{ isSecondYellow: boolean; issueRed: boolean }>> {
   return postMatchAction('/api/match/log-card', input)
+}
+
+export async function apiLogFormation(
+  input: LogFormationInput,
+): Promise<MatchActionResult<{ kind: LogFormationInput['kind'] }>> {
+  return postMatchAction('/api/match/log-formation', input)
 }
 
 export async function apiLogSubstitution(

@@ -4,6 +4,7 @@ import {
   FinalizePkInputSchema,
   FinalizeReviewInputSchema,
   LogCardInputSchema,
+  LogFormationInputSchema,
   LogGoalInputSchema,
   LogPeriodInputSchema,
   LogPkAttemptInputSchema,
@@ -16,6 +17,7 @@ const MATCH_ROUTES = [
   '/api/match/log-goal',
   '/api/match/log-card',
   '/api/match/log-substitution',
+  '/api/match/log-formation',
   '/api/match/log-period',
   '/api/match/log-pk-attempt',
   '/api/match/end-regulation',
@@ -276,5 +278,40 @@ test.describe('match action Zod schemas', () => {
       opponent: 'Rivals',
     })
     expect(ok.success).toBe(true)
+  })
+
+  test('LogFormationInputSchema requires labels for switch and updates for reassign', () => {
+    const switchBad = LogFormationInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'switch',
+      timestamp: 40,
+      formation: '4-3-3',
+    })
+    expect(switchBad.success).toBe(false)
+    const switchOk = LogFormationInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'switch',
+      timestamp: 40,
+      formation: '4-3-3',
+      previousLabel: '4-4-2',
+      nextLabel: '4-3-3',
+      positionUpdates: [{ playerId: VALID_UUID, position: 'CM' }],
+    })
+    expect(switchOk.success).toBe(true)
+    const reassignBad = LogFormationInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'reassign',
+      timestamp: 40,
+      formation: '4-3-3',
+    })
+    expect(reassignBad.success).toBe(false)
+    const reassignOk = LogFormationInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'reassign',
+      timestamp: 40,
+      formation: '4-3-3',
+      positionUpdates: [{ playerId: VALID_UUID, position: 'ST' }],
+    })
+    expect(reassignOk.success).toBe(true)
   })
 })
