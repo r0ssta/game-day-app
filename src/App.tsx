@@ -73,7 +73,6 @@ import {
   ENABLE_WAKE_LOCK,
 } from '@/lib/feature-flags'
 import {
-  buildCardPush,
   buildFullTimePush,
   buildMatchStartPush,
   buildPeriodPush,
@@ -116,7 +115,7 @@ import {
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
-import { apiLogGoal, apiLogTeamEvent } from '@/lib/match-api'
+import { apiLogCard, apiLogGoal, apiLogTeamEvent } from '@/lib/match-api'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { cn } from '@/lib/utils'
@@ -3442,99 +3441,84 @@ export default function App() {
       }
 
       const issueRed = kind === 'red' || isSecondYellow
+      const wasOnField = player.isOnField
       setCardWizardOpen(false)
 
-      setPlayers((prev) => {
-        let next = prev.map((p) => {
-          if (p.id !== playerId) return p
-          if (issueRed) {
-            return {
-              ...p,
-              yellowCardCount: isSecondYellow
-                ? Math.max(2, p.yellowCardCount + 1)
-                : p.yellowCardCount,
-              isSentOff: true,
-            }
-          }
-          return { ...p, yellowCardCount: p.yellowCardCount + 1 }
-        })
-
-        const events: Parameters<typeof syncMatchEvents>[0] = []
-
-        if (kind === 'yellow' || isSecondYellow) {
-          events.push({
-            matchId,
-            playerId,
-            eventType: 'yellow_card',
-            timestamp: eventTimestamp,
-            formation: activeFormation,
-            eventNotes: isSecondYellow ? 'second_yellow' : null,
-          })
-        }
-
+      const previousPlayers = players
+      let nextPlayers = players.map((p) => {
+        if (p.id !== playerId) return p
         if (issueRed) {
-          events.push({
-            matchId,
-            playerId,
-            eventType: 'red_card',
-            timestamp: eventTimestamp,
-            formation: activeFormation,
-            eventNotes: isSecondYellow ? 'second_yellow' : 'straight_red',
-          })
-
-          const current = next.find((p) => p.id === playerId)
-          if (current?.isOnField) {
-            next = applySubOut(next, playerId, seconds).map((p) =>
-              p.id === playerId ? { ...p, isSentOff: true } : p,
-            )
-            events.push({
-              matchId,
-              playerId,
-              eventType: 'sub_out',
-              timestamp: eventTimestamp,
-              formation: activeFormation,
-              eventNotes: 'sent_off',
-            })
-          } else {
-            next = next.map((p) =>
-              p.id === playerId ? { ...p, isOnField: false, isSentOff: true } : p,
-            )
+          return {
+            ...p,
+            yellowCardCount: isSecondYellow
+              ? Math.max(2, p.yellowCardCount + 1)
+              : p.yellowCardCount,
+            isSentOff: true,
           }
         }
+        return { ...p, yellowCardCount: p.yellowCardCount + 1 }
+      })
 
-        const updated = next.find((p) => p.id === playerId)
-        if (updated) syncMatchStat(matchId, updated)
-        if (events.length > 0) syncMatchEvents(events)
-
-        if (activeTeamId) {
-          const push = buildCardPush({
-            playerLabel: label,
-            kind: issueRed ? 'red' : 'yellow',
-            isSecondYellow,
-          })
-          notifyMatchPush({
-            eventType: 'card',
-            teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-            title: push.title,
-            body: push.body,
-          })
-        }
-
-        if (issueRed) {
-          setToast(
-            isSecondYellow
-              ? `2nd yellow → Red · ${label} sent off`
-              : `Red card · ${label} sent off`,
+      if (issueRed) {
+        if (wasOnField) {
+          nextPlayers = applySubOut(nextPlayers, playerId, seconds).map((p) =>
+            p.id === playerId ? { ...p, isSentOff: true } : p,
           )
         } else {
-          setToast(`Yellow card · ${label}`)
+          nextPlayers = nextPlayers.map((p) =>
+            p.id === playerId ? { ...p, isOnField: false, isSentOff: true } : p,
+          )
         }
+      }
 
-        return next
-      })
+      setPlayers(nextPlayers)
+      if (issueRed) {
+        setToast(
+          isSecondYellow
+            ? `2nd yellow → Red · ${label} sent off`
+            : `Red card · ${label} sent off`,
+        )
+      } else {
+        setToast(`Yellow card · ${label}`)
+      }
+
+      const updated = nextPlayers.find((p) => p.id === playerId)
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogCard({
+              matchId,
+              playerId,
+              kind,
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              yellowCardCountBefore: player.yellowCardCount,
+              isOnField: wasOnField,
+              totalSecondsPlayed: updated?.totalSecondsPlayed,
+              playerLabel: label,
+              teamSlug: activeTeamSlug,
+            }),
+          )
+        },
+        {
+          label: 'handleConfirmCard',
+          onRevert: () => setPlayers(previousPlayers),
+          onErrorToast: () => setToast('Could not save card — try again'),
+        },
+      )
     },
-    [matchId, players, seconds, halfLengthMinutes, activeFormation, setPlayers, activeTeamId],
+    [
+      matchId,
+      players,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      setPlayers,
+      activeTeamSlug,
+      runOptimisticSync,
+      setToast,
+    ],
   )
 
   const logTeamShot = useCallback(

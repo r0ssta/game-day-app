@@ -8,6 +8,7 @@ type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown>
 const ROUTES: Record<string, string> = {
   '/api/match/log-team-event': '/api/match/log-team-event.ts',
   '/api/match/log-goal': '/api/match/log-goal.ts',
+  '/api/match/log-card': '/api/match/log-card.ts',
   '/api/match/end-regulation': '/api/match/end-regulation.ts',
   '/api/match/finalize-review': '/api/match/finalize-review.ts',
   '/api/send-web-push': '/api/send-web-push.ts',

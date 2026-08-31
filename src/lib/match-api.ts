@@ -2,6 +2,7 @@ import { supabase } from '@/supabaseClient'
 import type {
   EndRegulationInput,
   FinalizeReviewInput,
+  LogCardInput,
   LogGoalInput,
   LogTeamEventInput,
   MatchActionResult,
@@ -69,6 +70,12 @@ export async function apiLogGoal(
   input: LogGoalInput,
 ): Promise<MatchActionResult<{ homeScore: number; awayScore: number; eventType: string }>> {
   return postMatchAction('/api/match/log-goal', input)
+}
+
+export async function apiLogCard(
+  input: LogCardInput,
+): Promise<MatchActionResult<{ isSecondYellow: boolean; issueRed: boolean }>> {
+  return postMatchAction('/api/match/log-card', input)
 }
 
 export async function apiEndRegulation(
