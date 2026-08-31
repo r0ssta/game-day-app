@@ -5,19 +5,21 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown>
 
-const ROUTES: Record<string, string> = {
-  '/api/match/log-team-event': '/api/match/log-team-event.ts',
-  '/api/match/log-goal': '/api/match/log-goal.ts',
-  '/api/match/log-card': '/api/match/log-card.ts',
-  '/api/match/log-substitution': '/api/match/log-substitution.ts',
-  '/api/match/log-formation': '/api/match/log-formation.ts',
-  '/api/match/log-period': '/api/match/log-period.ts',
-  '/api/match/log-pk-attempt': '/api/match/log-pk-attempt.ts',
-  '/api/match/end-regulation': '/api/match/end-regulation.ts',
-  '/api/match/finalize-pk': '/api/match/finalize-pk.ts',
-  '/api/match/finalize-review': '/api/match/finalize-review.ts',
-  '/api/match/remove-last-goal': '/api/match/remove-last-goal.ts',
-  '/api/send-web-push': '/api/send-web-push.ts',
+const MATCH_API_MODULE = '/api/match.ts'
+const SEND_WEB_PUSH_MODULE = '/api/send-web-push.ts'
+
+function routeModule(pathname: string): string | null {
+  if (pathname === '/api/send-web-push') return SEND_WEB_PUSH_MODULE
+  if (pathname === '/api/match' || pathname.startsWith('/api/match/')) {
+    return MATCH_API_MODULE
+  }
+  return null
+}
+
+function matchActionFromPath(pathname: string): string | undefined {
+  if (!pathname.startsWith('/api/match/')) return undefined
+  const action = pathname.slice('/api/match/'.length).split('/')[0]
+  return action || undefined
 }
 
 function readBody(req: IncomingMessage): Promise<unknown> {
@@ -76,7 +78,7 @@ export function matchApiPlugin(mode = 'development'): Plugin {
   const handle = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = req.url ? new URL(req.url, 'http://localhost') : null
     const pathname = url?.pathname ?? ''
-    const moduleId = ROUTES[pathname]
+    const moduleId = routeModule(pathname)
     if (!moduleId || !loadModule) {
       next()
       return
@@ -89,8 +91,11 @@ export function matchApiPlugin(mode = 'development'): Plugin {
         req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH'
           ? await readBody(req)
           : undefined
+      const query = Object.fromEntries(url?.searchParams.entries() ?? [])
+      const action = matchActionFromPath(pathname)
+      if (action && !query.action) query.action = action
       const vercelReq = Object.assign(req, {
-        query: Object.fromEntries(url?.searchParams.entries() ?? []),
+        query,
         body,
       }) as VercelRequest
       await handler(vercelReq, asVercelResponse(res))
