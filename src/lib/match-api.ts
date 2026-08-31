@@ -44,13 +44,17 @@ async function postMatchAction<T extends Record<string, unknown>>(
   }
 
   if (!response.ok) {
+    const code =
+      payload && 'code' in payload && typeof payload.code === 'string'
+        ? payload.code
+        : undefined
     return {
       ok: false,
       error:
         payload && 'error' in payload && payload.error
           ? String(payload.error)
           : `Request failed (${response.status})`,
-      code: payload && 'code' in payload ? payload.code : undefined,
+      code,
     }
   }
 

@@ -23,7 +23,6 @@ import {
   addedTimeSeconds,
   elapsedInHalf,
   initialHalfClock,
-  persistableClockSeconds,
   restoreMatchClockSeconds,
 } from '@/lib/match-clock'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
