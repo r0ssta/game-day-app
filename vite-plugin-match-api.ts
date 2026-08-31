@@ -11,6 +11,7 @@ const ROUTES: Record<string, string> = {
   '/api/match/log-card': '/api/match/log-card.ts',
   '/api/match/log-substitution': '/api/match/log-substitution.ts',
   '/api/match/log-period': '/api/match/log-period.ts',
+  '/api/match/log-pk-attempt': '/api/match/log-pk-attempt.ts',
   '/api/match/end-regulation': '/api/match/end-regulation.ts',
   '/api/match/finalize-review': '/api/match/finalize-review.ts',
   '/api/send-web-push': '/api/send-web-push.ts',

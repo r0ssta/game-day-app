@@ -102,7 +102,6 @@ import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
 import {
   syncMatchClock,
-  syncMatchEvent,
   syncMatchEvents,
   syncMatchRecord,
   syncMatchStat,
@@ -111,12 +110,11 @@ import {
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
-import { apiLogCard, apiLogGoal, apiLogPeriod, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
+import { apiLogCard, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { cn } from '@/lib/utils'
 import {
-  encodePkAttemptNotes,
   shouldEnterPenaltyShootout,
   shouldResumePenaltyShootout,
 } from '@/lib/penalty-kicks'
@@ -3935,6 +3933,63 @@ export default function App() {
     [matchId, setPkGkPlayerId],
   )
 
+  const handleRecordPkAttempt = useCallback(
+    async (input: {
+      round: number
+      team: 'us' | 'opponent'
+      result: 'make' | 'miss'
+      playerId: string | null
+    }) => {
+      if (!matchId) return
+      const prevHome = homePkScore
+      const prevAway = awayPkScore
+      const nextHome =
+        input.team === 'us' && input.result === 'make' ? homePkScore + 1 : homePkScore
+      const nextAway =
+        input.team === 'opponent' && input.result === 'make' ? awayPkScore + 1 : awayPkScore
+      if (input.team === 'us' && input.result === 'make') setHomePkScore(nextHome)
+      if (input.team === 'opponent' && input.result === 'make') setAwayPkScore(nextAway)
+
+      const saved = await runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogPkAttempt({
+              matchId,
+              round: input.round,
+              team: input.team,
+              result: input.result,
+              playerId: input.playerId,
+              formation: matchFormations.second,
+              homePkScoreBefore: prevHome,
+              awayPkScoreBefore: prevAway,
+            }),
+          )
+        },
+        {
+          label: 'handleRecordPkAttempt',
+          onRevert: () => {
+            setHomePkScore(prevHome)
+            setAwayPkScore(prevAway)
+          },
+          onErrorToast: () => setToast('Could not save PK attempt — try again'),
+        },
+      )
+      if (saved === null) {
+        throw new Error('Failed to log PK attempt')
+      }
+    },
+    [
+      matchId,
+      homePkScore,
+      awayPkScore,
+      matchFormations.second,
+      runOptimisticSync,
+      setHomePkScore,
+      setAwayPkScore,
+      setToast,
+    ],
+  )
+
   const handleShareStatTracker = useCallback(async () => {
     if (!matchId) return
 
@@ -4350,29 +4405,7 @@ export default function App() {
         players={players}
         gkPlayerId={pkGkPlayerId}
         onGkPlayerChange={handlePkGkPlayerChange}
-        onRecordAttempt={async ({ round, team, result, playerId }) => {
-          if (!matchId) return
-          const nextHome =
-            team === 'us' && result === 'make' ? homePkScore + 1 : homePkScore
-          const nextAway =
-            team === 'opponent' && result === 'make' ? awayPkScore + 1 : awayPkScore
-          if (team === 'us' && result === 'make') setHomePkScore(nextHome)
-          if (team === 'opponent' && result === 'make') setAwayPkScore(nextAway)
-          syncMatchEvent({
-            matchId,
-            eventType: 'pk_attempt',
-            timestamp: round,
-            formation: matchFormations.second,
-            playerId,
-            pkResult: result,
-            pkTeam: team,
-            eventNotes: encodePkAttemptNotes({ result, team, round }),
-          })
-          syncMatchRecord(matchId, {
-            home_pk_score: nextHome,
-            away_pk_score: nextAway,
-          })
-        }}
+        onRecordAttempt={handleRecordPkAttempt}
         onFinalize={async ({ homePkScore: homePk, awayPkScore: awayPk, pkWinnerIsUs: weWon }) => {
           try {
             await finalizePenaltyShootout({

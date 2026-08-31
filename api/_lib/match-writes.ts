@@ -11,6 +11,8 @@ export async function insertMatchEventRow(
     formation?: string | null
     assist_player_id?: string | null
     is_pk?: boolean
+    pk_result?: 'make' | 'miss' | null
+    pk_team?: 'us' | 'opponent' | null
   },
 ): Promise<void> {
   const payload: Record<string, unknown> = {
@@ -24,6 +26,10 @@ export async function insertMatchEventRow(
   }
   if (row.event_type === 'goal') {
     payload.assist_player_id = row.assist_player_id ?? null
+  }
+  if (row.event_type === 'pk_attempt') {
+    payload.pk_result = row.pk_result ?? null
+    payload.pk_team = row.pk_team ?? null
   }
 
   const { error } = await supabase.from('match_events').insert(payload)

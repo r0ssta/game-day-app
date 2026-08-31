@@ -147,6 +147,14 @@ export function PenaltyShootoutScreen({
         result: attempt.result,
         playerId: attempt.playerId,
       })
+    } catch {
+      setRounds((prev) =>
+        prev.map((round) => {
+          if (round.round !== roundNumber) return round
+          if (attempt.team === 'us') return { ...round, usResult: null }
+          return { ...round, opponentResult: null }
+        }),
+      )
     } finally {
       setSaving(false)
     }

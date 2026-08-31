@@ -261,6 +261,36 @@ export const LogPeriodInputSchema = z
 
 export type LogPeriodInput = z.infer<typeof LogPeriodInputSchema>
 
+/**
+ * One penalty-shootout attempt from the live PK screen.
+ * Client updates local rounds/scores first; server persists the event + match PK scores.
+ */
+export const LogPkAttemptInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    /** Shootout round (also stored as match_events.timestamp). */
+    round: z.number().int().positive(),
+    team: z.enum(['us', 'opponent']),
+    result: z.enum(['make', 'miss']),
+    /** Required when team is `us` (our taker); omitted for opponent attempts. */
+    playerId: z.string().uuid().nullable().optional(),
+    formation: z.string().catch(''),
+    /** PK scores before this attempt (client snapshot). */
+    homePkScoreBefore: z.number().int().nonnegative(),
+    awayPkScoreBefore: z.number().int().nonnegative(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.team === 'us' && !value.playerId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'playerId is required for our PK attempts',
+        path: ['playerId'],
+      })
+    }
+  })
+
+export type LogPkAttemptInput = z.infer<typeof LogPkAttemptInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T
