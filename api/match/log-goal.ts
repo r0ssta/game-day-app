@@ -4,10 +4,7 @@ import { requireMatchAccess } from '../_lib/match-access'
 import { LogGoalInputSchema } from '../_lib/match-action-schemas'
 import { buildGoalPush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
-import {
-  bumpOnFieldPlusMinus,
-  insertMatchEventRow,
-} from '../_lib/match-writes'
+import { type MatchEventInsert, runMatchWrites } from '../_lib/match-writes'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -47,39 +44,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const shotType = input.ourGoal ? 'shot_home' : 'shot_away'
     const plusMinusDelta: 1 | -1 = input.ourGoal ? 1 : -1
 
-    const { error: scoreError } = await auth.supabase
-      .from('matches')
-      .update({ home_score: nextHome, away_score: nextAway })
-      .eq('id', input.matchId)
-    if (scoreError) throw scoreError
-
-    await insertMatchEventRow(auth.supabase, {
-      match_id: input.matchId,
-      player_id: input.ourGoal ? (input.scorerId ?? null) : null,
-      event_type: eventType,
-      timestamp: input.timestamp,
-      formation: input.formation,
-      assist_player_id: input.ourGoal && !input.isPk ? (input.assistPlayerId ?? null) : null,
-      is_pk: input.isPk,
+    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      const events: MatchEventInsert[] = [
+        {
+          match_id: input.matchId,
+          player_id: input.ourGoal ? (input.scorerId ?? null) : null,
+          event_type: eventType,
+          timestamp: input.timestamp,
+          formation: input.formation,
+          assist_player_id: input.ourGoal && !input.isPk ? (input.assistPlayerId ?? null) : null,
+          is_pk: input.isPk,
+        },
+      ]
+      if (input.pairAutoShot) {
+        events.push({
+          match_id: input.matchId,
+          player_id: null,
+          event_type: shotType,
+          timestamp: input.timestamp,
+          formation: input.formation,
+          is_pk: false,
+        })
+      }
+      await tx.insertEvents(events)
+      await tx.updateMatch({ home_score: nextHome, away_score: nextAway })
+      await tx.bumpOnFieldPlusMinus(input.onFieldPlayerIds, plusMinusDelta)
     })
-
-    if (input.pairAutoShot) {
-      await insertMatchEventRow(auth.supabase, {
-        match_id: input.matchId,
-        player_id: null,
-        event_type: shotType,
-        timestamp: input.timestamp,
-        formation: input.formation,
-        is_pk: false,
-      })
-    }
-
-    await bumpOnFieldPlusMinus(
-      auth.supabase,
-      input.matchId,
-      input.onFieldPlayerIds,
-      plusMinusDelta,
-    )
 
     const push = buildGoalPush({
       teamName: input.teamName.trim() || 'Home',

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { LogPkAttemptInputSchema } from '../_lib/match-action-schemas'
-import { insertMatchEventRow } from '../_lib/match-writes'
+import { runMatchWrites } from '../_lib/match-writes'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -45,30 +45,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? input.awayPkScoreBefore + 1
         : input.awayPkScoreBefore
 
-    await insertMatchEventRow(auth.supabase, {
-      match_id: input.matchId,
-      player_id: input.playerId ?? null,
-      event_type: 'pk_attempt',
-      timestamp: input.round,
-      formation: input.formation,
-      event_notes: JSON.stringify({
-        result: input.result,
-        team: input.team,
-        round: input.round,
-      }),
-      is_pk: false,
-      pk_result: input.result,
-      pk_team: input.team,
-    })
-
-    const { error: scoreError } = await auth.supabase
-      .from('matches')
-      .update({
-        home_pk_score: nextHome,
-        away_pk_score: nextAway,
+    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      await tx.insertEvent({
+        match_id: input.matchId,
+        player_id: input.playerId ?? null,
+        event_type: 'pk_attempt',
+        timestamp: input.round,
+        formation: input.formation,
+        event_notes: JSON.stringify({
+          result: input.result,
+          team: input.team,
+          round: input.round,
+        }),
+        is_pk: false,
+        pk_result: input.result,
+        pk_team: input.team,
       })
-      .eq('id', input.matchId)
-    if (scoreError) throw scoreError
+      await tx.updateMatch({ home_pk_score: nextHome, away_pk_score: nextAway })
+    })
 
     return res.status(200).json({
       ok: true,

@@ -4,7 +4,7 @@ import { requireMatchAccess } from '../_lib/match-access'
 import { EndRegulationInputSchema } from '../_lib/match-action-schemas'
 import { buildFullTimePush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
-import { insertMatchEventRow } from '../_lib/match-writes'
+import { runMatchWrites } from '../_lib/match-writes'
 
 const PERIOD_END_NOTE = 'period_end'
 
@@ -52,55 +52,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const halfSeconds = Math.max(1, input.halfLengthMinutes) * 60
     const elapsed = halfSeconds - input.clockSeconds
 
-    // Period-end sub_out markers for Parent Hub / recap.
-    for (const playerId of input.onFieldPlayerIds) {
-      await insertMatchEventRow(auth.supabase, {
-        match_id: input.matchId,
-        player_id: playerId,
-        event_type: 'sub_out',
-        timestamp: elapsed,
-        formation: input.formation,
-        event_notes: PERIOD_END_NOTE,
-        is_pk: false,
-      })
-    }
+    const writeResult = await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      for (const playerId of input.onFieldPlayerIds) {
+        await tx.insertEvent({
+          match_id: input.matchId,
+          player_id: playerId,
+          event_type: 'sub_out',
+          timestamp: elapsed,
+          formation: input.formation,
+          event_notes: PERIOD_END_NOTE,
+          is_pk: false,
+        })
+      }
 
-    // Mark on-field players as off for remaining match_stats rows.
-    if (input.onFieldPlayerIds.length > 0) {
-      const { error: statsError } = await auth.supabase
-        .from('match_stats')
-        .update({
+      for (const playerId of input.onFieldPlayerIds) {
+        await tx.updatePlayerStats(playerId, {
           match_status: 'bench',
           subbed_in_at: null,
         })
-        .eq('match_id', input.matchId)
-        .in('player_id', input.onFieldPlayerIds)
-      if (statsError) {
-        console.warn('[end-regulation] match_stats update', statsError.message)
       }
-    }
 
-    // Persist timing context in qualitative_context when possible.
-    const { data: matchRow } = await auth.supabase
-      .from('matches')
-      .select('qualitative_context')
-      .eq('id', input.matchId)
-      .maybeSingle()
-
-    const prior =
-      matchRow?.qualitative_context && typeof matchRow.qualitative_context === 'object'
-        ? (matchRow.qualitative_context as Record<string, unknown>)
-        : {}
-    const nextContext = {
-      ...prior,
-      addedTimeSeconds: addedTimeSeconds(input.clockSeconds),
-      endedOnTime: input.endedOnTime ?? null,
-    }
-
-    if (input.enterPenaltyShootout) {
-      const { error } = await auth.supabase
+      const { data: matchRow, error: contextError } = await auth.supabase
         .from('matches')
-        .update({
+        .select('qualitative_context')
+        .eq('id', input.matchId)
+        .maybeSingle()
+      if (contextError) throw contextError
+
+      const prior =
+        matchRow?.qualitative_context && typeof matchRow.qualitative_context === 'object'
+          ? (matchRow.qualitative_context as Record<string, unknown>)
+          : {}
+      const nextContext = {
+        ...prior,
+        addedTimeSeconds: addedTimeSeconds(input.clockSeconds),
+        endedOnTime: input.endedOnTime ?? null,
+      }
+
+      if (input.enterPenaltyShootout) {
+        await tx.updateMatch({
           home_pk_score: 0,
           away_pk_score: 0,
           pk_winner_is_us: null,
@@ -110,26 +100,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           qualitative_context: nextContext,
           status: 'live',
         })
-        .eq('id', input.matchId)
-      if (error) throw error
+        return { status: 'live' as const, enterPenaltyShootout: true }
+      }
 
-      return res.status(200).json({
-        ok: true,
-        status: 'live',
-        enterPenaltyShootout: true,
-      })
-    }
-
-    const { error: pendingError } = await auth.supabase
-      .from('matches')
-      .update({
+      await tx.updateMatch({
         status: 'pending_review',
         period_clock_started: false,
         clock_seconds: persistableClockSeconds(input.clockSeconds),
         qualitative_context: nextContext,
       })
-      .eq('id', input.matchId)
-    if (pendingError) throw pendingError
+      return { status: 'pending_review' as const, enterPenaltyShootout: false }
+    })
+
+    if (writeResult.enterPenaltyShootout) {
+      return res.status(200).json({
+        ok: true,
+        status: writeResult.status,
+        enterPenaltyShootout: true,
+      })
+    }
 
     if (
       input.sendFullTimePush &&
@@ -159,7 +148,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       ok: true,
-      status: 'pending_review',
+      status: writeResult.status,
       enterPenaltyShootout: false,
     })
   } catch (err) {

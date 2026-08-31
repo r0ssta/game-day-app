@@ -1,20 +1,27 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export async function insertMatchEventRow(
-  supabase: SupabaseClient,
-  row: {
-    match_id: string
-    player_id: string | null
-    event_type: string
-    timestamp: number
-    event_notes?: string | null
-    formation?: string | null
-    assist_player_id?: string | null
-    is_pk?: boolean
-    pk_result?: 'make' | 'miss' | null
-    pk_team?: 'us' | 'opponent' | null
-  },
-): Promise<void> {
+export type MatchEventInsert = {
+  match_id: string
+  player_id: string | null
+  event_type: string
+  timestamp: number
+  event_notes?: string | null
+  formation?: string | null
+  assist_player_id?: string | null
+  is_pk?: boolean
+  pk_result?: 'make' | 'miss' | null
+  pk_team?: 'us' | 'opponent' | null
+}
+
+const EVENT_RESTORE_COLUMNS =
+  'id, match_id, player_id, event_type, timestamp, event_notes, formation, assist_player_id, is_pk, pk_result, pk_team'
+
+function isMissingPlusMinusColumn(error: { message?: string }): boolean {
+  const message = error.message?.toLowerCase() ?? ''
+  return message.includes('plus_minus') && message.includes('column')
+}
+
+export function matchEventInsertPayload(row: MatchEventInsert): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     match_id: row.match_id,
     player_id: row.player_id,
@@ -31,43 +38,184 @@ export async function insertMatchEventRow(
     payload.pk_result = row.pk_result ?? null
     payload.pk_team = row.pk_team ?? null
   }
-
-  const { error } = await supabase.from('match_events').insert(payload)
-  if (error) throw error
+  return payload
 }
 
-export async function bumpOnFieldPlusMinus(
+/**
+ * Tracks match_events / matches / match_stats writes and restores them if a
+ * later step throws. Not a Postgres transaction — a process crash can still
+ * leave a partial write — but an exception no longer commits half a goal.
+ */
+export class MatchWriteSession {
+  private insertedEventIds: string[] = []
+  private deletedEventRows: Record<string, unknown>[] = []
+  private matchRevert: Record<string, unknown> | null = null
+  private statsReverts: Array<{ playerId: string; patch: Record<string, unknown> }> = []
+
+  constructor(
+    private readonly supabase: SupabaseClient,
+    readonly matchId: string,
+  ) {}
+
+  async insertEvents(rows: MatchEventInsert[]): Promise<string[]> {
+    if (rows.length === 0) return []
+    const payloads = rows.map(matchEventInsertPayload)
+    const { data, error } = await this.supabase
+      .from('match_events')
+      .insert(payloads)
+      .select('id')
+    if (error) throw error
+    const ids = (data ?? []).map((row) => row.id as string)
+    this.insertedEventIds.push(...ids)
+    return ids
+  }
+
+  async insertEvent(row: MatchEventInsert): Promise<string> {
+    const ids = await this.insertEvents([row])
+    const id = ids[0]
+    if (!id) throw new Error('Event insert returned no id')
+    return id
+  }
+
+  async deleteEvents(eventIds: string[]): Promise<void> {
+    const ids = eventIds.filter(Boolean)
+    if (ids.length === 0) return
+    const { data, error } = await this.supabase
+      .from('match_events')
+      .select(EVENT_RESTORE_COLUMNS)
+      .in('id', ids)
+    if (error) throw error
+    this.deletedEventRows.push(...((data ?? []) as Record<string, unknown>[]))
+    const { error: deleteError } = await this.supabase
+      .from('match_events')
+      .delete()
+      .in('id', ids)
+    if (deleteError) throw deleteError
+  }
+
+  async updateMatch(patch: Record<string, unknown>): Promise<void> {
+    const keys = Object.keys(patch)
+    if (keys.length === 0) return
+    const missing = keys.filter((key) => !this.matchRevert || !(key in this.matchRevert))
+    if (missing.length > 0) {
+      const { data, error } = await this.supabase
+        .from('matches')
+        .select(missing.join(','))
+        .eq('id', this.matchId)
+        .maybeSingle()
+      if (error) throw error
+      if (!this.matchRevert) this.matchRevert = {}
+      for (const key of missing) {
+        this.matchRevert[key] = data ? (data as Record<string, unknown>)[key] : null
+      }
+    }
+    const { error } = await this.supabase.from('matches').update(patch).eq('id', this.matchId)
+    if (error) throw error
+  }
+
+  async updatePlayerStats(playerId: string, patch: Record<string, unknown>): Promise<void> {
+    const keys = Object.keys(patch)
+    if (keys.length === 0) return
+    const { data, error } = await this.supabase
+      .from('match_stats')
+      .select(keys.join(','))
+      .eq('match_id', this.matchId)
+      .eq('player_id', playerId)
+      .maybeSingle()
+    if (error) {
+      if (isMissingPlusMinusColumn(error) && keys.length === 1 && keys[0] === 'plus_minus') {
+        return
+      }
+      throw error
+    }
+    if (data) {
+      const revert: Record<string, unknown> = {}
+      for (const key of keys) {
+        revert[key] = (data as Record<string, unknown>)[key]
+      }
+      this.statsReverts.push({ playerId, patch: revert })
+    }
+    const { error: updateError } = await this.supabase
+      .from('match_stats')
+      .update(patch)
+      .eq('match_id', this.matchId)
+      .eq('player_id', playerId)
+    if (updateError) {
+      if (isMissingPlusMinusColumn(updateError) && keys.length === 1 && keys[0] === 'plus_minus') {
+        return
+      }
+      throw updateError
+    }
+  }
+
+  async bumpOnFieldPlusMinus(onFieldPlayerIds: string[], delta: 1 | -1): Promise<void> {
+    if (onFieldPlayerIds.length === 0) return
+    const { data: stats, error } = await this.supabase
+      .from('match_stats')
+      .select('player_id, plus_minus')
+      .eq('match_id', this.matchId)
+      .in('player_id', onFieldPlayerIds)
+    if (error) {
+      if (isMissingPlusMinusColumn(error)) return
+      throw error
+    }
+    for (const row of stats ?? []) {
+      await this.updatePlayerStats(row.player_id as string, {
+        plus_minus: (row.plus_minus ?? 0) + delta,
+      })
+    }
+  }
+
+  async rollback(): Promise<void> {
+    const errors: unknown[] = []
+    if (this.insertedEventIds.length > 0) {
+      const { error } = await this.supabase
+        .from('match_events')
+        .delete()
+        .in('id', this.insertedEventIds)
+      if (error) errors.push(error)
+    }
+    if (this.deletedEventRows.length > 0) {
+      const { error } = await this.supabase.from('match_events').insert(this.deletedEventRows)
+      if (error) errors.push(error)
+    }
+    if (this.matchRevert) {
+      const { error } = await this.supabase
+        .from('matches')
+        .update(this.matchRevert)
+        .eq('id', this.matchId)
+      if (error) errors.push(error)
+    }
+    for (const revert of this.statsReverts) {
+      const { error } = await this.supabase
+        .from('match_stats')
+        .update(revert.patch)
+        .eq('match_id', this.matchId)
+        .eq('player_id', revert.playerId)
+      if (error && !isMissingPlusMinusColumn(error)) errors.push(error)
+    }
+    if (errors.length > 0) {
+      console.error('[match-writes] rollback incomplete', errors)
+    }
+  }
+}
+
+export async function runMatchWrites<T>(
   supabase: SupabaseClient,
   matchId: string,
-  onFieldPlayerIds: string[],
-  delta: 1 | -1,
-): Promise<void> {
-  if (onFieldPlayerIds.length === 0) return
-
-  const { data: stats, error } = await supabase
-    .from('match_stats')
-    .select('player_id, plus_minus')
-    .eq('match_id', matchId)
-    .in('player_id', onFieldPlayerIds)
-
-  if (error) throw error
-
-  await Promise.all(
-    (stats ?? []).map(async (row) => {
-      const next = (row.plus_minus ?? 0) + delta
-      const { error: updateError } = await supabase
-        .from('match_stats')
-        .update({ plus_minus: next })
-        .eq('match_id', matchId)
-        .eq('player_id', row.player_id)
-      if (updateError) {
-        // Column may be missing on older DBs — don't fail the goal write.
-        const message = updateError.message?.toLowerCase() ?? ''
-        if (message.includes('plus_minus') && message.includes('column')) return
-        throw updateError
-      }
-    }),
-  )
+  work: (session: MatchWriteSession) => Promise<T>,
+): Promise<T> {
+  const session = new MatchWriteSession(supabase, matchId)
+  try {
+    return await work(session)
+  } catch (err) {
+    try {
+      await session.rollback()
+    } catch (rollbackErr) {
+      console.error('[match-writes] rollback failed', rollbackErr)
+    }
+    throw err
+  }
 }
 
 export function teamEventType(
@@ -106,14 +254,6 @@ export function findPairedGoalShotEvent<
   )
 }
 
-export async function deleteMatchEventRow(
-  supabase: SupabaseClient,
-  eventId: string,
-): Promise<void> {
-  const { error } = await supabase.from('match_events').delete().eq('id', eventId)
-  if (error) throw error
-}
-
 /**
  * Rebuild plus/minus from the event timeline (same rules as live goal logging).
  * Missing plus_minus column is tolerated for older DBs.
@@ -121,6 +261,7 @@ export async function deleteMatchEventRow(
 export async function recomputePlusMinusFromEvents(
   supabase: SupabaseClient,
   matchId: string,
+  session?: MatchWriteSession,
 ): Promise<void> {
   const [{ data: events, error: eventsError }, { data: stats, error: statsError }] =
     await Promise.all([
@@ -170,14 +311,17 @@ export async function recomputePlusMinusFromEvents(
     if (!row.attending) continue
     const playerId = row.player_id as string
     const plusMinus = ledger.get(playerId) ?? 0
+    if (session) {
+      await session.updatePlayerStats(playerId, { plus_minus: plusMinus })
+      continue
+    }
     const { error: updateError } = await supabase
       .from('match_stats')
       .update({ plus_minus: plusMinus })
       .eq('match_id', matchId)
       .eq('player_id', playerId)
     if (updateError) {
-      const message = updateError.message?.toLowerCase() ?? ''
-      if (message.includes('plus_minus') && message.includes('column')) continue
+      if (isMissingPlusMinusColumn(updateError)) continue
       throw updateError
     }
   }

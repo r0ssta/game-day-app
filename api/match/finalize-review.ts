@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { FinalizeReviewInputSchema } from '../_lib/match-action-schemas'
-import { recomputePlusMinusFromEvents } from '../_lib/match-writes'
+import { recomputePlusMinusFromEvents, runMatchWrites } from '../_lib/match-writes'
 
 /**
  * Port of client `finalizeMatchReview`: recompute plus/minus from events, set status final.
@@ -39,13 +39,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(access.status).json({ ok: false, error: access.error })
     }
 
-    await recomputePlusMinusFromEvents(auth.supabase, matchId)
-
-    const { error: finalError } = await auth.supabase
-      .from('matches')
-      .update({ status: 'final' })
-      .eq('id', matchId)
-    if (finalError) throw finalError
+    await runMatchWrites(auth.supabase, matchId, async (tx) => {
+      await recomputePlusMinusFromEvents(auth.supabase, matchId, tx)
+      await tx.updateMatch({ status: 'final' })
+    })
 
     return res.status(200).json({ ok: true, status: 'final' })
   } catch (err) {

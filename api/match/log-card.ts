@@ -4,7 +4,7 @@ import { requireMatchAccess } from '../_lib/match-access'
 import { LogCardInputSchema } from '../_lib/match-action-schemas'
 import { buildCardPush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
-import { insertMatchEventRow } from '../_lib/match-writes'
+import { type MatchEventInsert, runMatchWrites } from '../_lib/match-writes'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -41,60 +41,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isSecondYellow = input.kind === 'yellow' && input.yellowCardCountBefore >= 1
     const issueRed = input.kind === 'red' || isSecondYellow
 
-    if (input.kind === 'yellow' || isSecondYellow) {
-      await insertMatchEventRow(auth.supabase, {
-        match_id: input.matchId,
-        player_id: input.playerId,
-        event_type: 'yellow_card',
-        timestamp: input.timestamp,
-        formation: input.formation,
-        event_notes: isSecondYellow ? 'second_yellow' : null,
-        is_pk: false,
-      })
-    }
-
-    if (issueRed) {
-      await insertMatchEventRow(auth.supabase, {
-        match_id: input.matchId,
-        player_id: input.playerId,
-        event_type: 'red_card',
-        timestamp: input.timestamp,
-        formation: input.formation,
-        event_notes: isSecondYellow ? 'second_yellow' : 'straight_red',
-        is_pk: false,
-      })
-
-      if (input.isOnField) {
-        await insertMatchEventRow(auth.supabase, {
+    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      const events: MatchEventInsert[] = []
+      if (input.kind === 'yellow' || isSecondYellow) {
+        events.push({
           match_id: input.matchId,
           player_id: input.playerId,
-          event_type: 'sub_out',
+          event_type: 'yellow_card',
           timestamp: input.timestamp,
           formation: input.formation,
-          event_notes: 'sent_off',
+          event_notes: isSecondYellow ? 'second_yellow' : null,
           is_pk: false,
         })
       }
+      if (issueRed) {
+        events.push({
+          match_id: input.matchId,
+          player_id: input.playerId,
+          event_type: 'red_card',
+          timestamp: input.timestamp,
+          formation: input.formation,
+          event_notes: isSecondYellow ? 'second_yellow' : 'straight_red',
+          is_pk: false,
+        })
+        if (input.isOnField) {
+          events.push({
+            match_id: input.matchId,
+            player_id: input.playerId,
+            event_type: 'sub_out',
+            timestamp: input.timestamp,
+            formation: input.formation,
+            event_notes: 'sent_off',
+            is_pk: false,
+          })
+        }
+      }
+      await tx.insertEvents(events)
 
-      const statsUpdate: Record<string, unknown> = {
-        is_sent_off: true,
-        match_status: 'bench',
-        subbed_in_at: null,
+      if (issueRed) {
+        const statsUpdate: Record<string, unknown> = {
+          is_sent_off: true,
+          match_status: 'bench',
+          subbed_in_at: null,
+        }
+        if (typeof input.totalSecondsPlayed === 'number') {
+          statsUpdate.total_seconds_played = input.totalSecondsPlayed
+          statsUpdate.total_minutes = input.totalSecondsPlayed / 60
+        }
+        await tx.updatePlayerStats(input.playerId, statsUpdate)
       }
-      if (typeof input.totalSecondsPlayed === 'number') {
-        statsUpdate.total_seconds_played = input.totalSecondsPlayed
-        statsUpdate.total_minutes = input.totalSecondsPlayed / 60
-      }
-
-      const { error: statsError } = await auth.supabase
-        .from('match_stats')
-        .update(statsUpdate)
-        .eq('match_id', input.matchId)
-        .eq('player_id', input.playerId)
-      if (statsError) {
-        console.warn('[log-card] match_stats update', statsError.message)
-      }
-    }
+    })
 
     if (!access.match.is_test) {
       const push = buildCardPush({

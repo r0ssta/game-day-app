@@ -4,6 +4,7 @@ import { requireMatchAccess } from '../_lib/match-access'
 import { FinalizePkInputSchema } from '../_lib/match-action-schemas'
 import { buildFullTimePush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
+import { runMatchWrites } from '../_lib/match-writes'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -37,17 +38,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(access.status).json({ ok: false, error: access.error })
     }
 
-    const { error: matchError } = await auth.supabase
-      .from('matches')
-      .update({
+    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      await tx.updateMatch({
         home_pk_score: input.homePkScore,
         away_pk_score: input.awayPkScore,
         pk_winner_is_us: input.pkWinnerIsUs,
         period_clock_started: false,
         status: 'pending_review',
       })
-      .eq('id', input.matchId)
-    if (matchError) throw matchError
+    })
 
     if (!access.match.is_test) {
       const pkNote = `PKs ${input.homePkScore}–${input.awayPkScore} (${input.pkWinnerIsUs ? 'W' : 'L'})`

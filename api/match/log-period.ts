@@ -8,7 +8,7 @@ import {
   buildPeriodPush,
 } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
-import { insertMatchEventRow } from '../_lib/match-writes'
+import { runMatchWrites } from '../_lib/match-writes'
 
 const PERIOD_END_NOTE = 'period_end'
 const STARTING_LINEUP_NOTE_PREFIX = 'starting_lineup|'
@@ -27,15 +27,17 @@ function startingLineupNote(position: string | null | undefined): string {
 }
 
 async function mergeTimingContext(
+  tx: { updateMatch: (patch: Record<string, unknown>) => Promise<void> },
   supabase: SupabaseClient,
   matchId: string,
   timing: { addedTimeSeconds?: number },
 ) {
-  const { data: matchRow } = await supabase
+  const { data: matchRow, error } = await supabase
     .from('matches')
     .select('qualitative_context')
     .eq('id', matchId)
     .maybeSingle()
+  if (error) throw error
 
   const prior =
     matchRow?.qualitative_context && typeof matchRow.qualitative_context === 'object'
@@ -49,13 +51,7 @@ async function mergeTimingContext(
       : {}),
   }
 
-  const { error } = await supabase
-    .from('matches')
-    .update({ qualitative_context: nextContext })
-    .eq('id', matchId)
-  if (error) {
-    console.warn('[log-period] qualitative_context', error.message)
-  }
+  await tx.updateMatch({ qualitative_context: nextContext })
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -99,34 +95,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const halfSeconds = Math.max(1, input.halfLengthMinutes) * 60
       const elapsed = halfSeconds - input.clockSeconds
 
-      for (const player of input.onFieldPlayers) {
-        await insertMatchEventRow(auth.supabase, {
-          match_id: input.matchId,
-          player_id: player.playerId,
-          event_type: 'sub_out',
-          timestamp: elapsed,
-          formation: input.formation,
-          event_notes: PERIOD_END_NOTE,
-          is_pk: false,
-        })
-        const { error: statsError } = await auth.supabase
-          .from('match_stats')
-          .update({
+      await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+        for (const player of input.onFieldPlayers) {
+          await tx.insertEvent({
+            match_id: input.matchId,
+            player_id: player.playerId,
+            event_type: 'sub_out',
+            timestamp: elapsed,
+            formation: input.formation,
+            event_notes: PERIOD_END_NOTE,
+            is_pk: false,
+          })
+          await tx.updatePlayerStats(player.playerId, {
             match_status: 'bench',
             subbed_in_at: null,
             total_seconds_played: player.totalSecondsPlayed,
             total_minutes: player.totalSecondsPlayed / 60,
           })
-          .eq('match_id', input.matchId)
-          .eq('player_id', player.playerId)
-        if (statsError) {
-          console.warn('[log-period] end stats', statsError.message)
         }
-      }
 
-      const { error: matchError } = await auth.supabase
-        .from('matches')
-        .update({
+        await tx.updateMatch({
           period_clock_started: false,
           clock_seconds: persistableClockSeconds(input.clockSeconds),
           current_period: input.period,
@@ -134,11 +122,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           period_length: input.halfLengthMinutes,
           half_length: input.halfLengthMinutes,
         })
-        .eq('id', input.matchId)
-      if (matchError) throw matchError
 
-      await mergeTimingContext(auth.supabase, input.matchId, {
-        addedTimeSeconds: addedTimeSeconds(input.clockSeconds),
+        await mergeTimingContext(tx, auth.supabase, input.matchId, {
+          addedTimeSeconds: addedTimeSeconds(input.clockSeconds),
+        })
       })
 
       if (!access.match.is_test) {
@@ -165,65 +152,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // kind === 'start'
-    if (input.insertStarterEvents) {
+    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      if (input.insertStarterEvents) {
+        for (const starter of input.starters) {
+          await tx.insertEvent({
+            match_id: input.matchId,
+            player_id: starter.playerId,
+            event_type: 'sub_in',
+            timestamp: 0,
+            formation: input.formation,
+            event_notes: startingLineupNote(starter.matchPosition),
+            is_pk: false,
+          })
+        }
+      }
+
       for (const starter of input.starters) {
-        await insertMatchEventRow(auth.supabase, {
-          match_id: input.matchId,
-          player_id: starter.playerId,
-          event_type: 'sub_in',
-          timestamp: 0,
-          formation: input.formation,
-          event_notes: startingLineupNote(starter.matchPosition),
-          is_pk: false,
+        const patch: Record<string, unknown> = {
+          match_status: 'on-field',
+          subbed_in_at: starter.subbedInAt ?? null,
+        }
+        if (typeof starter.matchPosition === 'string' && starter.matchPosition.trim()) {
+          patch.match_position = starter.matchPosition.trim()
+        }
+        if (typeof starter.totalSecondsPlayed === 'number') {
+          patch.total_seconds_played = starter.totalSecondsPlayed
+          patch.total_minutes = starter.totalSecondsPlayed / 60
+        }
+        await tx.updatePlayerStats(starter.playerId, patch)
+      }
+
+      const matchPatch: Record<string, unknown> = {
+        period_clock_started: true,
+        clock_seconds: persistableClockSeconds(input.clockSeconds),
+        current_period: input.period,
+        total_periods: input.totalPeriods,
+        period_length: input.halfLengthMinutes,
+        half_length: input.halfLengthMinutes,
+      }
+      if (input.periodCode) {
+        matchPatch.period = input.periodCode
+      }
+      await tx.updateMatch(matchPatch)
+
+      if (input.insertStarterEvents) {
+        await mergeTimingContext(tx, auth.supabase, input.matchId, {
+          addedTimeSeconds: 0,
         })
       }
-    }
-
-    for (const starter of input.starters) {
-      const patch: Record<string, unknown> = {
-        match_status: 'on-field',
-        subbed_in_at: starter.subbedInAt ?? null,
-      }
-      if (typeof starter.matchPosition === 'string' && starter.matchPosition.trim()) {
-        patch.match_position = starter.matchPosition.trim()
-      }
-      if (typeof starter.totalSecondsPlayed === 'number') {
-        patch.total_seconds_played = starter.totalSecondsPlayed
-        patch.total_minutes = starter.totalSecondsPlayed / 60
-      }
-      const { error: statsError } = await auth.supabase
-        .from('match_stats')
-        .update(patch)
-        .eq('match_id', input.matchId)
-        .eq('player_id', starter.playerId)
-      if (statsError) {
-        console.warn('[log-period] start stats', statsError.message)
-      }
-    }
-
-    const matchPatch: Record<string, unknown> = {
-      period_clock_started: true,
-      clock_seconds: persistableClockSeconds(input.clockSeconds),
-      current_period: input.period,
-      total_periods: input.totalPeriods,
-      period_length: input.halfLengthMinutes,
-      half_length: input.halfLengthMinutes,
-    }
-    if (input.periodCode) {
-      matchPatch.period = input.periodCode
-    }
-
-    const { error: matchError } = await auth.supabase
-      .from('matches')
-      .update(matchPatch)
-      .eq('id', input.matchId)
-    if (matchError) throw matchError
-
-    if (input.insertStarterEvents) {
-      await mergeTimingContext(auth.supabase, input.matchId, {
-        addedTimeSeconds: 0,
-      })
-    }
+    })
 
     if (!access.match.is_test) {
       const push =
