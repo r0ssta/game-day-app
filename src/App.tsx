@@ -106,7 +106,7 @@ import {
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
-import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
+import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, formatMatchWriteError } from '@/lib/match-api'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { cn } from '@/lib/utils'
@@ -2208,6 +2208,12 @@ export default function App() {
 
   const [toast, setToast] = useState<string | null>(null)
   const { syncPending, run: runOptimisticSync } = useOptimisticSync()
+  const failToast = useCallback(
+    (fallback: string) => (err: unknown) => {
+      setToast(formatMatchWriteError(err, fallback))
+    },
+    [],
+  )
   const [pendingReviewMatches, setPendingReviewMatches] = useState<DbMatch[]>([])
   const [recapReturnMode, setRecapReturnMode] = useState<
     'home' | 'recap_history' | 'reporting' | null
@@ -2548,6 +2554,10 @@ export default function App() {
       ).detail
       if (!detail) return
       if (!detail.ok) {
+        if (detail.status === 429) {
+          setToast('Slow down — too many match updates. Try again in a few seconds.')
+          return
+        }
         setToast(`Parent alerts failed to send (${detail.status ?? 'error'})`)
         return
       }
@@ -3157,7 +3167,7 @@ export default function App() {
             setActiveFormation(previousFormationId)
             setPlayers(previousPlayers)
           },
-          onErrorToast: () => setToast('Could not save formation — try again'),
+          onErrorToast: failToast('Could not save formation — try again'),
         },
       )
     },
@@ -3204,7 +3214,7 @@ export default function App() {
         {
           label: 'handleLiveReassignPosition',
           onRevert: () => setPlayers(previousPlayers),
-          onErrorToast: () => setToast('Could not save positions — try again'),
+          onErrorToast: failToast('Could not save positions — try again'),
         },
       )
     },
@@ -3254,7 +3264,7 @@ export default function App() {
         {
           label: 'handleLiveSubIn',
           onRevert: () => setPlayers(previousPlayers),
-          onErrorToast: () => setToast('Could not save sub — try again'),
+          onErrorToast: failToast('Could not save sub — try again'),
         },
       )
     },
@@ -3309,7 +3319,7 @@ export default function App() {
         {
           label: 'handleLiveSubOut',
           onRevert: () => setPlayers(previousPlayers),
-          onErrorToast: () => setToast('Could not save sub — try again'),
+          onErrorToast: failToast('Could not save sub — try again'),
         },
       )
     },
@@ -3373,7 +3383,7 @@ export default function App() {
         {
           label: 'handleLiveSwap',
           onRevert: () => setPlayers(previousPlayers),
-          onErrorToast: () => setToast('Could not save sub — try again'),
+          onErrorToast: failToast('Could not save sub — try again'),
         },
       )
     },
@@ -3493,7 +3503,7 @@ export default function App() {
         {
           label: 'handleConfirmCard',
           onRevert: () => setPlayers(previousPlayers),
-          onErrorToast: () => setToast('Could not save card — try again'),
+          onErrorToast: failToast('Could not save card — try again'),
         },
       )
     },
@@ -3556,7 +3566,7 @@ export default function App() {
             if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
             else setAwayShots((n) => Math.max(0, n - 1))
           },
-          onErrorToast: () => setToast('Could not save shot — try again'),
+          onErrorToast: failToast('Could not save shot — try again'),
         },
       )
     },
@@ -3599,9 +3609,14 @@ export default function App() {
         setToast(side === 'home' ? 'Removed our goal' : 'Removed opponent goal')
       } catch (err) {
         console.error('[removeLastGoal]', err)
-        setToast(err instanceof Error && err.message === 'No goal to remove'
-          ? 'No goal to remove'
-          : 'Could not remove goal — try again')
+        setToast(
+          formatMatchWriteError(
+            err,
+            err instanceof Error && err.message === 'No goal to remove'
+              ? 'No goal to remove'
+              : 'Could not remove goal — try again',
+          ),
+        )
       }
     },
     [matchId, appMode, setHomeScore, setAwayScore, setHomeShots, setAwayShots, setPlayers, setToast],
@@ -3658,7 +3673,7 @@ export default function App() {
             setAwayShots((n) => Math.max(0, n - 1))
             setPlayers((prev) => applyPlusMinusDelta(prev, 1))
           },
-          onErrorToast: () => setToast('Could not save goal — try again'),
+          onErrorToast: failToast('Could not save goal — try again'),
         },
       )
     },
@@ -3711,7 +3726,7 @@ export default function App() {
             if (side === 'home') setHomeCorners((n) => Math.max(0, n - 1))
             else setAwayCorners((n) => Math.max(0, n - 1))
           },
-          onErrorToast: () => setToast('Could not save corner — try again'),
+          onErrorToast: failToast('Could not save corner — try again'),
         },
       )
     },
@@ -3773,7 +3788,7 @@ export default function App() {
             if (side === 'away') setAwaySaves((n) => Math.max(0, n - 1))
             else setHomeSaves((n) => Math.max(0, n - 1))
           },
-          onErrorToast: () => setToast('Could not save — try again'),
+          onErrorToast: failToast('Could not save — try again'),
         },
       )
     },
@@ -3853,7 +3868,7 @@ export default function App() {
             setHomeShots((n) => Math.max(0, n - 1))
             setPlayers((prev) => applyPlusMinusDelta(prev, -1))
           },
-          onErrorToast: () => setToast('Could not save goal — try again'),
+          onErrorToast: failToast('Could not save goal — try again'),
         },
       )
     },
@@ -3959,7 +3974,7 @@ export default function App() {
             setHomePkScore(prevHome)
             setAwayPkScore(prevAway)
           },
-          onErrorToast: () => setToast('Could not save PK attempt — try again'),
+          onErrorToast: failToast('Could not save PK attempt — try again'),
         },
       )
       if (saved === null) {

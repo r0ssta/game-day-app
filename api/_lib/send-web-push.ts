@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
 import { reportApiError } from './sentry.js'
+import { requireVapidConfig } from './server-env.js'
 
 export type SendWebPushInput = {
   teamId: string
@@ -29,14 +30,7 @@ type SubscriptionRow = {
 }
 
 function configureVapid() {
-  const publicKey = process.env.VITE_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY
-  const privateKey = process.env.VAPID_PRIVATE_KEY
-  const subject = process.env.VAPID_SUBJECT || 'mailto:admin@virginiavelocity.com'
-
-  if (!publicKey || !privateKey) {
-    throw new Error('Missing VITE_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY')
-  }
-
+  const { publicKey, privateKey, subject } = requireVapidConfig()
   webpush.setVapidDetails(subject, publicKey, privateKey)
 }
 

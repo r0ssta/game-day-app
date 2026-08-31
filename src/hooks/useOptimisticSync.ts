@@ -24,7 +24,7 @@ export function useOptimisticSync() {
       work: () => Promise<T>,
       options: {
         onRevert: () => void
-        onErrorToast: () => void
+        onErrorToast: (err: unknown) => void
         label?: string
       },
     ): Promise<T | null> => {
@@ -34,7 +34,7 @@ export function useOptimisticSync() {
       } catch (err) {
         console.error(`[optimistic${options.label ? `:${options.label}` : ''}]`, err)
         options.onRevert()
-        options.onErrorToast()
+        options.onErrorToast(err)
         return null
       } finally {
         end()

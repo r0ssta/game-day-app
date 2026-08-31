@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from './_lib/auth.js'
+import { checkWriteRateLimit, rejectTooManyRequests } from './_lib/rate-limit.js'
+import { assertNoClientLeakedSecrets, requireVapidConfig } from './_lib/server-env.js'
 import { sendTeamWebPush } from './_lib/send-web-push.js'
 import { reportApiError } from './_lib/sentry.js'
 
@@ -15,6 +17,8 @@ type SendBody = {
 
 /** Thin HTTP wrapper — core fan-out lives in `api/_lib/send-web-push.ts`. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  assertNoClientLeakedSecrets()
+
   if (req.method === 'OPTIONS') {
     corsPreflight(res)
     return res.status(200).end()
@@ -26,7 +30,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   corsPreflight(res)
 
+  const limited = checkWriteRateLimit(req)
+  if (!limited.ok) {
+    rejectTooManyRequests(res, limited.retryAfterSec)
+    return
+  }
+
   try {
+    requireVapidConfig()
     const auth = await requireStaffSession(req)
     if ('error' in auth) {
       return res.status(auth.status).json({ error: auth.error })

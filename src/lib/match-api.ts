@@ -14,6 +14,19 @@ import type {
   MatchActionResult,
 } from '@/schemas/match-actions'
 
+export const RATE_LIMITED_TOAST =
+  'Slow down — too many match updates. Try again in a few seconds.'
+
+export function formatMatchWriteError(err: unknown, fallback: string): string {
+  if (
+    err instanceof Error &&
+    (err.message === RATE_LIMITED_TOAST || /too many requests/i.test(err.message))
+  ) {
+    return RATE_LIMITED_TOAST
+  }
+  return fallback
+}
+
 async function accessToken(): Promise<string> {
   // Prefer validated user + refreshed session so we don't send a stale JWT.
   const { data: userData, error: userError } = await supabase.auth.getUser()
@@ -49,6 +62,13 @@ async function postMatchAction<T extends Record<string, unknown>>(
   }
 
   if (!response.ok) {
+    if (response.status === 429) {
+      return {
+        ok: false,
+        error: RATE_LIMITED_TOAST,
+        code: 'rate_limited',
+      }
+    }
     const code =
       payload && 'code' in payload && typeof payload.code === 'string'
         ? payload.code
