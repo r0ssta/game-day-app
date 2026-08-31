@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   EndRegulationInputSchema,
   FinalizeReviewInputSchema,
+  LogCardInputSchema,
   LogGoalInputSchema,
   LogTeamEventInputSchema,
 } from '../src/schemas/match-actions'
@@ -9,6 +10,7 @@ import {
 const MATCH_ROUTES = [
   '/api/match/log-team-event',
   '/api/match/log-goal',
+  '/api/match/log-card',
   '/api/match/end-regulation',
   '/api/match/finalize-review',
 ] as const
@@ -118,5 +120,30 @@ test.describe('match action Zod schemas', () => {
     expect(parsed.success).toBe(false)
     const ok = FinalizeReviewInputSchema.safeParse({ matchId: VALID_UUID })
     expect(ok.success).toBe(true)
+  })
+
+  test('LogCardInputSchema accepts yellow and rejects bad kind', () => {
+    const ok = LogCardInputSchema.safeParse({
+      matchId: VALID_UUID,
+      playerId: VALID_UUID,
+      kind: 'yellow',
+      timestamp: 40,
+      formation: '4-3-3',
+      yellowCardCountBefore: 0,
+      isOnField: true,
+      playerLabel: '#7 Player',
+    })
+    expect(ok.success).toBe(true)
+    const bad = LogCardInputSchema.safeParse({
+      matchId: VALID_UUID,
+      playerId: VALID_UUID,
+      kind: 'blue',
+      timestamp: 40,
+      formation: '4-3-3',
+      yellowCardCountBefore: 0,
+      isOnField: true,
+      playerLabel: '#7 Player',
+    })
+    expect(bad.success).toBe(false)
   })
 })

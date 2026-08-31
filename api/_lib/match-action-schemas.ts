@@ -85,3 +85,18 @@ export const FinalizeReviewInputSchema = z.object({
 })
 
 export type FinalizeReviewInput = z.infer<typeof FinalizeReviewInputSchema>
+
+export const LogCardInputSchema = z.object({
+  matchId: z.string().uuid(),
+  playerId: z.string().uuid(),
+  kind: z.enum(['yellow', 'red']),
+  timestamp: z.number().int().finite(),
+  formation: z.string().catch(''),
+  yellowCardCountBefore: z.number().int().nonnegative(),
+  isOnField: z.boolean(),
+  totalSecondsPlayed: z.number().nonnegative().optional(),
+  playerLabel: z.string().min(1),
+  teamSlug: z.string().nullable().optional(),
+})
+
+export type LogCardInput = z.infer<typeof LogCardInputSchema>

@@ -42,3 +42,19 @@ export function buildFullTimePush(input: {
     body: `${input.homeScore}–${input.awayScore} vs ${input.opponent || 'Opponent'}${input.pkNote ? ` · ${input.pkNote}` : ''}`,
   }
 }
+
+export function buildCardPush(input: {
+  playerLabel: string
+  kind: 'yellow' | 'red'
+  isSecondYellow?: boolean
+}): { title: string; body: string } {
+  if (input.kind === 'red' || input.isSecondYellow) {
+    return {
+      title: 'Red card',
+      body: input.isSecondYellow
+        ? `${input.playerLabel} sent off (2nd yellow).`
+        : `${input.playerLabel} sent off.`,
+    }
+  }
+  return { title: 'Yellow card', body: `${input.playerLabel} booked.` }
+}

@@ -95,6 +95,25 @@ export const FinalizeReviewInputSchema = z.object({
 
 export type FinalizeReviewInput = z.infer<typeof FinalizeReviewInputSchema>
 
+/** Yellow / red card from the live match dashboard. */
+export const LogCardInputSchema = z.object({
+  matchId: z.string().uuid(),
+  playerId: z.string().uuid(),
+  kind: z.enum(['yellow', 'red']),
+  timestamp: z.number().int().finite(),
+  formation: z.string().catch(''),
+  /** Yellow count before this card (client snapshot) — used to detect 2nd yellow. */
+  yellowCardCountBefore: z.number().int().nonnegative(),
+  /** Whether the player was on the field when the card was issued. */
+  isOnField: z.boolean(),
+  /** Played seconds after local send-off clock finalize (optional). */
+  totalSecondsPlayed: z.number().nonnegative().optional(),
+  playerLabel: z.string().min(1),
+  teamSlug: z.string().nullable().optional(),
+})
+
+export type LogCardInput = z.infer<typeof LogCardInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T
