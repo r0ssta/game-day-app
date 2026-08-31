@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin, ViteDevServer } from 'vite'
+import { loadEnv } from 'vite'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown>
@@ -48,11 +49,21 @@ function asVercelResponse(res: ServerResponse): VercelResponse {
   return wrapper
 }
 
+function injectServerEnv(mode: string) {
+  const env = loadEnv(mode, process.cwd(), '')
+  for (const [key, value] of Object.entries(env)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value
+    }
+  }
+}
+
 /**
  * Local stand-in for Vercel match orchestration + push routes so
  * `vite` / `vite preview` can exercise them without `vercel dev`.
  */
-export function matchApiPlugin(): Plugin {
+export function matchApiPlugin(mode = 'development'): Plugin {
+  injectServerEnv(mode)
   let loadModule: ((id: string) => Promise<{ default: Handler }>) | null = null
 
   const handle = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {

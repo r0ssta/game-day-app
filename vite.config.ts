@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     tailwindcss(),
     parentHubManifestApiPlugin(mode),
-    matchApiPlugin(),
+    matchApiPlugin(mode),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',

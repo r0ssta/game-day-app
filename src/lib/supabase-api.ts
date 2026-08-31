@@ -953,6 +953,8 @@ export async function createMatchRecord(input: {
   opponent: string
   locationType: LocationType
   tournamentGame: boolean
+  /** Staff-only test match — parents never see it or get push. */
+  isTest?: boolean
   goesToPks?: boolean
   halfLength: number
   /** Minutes per period; defaults to halfLength. */
@@ -974,6 +976,7 @@ export async function createMatchRecord(input: {
   const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
   const periodLength = input.periodLength ?? input.halfLength
   const totalPeriods = input.totalPeriods === 3 ? 3 : 2
+  const isTest = Boolean(input.isTest)
 
   const minimalPayload = {
     team_id: input.teamId,
@@ -996,6 +999,7 @@ export async function createMatchRecord(input: {
     sub_interval_seconds: input.subIntervalSeconds ?? null,
     gk_plays_full_half: input.gkPlaysFullHalf ?? true,
     goes_to_pks: goesToPks,
+    is_test: isTest,
     home_pk_score: 0,
     away_pk_score: 0,
     pk_winner_is_us: null,
@@ -1014,6 +1018,7 @@ export async function createMatchRecord(input: {
     'sub_interval_seconds',
     'gk_plays_full_half',
     'goes_to_pks',
+    'is_test',
     'home_pk_score',
     'away_pk_score',
     'pk_winner_is_us',

@@ -96,14 +96,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? `/hub/${encodeURIComponent(input.teamSlug)}`
       : '/'
 
-    queueTeamWebPush(auth.supabase, {
-      teamId: access.match.team_id,
-      title: push.title,
-      body: push.body,
-      url: hubPath,
-      tag: `vvfc-goal-${input.matchId}`,
-      eventType: 'goal',
-    })
+    if (!access.match.is_test) {
+      queueTeamWebPush(auth.supabase, {
+        teamId: access.match.team_id,
+        title: push.title,
+        body: push.body,
+        url: hubPath,
+        tag: `vvfc-goal-${input.matchId}`,
+        eventType: 'goal',
+      })
+    }
 
     return res.status(200).json({
       ok: true,

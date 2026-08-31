@@ -690,8 +690,11 @@ export function notifyWebPush(input: {
   teamSlug?: string | null
   playerId?: string | null
   url?: string
+  /** When true, skip parent notifications (staff test matches). */
+  isTest?: boolean
 }): void {
   if (!ENABLE_PARENT_HUB) return
+  if (input.isTest) return
   if (!input.teamId || !input.body.trim()) return
 
   void (async () => {

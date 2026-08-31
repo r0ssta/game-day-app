@@ -328,6 +328,8 @@ type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
+  /** Staff test match — parents do not see this game. */
+  isTest?: boolean
   /** True when Screen Wake Lock is held (keeps display on). */
   wakeLockActive?: boolean
   /** When true, header is already outside the scrollport — no sticky needed. */
@@ -405,6 +407,7 @@ function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
+  isTest = false,
   wakeLockActive = false,
   pinned = false,
   onHome,
@@ -441,7 +444,13 @@ function MatchHeader({
         'z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
         pinned ? 'relative' : 'sticky top-0',
       )}
-    >      <div className={`${APP_CONTAINER} space-y-2 py-2`}>
+    >
+      <div className={`${APP_CONTAINER} space-y-2 py-2`}>
+        {isTest ? (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-amber-200">
+            Testing match — hidden from parents
+          </p>
+        ) : null}
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <p className="truncate text-center text-xs font-bold text-foreground sm:text-sm">
@@ -1043,6 +1052,8 @@ type SetupScreenProps = {
   onLocationTypeChange: (value: LocationType) => void
   tournamentGame: boolean
   onTournamentGameChange: (value: boolean) => void
+  isTestMatch: boolean
+  onIsTestMatchChange: (value: boolean) => void
   goesToPks: boolean
   onGoesToPksChange: (value: boolean) => void
   totalPeriods: TotalPeriods
@@ -1111,6 +1122,8 @@ function SetupScreen({
   onLocationTypeChange,
   tournamentGame,
   onTournamentGameChange,
+  isTestMatch,
+  onIsTestMatchChange,
   goesToPks,
   onGoesToPksChange,
   totalPeriods,
@@ -1461,6 +1474,33 @@ function SetupScreen({
                   className={cn(
                     'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
                     tournamentGame ? 'left-7' : 'left-1',
+                  )}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-foreground">Testing match</p>
+                <p className="text-xs text-muted-foreground">
+                  Hidden from Parent Hub — no parent alerts
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isTestMatch}
+                aria-label="Testing match"
+                onClick={() => onIsTestMatchChange(!isTestMatch)}
+                className={cn(
+                  'relative h-8 w-14 shrink-0 rounded-full transition-colors',
+                  isTestMatch ? 'bg-amber-500' : 'bg-secondary',
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                    isTestMatch ? 'left-7' : 'left-1',
                   )}
                 />
               </button>
@@ -2062,6 +2102,9 @@ export default function App() {
     setLocationType,
     tournamentGame,
     setTournamentGame,
+    isTestMatch,
+    setIsTestMatch,
+    matchIsTest,
     goesToPks,
     setGoesToPks,
     matchDate,
@@ -2443,6 +2486,19 @@ export default function App() {
   })()
   const activeTeamSlug =
     teams.find((entry) => entry.id === activeTeamId)?.slug?.trim() || null
+
+  const notifyMatchPush = useCallback(
+    (
+      input: Omit<
+        Parameters<typeof notifyWebPush>[0],
+        'isTest'
+      >,
+    ) => {
+      notifyWebPush({ ...input, isTest: matchIsTest })
+    },
+    [matchIsTest],
+  )
+
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const startMatchBlockReason =
     getSetupLineupBlockReason(setupLineup, maxFieldPlayers) ??
@@ -2593,6 +2649,7 @@ export default function App() {
       opponent,
       locationType,
       tournamentGame,
+      isTest: isTestMatch,
       goesToPks,
       halfLength: halfLengthMinutes,
       totalPeriods: matchTotalPeriods as 2 | 3,
@@ -2619,6 +2676,7 @@ export default function App() {
     masterRoster,
     setupSubIntervalMinutes,
     tournamentGame,
+    isTestMatch,
     totalPeriods,
     setupCoachName,
     opponent,
@@ -2766,7 +2824,7 @@ export default function App() {
         currentPeriod,
         totalPeriods,
       })
-      notifyWebPush({
+      notifyMatchPush({
         eventType: 'match_start',
         teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -2826,7 +2884,7 @@ export default function App() {
         homeScore,
         awayScore,
       })
-      notifyWebPush({
+      notifyMatchPush({
         eventType: 'period_end',
         teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -2884,7 +2942,7 @@ export default function App() {
         totalPeriods,
         starters,
       })
-      notifyWebPush({
+      notifyMatchPush({
         eventType: 'period_start',
         teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3162,7 +3220,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3217,7 +3275,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3286,7 +3344,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3300,7 +3358,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3437,7 +3495,7 @@ export default function App() {
             kind: issueRed ? 'red' : 'yellow',
             isSecondYellow,
           })
-          notifyWebPush({
+          notifyMatchPush({
             eventType: 'card',
             teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -4040,6 +4098,8 @@ export default function App() {
             setTournamentGame(value)
             if (!value) setGoesToPks(false)
           }}
+          isTestMatch={isTestMatch}
+          onIsTestMatchChange={setIsTestMatch}
           goesToPks={goesToPks}
           onGoesToPksChange={setGoesToPks}
           totalPeriods={totalPeriods}
@@ -4291,7 +4351,7 @@ export default function App() {
                 awayScore,
                 pkNote: `PKs ${homePk}–${awayPk} (${weWon ? 'W' : 'L'})`,
               })
-              notifyWebPush({
+              notifyMatchPush({
                 eventType: 'full_time',
                 teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -4368,6 +4428,7 @@ export default function App() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
+        isTest={matchIsTest}
         wakeLockActive={wakeLockActive}
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}

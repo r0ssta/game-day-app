@@ -49,6 +49,7 @@
     "supabase-parent-live-feed-events-migration.sql",
     "supabase-parent-live-lineup-labels-migration.sql",
     "supabase-fix-u13-maroon-final-score-migration.sql",
-    "supabase-parent-finished-match-events-migration.sql"
+    "supabase-parent-finished-match-events-migration.sql",
+    "supabase-match-is-test-migration.sql"
   ]
 }

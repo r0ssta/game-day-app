@@ -133,6 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (
       input.sendFullTimePush &&
+      !access.match.is_test &&
       input.homeScore != null &&
       input.awayScore != null &&
       input.teamName

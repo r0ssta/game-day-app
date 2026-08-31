@@ -9,6 +9,7 @@ export type MatchAccessRow = {
   half_length: number
   opponent: string
   period_clock_started: boolean
+  is_test: boolean
 }
 
 /**
@@ -23,7 +24,7 @@ export async function requireMatchAccess(
   const { data, error } = await supabase
     .from('matches')
     .select(
-      'id, team_id, status, home_score, away_score, half_length, opponent, period_clock_started',
+      'id, team_id, status, home_score, away_score, half_length, opponent, period_clock_started, is_test',
     )
     .eq('id', matchId)
     .maybeSingle()
@@ -36,5 +37,10 @@ export async function requireMatchAccess(
     return { error: 'Match not found or access denied', status: 404 }
   }
 
-  return { match: data as MatchAccessRow }
+  return {
+    match: {
+      ...(data as Omit<MatchAccessRow, 'is_test'>),
+      is_test: Boolean((data as { is_test?: boolean }).is_test),
+    },
+  }
 }

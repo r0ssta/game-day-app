@@ -57,14 +57,21 @@ export function parseJsonBody(req: VercelRequest): unknown {
 export async function requireStaffSession(
   req: VercelRequest,
 ): Promise<AuthedContext | { error: string; status: number }> {
-  const authHeader = req.headers.authorization
+  const rawHeader = req.headers.authorization
+  const authHeader = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader
   if (!authHeader?.startsWith('Bearer ')) {
     return { error: 'Authorization required', status: 401 }
   }
 
-  let supabase: SupabaseClient
+  const accessToken = authHeader.slice('Bearer '.length).trim()
+  if (!accessToken) {
+    return { error: 'Authorization required', status: 401 }
+  }
+
+  let url: string
+  let key: string
   try {
-    supabase = createUserSupabaseClient(authHeader)
+    ;({ url, key } = supabaseEnv())
   } catch (err) {
     return {
       error: err instanceof Error ? err.message : 'Supabase env not configured',
@@ -72,13 +79,24 @@ export async function requireStaffSession(
     }
   }
 
+  // Validate JWT explicitly — global Authorization headers alone are unreliable
+  // for auth.getUser() in Node/Vite middleware (no browser storage).
+  const authClient = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser()
+  } = await authClient.auth.getUser(accessToken)
   if (authError || !user) {
+    console.error('[requireStaffSession] getUser', authError?.message ?? 'no user')
     return { error: 'Invalid session', status: 401 }
   }
+
+  const supabase = createClient(url, key, {
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 
   const { data: roleRow, error: roleError } = await supabase
     .from('user_roles')
@@ -99,6 +117,6 @@ export async function requireStaffSession(
   return {
     supabase,
     user,
-    accessToken: authHeader.slice('Bearer '.length).trim(),
+    accessToken,
   }
 }

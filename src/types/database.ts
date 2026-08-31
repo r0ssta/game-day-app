@@ -81,6 +81,8 @@ export type DbMatch = {
   location: string
   location_type?: string | null
   tournament_game: boolean
+  /** Staff-only smoke/test match — hidden from Parent Hub and parent push. */
+  is_test: boolean
   goes_to_pks: boolean
   home_score: number
   away_score: number

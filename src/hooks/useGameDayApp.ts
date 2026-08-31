@@ -203,6 +203,7 @@ export function useGameDayApp() {
   const [matchOpponent, setMatchOpponent] = useState('')
   const [matchLocationType, setMatchLocationType] = useState<LocationType>('home')
   const [matchTournamentGame, setMatchTournamentGame] = useState(false)
+  const [matchIsTest, setMatchIsTest] = useState(false)
   const [matchGoesToPks, setMatchGoesToPks] = useState(false)
   const [homePkScore, setHomePkScore] = useState(0)
   const [awayPkScore, setAwayPkScore] = useState(0)
@@ -218,6 +219,7 @@ export function useGameDayApp() {
   const [opponent, setOpponent] = useState('')
   const [locationType, setLocationType] = useState<LocationType>('home')
   const [tournamentGame, setTournamentGame] = useState(false)
+  const [isTestMatch, setIsTestMatch] = useState(false)
   const [goesToPks, setGoesToPks] = useState(false)
   const [matchDate, setMatchDate] = useState(defaultMatchDate)
   const [matchTime, setMatchTime] = useState(defaultMatchTime)
@@ -419,6 +421,7 @@ export function useGameDayApp() {
           setMatchOpponent(match.opponent)
           setMatchLocationType(resolveMatchLocationType(match))
           setMatchTournamentGame(match.tournament_game)
+          setMatchIsTest(Boolean(match.is_test))
           setMatchGoesToPks(Boolean(match.goes_to_pks))
           setHomePkScore(match.home_pk_score ?? 0)
           setAwayPkScore(match.away_pk_score ?? 0)
@@ -653,6 +656,7 @@ export function useGameDayApp() {
       setOpponent(match.opponent)
       setLocationType(resolveMatchLocationType(match))
       setTournamentGame(Boolean(match.tournament_game))
+      setIsTestMatch(Boolean(match.is_test))
       setGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
       applyMatchPeriodState(match)
       setMatchDate(match.match_date ?? match.date.slice(0, 10))
@@ -1106,6 +1110,7 @@ export function useGameDayApp() {
       opponent: string
       locationType: LocationType
       tournamentGame: boolean
+      isTest?: boolean
       goesToPks?: boolean
       halfLength: number
       totalPeriods?: TotalPeriods
@@ -1148,6 +1153,7 @@ export function useGameDayApp() {
           opponent: input.opponent,
           locationType: input.locationType,
           tournamentGame: input.tournamentGame,
+          isTest: Boolean(input.isTest),
           goesToPks,
           halfLength: input.halfLength,
           periodLength: input.halfLength,
@@ -1203,6 +1209,7 @@ export function useGameDayApp() {
         setMatchOpponent(input.opponent)
         setMatchLocationType(input.locationType)
         setMatchTournamentGame(input.tournamentGame)
+        setMatchIsTest(Boolean(input.isTest))
         setMatchGoesToPks(goesToPks)
         setHalfLengthMinutes(input.halfLength)
         setSubIntervalSeconds(input.subIntervalSeconds ?? null)
@@ -1231,6 +1238,7 @@ export function useGameDayApp() {
       opponent: string
       locationType: LocationType
       tournamentGame: boolean
+      isTest?: boolean
       goesToPks?: boolean
       halfLength: number
       totalPeriods?: TotalPeriods
@@ -1268,6 +1276,7 @@ export function useGameDayApp() {
           opponent: input.opponent,
           locationType: input.locationType,
           tournamentGame: input.tournamentGame,
+          isTest: Boolean(input.isTest),
           goesToPks,
           halfLength: input.halfLength,
           periodLength: input.halfLength,
@@ -1420,6 +1429,7 @@ export function useGameDayApp() {
       setMatchOpponent(match.opponent)
       setMatchLocationType(resolveMatchLocationType(match))
       setMatchTournamentGame(Boolean(match.tournament_game))
+      setMatchIsTest(Boolean(match.is_test))
       setMatchGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
       setHalfLengthMinutes(halfLen)
       setSubIntervalSeconds(match.sub_interval_seconds ?? null)
@@ -1741,6 +1751,7 @@ export function useGameDayApp() {
     setMatchOpponent('')
     setMatchLocationType('home')
     setMatchTournamentGame(false)
+    setMatchIsTest(false)
     setMatchGoesToPks(false)
     setHomePkScore(0)
     setAwayPkScore(0)
@@ -1748,6 +1759,7 @@ export function useGameDayApp() {
     setPkGkPlayerId(null)
     setLocationType('home')
     setTournamentGame(false)
+    setIsTestMatch(false)
     setGoesToPks(false)
     setMatchFormations({
       first: getDefaultFormationId(activeTeamFormat),
@@ -1821,6 +1833,7 @@ export function useGameDayApp() {
     setMatchOpponent(match.opponent)
     setMatchLocationType(resolveMatchLocationType(match))
     setMatchTournamentGame(match.tournament_game)
+    setMatchIsTest(Boolean(match.is_test))
     setMatchGoesToPks(Boolean(match.goes_to_pks))
     setFirstHalfStarterIds(stats.filter((s) => s.is_first_half_starter).map((s) => s.player_id))
     setSecondHalfStarterIds(stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id))
@@ -2018,6 +2031,7 @@ export function useGameDayApp() {
     matchOpponent,
     matchLocationType,
     matchTournamentGame,
+    matchIsTest,
     matchGoesToPks,
     homePkScore,
     setHomePkScore,
@@ -2041,6 +2055,8 @@ export function useGameDayApp() {
     setLocationType,
     tournamentGame,
     setTournamentGame,
+    isTestMatch,
+    setIsTestMatch,
     goesToPks,
     setGoesToPks,
     matchDate,

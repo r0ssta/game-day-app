@@ -8,6 +8,11 @@ import type {
 } from '@/schemas/match-actions'
 
 async function accessToken(): Promise<string> {
+  // Prefer validated user + refreshed session so we don't send a stale JWT.
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError) throw userError
+  if (!userData.user) throw new Error('Not signed in')
+
   const { data, error } = await supabase.auth.getSession()
   if (error) throw error
   const token = data.session?.access_token

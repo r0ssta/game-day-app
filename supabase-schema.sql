@@ -63,6 +63,8 @@ create table if not exists public.matches (
   location text not null default '',
   location_type text not null default 'home' check (location_type in ('home', 'away')),
   tournament_game boolean not null default false,
+  is_test boolean not null default false,
+  goes_to_pks boolean not null default false,
   home_score integer not null default 0 check (home_score >= 0),
   away_score integer not null default 0 check (away_score >= 0),
   clock_seconds integer not null default 0 check (clock_seconds >= 0),
