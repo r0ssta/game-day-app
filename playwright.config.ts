@@ -5,8 +5,9 @@ const HOST = process.env.PLAYWRIGHT_HOST || '127.0.0.1'
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://${HOST}:${PORT}`
 
 /**
- * Smoke tests against the local Vite preview server (SPA + local /api/manifest
- * middleware). Override with PLAYWRIGHT_BASE_URL to hit a deployed environment.
+ * Smoke + API contract tests against the local Vite dev server (SPA +
+ * `/api/match/*` + `/api/manifest` middleware). Override with
+ * PLAYWRIGHT_BASE_URL to hit a deployed environment.
  */
 export default defineConfig({
   testDir: './e2e',
@@ -33,9 +34,10 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: `npm run build && npm run preview -- --host ${HOST} --port ${PORT}`,
+        // Dev server (not preview) so vite-plugin-match-api can SSR-load handlers.
+        command: `npm run dev -- --host ${HOST} --port ${PORT}`,
         url: baseURL,
         reuseExistingServer: !process.env.CI,
-        timeout: 180_000,
+        timeout: 120_000,
       },
 })
