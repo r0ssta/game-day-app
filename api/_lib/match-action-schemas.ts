@@ -230,3 +230,26 @@ export const LogPeriodInputSchema = z
   })
 
 export type LogPeriodInput = z.infer<typeof LogPeriodInputSchema>
+
+export const LogPkAttemptInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    round: z.number().int().positive(),
+    team: z.enum(['us', 'opponent']),
+    result: z.enum(['make', 'miss']),
+    playerId: z.string().uuid().nullable().optional(),
+    formation: z.string().catch(''),
+    homePkScoreBefore: z.number().int().nonnegative(),
+    awayPkScoreBefore: z.number().int().nonnegative(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.team === 'us' && !value.playerId) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'playerId is required for our PK attempts',
+        path: ['playerId'],
+      })
+    }
+  })
+
+export type LogPkAttemptInput = z.infer<typeof LogPkAttemptInputSchema>

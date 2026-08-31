@@ -5,6 +5,7 @@ import {
   LogCardInputSchema,
   LogGoalInputSchema,
   LogPeriodInputSchema,
+  LogPkAttemptInputSchema,
   LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
 } from '../src/schemas/match-actions'
@@ -15,6 +16,7 @@ const MATCH_ROUTES = [
   '/api/match/log-card',
   '/api/match/log-substitution',
   '/api/match/log-period',
+  '/api/match/log-pk-attempt',
   '/api/match/end-regulation',
   '/api/match/finalize-review',
 ] as const
@@ -204,5 +206,39 @@ test.describe('match action Zod schemas', () => {
       teamName: 'Velocity',
     })
     expect(endBad.success).toBe(false)
+  })
+
+  test('LogPkAttemptInputSchema requires playerId for us and accepts opponent miss', () => {
+    const usBad = LogPkAttemptInputSchema.safeParse({
+      matchId: VALID_UUID,
+      round: 1,
+      team: 'us',
+      result: 'make',
+      formation: '4-3-3',
+      homePkScoreBefore: 0,
+      awayPkScoreBefore: 0,
+    })
+    expect(usBad.success).toBe(false)
+    const usOk = LogPkAttemptInputSchema.safeParse({
+      matchId: VALID_UUID,
+      round: 1,
+      team: 'us',
+      result: 'make',
+      playerId: VALID_UUID,
+      formation: '4-3-3',
+      homePkScoreBefore: 0,
+      awayPkScoreBefore: 0,
+    })
+    expect(usOk.success).toBe(true)
+    const opponent = LogPkAttemptInputSchema.safeParse({
+      matchId: VALID_UUID,
+      round: 2,
+      team: 'opponent',
+      result: 'miss',
+      formation: '4-3-3',
+      homePkScoreBefore: 1,
+      awayPkScoreBefore: 0,
+    })
+    expect(opponent.success).toBe(true)
   })
 })

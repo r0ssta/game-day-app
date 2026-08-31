@@ -5,6 +5,7 @@ import type {
   LogCardInput,
   LogGoalInput,
   LogPeriodInput,
+  LogPkAttemptInput,
   LogSubstitutionInput,
   LogTeamEventInput,
   MatchActionResult,
@@ -94,6 +95,12 @@ export async function apiLogPeriod(
   input: LogPeriodInput,
 ): Promise<MatchActionResult<{ kind: LogPeriodInput['kind']; period: number }>> {
   return postMatchAction('/api/match/log-period', input)
+}
+
+export async function apiLogPkAttempt(
+  input: LogPkAttemptInput,
+): Promise<MatchActionResult<{ homePkScore: number; awayPkScore: number }>> {
+  return postMatchAction('/api/match/log-pk-attempt', input)
 }
 
 export async function apiEndRegulation(
