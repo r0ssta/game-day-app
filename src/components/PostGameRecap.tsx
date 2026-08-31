@@ -36,9 +36,9 @@ import {
   fetchMatchEvents,
   backfillMissingGoalShots,
   fetchMatchReviews,
-  finalizeMatchReview,
   saveMatchReport,
 } from '@/lib/supabase-api'
+import { apiFinalizeReview } from '@/lib/match-api'
 import {
   aggregateTeamShotSaveTotals,
   formatTeamShotSaveLine,
@@ -543,7 +543,10 @@ export function PostGameRecap({
         qualitativeContext: qualitativePayload,
         parentFacingRecap,
       })
-      await finalizeMatchReview(matchId)
+      const finalized = await apiFinalizeReview({ matchId })
+      if (!finalized.ok) {
+        throw new Error(finalized.error)
+      }
 
       const summary = buildRecapSummaryText({
         teamName,

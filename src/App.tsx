@@ -74,7 +74,6 @@ import {
 import {
   buildCardPush,
   buildFullTimePush,
-  buildGoalPush,
   buildMatchStartPush,
   buildPeriodPush,
   buildSubstitutionPush,
@@ -106,7 +105,6 @@ import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
 import {
-  insertMatchEvent,
   syncMatchClock,
   syncMatchEvent,
   syncMatchEvents,
@@ -117,6 +115,7 @@ import {
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
+import { apiLogGoal, apiLogTeamEvent } from '@/lib/match-api'
 import { cn } from '@/lib/utils'
 import {
   encodePkAttemptNotes,
@@ -2722,27 +2721,6 @@ export default function App() {
           goesToPks: matchGoesToPks,
         })
         await finishGame(seconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
-        if (matchId && !enterPks) {
-          syncMatchRecord(matchId, {
-            period_clock_started: false,
-            clock_seconds: persistableClockSeconds(seconds),
-          })
-        }
-        if (activeTeamId && !enterPks) {
-          const push = buildFullTimePush({
-            teamName: matchTeamName.trim() || 'Home',
-            opponent: matchOpponent,
-            homeScore,
-            awayScore,
-          })
-          notifyWebPush({
-            eventType: 'full_time',
-            teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-            title: push.title,
-            body: push.body,
-          })
-        }
         setEndTimingOpen(false)
         setToast(
           enterPks
@@ -2757,7 +2735,7 @@ export default function App() {
         setEndingMatch(false)
       }
     },
-    [seconds, matchId, finishGame, homeScore, awayScore, matchGoesToPks, activeTeamId, matchTeamName, matchOpponent],
+    [seconds, finishGame, homeScore, awayScore, matchGoesToPks],
   )
 
   const handleStartFirstHalf = useCallback(() => {
@@ -3490,35 +3468,43 @@ export default function App() {
       options?: {
         silent?: boolean
         timestamp?: number
+        /** When false, skip network (used when goal API already paired the shot). */
+        persist?: boolean
       },
     ) => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp =
         options?.timestamp ?? elapsedInHalf(seconds, halfLengthMinutes)
-      const eventType = side === 'home' ? 'shot_home' : 'shot_away'
       if (side === 'home') {
         setHomeShots((n) => n + 1)
       } else {
         setAwayShots((n) => n + 1)
       }
-      void insertMatchEvent({
+      if (options?.persist === false) {
+        if (!options?.silent) {
+          setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+        }
+        return
+      }
+      void apiLogTeamEvent({
         matchId,
-        eventType,
+        side,
+        eventKind: 'shot',
         timestamp: eventTimestamp,
         formation: activeFormation,
-        playerId: null,
-      })
-        .then(() => {
-          if (!options?.silent) {
-            setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
-          }
-        })
-        .catch((err) => {
+        pairAutoShot: false,
+      }).then((result) => {
+        if (!result.ok) {
           if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
           else setAwayShots((n) => Math.max(0, n - 1))
-          console.error('[logTeamShot]', err)
+          console.error('[logTeamShot]', result.error)
           setToast('Could not save shot — try again')
-        })
+          return
+        }
+        if (!options?.silent) {
+          setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+        }
+      })
     },
     [
       matchId,
@@ -3572,80 +3558,94 @@ export default function App() {
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const opponentLabel = matchOpponent.trim() || 'Opponent'
+      const onFieldPlayerIds = players
+        .filter((p) => p.attending && p.isOnField)
+        .map((p) => p.id)
+      const homeBefore = homeScore
+      const awayBefore = awayScore
 
-      setAwayScore((current) => {
-        const next = current + 1
-        syncMatchRecord(matchId, { away_score: next })
-        if (activeTeamId) {
-          const push = buildGoalPush({
-            teamName: matchTeamName.trim() || 'Home',
-            opponent: matchOpponent,
-            homeScore,
-            awayScore: next,
-            isPk,
-            ourGoal: false,
-          })
-          notifyWebPush({
-            eventType: 'goal',
-            teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-            title: push.title,
-            body: push.body,
-          })
+      setAwayScore((current) => current + 1)
+      logTeamShot('away', {
+        silent: true,
+        timestamp: eventTimestamp,
+        persist: false,
+      })
+      setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+
+      void apiLogGoal({
+        matchId,
+        ourGoal: false,
+        isPk,
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        homeScoreBefore: homeBefore,
+        awayScoreBefore: awayBefore,
+        teamName: matchTeamName.trim() || 'Home',
+        opponent: matchOpponent,
+        teamSlug: activeTeamSlug,
+        onFieldPlayerIds,
+        pairAutoShot: true,
+      }).then((result) => {
+        if (!result.ok) {
+          setAwayScore(awayBefore)
+          setAwayShots((n) => Math.max(0, n - 1))
+          setPlayers((prev) => applyPlusMinusDelta(prev, 1))
+          console.error('[commitOpponentGoal]', result.error)
+          setToast('Could not save goal — try again')
+          return
         }
         setToast(
           isPk
-            ? `Opponent PK · ${opponentLabel} ${next}`
-            : `Opponent goal · ${opponentLabel} ${next}`,
+            ? `Opponent PK · ${opponentLabel} ${awayBefore + 1}`
+            : `Opponent goal · ${opponentLabel} ${awayBefore + 1}`,
         )
-        return next
-      })
-
-      syncMatchEvent({
-        matchId,
-        eventType: 'opponent_goal',
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        isPk,
-      })
-
-      logTeamShot('away', { silent: true, timestamp: eventTimestamp })
-
-      setPlayers((prev) => {
-        const next = applyPlusMinusDelta(prev, -1)
-        if (matchId) syncMatchStats(matchId, next)
-        return next
       })
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore, setPlayers, activeTeamId, matchTeamName, homeScore, activeTeamSlug, logTeamShot],
+    [
+      matchId,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      matchOpponent,
+      players,
+      homeScore,
+      awayScore,
+      matchTeamName,
+      activeTeamSlug,
+      setAwayScore,
+      setAwayShots,
+      setPlayers,
+      logTeamShot,
+      setToast,
+    ],
   )
 
   const commitTeamCorner = useCallback(
     (side: 'home' | 'away') => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
-      const eventType = side === 'home' ? 'corner_home' : 'corner_away'
       if (side === 'home') {
         setHomeCorners((n) => n + 1)
       } else {
         setAwayCorners((n) => n + 1)
       }
-      void insertMatchEvent({
+      void apiLogTeamEvent({
         matchId,
-        eventType,
+        side,
+        eventKind: 'corner',
         timestamp: eventTimestamp,
         formation: activeFormation,
-        playerId: null,
-      })
-        .then(() => {
-          setToast(side === 'home' ? 'Corner · Home' : 'Corner · Away')
-        })
-        .catch((err) => {
+        pairAutoShot: false,
+      }).then((result) => {
+        if (!result.ok) {
           if (side === 'home') setHomeCorners((n) => Math.max(0, n - 1))
           else setAwayCorners((n) => Math.max(0, n - 1))
-          console.error('[commitTeamCorner]', err)
+          console.error('[commitTeamCorner]', result.error)
           setToast('Could not save corner — try again')
-        })
+          return
+        }
+        setToast(side === 'home' ? 'Corner · Home' : 'Corner · Away')
+      })
     },
     [
       matchId,
@@ -3663,51 +3663,47 @@ export default function App() {
     (side: 'home' | 'away') => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const gk = side === 'home' ? findActiveOnFieldGoalkeeper(players) : null
 
       if (side === 'away') {
         setAwaySaves((n) => n + 1)
-        void insertMatchEvent({
-          matchId,
-          eventType: 'save_away',
-          timestamp: eventTimestamp,
-          formation: activeFormation,
-          playerId: null,
-        })
-          .then(() => {
-            logTeamShot('home', { silent: true, timestamp: eventTimestamp })
-            setToast('Save · Away')
-          })
-          .catch((err) => {
-            setAwaySaves((n) => Math.max(0, n - 1))
-            console.error('[commitTeamSave]', err)
-            setToast('Could not save — try again')
-          })
-        return
+      } else {
+        setHomeSaves((n) => n + 1)
       }
 
-      const gk = findActiveOnFieldGoalkeeper(players)
-      setHomeSaves((n) => n + 1)
-      void insertMatchEvent({
+      void apiLogTeamEvent({
         matchId,
-        eventType: 'save_home',
+        side,
+        eventKind: 'save',
         timestamp: eventTimestamp,
         formation: activeFormation,
         playerId: gk?.id ?? null,
-      })
-        .then(() => {
-          logTeamShot('away', { silent: true, timestamp: eventTimestamp })
-          if (gk) {
-            const label = formatPlayerFullName(gk.firstName, gk.lastName)
-            setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
-          } else {
-            setToast('Save · Home (no GK on pitch)')
-          }
-        })
-        .catch((err) => {
-          setHomeSaves((n) => Math.max(0, n - 1))
-          console.error('[commitTeamSave]', err)
+        pairAutoShot: true,
+      }).then((result) => {
+        if (!result.ok) {
+          if (side === 'away') setAwaySaves((n) => Math.max(0, n - 1))
+          else setHomeSaves((n) => Math.max(0, n - 1))
+          console.error('[commitTeamSave]', result.error)
           setToast('Could not save — try again')
+          return
+        }
+        // Paired shot is written server-side; bump local shot counters only.
+        logTeamShot(side === 'away' ? 'home' : 'away', {
+          silent: true,
+          timestamp: eventTimestamp,
+          persist: false,
         })
+        if (side === 'away') {
+          setToast('Save · Away')
+          return
+        }
+        if (gk) {
+          const label = formatPlayerFullName(gk.firstName, gk.lastName)
+          setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
+        } else {
+          setToast('Save · Home (no GK on pitch)')
+        }
+      })
     },
     [
       matchId,
@@ -3732,60 +3728,54 @@ export default function App() {
       if (assistPlayerId === scorerId) return
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
-
-      setHomeScore((s) => {
-        const next = s + 1
-        syncMatchRecord(matchId, { home_score: next })
-        return next
-      })
-
-      syncMatchEvent({
-        matchId,
-        playerId: scorerId,
-        eventType: 'goal',
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        assistPlayerId: isPk ? null : assistPlayerId,
-        isPk,
-      })
-
-      logTeamShot('home', { silent: true, timestamp: eventTimestamp })
-
-      setPlayers((prev) => {
-        const next = applyPlusMinusDelta(prev, 1)
-        if (matchId) syncMatchStats(matchId, next)
-        return next
-      })
-
       const assistPlayer =
         !isPk && assistPlayerId ? players.find((p) => p.id === assistPlayerId) : null
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const scorerLabel = formatPlayerLabel(scorer, sidelineMap)
       const assistLabel = assistPlayer ? formatPlayerLabel(assistPlayer, sidelineMap) : null
       const detail = isPk ? 'PK' : assistLabel ? assistLabel : 'Unassisted'
+      const onFieldPlayerIds = players
+        .filter((p) => p.attending && p.isOnField)
+        .map((p) => p.id)
+      const homeBefore = homeScore
+      const awayBefore = awayScore
 
-      if (activeTeamId) {
-        const push = buildGoalPush({
-          teamName: matchTeamName.trim() || 'Home',
-          opponent: matchOpponent,
-          homeScore: homeScore + 1,
-          awayScore,
-          scorerLabel,
-          assistLabel,
-          isPk,
-          ourGoal: true,
-        })
-        notifyWebPush({
-          eventType: 'goal',
-          teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-          title: push.title,
-          body: push.body,
-        })
-      }
-
+      setHomeScore((s) => s + 1)
+      logTeamShot('home', {
+        silent: true,
+        timestamp: eventTimestamp,
+        persist: false,
+      })
+      setPlayers((prev) => applyPlusMinusDelta(prev, 1))
       setToast(`Goal · ${scorerLabel} (${detail})`)
       closeGoalWizard()
+
+      void apiLogGoal({
+        matchId,
+        ourGoal: true,
+        isPk,
+        scorerId,
+        assistPlayerId: isPk ? null : assistPlayerId,
+        scorerLabel,
+        assistLabel,
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        homeScoreBefore: homeBefore,
+        awayScoreBefore: awayBefore,
+        teamName: matchTeamName.trim() || 'Home',
+        opponent: matchOpponent,
+        teamSlug: activeTeamSlug,
+        onFieldPlayerIds,
+        pairAutoShot: true,
+      }).then((result) => {
+        if (!result.ok) {
+          setHomeScore(homeBefore)
+          setHomeShots((n) => Math.max(0, n - 1))
+          setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+          console.error('[commitOurGoal]', result.error)
+          setToast('Could not save goal — try again')
+        }
+      })
     },
     [
       matchId,
@@ -3794,14 +3784,16 @@ export default function App() {
       halfLengthMinutes,
       activeFormation,
       setHomeScore,
+      setHomeShots,
       setPlayers,
       closeGoalWizard,
-      activeTeamId,
       matchTeamName,
       matchOpponent,
       homeScore,
       awayScore,
+      activeTeamSlug,
       logTeamShot,
+      setToast,
     ],
   )
 

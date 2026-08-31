@@ -124,6 +124,7 @@ import {
 import { applyCardsFromEvents } from '@/lib/match-cards'
 import { PERIOD_END_NOTE, startingLineupNote } from '@/lib/match-event-notes'
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
+import { apiEndRegulation } from '@/lib/match-api'
 import {
   defaultPeriodLengthMinutes,
   periodIndexToCode,
@@ -1613,40 +1614,41 @@ export function useGameDayApp() {
     ) => {
       setRunning(false)
 
+      const onFieldPlayerIds = players
+        .filter((p) => p.attending && p.isOnField)
+        .map((p) => p.id)
+      const formation = getActiveFormation()
+      const teamSlug =
+        teams.find((entry) => entry.id === selectedTeamId)?.slug?.trim() || null
+
       if (matchId) {
-        void mergeMatchTimingContext(matchId, {
-          addedTimeSeconds: addedTimeSeconds(clockSeconds),
+        const result = await apiEndRegulation({
+          matchId,
+          clockSeconds,
+          halfLengthMinutes,
+          formation,
           endedOnTime: timing?.endedOnTime ?? null,
+          enterPenaltyShootout: options?.enterPenaltyShootout ?? false,
+          onFieldPlayerIds,
+          homeScore,
+          awayScore,
+          teamName: matchTeamName.trim() || 'Home',
+          opponent: matchOpponent,
+          teamSlug,
+          sendFullTimePush: !options?.enterPenaltyShootout,
         })
+        if (!result.ok) {
+          throw new Error(result.error)
+        }
       }
 
       setPlayers((prev) => {
-        if (matchId) {
-          const elapsed = elapsedInHalf(clockSeconds, halfLengthMinutes)
-          const formation = getActiveFormation()
-          for (const p of prev) {
-            if (p.attending && p.isOnField) {
-              void insertMatchEvent({
-                matchId,
-                playerId: p.id,
-                eventType: 'sub_out',
-                timestamp: elapsed,
-                formation,
-                eventNotes: PERIOD_END_NOTE,
-              })
-            }
-          }
-        }
-
         const finalized = finalizeAllOnField(prev, clockSeconds).map((p) =>
           p.attending && p.isOnField ? { ...p, isOnField: false, subbedInAt: null } : p,
         )
 
         if (matchId) {
           void syncMatchStats(matchId, finalized)
-          if (!options?.enterPenaltyShootout) {
-            void markMatchPendingReview(matchId)
-          }
         }
 
         return finalized
@@ -1657,16 +1659,6 @@ export function useGameDayApp() {
         setAwayPkScore(0)
         setPkWinnerIsUs(null)
         setPkGkPlayerId(null)
-        if (matchId) {
-          void syncMatchRecord(matchId, {
-            home_pk_score: 0,
-            away_pk_score: 0,
-            pk_winner_is_us: null,
-            pk_gk_player_id: null,
-            period_clock_started: false,
-            clock_seconds: persistableClockSeconds(clockSeconds),
-          })
-        }
         setPeriodClockStarted(false)
         setMatchStatus('live')
         setAppMode('penalty_shootout')
@@ -1676,7 +1668,19 @@ export function useGameDayApp() {
       setMatchStatus('pending_review')
       setAppMode('recap')
     },
-    [matchId, halfLengthMinutes, setRunning, getActiveFormation],
+    [
+      matchId,
+      halfLengthMinutes,
+      setRunning,
+      getActiveFormation,
+      players,
+      teams,
+      selectedTeamId,
+      homeScore,
+      awayScore,
+      matchTeamName,
+      matchOpponent,
+    ],
   )
 
   const finalizePenaltyShootout = useCallback(

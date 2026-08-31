@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { parentHubManifestApiPlugin } from './vite-plugin-parent-hub-manifest.ts'
+import { matchApiPlugin } from './vite-plugin-match-api.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -14,6 +15,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     tailwindcss(),
     parentHubManifestApiPlugin(mode),
+    matchApiPlugin(),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
