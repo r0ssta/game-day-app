@@ -1,6 +1,7 @@
 import { supabase } from '@/supabaseClient'
 import type {
   EndRegulationInput,
+  FinalizePkInput,
   FinalizeReviewInput,
   LogCardInput,
   LogGoalInput,
@@ -109,6 +110,12 @@ export async function apiEndRegulation(
   MatchActionResult<{ status: string; enterPenaltyShootout: boolean }>
 > {
   return postMatchAction('/api/match/end-regulation', input)
+}
+
+export async function apiFinalizePk(
+  input: FinalizePkInput,
+): Promise<MatchActionResult<{ status: string; pkWinnerIsUs: boolean }>> {
+  return postMatchAction('/api/match/finalize-pk', input)
 }
 
 export async function apiFinalizeReview(

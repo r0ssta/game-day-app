@@ -291,6 +291,42 @@ export const LogPkAttemptInputSchema = z
 
 export type LogPkAttemptInput = z.infer<typeof LogPkAttemptInputSchema>
 
+/**
+ * Finalize a penalty shootout: persist PK scores + winner, move to pending_review,
+ * and send the full-time parent push (skipped for testing matches).
+ */
+export const FinalizePkInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    homePkScore: z.number().int().nonnegative(),
+    awayPkScore: z.number().int().nonnegative(),
+    pkWinnerIsUs: z.boolean(),
+    /** Regulation scores for full-time push copy. */
+    homeScore: z.number().int().nonnegative(),
+    awayScore: z.number().int().nonnegative(),
+    teamName: z.string().min(1),
+    opponent: z.string().catch('Opponent'),
+    teamSlug: z.string().nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.homePkScore === value.awayPkScore) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'PK scores cannot be tied when finalizing',
+        path: ['homePkScore'],
+      })
+    }
+    if (value.pkWinnerIsUs !== value.homePkScore > value.awayPkScore) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'pkWinnerIsUs must match the PK score line',
+        path: ['pkWinnerIsUs'],
+      })
+    }
+  })
+
+export type FinalizePkInput = z.infer<typeof FinalizePkInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T
