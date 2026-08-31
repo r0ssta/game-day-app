@@ -330,3 +330,10 @@ export const LogFormationInputSchema = z
   })
 
 export type LogFormationInput = z.infer<typeof LogFormationInputSchema>
+
+export const RemoveLastGoalInputSchema = z.object({
+  matchId: z.string().uuid(),
+  side: MatchActionSideSchema,
+})
+
+export type RemoveLastGoalInput = z.infer<typeof RemoveLastGoalInputSchema>
