@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
-import { reportApiError } from './sentry'
+import { reportApiError } from './sentry.js'
 
 export type SendWebPushInput = {
   teamId: string

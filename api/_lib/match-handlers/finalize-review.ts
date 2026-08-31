@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth'
-import { requireMatchAccess } from '../match-access'
-import { FinalizeReviewInputSchema } from '../match-action-schemas'
-import { reportApiError } from '../sentry'
-import { recomputePlusMinusFromEvents, runMatchWrites } from '../match-writes'
+import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth.js'
+import { requireMatchAccess } from '../match-access.js'
+import { FinalizeReviewInputSchema } from '../match-action-schemas.js'
+import { reportApiError } from '../sentry.js'
+import { recomputePlusMinusFromEvents, runMatchWrites } from '../match-writes.js'
 
 /**
  * Port of client `finalizeMatchReview`: recompute plus/minus from events, set status final.

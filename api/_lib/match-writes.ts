@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { reportApiError } from './sentry'
+import { reportApiError } from './sentry.js'
 
 export type MatchEventInsert = {
   match_id: string
