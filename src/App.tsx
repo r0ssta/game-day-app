@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   CheckCircle2,
   Goal,
+  Loader2,
   Lock,
   Share2,
   Shield,
@@ -116,6 +117,8 @@ import {
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
 import { apiLogGoal, apiLogTeamEvent } from '@/lib/match-api'
+import { assertMatchActionOk } from '@/schemas/match-actions'
+import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { cn } from '@/lib/utils'
 import {
   encodePkAttemptNotes,
@@ -343,6 +346,8 @@ type MatchHeaderProps = {
   onLogCorner?: (side: 'home' | 'away') => void
   onLogCard?: () => void
   onShareStatTracker?: () => void
+  /** True while a live-event mutation is still syncing to the match API. */
+  syncPending?: boolean
 }
 
 function QaSpeedControls({
@@ -419,6 +424,7 @@ function MatchHeader({
   onLogCorner,
   onLogCard,
   onShareStatTracker,
+  syncPending = false,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
   const awayName = opponent.trim() || 'Opponent'
@@ -527,6 +533,16 @@ function MatchHeader({
                   aria-label="Screen stay-awake is on"
                 >
                   <Lock className="size-3.5" strokeWidth={2.5} aria-hidden />
+                </span>
+              ) : null}
+              {syncPending ? (
+                <span
+                  className="inline-flex items-center gap-1 text-muted-foreground"
+                  title="Saving match event…"
+                  aria-label="Saving match event"
+                >
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  <span className="size-1.5 rounded-full bg-athletic" aria-hidden />
                 </span>
               ) : null}
             </div>
@@ -2202,6 +2218,7 @@ export default function App() {
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
   const [toast, setToast] = useState<string | null>(null)
+  const { syncPending, run: runOptimisticSync } = useOptimisticSync()
   const [pendingReviewMatches, setPendingReviewMatches] = useState<DbMatch[]>([])
   const [recapReturnMode, setRecapReturnMode] = useState<
     'home' | 'recap_history' | 'reporting' | null
@@ -3544,25 +3561,31 @@ export default function App() {
         }
         return
       }
-      void apiLogTeamEvent({
-        matchId,
-        side,
-        eventKind: 'shot',
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        pairAutoShot: false,
-      }).then((result) => {
-        if (!result.ok) {
-          if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
-          else setAwayShots((n) => Math.max(0, n - 1))
-          console.error('[logTeamShot]', result.error)
-          setToast('Could not save shot — try again')
-          return
-        }
-        if (!options?.silent) {
-          setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
-        }
-      })
+      if (!options?.silent) {
+        setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+      }
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogTeamEvent({
+              matchId,
+              side,
+              eventKind: 'shot',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              pairAutoShot: false,
+            }),
+          )
+        },
+        {
+          label: 'logTeamShot',
+          onRevert: () => {
+            if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
+            else setAwayShots((n) => Math.max(0, n - 1))
+          },
+          onErrorToast: () => setToast('Could not save shot — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3573,6 +3596,7 @@ export default function App() {
       setHomeShots,
       setAwayShots,
       setToast,
+      runOptimisticSync,
     ],
   )
 
@@ -3629,35 +3653,41 @@ export default function App() {
         persist: false,
       })
       setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+      setToast(
+        isPk
+          ? `Opponent PK · ${opponentLabel} ${awayBefore + 1}`
+          : `Opponent goal · ${opponentLabel} ${awayBefore + 1}`,
+      )
 
-      void apiLogGoal({
-        matchId,
-        ourGoal: false,
-        isPk,
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        homeScoreBefore: homeBefore,
-        awayScoreBefore: awayBefore,
-        teamName: matchTeamName.trim() || 'Home',
-        opponent: matchOpponent,
-        teamSlug: activeTeamSlug,
-        onFieldPlayerIds,
-        pairAutoShot: true,
-      }).then((result) => {
-        if (!result.ok) {
-          setAwayScore(awayBefore)
-          setAwayShots((n) => Math.max(0, n - 1))
-          setPlayers((prev) => applyPlusMinusDelta(prev, 1))
-          console.error('[commitOpponentGoal]', result.error)
-          setToast('Could not save goal — try again')
-          return
-        }
-        setToast(
-          isPk
-            ? `Opponent PK · ${opponentLabel} ${awayBefore + 1}`
-            : `Opponent goal · ${opponentLabel} ${awayBefore + 1}`,
-        )
-      })
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogGoal({
+              matchId,
+              ourGoal: false,
+              isPk,
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              homeScoreBefore: homeBefore,
+              awayScoreBefore: awayBefore,
+              teamName: matchTeamName.trim() || 'Home',
+              opponent: matchOpponent,
+              teamSlug: activeTeamSlug,
+              onFieldPlayerIds,
+              pairAutoShot: true,
+            }),
+          )
+        },
+        {
+          label: 'commitOpponentGoal',
+          onRevert: () => {
+            setAwayScore(awayBefore)
+            setAwayShots((n) => Math.max(0, n - 1))
+            setPlayers((prev) => applyPlusMinusDelta(prev, 1))
+          },
+          onErrorToast: () => setToast('Could not save goal — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3675,6 +3705,7 @@ export default function App() {
       setPlayers,
       logTeamShot,
       setToast,
+      runOptimisticSync,
     ],
   )
 
@@ -3687,23 +3718,29 @@ export default function App() {
       } else {
         setAwayCorners((n) => n + 1)
       }
-      void apiLogTeamEvent({
-        matchId,
-        side,
-        eventKind: 'corner',
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        pairAutoShot: false,
-      }).then((result) => {
-        if (!result.ok) {
-          if (side === 'home') setHomeCorners((n) => Math.max(0, n - 1))
-          else setAwayCorners((n) => Math.max(0, n - 1))
-          console.error('[commitTeamCorner]', result.error)
-          setToast('Could not save corner — try again')
-          return
-        }
-        setToast(side === 'home' ? 'Corner · Home' : 'Corner · Away')
-      })
+      setToast(side === 'home' ? 'Corner · Home' : 'Corner · Away')
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogTeamEvent({
+              matchId,
+              side,
+              eventKind: 'corner',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              pairAutoShot: false,
+            }),
+          )
+        },
+        {
+          label: 'commitTeamCorner',
+          onRevert: () => {
+            if (side === 'home') setHomeCorners((n) => Math.max(0, n - 1))
+            else setAwayCorners((n) => Math.max(0, n - 1))
+          },
+          onErrorToast: () => setToast('Could not save corner — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3714,6 +3751,7 @@ export default function App() {
       setHomeCorners,
       setAwayCorners,
       setToast,
+      runOptimisticSync,
     ],
   )
 
@@ -3725,43 +3763,46 @@ export default function App() {
 
       if (side === 'away') {
         setAwaySaves((n) => n + 1)
+        setToast('Save · Away')
       } else {
         setHomeSaves((n) => n + 1)
-      }
-
-      void apiLogTeamEvent({
-        matchId,
-        side,
-        eventKind: 'save',
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        playerId: gk?.id ?? null,
-        pairAutoShot: true,
-      }).then((result) => {
-        if (!result.ok) {
-          if (side === 'away') setAwaySaves((n) => Math.max(0, n - 1))
-          else setHomeSaves((n) => Math.max(0, n - 1))
-          console.error('[commitTeamSave]', result.error)
-          setToast('Could not save — try again')
-          return
-        }
-        // Paired shot is written server-side; bump local shot counters only.
-        logTeamShot(side === 'away' ? 'home' : 'away', {
-          silent: true,
-          timestamp: eventTimestamp,
-          persist: false,
-        })
-        if (side === 'away') {
-          setToast('Save · Away')
-          return
-        }
         if (gk) {
           const label = formatPlayerFullName(gk.firstName, gk.lastName)
           setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
         } else {
           setToast('Save · Home (no GK on pitch)')
         }
-      })
+      }
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogTeamEvent({
+              matchId,
+              side,
+              eventKind: 'save',
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              playerId: gk?.id ?? null,
+              pairAutoShot: true,
+            }),
+          )
+          // Paired shot is written server-side; bump local shot counters only.
+          logTeamShot(side === 'away' ? 'home' : 'away', {
+            silent: true,
+            timestamp: eventTimestamp,
+            persist: false,
+          })
+        },
+        {
+          label: 'commitTeamSave',
+          onRevert: () => {
+            if (side === 'away') setAwaySaves((n) => Math.max(0, n - 1))
+            else setHomeSaves((n) => Math.max(0, n - 1))
+          },
+          onErrorToast: () => setToast('Could not save — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3774,6 +3815,7 @@ export default function App() {
       setAwaySaves,
       setToast,
       logTeamShot,
+      runOptimisticSync,
     ],
   )
 
@@ -3808,32 +3850,39 @@ export default function App() {
       setToast(`Goal · ${scorerLabel} (${detail})`)
       closeGoalWizard()
 
-      void apiLogGoal({
-        matchId,
-        ourGoal: true,
-        isPk,
-        scorerId,
-        assistPlayerId: isPk ? null : assistPlayerId,
-        scorerLabel,
-        assistLabel,
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        homeScoreBefore: homeBefore,
-        awayScoreBefore: awayBefore,
-        teamName: matchTeamName.trim() || 'Home',
-        opponent: matchOpponent,
-        teamSlug: activeTeamSlug,
-        onFieldPlayerIds,
-        pairAutoShot: true,
-      }).then((result) => {
-        if (!result.ok) {
-          setHomeScore(homeBefore)
-          setHomeShots((n) => Math.max(0, n - 1))
-          setPlayers((prev) => applyPlusMinusDelta(prev, -1))
-          console.error('[commitOurGoal]', result.error)
-          setToast('Could not save goal — try again')
-        }
-      })
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogGoal({
+              matchId,
+              ourGoal: true,
+              isPk,
+              scorerId,
+              assistPlayerId: isPk ? null : assistPlayerId,
+              scorerLabel,
+              assistLabel,
+              timestamp: eventTimestamp,
+              formation: activeFormation,
+              homeScoreBefore: homeBefore,
+              awayScoreBefore: awayBefore,
+              teamName: matchTeamName.trim() || 'Home',
+              opponent: matchOpponent,
+              teamSlug: activeTeamSlug,
+              onFieldPlayerIds,
+              pairAutoShot: true,
+            }),
+          )
+        },
+        {
+          label: 'commitOurGoal',
+          onRevert: () => {
+            setHomeScore(homeBefore)
+            setHomeShots((n) => Math.max(0, n - 1))
+            setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+          },
+          onErrorToast: () => setToast('Could not save goal — try again'),
+        },
+      )
     },
     [
       matchId,
@@ -3852,6 +3901,7 @@ export default function App() {
       activeTeamSlug,
       logTeamShot,
       setToast,
+      runOptimisticSync,
     ],
   )
 
@@ -4429,6 +4479,7 @@ export default function App() {
         running={running}
         periodClockStarted={periodClockStarted}
         isTest={matchIsTest}
+        syncPending={syncPending}
         wakeLockActive={wakeLockActive}
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}

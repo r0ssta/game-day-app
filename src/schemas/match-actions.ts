@@ -112,3 +112,12 @@ export type MatchActionResult<T extends Record<string, unknown> = Record<string,
 export function matchActionError(error: string, code?: string): MatchActionErr {
   return code ? { ok: false, error, code } : { ok: false, error }
 }
+
+/** Throw if a match API result failed — use inside optimistic `run` work. */
+export function assertMatchActionOk<T extends Record<string, unknown>>(
+  result: MatchActionResult<T>,
+): asserts result is MatchActionOk<T> {
+  if (!result.ok) {
+    throw new Error(result.error || 'Match action failed')
+  }
+}
