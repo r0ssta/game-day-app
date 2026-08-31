@@ -66,6 +66,16 @@ test.describe('match API contracts', () => {
     })
     expect([200, 204]).toContain(response.status())
   })
+
+  test('unknown match action → 404', async ({ request }) => {
+    const response = await request.post('/api/match/not-a-real-action', {
+      data: { matchId: VALID_UUID },
+    })
+    expect(response.status()).toBe(404)
+    const body = (await response.json()) as { ok?: boolean; error?: string }
+    expect(body.ok).toBe(false)
+    expect(String(body.error || '')).toMatch(/unknown match action/i)
+  })
 })
 
 test.describe('match action Zod schemas', () => {

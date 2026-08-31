@@ -1,15 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
-import { requireMatchAccess } from '../_lib/match-access'
-import { LogPeriodInputSchema } from '../_lib/match-action-schemas'
-import { reportApiError } from '../_lib/sentry'
+import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth'
+import { requireMatchAccess } from '../match-access'
+import { LogPeriodInputSchema } from '../match-action-schemas'
+import { reportApiError } from '../sentry'
 import {
   buildMatchStartPush,
   buildPeriodPush,
-} from '../_lib/push-copy'
-import { queueTeamWebPush } from '../_lib/send-web-push'
-import { runMatchWrites } from '../_lib/match-writes'
+} from '../push-copy'
+import { queueTeamWebPush } from '../send-web-push'
+import { runMatchWrites } from '../match-writes'
 
 const PERIOD_END_NOTE = 'period_end'
 const STARTING_LINEUP_NOTE_PREFIX = 'starting_lineup|'

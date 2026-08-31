@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
-import { requireMatchAccess } from '../_lib/match-access'
-import { LogGoalInputSchema } from '../_lib/match-action-schemas'
-import { reportApiError } from '../_lib/sentry'
-import { buildGoalPush } from '../_lib/push-copy'
-import { queueTeamWebPush } from '../_lib/send-web-push'
-import { type MatchEventInsert, runMatchWrites } from '../_lib/match-writes'
+import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth'
+import { requireMatchAccess } from '../match-access'
+import { LogGoalInputSchema } from '../match-action-schemas'
+import { reportApiError } from '../sentry'
+import { buildGoalPush } from '../push-copy'
+import { queueTeamWebPush } from '../send-web-push'
+import { type MatchEventInsert, runMatchWrites } from '../match-writes'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {

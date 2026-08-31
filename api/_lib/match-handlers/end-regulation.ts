@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
-import { requireMatchAccess } from '../_lib/match-access'
-import { EndRegulationInputSchema } from '../_lib/match-action-schemas'
-import { reportApiError } from '../_lib/sentry'
-import { buildFullTimePush } from '../_lib/push-copy'
-import { queueTeamWebPush } from '../_lib/send-web-push'
-import { runMatchWrites } from '../_lib/match-writes'
+import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth'
+import { requireMatchAccess } from '../match-access'
+import { EndRegulationInputSchema } from '../match-action-schemas'
+import { reportApiError } from '../sentry'
+import { buildFullTimePush } from '../push-copy'
+import { queueTeamWebPush } from '../send-web-push'
+import { runMatchWrites } from '../match-writes'
 
 const PERIOD_END_NOTE = 'period_end'
 
