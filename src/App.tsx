@@ -74,7 +74,6 @@ import {
 import {
   buildCardPush,
   buildFullTimePush,
-  buildGoalPush,
   buildMatchStartPush,
   buildPeriodPush,
   buildSubstitutionPush,
@@ -106,7 +105,6 @@ import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
 import {
-  insertMatchEvent,
   syncMatchClock,
   syncMatchEvent,
   syncMatchEvents,
@@ -117,6 +115,7 @@ import {
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
+import { apiLogGoal, apiLogTeamEvent } from '@/lib/match-api'
 import { cn } from '@/lib/utils'
 import {
   encodePkAttemptNotes,
@@ -329,6 +328,8 @@ type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
+  /** Staff test match — parents do not see this game. */
+  isTest?: boolean
   /** True when Screen Wake Lock is held (keeps display on). */
   wakeLockActive?: boolean
   /** When true, header is already outside the scrollport — no sticky needed. */
@@ -406,6 +407,7 @@ function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
+  isTest = false,
   wakeLockActive = false,
   pinned = false,
   onHome,
@@ -442,7 +444,13 @@ function MatchHeader({
         'z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
         pinned ? 'relative' : 'sticky top-0',
       )}
-    >      <div className={`${APP_CONTAINER} space-y-2 py-2`}>
+    >
+      <div className={`${APP_CONTAINER} space-y-2 py-2`}>
+        {isTest ? (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-amber-200">
+            Testing match — hidden from parents
+          </p>
+        ) : null}
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <p className="truncate text-center text-xs font-bold text-foreground sm:text-sm">
@@ -1044,6 +1052,8 @@ type SetupScreenProps = {
   onLocationTypeChange: (value: LocationType) => void
   tournamentGame: boolean
   onTournamentGameChange: (value: boolean) => void
+  isTestMatch: boolean
+  onIsTestMatchChange: (value: boolean) => void
   goesToPks: boolean
   onGoesToPksChange: (value: boolean) => void
   totalPeriods: TotalPeriods
@@ -1112,6 +1122,8 @@ function SetupScreen({
   onLocationTypeChange,
   tournamentGame,
   onTournamentGameChange,
+  isTestMatch,
+  onIsTestMatchChange,
   goesToPks,
   onGoesToPksChange,
   totalPeriods,
@@ -1462,6 +1474,33 @@ function SetupScreen({
                   className={cn(
                     'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
                     tournamentGame ? 'left-7' : 'left-1',
+                  )}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-foreground">Testing match</p>
+                <p className="text-xs text-muted-foreground">
+                  Hidden from Parent Hub — no parent alerts
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isTestMatch}
+                aria-label="Testing match"
+                onClick={() => onIsTestMatchChange(!isTestMatch)}
+                className={cn(
+                  'relative h-8 w-14 shrink-0 rounded-full transition-colors',
+                  isTestMatch ? 'bg-amber-500' : 'bg-secondary',
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                    isTestMatch ? 'left-7' : 'left-1',
                   )}
                 />
               </button>
@@ -2063,6 +2102,9 @@ export default function App() {
     setLocationType,
     tournamentGame,
     setTournamentGame,
+    isTestMatch,
+    setIsTestMatch,
+    matchIsTest,
     goesToPks,
     setGoesToPks,
     matchDate,
@@ -2444,6 +2486,19 @@ export default function App() {
   })()
   const activeTeamSlug =
     teams.find((entry) => entry.id === activeTeamId)?.slug?.trim() || null
+
+  const notifyMatchPush = useCallback(
+    (
+      input: Omit<
+        Parameters<typeof notifyWebPush>[0],
+        'isTest'
+      >,
+    ) => {
+      notifyWebPush({ ...input, isTest: matchIsTest })
+    },
+    [matchIsTest],
+  )
+
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const startMatchBlockReason =
     getSetupLineupBlockReason(setupLineup, maxFieldPlayers) ??
@@ -2594,6 +2649,7 @@ export default function App() {
       opponent,
       locationType,
       tournamentGame,
+      isTest: isTestMatch,
       goesToPks,
       halfLength: halfLengthMinutes,
       totalPeriods: matchTotalPeriods as 2 | 3,
@@ -2620,6 +2676,7 @@ export default function App() {
     masterRoster,
     setupSubIntervalMinutes,
     tournamentGame,
+    isTestMatch,
     totalPeriods,
     setupCoachName,
     opponent,
@@ -2722,27 +2779,6 @@ export default function App() {
           goesToPks: matchGoesToPks,
         })
         await finishGame(seconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
-        if (matchId && !enterPks) {
-          syncMatchRecord(matchId, {
-            period_clock_started: false,
-            clock_seconds: persistableClockSeconds(seconds),
-          })
-        }
-        if (activeTeamId && !enterPks) {
-          const push = buildFullTimePush({
-            teamName: matchTeamName.trim() || 'Home',
-            opponent: matchOpponent,
-            homeScore,
-            awayScore,
-          })
-          notifyWebPush({
-            eventType: 'full_time',
-            teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-            title: push.title,
-            body: push.body,
-          })
-        }
         setEndTimingOpen(false)
         setToast(
           enterPks
@@ -2757,7 +2793,7 @@ export default function App() {
         setEndingMatch(false)
       }
     },
-    [seconds, matchId, finishGame, homeScore, awayScore, matchGoesToPks, activeTeamId, matchTeamName, matchOpponent],
+    [seconds, finishGame, homeScore, awayScore, matchGoesToPks],
   )
 
   const handleStartFirstHalf = useCallback(() => {
@@ -2788,7 +2824,7 @@ export default function App() {
         currentPeriod,
         totalPeriods,
       })
-      notifyWebPush({
+      notifyMatchPush({
         eventType: 'match_start',
         teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -2848,7 +2884,7 @@ export default function App() {
         homeScore,
         awayScore,
       })
-      notifyWebPush({
+      notifyMatchPush({
         eventType: 'period_end',
         teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -2906,7 +2942,7 @@ export default function App() {
         totalPeriods,
         starters,
       })
-      notifyWebPush({
+      notifyMatchPush({
         eventType: 'period_start',
         teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3184,7 +3220,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3239,7 +3275,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3308,7 +3344,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3322,7 +3358,7 @@ export default function App() {
               currentPeriod,
               totalPeriods,
             })
-            notifyWebPush({
+            notifyMatchPush({
               eventType: 'substitution',
               teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3459,7 +3495,7 @@ export default function App() {
             kind: issueRed ? 'red' : 'yellow',
             isSecondYellow,
           })
-          notifyWebPush({
+          notifyMatchPush({
             eventType: 'card',
             teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -3490,35 +3526,43 @@ export default function App() {
       options?: {
         silent?: boolean
         timestamp?: number
+        /** When false, skip network (used when goal API already paired the shot). */
+        persist?: boolean
       },
     ) => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp =
         options?.timestamp ?? elapsedInHalf(seconds, halfLengthMinutes)
-      const eventType = side === 'home' ? 'shot_home' : 'shot_away'
       if (side === 'home') {
         setHomeShots((n) => n + 1)
       } else {
         setAwayShots((n) => n + 1)
       }
-      void insertMatchEvent({
+      if (options?.persist === false) {
+        if (!options?.silent) {
+          setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+        }
+        return
+      }
+      void apiLogTeamEvent({
         matchId,
-        eventType,
+        side,
+        eventKind: 'shot',
         timestamp: eventTimestamp,
         formation: activeFormation,
-        playerId: null,
-      })
-        .then(() => {
-          if (!options?.silent) {
-            setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
-          }
-        })
-        .catch((err) => {
+        pairAutoShot: false,
+      }).then((result) => {
+        if (!result.ok) {
           if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
           else setAwayShots((n) => Math.max(0, n - 1))
-          console.error('[logTeamShot]', err)
+          console.error('[logTeamShot]', result.error)
           setToast('Could not save shot — try again')
-        })
+          return
+        }
+        if (!options?.silent) {
+          setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+        }
+      })
     },
     [
       matchId,
@@ -3572,80 +3616,94 @@ export default function App() {
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const opponentLabel = matchOpponent.trim() || 'Opponent'
+      const onFieldPlayerIds = players
+        .filter((p) => p.attending && p.isOnField)
+        .map((p) => p.id)
+      const homeBefore = homeScore
+      const awayBefore = awayScore
 
-      setAwayScore((current) => {
-        const next = current + 1
-        syncMatchRecord(matchId, { away_score: next })
-        if (activeTeamId) {
-          const push = buildGoalPush({
-            teamName: matchTeamName.trim() || 'Home',
-            opponent: matchOpponent,
-            homeScore,
-            awayScore: next,
-            isPk,
-            ourGoal: false,
-          })
-          notifyWebPush({
-            eventType: 'goal',
-            teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-            title: push.title,
-            body: push.body,
-          })
+      setAwayScore((current) => current + 1)
+      logTeamShot('away', {
+        silent: true,
+        timestamp: eventTimestamp,
+        persist: false,
+      })
+      setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+
+      void apiLogGoal({
+        matchId,
+        ourGoal: false,
+        isPk,
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        homeScoreBefore: homeBefore,
+        awayScoreBefore: awayBefore,
+        teamName: matchTeamName.trim() || 'Home',
+        opponent: matchOpponent,
+        teamSlug: activeTeamSlug,
+        onFieldPlayerIds,
+        pairAutoShot: true,
+      }).then((result) => {
+        if (!result.ok) {
+          setAwayScore(awayBefore)
+          setAwayShots((n) => Math.max(0, n - 1))
+          setPlayers((prev) => applyPlusMinusDelta(prev, 1))
+          console.error('[commitOpponentGoal]', result.error)
+          setToast('Could not save goal — try again')
+          return
         }
         setToast(
           isPk
-            ? `Opponent PK · ${opponentLabel} ${next}`
-            : `Opponent goal · ${opponentLabel} ${next}`,
+            ? `Opponent PK · ${opponentLabel} ${awayBefore + 1}`
+            : `Opponent goal · ${opponentLabel} ${awayBefore + 1}`,
         )
-        return next
-      })
-
-      syncMatchEvent({
-        matchId,
-        eventType: 'opponent_goal',
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        isPk,
-      })
-
-      logTeamShot('away', { silent: true, timestamp: eventTimestamp })
-
-      setPlayers((prev) => {
-        const next = applyPlusMinusDelta(prev, -1)
-        if (matchId) syncMatchStats(matchId, next)
-        return next
       })
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, matchOpponent, setAwayScore, setPlayers, activeTeamId, matchTeamName, homeScore, activeTeamSlug, logTeamShot],
+    [
+      matchId,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      matchOpponent,
+      players,
+      homeScore,
+      awayScore,
+      matchTeamName,
+      activeTeamSlug,
+      setAwayScore,
+      setAwayShots,
+      setPlayers,
+      logTeamShot,
+      setToast,
+    ],
   )
 
   const commitTeamCorner = useCallback(
     (side: 'home' | 'away') => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
-      const eventType = side === 'home' ? 'corner_home' : 'corner_away'
       if (side === 'home') {
         setHomeCorners((n) => n + 1)
       } else {
         setAwayCorners((n) => n + 1)
       }
-      void insertMatchEvent({
+      void apiLogTeamEvent({
         matchId,
-        eventType,
+        side,
+        eventKind: 'corner',
         timestamp: eventTimestamp,
         formation: activeFormation,
-        playerId: null,
-      })
-        .then(() => {
-          setToast(side === 'home' ? 'Corner · Home' : 'Corner · Away')
-        })
-        .catch((err) => {
+        pairAutoShot: false,
+      }).then((result) => {
+        if (!result.ok) {
           if (side === 'home') setHomeCorners((n) => Math.max(0, n - 1))
           else setAwayCorners((n) => Math.max(0, n - 1))
-          console.error('[commitTeamCorner]', err)
+          console.error('[commitTeamCorner]', result.error)
           setToast('Could not save corner — try again')
-        })
+          return
+        }
+        setToast(side === 'home' ? 'Corner · Home' : 'Corner · Away')
+      })
     },
     [
       matchId,
@@ -3663,51 +3721,47 @@ export default function App() {
     (side: 'home' | 'away') => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const gk = side === 'home' ? findActiveOnFieldGoalkeeper(players) : null
 
       if (side === 'away') {
         setAwaySaves((n) => n + 1)
-        void insertMatchEvent({
-          matchId,
-          eventType: 'save_away',
-          timestamp: eventTimestamp,
-          formation: activeFormation,
-          playerId: null,
-        })
-          .then(() => {
-            logTeamShot('home', { silent: true, timestamp: eventTimestamp })
-            setToast('Save · Away')
-          })
-          .catch((err) => {
-            setAwaySaves((n) => Math.max(0, n - 1))
-            console.error('[commitTeamSave]', err)
-            setToast('Could not save — try again')
-          })
-        return
+      } else {
+        setHomeSaves((n) => n + 1)
       }
 
-      const gk = findActiveOnFieldGoalkeeper(players)
-      setHomeSaves((n) => n + 1)
-      void insertMatchEvent({
+      void apiLogTeamEvent({
         matchId,
-        eventType: 'save_home',
+        side,
+        eventKind: 'save',
         timestamp: eventTimestamp,
         formation: activeFormation,
         playerId: gk?.id ?? null,
-      })
-        .then(() => {
-          logTeamShot('away', { silent: true, timestamp: eventTimestamp })
-          if (gk) {
-            const label = formatPlayerFullName(gk.firstName, gk.lastName)
-            setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
-          } else {
-            setToast('Save · Home (no GK on pitch)')
-          }
-        })
-        .catch((err) => {
-          setHomeSaves((n) => Math.max(0, n - 1))
-          console.error('[commitTeamSave]', err)
+        pairAutoShot: true,
+      }).then((result) => {
+        if (!result.ok) {
+          if (side === 'away') setAwaySaves((n) => Math.max(0, n - 1))
+          else setHomeSaves((n) => Math.max(0, n - 1))
+          console.error('[commitTeamSave]', result.error)
           setToast('Could not save — try again')
+          return
+        }
+        // Paired shot is written server-side; bump local shot counters only.
+        logTeamShot(side === 'away' ? 'home' : 'away', {
+          silent: true,
+          timestamp: eventTimestamp,
+          persist: false,
         })
+        if (side === 'away') {
+          setToast('Save · Away')
+          return
+        }
+        if (gk) {
+          const label = formatPlayerFullName(gk.firstName, gk.lastName)
+          setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
+        } else {
+          setToast('Save · Home (no GK on pitch)')
+        }
+      })
     },
     [
       matchId,
@@ -3732,60 +3786,54 @@ export default function App() {
       if (assistPlayerId === scorerId) return
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
-
-      setHomeScore((s) => {
-        const next = s + 1
-        syncMatchRecord(matchId, { home_score: next })
-        return next
-      })
-
-      syncMatchEvent({
-        matchId,
-        playerId: scorerId,
-        eventType: 'goal',
-        timestamp: eventTimestamp,
-        formation: activeFormation,
-        assistPlayerId: isPk ? null : assistPlayerId,
-        isPk,
-      })
-
-      logTeamShot('home', { silent: true, timestamp: eventTimestamp })
-
-      setPlayers((prev) => {
-        const next = applyPlusMinusDelta(prev, 1)
-        if (matchId) syncMatchStats(matchId, next)
-        return next
-      })
-
       const assistPlayer =
         !isPk && assistPlayerId ? players.find((p) => p.id === assistPlayerId) : null
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const scorerLabel = formatPlayerLabel(scorer, sidelineMap)
       const assistLabel = assistPlayer ? formatPlayerLabel(assistPlayer, sidelineMap) : null
       const detail = isPk ? 'PK' : assistLabel ? assistLabel : 'Unassisted'
+      const onFieldPlayerIds = players
+        .filter((p) => p.attending && p.isOnField)
+        .map((p) => p.id)
+      const homeBefore = homeScore
+      const awayBefore = awayScore
 
-      if (activeTeamId) {
-        const push = buildGoalPush({
-          teamName: matchTeamName.trim() || 'Home',
-          opponent: matchOpponent,
-          homeScore: homeScore + 1,
-          awayScore,
-          scorerLabel,
-          assistLabel,
-          isPk,
-          ourGoal: true,
-        })
-        notifyWebPush({
-          eventType: 'goal',
-          teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-          title: push.title,
-          body: push.body,
-        })
-      }
-
+      setHomeScore((s) => s + 1)
+      logTeamShot('home', {
+        silent: true,
+        timestamp: eventTimestamp,
+        persist: false,
+      })
+      setPlayers((prev) => applyPlusMinusDelta(prev, 1))
       setToast(`Goal · ${scorerLabel} (${detail})`)
       closeGoalWizard()
+
+      void apiLogGoal({
+        matchId,
+        ourGoal: true,
+        isPk,
+        scorerId,
+        assistPlayerId: isPk ? null : assistPlayerId,
+        scorerLabel,
+        assistLabel,
+        timestamp: eventTimestamp,
+        formation: activeFormation,
+        homeScoreBefore: homeBefore,
+        awayScoreBefore: awayBefore,
+        teamName: matchTeamName.trim() || 'Home',
+        opponent: matchOpponent,
+        teamSlug: activeTeamSlug,
+        onFieldPlayerIds,
+        pairAutoShot: true,
+      }).then((result) => {
+        if (!result.ok) {
+          setHomeScore(homeBefore)
+          setHomeShots((n) => Math.max(0, n - 1))
+          setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+          console.error('[commitOurGoal]', result.error)
+          setToast('Could not save goal — try again')
+        }
+      })
     },
     [
       matchId,
@@ -3794,14 +3842,16 @@ export default function App() {
       halfLengthMinutes,
       activeFormation,
       setHomeScore,
+      setHomeShots,
       setPlayers,
       closeGoalWizard,
-      activeTeamId,
       matchTeamName,
       matchOpponent,
       homeScore,
       awayScore,
+      activeTeamSlug,
       logTeamShot,
+      setToast,
     ],
   )
 
@@ -4048,6 +4098,8 @@ export default function App() {
             setTournamentGame(value)
             if (!value) setGoesToPks(false)
           }}
+          isTestMatch={isTestMatch}
+          onIsTestMatchChange={setIsTestMatch}
           goesToPks={goesToPks}
           onGoesToPksChange={setGoesToPks}
           totalPeriods={totalPeriods}
@@ -4299,7 +4351,7 @@ export default function App() {
                 awayScore,
                 pkNote: `PKs ${homePk}–${awayPk} (${weWon ? 'W' : 'L'})`,
               })
-              notifyWebPush({
+              notifyMatchPush({
                 eventType: 'full_time',
                 teamId: activeTeamId,
             teamSlug: activeTeamSlug,
@@ -4376,6 +4428,7 @@ export default function App() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
+        isTest={matchIsTest}
         wakeLockActive={wakeLockActive}
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}

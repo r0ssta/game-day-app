@@ -64,6 +64,7 @@ export const MatchSchema: z.ZodType<DbMatch> = z
     location: z.string().catch(''),
     location_type: z.string().nullable().optional().catch(null),
     tournament_game: z.boolean().catch(false),
+    is_test: z.boolean().catch(false),
     goes_to_pks: z.boolean().catch(false),
     home_score: z.number().catch(0),
     away_score: z.number().catch(0),
