@@ -3,10 +3,10 @@ import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { RemoveLastGoalInputSchema } from '../_lib/match-action-schemas'
 import {
-  deleteMatchEventRow,
   findLastGoalEvent,
   findPairedGoalShotEvent,
   recomputePlusMinusFromEvents,
+  runMatchWrites,
 } from '../_lib/match-writes'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -58,23 +58,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const pairedShot = findPairedGoalShotEvent(events ?? [], goalEvent)
-    await deleteMatchEventRow(auth.supabase, goalEvent.id)
-    if (pairedShot) {
-      await deleteMatchEventRow(auth.supabase, pairedShot.id)
-    }
-
+    const deleteIds = [goalEvent.id, pairedShot?.id].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    )
     const homeScore =
       input.side === 'home' ? Math.max(0, access.match.home_score - 1) : access.match.home_score
     const awayScore =
       input.side === 'away' ? Math.max(0, access.match.away_score - 1) : access.match.away_score
 
-    const { error: scoreError } = await auth.supabase
-      .from('matches')
-      .update({ home_score: homeScore, away_score: awayScore })
-      .eq('id', input.matchId)
-    if (scoreError) throw scoreError
-
-    await recomputePlusMinusFromEvents(auth.supabase, input.matchId)
+    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      await tx.deleteEvents(deleteIds)
+      await tx.updateMatch({ home_score: homeScore, away_score: awayScore })
+      await recomputePlusMinusFromEvents(auth.supabase, input.matchId, tx)
+    })
 
     return res.status(200).json({
       ok: true,

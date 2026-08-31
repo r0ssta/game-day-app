@@ -1,56 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { LogSubstitutionInputSchema } from '../_lib/match-action-schemas'
 import { buildSubstitutionPush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
-import { insertMatchEventRow } from '../_lib/match-writes'
-
-async function updateFieldOutStats(
-  supabase: SupabaseClient,
-  matchId: string,
-  playerId: string,
-  totalSecondsPlayed: number,
-) {
-  const { error } = await supabase
-    .from('match_stats')
-    .update({
-      match_status: 'bench',
-      subbed_in_at: null,
-      total_seconds_played: totalSecondsPlayed,
-      total_minutes: totalSecondsPlayed / 60,
-    })
-    .eq('match_id', matchId)
-    .eq('player_id', playerId)
-  if (error) {
-    console.warn('[log-substitution] field out stats', error.message)
-  }
-}
-
-async function updateBenchInStats(
-  supabase: SupabaseClient,
-  matchId: string,
-  playerId: string,
-  subbedInAt: number | null,
-  matchPosition: string | undefined,
-) {
-  const patch: Record<string, unknown> = {
-    match_status: 'on-field',
-    subbed_in_at: subbedInAt,
-  }
-  if (typeof matchPosition === 'string' && matchPosition.trim()) {
-    patch.match_position = matchPosition.trim()
-  }
-  const { error } = await supabase
-    .from('match_stats')
-    .update(patch)
-    .eq('match_id', matchId)
-    .eq('player_id', playerId)
-  if (error) {
-    console.warn('[log-substitution] bench in stats', error.message)
-  }
-}
+import { runMatchWrites } from '../_lib/match-writes'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -87,42 +41,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const doOut = input.kind === 'out' || input.kind === 'swap'
     const doIn = input.kind === 'in' || input.kind === 'swap'
 
-    if (doOut && input.fieldPlayerId) {
-      await insertMatchEventRow(auth.supabase, {
-        match_id: input.matchId,
-        player_id: input.fieldPlayerId,
-        event_type: 'sub_out',
-        timestamp: input.timestamp,
-        formation: input.formation,
-        is_pk: false,
-      })
-      await updateFieldOutStats(
-        auth.supabase,
-        input.matchId,
-        input.fieldPlayerId,
-        input.fieldTotalSecondsPlayed ?? 0,
-      )
-    }
+    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      if (doOut && input.fieldPlayerId) {
+        await tx.insertEvent({
+          match_id: input.matchId,
+          player_id: input.fieldPlayerId,
+          event_type: 'sub_out',
+          timestamp: input.timestamp,
+          formation: input.formation,
+          is_pk: false,
+        })
+        await tx.updatePlayerStats(input.fieldPlayerId, {
+          match_status: 'bench',
+          subbed_in_at: null,
+          total_seconds_played: input.fieldTotalSecondsPlayed ?? 0,
+          total_minutes: (input.fieldTotalSecondsPlayed ?? 0) / 60,
+        })
+      }
 
-    if (doIn && input.benchPlayerId) {
-      const position = input.tacticalPosition?.trim() || null
-      await insertMatchEventRow(auth.supabase, {
-        match_id: input.matchId,
-        player_id: input.benchPlayerId,
-        event_type: 'sub_in',
-        timestamp: input.timestamp,
-        formation: input.formation,
-        event_notes: position,
-        is_pk: false,
-      })
-      await updateBenchInStats(
-        auth.supabase,
-        input.matchId,
-        input.benchPlayerId,
-        input.benchSubbedInAt ?? null,
-        position ?? undefined,
-      )
-    }
+      if (doIn && input.benchPlayerId) {
+        const position = input.tacticalPosition?.trim() || null
+        await tx.insertEvent({
+          match_id: input.matchId,
+          player_id: input.benchPlayerId,
+          event_type: 'sub_in',
+          timestamp: input.timestamp,
+          formation: input.formation,
+          event_notes: position,
+          is_pk: false,
+        })
+        const patch: Record<string, unknown> = {
+          match_status: 'on-field',
+          subbed_in_at: input.benchSubbedInAt ?? null,
+        }
+        if (position) patch.match_position = position
+        await tx.updatePlayerStats(input.benchPlayerId, patch)
+      }
+    })
 
     if (!access.match.is_test) {
       const hubPath = input.teamSlug
