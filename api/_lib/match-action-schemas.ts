@@ -284,3 +284,49 @@ export const FinalizePkInputSchema = z
   })
 
 export type FinalizePkInput = z.infer<typeof FinalizePkInputSchema>
+
+export const LogFormationInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    kind: z.enum(['switch', 'reassign']),
+    timestamp: z.number().int().finite(),
+    formation: z.string().min(1),
+    previousLabel: z.string().optional(),
+    nextLabel: z.string().optional(),
+    positionUpdates: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          position: z.string().min(1),
+        }),
+      )
+      .default([]),
+    overflowPlayers: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          totalSecondsPlayed: z.number().nonnegative(),
+        }),
+      )
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === 'switch') {
+      if (!value.previousLabel?.trim() || !value.nextLabel?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'previousLabel and nextLabel are required when switching formation',
+          path: ['previousLabel'],
+        })
+      }
+    }
+    if (value.kind === 'reassign' && value.positionUpdates.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'positionUpdates is required when reassigning',
+        path: ['positionUpdates'],
+      })
+    }
+  })
+
+export type LogFormationInput = z.infer<typeof LogFormationInputSchema>

@@ -327,6 +327,59 @@ export const FinalizePkInputSchema = z
 
 export type FinalizePkInput = z.infer<typeof FinalizePkInputSchema>
 
+/**
+ * Live formation switch or on-pitch position remap.
+ * Client updates local pitch/players first; server persists events + match_stats.
+ */
+export const LogFormationInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    kind: z.enum(['switch', 'reassign']),
+    timestamp: z.number().int().finite(),
+    /** Formation id stored on the events (the formation in effect after the change). */
+    formation: z.string().min(1),
+    /** Human labels for formation_change notes — required for `switch`. */
+    previousLabel: z.string().optional(),
+    nextLabel: z.string().optional(),
+    positionUpdates: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          position: z.string().min(1),
+        }),
+      )
+      .default([]),
+    /** Players who no longer fit after a smaller formation — each gets a sub_out. */
+    overflowPlayers: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          totalSecondsPlayed: z.number().nonnegative(),
+        }),
+      )
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === 'switch') {
+      if (!value.previousLabel?.trim() || !value.nextLabel?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'previousLabel and nextLabel are required when switching formation',
+          path: ['previousLabel'],
+        })
+      }
+    }
+    if (value.kind === 'reassign' && value.positionUpdates.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'positionUpdates is required when reassigning',
+        path: ['positionUpdates'],
+      })
+    }
+  })
+
+export type LogFormationInput = z.infer<typeof LogFormationInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T
