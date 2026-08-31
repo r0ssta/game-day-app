@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
+import { requirePublishableSupabaseEnv } from './server-env.js'
 
 export type AuthedContext = {
   supabase: SupabaseClient
@@ -8,15 +9,7 @@ export type AuthedContext = {
 }
 
 function supabaseEnv() {
-  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
-  const key =
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY
-  if (!url || !key) {
-    throw new Error('Supabase env not configured')
-  }
-  return { url, key }
+  return requirePublishableSupabaseEnv()
 }
 
 /** User-scoped Supabase client from `Authorization: Bearer <access_token>`. */

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { reportApiError } from './_lib/sentry.js'
+import { assertNoClientLeakedSecrets, requirePublishableSupabaseEnv } from './_lib/server-env.js'
 
 const DEFAULT_THEME = '#12141c'
 const DEFAULT_LOGO_PATH = '/branding/virginia-velocity-crest.png'
@@ -112,6 +113,8 @@ function buildManifest(input: {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  assertNoClientLeakedSecrets()
+
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -141,15 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
     }
 
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
-    const supabaseKey =
-      process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_PUBLISHABLE_KEY
-
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ error: 'Supabase env not configured' })
-    }
+    const { url: supabaseUrl, key: supabaseKey } = requirePublishableSupabaseEnv()
 
     const supabase = createClient(supabaseUrl, supabaseKey)
     const { data, error } = await supabase.rpc('get_team_pwa_branding', {
