@@ -73,8 +73,6 @@ import {
   ENABLE_WAKE_LOCK,
 } from '@/lib/feature-flags'
 import {
-  buildFullTimePush,
-  notifyWebPush,
   buildParentHubUrl,
   shareParentHubLink,
 } from '@/lib/parent-hub'
@@ -2497,18 +2495,6 @@ export default function App() {
   const activeTeamSlug =
     teams.find((entry) => entry.id === activeTeamId)?.slug?.trim() || null
 
-  const notifyMatchPush = useCallback(
-    (
-      input: Omit<
-        Parameters<typeof notifyWebPush>[0],
-        'isTest'
-      >,
-    ) => {
-      notifyWebPush({ ...input, isTest: matchIsTest })
-    },
-    [matchIsTest],
-  )
-
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
   const startMatchBlockReason =
     getSetupLineupBlockReason(setupLineup, maxFieldPlayers) ??
@@ -4413,22 +4399,6 @@ export default function App() {
               awayPkScore: awayPk,
               pkWinnerIsUs: weWon,
             })
-            if (activeTeamId) {
-              const push = buildFullTimePush({
-                teamName: matchTeamName.trim() || 'Home',
-                opponent: matchOpponent,
-                homeScore,
-                awayScore,
-                pkNote: `PKs ${homePk}–${awayPk} (${weWon ? 'W' : 'L'})`,
-              })
-              notifyMatchPush({
-                eventType: 'full_time',
-                teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-                title: push.title,
-                body: push.body,
-              })
-            }
             setToast(
               weWon
                 ? `Won on PKs ${homePk}–${awayPk}`

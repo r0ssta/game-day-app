@@ -71,7 +71,6 @@ import {
   fetchTeams,
   insertLineupPreset,
   insertTeam,
-  markMatchPendingReview,
   rebuildMatchPlayers,
   fetchMatchEvents,
   backfillMissingGoalShots,
@@ -118,7 +117,7 @@ import {
 } from '@/lib/season-roster'
 import { applyCardsFromEvents } from '@/lib/match-cards'
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
-import { apiEndRegulation } from '@/lib/match-api'
+import { apiEndRegulation, apiFinalizePk } from '@/lib/match-api'
 import {
   defaultPeriodLengthMinutes,
   periodIndexToCode,
@@ -1649,22 +1648,31 @@ export function useGameDayApp() {
       awayPkScore: number
       pkWinnerIsUs: boolean
     }) => {
+      if (matchId) {
+        const teamSlug =
+          teams.find((entry) => entry.id === selectedTeamId)?.slug?.trim() || null
+        const result = await apiFinalizePk({
+          matchId,
+          homePkScore: input.homePkScore,
+          awayPkScore: input.awayPkScore,
+          pkWinnerIsUs: input.pkWinnerIsUs,
+          homeScore,
+          awayScore,
+          teamName: matchTeamName.trim() || 'Home',
+          opponent: matchOpponent,
+          teamSlug,
+        })
+        if (!result.ok) {
+          throw new Error(result.error)
+        }
+      }
       setHomePkScore(input.homePkScore)
       setAwayPkScore(input.awayPkScore)
       setPkWinnerIsUs(input.pkWinnerIsUs)
-      if (matchId) {
-        await syncMatchRecord(matchId, {
-          home_pk_score: input.homePkScore,
-          away_pk_score: input.awayPkScore,
-          pk_winner_is_us: input.pkWinnerIsUs,
-          period_clock_started: false,
-        })
-        await markMatchPendingReview(matchId)
-      }
       setMatchStatus('pending_review')
       setAppMode('recap')
     },
-    [matchId],
+    [matchId, teams, selectedTeamId, homeScore, awayScore, matchTeamName, matchOpponent],
   )
 
   const returnToHome = useCallback(() => {

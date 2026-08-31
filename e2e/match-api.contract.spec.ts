@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   EndRegulationInputSchema,
+  FinalizePkInputSchema,
   FinalizeReviewInputSchema,
   LogCardInputSchema,
   LogGoalInputSchema,
@@ -18,6 +19,7 @@ const MATCH_ROUTES = [
   '/api/match/log-period',
   '/api/match/log-pk-attempt',
   '/api/match/end-regulation',
+  '/api/match/finalize-pk',
   '/api/match/finalize-review',
 ] as const
 
@@ -240,5 +242,39 @@ test.describe('match action Zod schemas', () => {
       awayPkScoreBefore: 0,
     })
     expect(opponent.success).toBe(true)
+  })
+
+  test('FinalizePkInputSchema rejects a tied shootout and accepts a winner', () => {
+    const tied = FinalizePkInputSchema.safeParse({
+      matchId: VALID_UUID,
+      homePkScore: 3,
+      awayPkScore: 3,
+      pkWinnerIsUs: true,
+      homeScore: 1,
+      awayScore: 1,
+      teamName: 'Velocity',
+    })
+    expect(tied.success).toBe(false)
+    const mismatch = FinalizePkInputSchema.safeParse({
+      matchId: VALID_UUID,
+      homePkScore: 4,
+      awayPkScore: 5,
+      pkWinnerIsUs: true,
+      homeScore: 1,
+      awayScore: 1,
+      teamName: 'Velocity',
+    })
+    expect(mismatch.success).toBe(false)
+    const ok = FinalizePkInputSchema.safeParse({
+      matchId: VALID_UUID,
+      homePkScore: 4,
+      awayPkScore: 3,
+      pkWinnerIsUs: true,
+      homeScore: 1,
+      awayScore: 1,
+      teamName: 'Velocity',
+      opponent: 'Rivals',
+    })
+    expect(ok.success).toBe(true)
   })
 })

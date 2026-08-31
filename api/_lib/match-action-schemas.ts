@@ -253,3 +253,34 @@ export const LogPkAttemptInputSchema = z
   })
 
 export type LogPkAttemptInput = z.infer<typeof LogPkAttemptInputSchema>
+
+export const FinalizePkInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    homePkScore: z.number().int().nonnegative(),
+    awayPkScore: z.number().int().nonnegative(),
+    pkWinnerIsUs: z.boolean(),
+    homeScore: z.number().int().nonnegative(),
+    awayScore: z.number().int().nonnegative(),
+    teamName: z.string().min(1),
+    opponent: z.string().catch('Opponent'),
+    teamSlug: z.string().nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.homePkScore === value.awayPkScore) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'PK scores cannot be tied when finalizing',
+        path: ['homePkScore'],
+      })
+    }
+    if (value.pkWinnerIsUs !== value.homePkScore > value.awayPkScore) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'pkWinnerIsUs must match the PK score line',
+        path: ['pkWinnerIsUs'],
+      })
+    }
+  })
+
+export type FinalizePkInput = z.infer<typeof FinalizePkInputSchema>
