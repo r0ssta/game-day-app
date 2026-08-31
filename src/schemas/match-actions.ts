@@ -114,6 +114,95 @@ export const LogCardInputSchema = z.object({
 
 export type LogCardInput = z.infer<typeof LogCardInputSchema>
 
+/**
+ * Live substitution: bench in, field out, or swap (out then in).
+ * Client applies local player state first; server persists events + match_stats + push.
+ */
+export const LogSubstitutionInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    kind: z.enum(['in', 'out', 'swap']),
+    timestamp: z.number().int().finite(),
+    formation: z.string().catch(''),
+    /** Bench player coming on — required for `in` and `swap`. */
+    benchPlayerId: z.string().uuid().optional(),
+    /** Field player coming off — required for `out` and `swap`. */
+    fieldPlayerId: z.string().uuid().optional(),
+    /** Tactical slot label stored on sub_in event_notes / match_position. */
+    tacticalPosition: z.string().optional(),
+    /** Remaining countdown when the bench player entered (subbed_in_at). */
+    benchSubbedInAt: z.number().finite().nullable().optional(),
+    /** Accumulated play seconds after finalizing the outgoing stint. */
+    fieldTotalSecondsPlayed: z.number().nonnegative().optional(),
+    benchPlayerLabel: z.string().optional(),
+    fieldPlayerLabel: z.string().optional(),
+    currentPeriod: z.number().int().positive(),
+    totalPeriods: z.union([z.literal(2), z.literal(3)]),
+    teamSlug: z.string().nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === 'in' || value.kind === 'swap') {
+      if (!value.benchPlayerId) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'benchPlayerId is required for in/swap',
+          path: ['benchPlayerId'],
+        })
+      }
+      if (value.benchSubbedInAt === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'benchSubbedInAt is required for in/swap',
+          path: ['benchSubbedInAt'],
+        })
+      }
+      if (!value.benchPlayerLabel?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'benchPlayerLabel is required for in/swap',
+          path: ['benchPlayerLabel'],
+        })
+      }
+    }
+    if (value.kind === 'out' || value.kind === 'swap') {
+      if (!value.fieldPlayerId) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'fieldPlayerId is required for out/swap',
+          path: ['fieldPlayerId'],
+        })
+      }
+      if (typeof value.fieldTotalSecondsPlayed !== 'number') {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'fieldTotalSecondsPlayed is required for out/swap',
+          path: ['fieldTotalSecondsPlayed'],
+        })
+      }
+      if (!value.fieldPlayerLabel?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'fieldPlayerLabel is required for out/swap',
+          path: ['fieldPlayerLabel'],
+        })
+      }
+    }
+    if (
+      value.kind === 'swap' &&
+      value.benchPlayerId &&
+      value.fieldPlayerId &&
+      value.benchPlayerId === value.fieldPlayerId
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'benchPlayerId cannot equal fieldPlayerId',
+        path: ['benchPlayerId'],
+      })
+    }
+  })
+
+export type LogSubstitutionInput = z.infer<typeof LogSubstitutionInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T

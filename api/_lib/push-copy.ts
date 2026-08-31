@@ -58,3 +58,23 @@ export function buildCardPush(input: {
   }
   return { title: 'Yellow card', body: `${input.playerLabel} booked.` }
 }
+
+function formatPeriodLong(currentPeriod: number, totalPeriods: 2 | 3): string {
+  if (totalPeriods === 2) {
+    return currentPeriod <= 1 ? '1st Half' : '2nd Half'
+  }
+  return `Period ${Math.min(Math.max(1, currentPeriod), totalPeriods)}`
+}
+
+export function buildSubstitutionPush(input: {
+  playerLabel: string
+  direction: 'ON' | 'OFF'
+  currentPeriod: number
+  totalPeriods: 2 | 3
+}): { title: string; body: string } {
+  const period = formatPeriodLong(input.currentPeriod, input.totalPeriods)
+  return {
+    title: 'Substitution',
+    body: `${input.playerLabel} is subbing ${input.direction} the pitch in ${period}.`,
+  }
+}

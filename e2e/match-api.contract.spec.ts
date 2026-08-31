@@ -4,6 +4,7 @@ import {
   FinalizeReviewInputSchema,
   LogCardInputSchema,
   LogGoalInputSchema,
+  LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
 } from '../src/schemas/match-actions'
 
@@ -11,6 +12,7 @@ const MATCH_ROUTES = [
   '/api/match/log-team-event',
   '/api/match/log-goal',
   '/api/match/log-card',
+  '/api/match/log-substitution',
   '/api/match/end-regulation',
   '/api/match/finalize-review',
 ] as const
@@ -143,6 +145,34 @@ test.describe('match action Zod schemas', () => {
       yellowCardCountBefore: 0,
       isOnField: true,
       playerLabel: '#7 Player',
+    })
+    expect(bad.success).toBe(false)
+  })
+
+  test('LogSubstitutionInputSchema accepts swap and rejects incomplete in', () => {
+    const ok = LogSubstitutionInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'swap',
+      timestamp: 55,
+      formation: '4-3-3',
+      benchPlayerId: VALID_UUID,
+      fieldPlayerId: '00000000-0000-4000-8000-000000000002',
+      tacticalPosition: 'CM',
+      benchSubbedInAt: 1200,
+      fieldTotalSecondsPlayed: 400,
+      benchPlayerLabel: '#10 On',
+      fieldPlayerLabel: '#8 Off',
+      currentPeriod: 1,
+      totalPeriods: 2,
+    })
+    expect(ok.success).toBe(true)
+    const bad = LogSubstitutionInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'in',
+      timestamp: 55,
+      formation: '4-3-3',
+      currentPeriod: 1,
+      totalPeriods: 2,
     })
     expect(bad.success).toBe(false)
   })
