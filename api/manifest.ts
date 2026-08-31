@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { reportApiError } from './_lib/sentry'
+import { reportApiError } from './_lib/sentry.js'
 
 const DEFAULT_THEME = '#12141c'
 const DEFAULT_LOGO_PATH = '/branding/virginia-velocity-crest.png'

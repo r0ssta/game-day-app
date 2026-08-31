@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { corsPreflight, parseJsonBody, requireStaffSession } from './_lib/auth'
-import { sendTeamWebPush } from './_lib/send-web-push'
-import { reportApiError } from './_lib/sentry'
+import { corsPreflight, parseJsonBody, requireStaffSession } from './_lib/auth.js'
+import { sendTeamWebPush } from './_lib/send-web-push.js'
+import { reportApiError } from './_lib/sentry.js'
 
 type SendBody = {
   teamId?: string

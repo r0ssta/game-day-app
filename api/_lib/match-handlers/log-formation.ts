@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth'
-import { requireMatchAccess } from '../match-access'
-import { LogFormationInputSchema } from '../match-action-schemas'
-import { reportApiError } from '../sentry'
-import { runMatchWrites } from '../match-writes'
+import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth.js'
+import { requireMatchAccess } from '../match-access.js'
+import { LogFormationInputSchema } from '../match-action-schemas.js'
+import { reportApiError } from '../sentry.js'
+import { runMatchWrites } from '../match-writes.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {

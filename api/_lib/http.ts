@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { ZodType } from 'zod'
-import { corsPreflight, parseJsonBody, requireStaffSession } from './auth'
-import { requireMatchAccess, type MatchAccessRow } from './match-access'
-import type { AuthedContext } from './auth'
-import { reportApiError } from './sentry'
+import { corsPreflight, parseJsonBody, requireStaffSession } from './auth.js'
+import { requireMatchAccess, type MatchAccessRow } from './match-access.js'
+import type { AuthedContext } from './auth.js'
+import { reportApiError } from './sentry.js'
 
 export function methodGuard(req: VercelRequest, res: VercelResponse): boolean {
   if (req.method === 'OPTIONS') {
