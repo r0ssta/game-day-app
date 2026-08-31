@@ -180,3 +180,53 @@ export const LogSubstitutionInputSchema = z
   })
 
 export type LogSubstitutionInput = z.infer<typeof LogSubstitutionInputSchema>
+
+export const LogPeriodInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    kind: z.enum(['start', 'end']),
+    period: z.number().int().positive(),
+    totalPeriods: z.union([z.literal(2), z.literal(3)]),
+    clockSeconds: z.number().int().finite(),
+    halfLengthMinutes: z.number().positive(),
+    formation: z.string().catch(''),
+    teamName: z.string().min(1),
+    opponent: z.string().catch('Opponent'),
+    teamSlug: z.string().nullable().optional(),
+    homeScore: z.number().int().nonnegative().optional(),
+    awayScore: z.number().int().nonnegative().optional(),
+    periodCode: z.enum(['1st', '2nd', '3rd']).optional(),
+    insertStarterEvents: z.boolean().optional().default(false),
+    starters: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          label: z.string().min(1),
+          matchPosition: z.string().nullable().optional(),
+          subbedInAt: z.number().finite().nullable().optional(),
+          totalSecondsPlayed: z.number().nonnegative().optional(),
+        }),
+      )
+      .default([]),
+    onFieldPlayers: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          totalSecondsPlayed: z.number().nonnegative(),
+        }),
+      )
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === 'end') {
+      if (typeof value.homeScore !== 'number' || typeof value.awayScore !== 'number') {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'homeScore and awayScore are required when ending a period',
+          path: ['homeScore'],
+        })
+      }
+    }
+  })
+
+export type LogPeriodInput = z.infer<typeof LogPeriodInputSchema>

@@ -78,3 +78,50 @@ export function buildSubstitutionPush(input: {
     body: `${input.playerLabel} is subbing ${input.direction} the pitch in ${period}.`,
   }
 }
+
+export function buildMatchStartPush(input: {
+  teamName: string
+  opponent: string
+  starterLabels: string[]
+  currentPeriod: number
+  totalPeriods: 2 | 3
+}): { title: string; body: string } {
+  const period = formatPeriodLong(input.currentPeriod, input.totalPeriods)
+  const lineup =
+    input.starterLabels.length > 0 ? input.starterLabels.join(', ') : 'TBD'
+  return {
+    title: `${input.teamName} · Starting lineup`,
+    body: `${period} vs ${input.opponent || 'Opponent'}: ${lineup}`,
+  }
+}
+
+export function buildPeriodPush(input: {
+  teamName: string
+  opponent: string
+  kind: 'start' | 'end'
+  period: number
+  totalPeriods: 2 | 3
+  homeScore?: number
+  awayScore?: number
+  starterLabels?: string[]
+}): { title: string; body: string } {
+  const label = formatPeriodLong(input.period, input.totalPeriods)
+  if (input.kind === 'start') {
+    const lineup =
+      input.starterLabels && input.starterLabels.length > 0
+        ? input.starterLabels.join(', ')
+        : null
+    return {
+      title: lineup
+        ? `${input.teamName} · ${label} lineup`
+        : `${input.teamName} · ${label}`,
+      body: lineup
+        ? `${label} vs ${input.opponent || 'Opponent'}: ${lineup}`
+        : `${label} underway vs ${input.opponent || 'Opponent'}.`,
+    }
+  }
+  return {
+    title: `${input.teamName} · ${label} ended`,
+    body: `Score ${input.homeScore ?? 0}–${input.awayScore ?? 0} vs ${input.opponent || 'Opponent'}.`,
+  }
+}

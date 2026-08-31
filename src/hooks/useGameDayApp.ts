@@ -20,8 +20,6 @@ import {
 import type { LocationType } from '@/lib/match-location'
 import { resolveMatchLocationType } from '@/lib/match-location'
 import {
-  addedTimeSeconds,
-  elapsedInHalf,
   initialHalfClock,
   restoreMatchClockSeconds,
 } from '@/lib/match-clock'
@@ -73,8 +71,6 @@ import {
   fetchTeams,
   insertLineupPreset,
   insertTeam,
-  insertMatchEvent,
-  mergeMatchTimingContext,
   markMatchPendingReview,
   rebuildMatchPlayers,
   fetchMatchEvents,
@@ -121,7 +117,6 @@ import {
   seasonRosterToPlayers,
 } from '@/lib/season-roster'
 import { applyCardsFromEvents } from '@/lib/match-cards'
-import { PERIOD_END_NOTE, startingLineupNote } from '@/lib/match-event-notes'
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import { apiEndRegulation } from '@/lib/match-api'
 import {
@@ -1457,33 +1452,10 @@ export function useGameDayApp() {
     ) => {
       setRunning(false)
 
-      if (matchId) {
-        void mergeMatchTimingContext(matchId, {
-          addedTimeSeconds: addedTimeSeconds(clockSeconds),
-        })
-      }
-
       let nextPlayers: MatchPlayer[] = []
       let toggles: Record<string, boolean> = {}
 
       setPlayers((prev) => {
-        if (matchId) {
-          const elapsed = elapsedInHalf(clockSeconds, halfLengthMinutes)
-          const formation = getActiveFormation()
-          for (const p of prev) {
-            if (p.attending && p.isOnField) {
-              void insertMatchEvent({
-                matchId,
-                playerId: p.id,
-                eventType: 'sub_out',
-                timestamp: elapsed,
-                formation,
-                eventNotes: PERIOD_END_NOTE,
-              })
-            }
-          }
-        }
-
         const finalized = finalizeAllOnField(prev, clockSeconds)
         const attendingIds = finalized.filter((p) => p.attending).map((p) => p.id)
         const onFieldById = Object.fromEntries(
@@ -1495,7 +1467,6 @@ export function useGameDayApp() {
           p.attending ? { ...p, isOnField: false, subbedInAt: null } : p,
         )
 
-        if (matchId) void syncMatchStats(matchId, nextPlayers)
         return nextPlayers
       })
 
@@ -1515,7 +1486,7 @@ export function useGameDayApp() {
       setAppMode('halftime')
       return nextPlayers
     },
-    [matchId, halfLengthMinutes, setRunning, getActiveFormation],
+    [setRunning],
   )
 
   /** @deprecated Prefer enterIntermission — kept for call sites still using the old name. */
@@ -1549,6 +1520,7 @@ export function useGameDayApp() {
         setSecondHalfSlotAssignments(slotAssignments)
       }
 
+      let stamped: MatchPlayer[] = []
       setPlayers((prev) => {
         let linedUp = applySecondHalfLineup(prev, starterIds)
         if (slotAssignments && assignmentIds.length > 0) {
@@ -1559,23 +1531,7 @@ export function useGameDayApp() {
             slotLabelOverrides,
           )
         }
-        const stamped = stampAllOnField(linedUp, newClock)
-
-        if (matchId) {
-          for (const id of starterIds) {
-            const starter = stamped.find((player) => player.id === id)
-            void insertMatchEvent({
-              matchId,
-              playerId: id,
-              eventType: 'sub_in',
-              timestamp: 0,
-              formation,
-              eventNotes: startingLineupNote(starter?.matchPosition),
-            })
-          }
-          void syncMatchStats(matchId, stamped)
-        }
-
+        stamped = stampAllOnField(linedUp, newClock)
         return stamped
       })
 
@@ -1585,24 +1541,19 @@ export function useGameDayApp() {
       setSeconds(newClock)
       setRunning(true)
       setPeriodClockStarted(true)
-      if (matchId) {
-        void syncMatchRecord(matchId, {
-          period: nextPeriodCode,
-          current_period: nextPeriodIndex,
-          total_periods: totalPeriods,
-          period_length: halfLengthMinutes,
-          half_length: halfLengthMinutes,
-          clock_seconds: newClock,
-          period_clock_started: true,
-        })
-        void mergeMatchTimingContext(matchId, { addedTimeSeconds: 0 })
-      }
       setAppMode('match')
+
+      return {
+        starters: stamped.filter((p) => starterIds.has(p.id)),
+        period: nextPeriodIndex,
+        periodCode: nextPeriodCode,
+        clockSeconds: newClock,
+        formation,
+      }
     },
     [
       halftimeSecondHalf,
       halfLengthMinutes,
-      matchId,
       totalPeriods,
       currentPeriod,
       setPeriod,

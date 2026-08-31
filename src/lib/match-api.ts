@@ -4,6 +4,7 @@ import type {
   FinalizeReviewInput,
   LogCardInput,
   LogGoalInput,
+  LogPeriodInput,
   LogSubstitutionInput,
   LogTeamEventInput,
   MatchActionResult,
@@ -87,6 +88,12 @@ export async function apiLogSubstitution(
   input: LogSubstitutionInput,
 ): Promise<MatchActionResult<{ kind: LogSubstitutionInput['kind'] }>> {
   return postMatchAction('/api/match/log-substitution', input)
+}
+
+export async function apiLogPeriod(
+  input: LogPeriodInput,
+): Promise<MatchActionResult<{ kind: LogPeriodInput['kind']; period: number }>> {
+  return postMatchAction('/api/match/log-period', input)
 }
 
 export async function apiEndRegulation(

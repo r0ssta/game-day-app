@@ -203,6 +203,64 @@ export const LogSubstitutionInputSchema = z
 
 export type LogSubstitutionInput = z.infer<typeof LogSubstitutionInputSchema>
 
+/**
+ * Start or end a regulation period (not full-time — use EndRegulation for that).
+ * `start` covers kickoff (period 1 → match_start push) and post-intermission starts.
+ * `end` covers intermediate whistle → intermission (period_end push + period_end sub_outs).
+ */
+export const LogPeriodInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    kind: z.enum(['start', 'end']),
+    /** Period being started, or period that just ended. */
+    period: z.number().int().positive(),
+    totalPeriods: z.union([z.literal(2), z.literal(3)]),
+    clockSeconds: z.number().int().finite(),
+    halfLengthMinutes: z.number().positive(),
+    formation: z.string().catch(''),
+    teamName: z.string().min(1),
+    opponent: z.string().catch('Opponent'),
+    teamSlug: z.string().nullable().optional(),
+    homeScore: z.number().int().nonnegative().optional(),
+    awayScore: z.number().int().nonnegative().optional(),
+    /** Optional DB period code (`1st` / `2nd`) when starting the next period. */
+    periodCode: z.enum(['1st', '2nd', '3rd']).optional(),
+    /** Insert starting-lineup sub_in rows (next-period starts). */
+    insertStarterEvents: z.boolean().optional().default(false),
+    starters: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          label: z.string().min(1),
+          matchPosition: z.string().nullable().optional(),
+          subbedInAt: z.number().finite().nullable().optional(),
+          totalSecondsPlayed: z.number().nonnegative().optional(),
+        }),
+      )
+      .default([]),
+    onFieldPlayers: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          totalSecondsPlayed: z.number().nonnegative(),
+        }),
+      )
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === 'end') {
+      if (typeof value.homeScore !== 'number' || typeof value.awayScore !== 'number') {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'homeScore and awayScore are required when ending a period',
+          path: ['homeScore'],
+        })
+      }
+    }
+  })
+
+export type LogPeriodInput = z.infer<typeof LogPeriodInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T
