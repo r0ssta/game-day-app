@@ -4,6 +4,7 @@ import {
   FinalizeReviewInputSchema,
   LogCardInputSchema,
   LogGoalInputSchema,
+  LogPeriodInputSchema,
   LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
 } from '../src/schemas/match-actions'
@@ -13,6 +14,7 @@ const MATCH_ROUTES = [
   '/api/match/log-goal',
   '/api/match/log-card',
   '/api/match/log-substitution',
+  '/api/match/log-period',
   '/api/match/end-regulation',
   '/api/match/finalize-review',
 ] as const
@@ -175,5 +177,32 @@ test.describe('match action Zod schemas', () => {
       totalPeriods: 2,
     })
     expect(bad.success).toBe(false)
+  })
+
+  test('LogPeriodInputSchema accepts start and requires scores for end', () => {
+    const start = LogPeriodInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'start',
+      period: 1,
+      totalPeriods: 2,
+      clockSeconds: 1800,
+      halfLengthMinutes: 30,
+      formation: '4-3-3',
+      teamName: 'Velocity',
+      opponent: 'Rivals',
+      starters: [{ playerId: VALID_UUID, label: '#1 GK' }],
+    })
+    expect(start.success).toBe(true)
+    const endBad = LogPeriodInputSchema.safeParse({
+      matchId: VALID_UUID,
+      kind: 'end',
+      period: 1,
+      totalPeriods: 2,
+      clockSeconds: 0,
+      halfLengthMinutes: 30,
+      formation: '4-3-3',
+      teamName: 'Velocity',
+    })
+    expect(endBad.success).toBe(false)
   })
 })

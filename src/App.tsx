@@ -74,8 +74,6 @@ import {
 } from '@/lib/feature-flags'
 import {
   buildFullTimePush,
-  buildMatchStartPush,
-  buildPeriodPush,
   notifyWebPush,
   buildParentHubUrl,
   shareParentHubLink,
@@ -95,7 +93,6 @@ import {
   halfDurationSeconds,
   isHalfExpired,
   isInAddedTime,
-  persistableClockSeconds,
   QA_SPEED_MULTIPLIERS,
   tickCountdownClock,
   type QaSpeedMultiplier,
@@ -114,7 +111,7 @@ import {
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
-import { apiLogCard, apiLogGoal, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
+import { apiLogCard, apiLogGoal, apiLogPeriod, apiLogSubstitution, apiLogTeamEvent } from '@/lib/match-api'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { cn } from '@/lib/utils'
@@ -2812,40 +2809,44 @@ export default function App() {
   )
 
   const handleStartFirstHalf = useCallback(() => {
-    setPlayers((prev) => {
-      const stamped = stampAllOnField(prev, seconds)
-      if (matchId) syncMatchStats(matchId, stamped)
-      return stamped
-    })
+    const stamped = stampAllOnField(players, seconds)
+    setPlayers(stamped)
     setPeriodClockStarted(true)
     setRunning(true)
-    if (matchId) {
-      syncMatchRecord(matchId, {
-        period_clock_started: true,
-        clock_seconds: seconds,
-        current_period: currentPeriod,
-        total_periods: totalPeriods,
-        period_length: halfLengthMinutes,
-        half_length: halfLengthMinutes,
-      })
-    }
 
-    if (activeTeamId) {
-      const starters = players.filter((p) => p.attending && p.isOnField)
-      const push = buildMatchStartPush({
-        teamName: matchTeamName.trim() || 'Home',
-        opponent: matchOpponent,
-        starters,
-        currentPeriod,
-        totalPeriods,
-      })
-      notifyMatchPush({
-        eventType: 'match_start',
-        teamId: activeTeamId,
-            teamSlug: activeTeamSlug,
-        title: push.title,
-        body: push.body,
-      })
+    const sidelineMap = buildSidelineNameMap(stamped.filter((p) => p.attending))
+    const starters = stamped.filter((p) => p.attending && p.isOnField)
+
+    if (matchId) {
+      void (async () => {
+        try {
+          assertMatchActionOk(
+            await apiLogPeriod({
+              matchId,
+              kind: 'start',
+              period: currentPeriod,
+              totalPeriods,
+              clockSeconds: seconds,
+              halfLengthMinutes,
+              formation: activeFormation,
+              teamName: matchTeamName.trim() || 'Home',
+              opponent: matchOpponent,
+              teamSlug: activeTeamSlug,
+              insertStarterEvents: false,
+              starters: starters.map((p) => ({
+                playerId: p.id,
+                label: formatPlayerLabel(p, sidelineMap),
+                matchPosition: p.matchPosition,
+                subbedInAt: p.subbedInAt,
+                totalSecondsPlayed: p.totalSecondsPlayed,
+              })),
+              onFieldPlayers: [],
+            }),
+          )
+        } catch {
+          setToast('Could not sync period start — try again')
+        }
+      })()
     }
 
     const underwayToast = `${formatPeriodLong(currentPeriod, totalPeriods)} underway · ${formatClock(seconds)}`
@@ -2867,48 +2868,63 @@ export default function App() {
     currentPeriod,
     totalPeriods,
     halfLengthMinutes,
-    activeTeamId,
     players,
     matchTeamName,
     matchOpponent,
+    activeTeamSlug,
+    activeFormation,
+    setToast,
   ])
 
   const handleEnterHalftime = useCallback(async () => {
     setRunning(false)
     const slotAssignments = livePitchRef.current?.getSlotAssignments()
     const slotLabelOverrides = livePitchRef.current?.getSlotLabelOverrides()
-    await enterHalftime(seconds, slotAssignments, slotLabelOverrides)
+    const onFieldBefore = players
+      .filter((p) => p.attending && p.isOnField)
+      .map((p) => p.id)
+    const endedPeriod = currentPeriod
+    const endedFormation = activeFormation
+
+    const nextPlayers = await enterHalftime(seconds, slotAssignments, slotLabelOverrides)
+    const onFieldPlayers = onFieldBefore.map((playerId) => {
+      const player = nextPlayers.find((p) => p.id === playerId)
+      return {
+        playerId,
+        totalSecondsPlayed: player?.totalSecondsPlayed ?? 0,
+      }
+    })
+
     if (matchId) {
-      syncMatchRecord(matchId, {
-        period_clock_started: false,
-        clock_seconds: persistableClockSeconds(seconds),
-        current_period: currentPeriod,
-        total_periods: totalPeriods,
-        period_length: halfLengthMinutes,
-        half_length: halfLengthMinutes,
-      })
-    }
-    const next = Math.min(totalPeriods, currentPeriod + 1)
-    if (activeTeamId) {
-      const push = buildPeriodPush({
-        teamName: matchTeamName.trim() || 'Home',
-        opponent: matchOpponent,
-        kind: 'end',
-        period: currentPeriod,
-        totalPeriods,
-        homeScore,
-        awayScore,
-      })
-      notifyMatchPush({
-        eventType: 'period_end',
-        teamId: activeTeamId,
+      try {
+        assertMatchActionOk(
+          await apiLogPeriod({
+            matchId,
+            kind: 'end',
+            period: endedPeriod,
+            totalPeriods,
+            clockSeconds: seconds,
+            halfLengthMinutes,
+            formation: endedFormation,
+            teamName: matchTeamName.trim() || 'Home',
+            opponent: matchOpponent,
             teamSlug: activeTeamSlug,
-        title: push.title,
-        body: push.body,
-      })
+            homeScore,
+            awayScore,
+            insertStarterEvents: false,
+            starters: [],
+            onFieldPlayers,
+          }),
+        )
+      } catch {
+        setToast('Could not sync period end — try again')
+        return
+      }
     }
+
+    const next = Math.min(totalPeriods, endedPeriod + 1)
     setToast(
-      `${formatPeriodLong(currentPeriod, totalPeriods)} ended — set ${formatPeriodLong(next, totalPeriods)} lineup`,
+      `${formatPeriodLong(endedPeriod, totalPeriods)} ended — set ${formatPeriodLong(next, totalPeriods)} lineup`,
     )
   }, [
     seconds,
@@ -2918,11 +2934,14 @@ export default function App() {
     currentPeriod,
     totalPeriods,
     halfLengthMinutes,
-    activeTeamId,
+    players,
     matchTeamName,
     matchOpponent,
+    activeTeamSlug,
+    activeFormation,
     homeScore,
     awayScore,
+    setToast,
   ])
 
   const handleBeginSecondHalf = useCallback(async () => {
@@ -2930,7 +2949,6 @@ export default function App() {
     const assignments = halftimeAssignmentsRef.current ?? halftimeSlotAssignments
     const labelOverrides = halftimeLabelOverridesRef.current
     const newClock = halfDurationSeconds(halfLengthMinutes)
-    const nextPeriod = Math.min(totalPeriods, currentPeriod + 1)
 
     const wakePromise =
       ENABLE_WAKE_LOCK
@@ -2938,35 +2956,43 @@ export default function App() {
           requestWakeLock()
         : Promise.resolve({ active: false, blockedByOs: false, usedFallback: false })
 
-    // beginNextPeriod persists period / clock / current_period to the match record.
-    await beginNextPeriod(assignments, labelOverrides)
+    const started = await beginNextPeriod(assignments, labelOverrides)
+    const sidelineMap = buildSidelineNameMap(
+      players.filter((p) => p.attending).concat(started.starters),
+    )
 
-    if (activeTeamId) {
-      const assignmentIds = assignments
-        ? Object.values(assignments).filter((id): id is string => Boolean(id))
-        : []
-      const starters =
-        assignmentIds.length > 0
-          ? players.filter((p) => assignmentIds.includes(p.id))
-          : players.filter((p) => p.attending && halftimeSecondHalf[p.id])
-      const push = buildPeriodPush({
-        teamName: matchTeamName.trim() || 'Home',
-        opponent: matchOpponent,
-        kind: 'start',
-        period: nextPeriod,
-        totalPeriods,
-        starters,
-      })
-      notifyMatchPush({
-        eventType: 'period_start',
-        teamId: activeTeamId,
+    if (matchId) {
+      try {
+        assertMatchActionOk(
+          await apiLogPeriod({
+            matchId,
+            kind: 'start',
+            period: started.period,
+            totalPeriods,
+            clockSeconds: started.clockSeconds,
+            halfLengthMinutes,
+            formation: started.formation,
+            periodCode: started.periodCode,
+            teamName: matchTeamName.trim() || 'Home',
+            opponent: matchOpponent,
             teamSlug: activeTeamSlug,
-        title: push.title,
-        body: push.body,
-      })
+            insertStarterEvents: true,
+            starters: started.starters.map((p) => ({
+              playerId: p.id,
+              label: formatPlayerLabel(p, sidelineMap),
+              matchPosition: p.matchPosition,
+              subbedInAt: p.subbedInAt,
+              totalSecondsPlayed: p.totalSecondsPlayed,
+            })),
+            onFieldPlayers: [],
+          }),
+        )
+      } catch {
+        setToast('Could not sync period start — try again')
+      }
     }
 
-    const underwayToast = `${formatPeriodLong(nextPeriod, totalPeriods)} underway · ${formatClock(newClock)}`
+    const underwayToast = `${formatPeriodLong(started.period, totalPeriods)} underway · ${formatClock(newClock)}`
     const wakeResult = await wakePromise
     setToast(wakeResult.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
   }, [
@@ -2974,15 +3000,14 @@ export default function App() {
     halfLengthMinutes,
     beginNextPeriod,
     halftimeSlotAssignments,
-    halftimeSecondHalf,
     players,
     requestWakeLock,
-    currentPeriod,
     totalPeriods,
-    activeTeamId,
+    matchId,
     activeTeamSlug,
     matchTeamName,
     matchOpponent,
+    setToast,
   ])
 
   const handleShareParentHub = useCallback(async () => {
