@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from './_lib/auth'
 import { sendTeamWebPush } from './_lib/send-web-push'
+import { reportApiError } from './_lib/sentry'
 
 type SendBody = {
   teamId?: string
@@ -51,7 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json(result)
   } catch (err) {
-    console.error('[api/send-web-push]', err)
+    await reportApiError('[api/send-web-push]', err)
     return res.status(500).json({
       error: err instanceof Error ? err.message : 'Send failed',
     })

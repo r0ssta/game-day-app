@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { reportApiError } from './sentry'
 
 export type MatchEventInsert = {
   match_id: string
@@ -195,7 +196,16 @@ export class MatchWriteSession {
       if (error && !isMissingPlusMinusColumn(error)) errors.push(error)
     }
     if (errors.length > 0) {
-      console.error('[match-writes] rollback incomplete', errors)
+      await reportApiError(
+        '[match-writes] rollback incomplete',
+        new Error('Match write rollback incomplete'),
+        {
+          matchId: this.matchId,
+          errors: errors.map((item) =>
+            item instanceof Error ? item.message : String(item),
+          ),
+        },
+      )
     }
   }
 }
@@ -212,7 +222,9 @@ export async function runMatchWrites<T>(
     try {
       await session.rollback()
     } catch (rollbackErr) {
-      console.error('[match-writes] rollback failed', rollbackErr)
+      await reportApiError('[match-writes] rollback failed', rollbackErr, {
+        matchId,
+      })
     }
     throw err
   }

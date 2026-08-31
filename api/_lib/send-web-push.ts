@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
+import { reportApiError } from './sentry'
 
 export type SendWebPushInput = {
   teamId: string
@@ -148,6 +149,6 @@ export async function sendTeamWebPush(
 /** Fire-and-forget wrapper — never throws to the match write path. */
 export function queueTeamWebPush(supabase: SupabaseClient, input: SendWebPushInput): void {
   void sendTeamWebPush(supabase, input).catch((err) => {
-    console.error('[queueTeamWebPush]', input.eventType, err)
+    void reportApiError('[queueTeamWebPush]', err, { eventType: input.eventType })
   })
 }

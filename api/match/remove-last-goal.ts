@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { RemoveLastGoalInputSchema } from '../_lib/match-action-schemas'
+import { reportApiError } from '../_lib/sentry'
 import {
   findLastGoalEvent,
   findPairedGoalShotEvent,
@@ -80,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       eventType: goalEvent.event_type,
     })
   } catch (err) {
-    console.error('[api/match/remove-last-goal]', err)
+    await reportApiError('[api/match/remove-last-goal]', err)
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to remove goal',

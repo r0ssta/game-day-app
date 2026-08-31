@@ -3,6 +3,7 @@ import type { ZodType } from 'zod'
 import { corsPreflight, parseJsonBody, requireStaffSession } from './auth'
 import { requireMatchAccess, type MatchAccessRow } from './match-access'
 import type { AuthedContext } from './auth'
+import { reportApiError } from './sentry'
 
 export function methodGuard(req: VercelRequest, res: VercelResponse): boolean {
   if (req.method === 'OPTIONS') {
@@ -53,7 +54,7 @@ export async function withMatchMutation<T>(
   try {
     await run(auth, parsed.data, access.match)
   } catch (err) {
-    console.error('[match mutation]', err)
+    await reportApiError('[match mutation]', err)
     res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Mutation failed',

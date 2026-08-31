@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { reportApiError } from './_lib/sentry'
 
 const DEFAULT_THEME = '#12141c'
 const DEFAULT_LOGO_PATH = '/branding/virginia-velocity-crest.png'
@@ -156,7 +157,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
 
     if (error) {
-      console.error('[manifest]', error.message)
+      await reportApiError('[manifest]', error)
       return res.status(500).json({ error: 'Failed to load team branding' })
     }
 
@@ -177,7 +178,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Cache-Control', 'public, max-age=300')
     return res.status(200).send(JSON.stringify(manifest))
   } catch (err) {
-    console.error('[manifest]', err)
+    await reportApiError('[manifest]', err)
     return res.status(500).json({ error: 'Unexpected error' })
   }
 }
