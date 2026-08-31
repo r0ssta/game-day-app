@@ -16,6 +16,7 @@ const ROUTES: Record<string, string> = {
   '/api/match/end-regulation': '/api/match/end-regulation.ts',
   '/api/match/finalize-pk': '/api/match/finalize-pk.ts',
   '/api/match/finalize-review': '/api/match/finalize-review.ts',
+  '/api/match/remove-last-goal': '/api/match/remove-last-goal.ts',
   '/api/send-web-push': '/api/send-web-push.ts',
 }
 

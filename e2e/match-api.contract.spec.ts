@@ -10,6 +10,7 @@ import {
   LogPkAttemptInputSchema,
   LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
+  RemoveLastGoalInputSchema,
 } from '../src/schemas/match-actions'
 
 const MATCH_ROUTES = [
@@ -23,6 +24,7 @@ const MATCH_ROUTES = [
   '/api/match/end-regulation',
   '/api/match/finalize-pk',
   '/api/match/finalize-review',
+  '/api/match/remove-last-goal',
 ] as const
 
 const VALID_UUID = '00000000-0000-4000-8000-000000000001'
@@ -313,5 +315,23 @@ test.describe('match action Zod schemas', () => {
       positionUpdates: [{ playerId: VALID_UUID, position: 'ST' }],
     })
     expect(reassignOk.success).toBe(true)
+  })
+
+  test('RemoveLastGoalInputSchema accepts home/away and rejects a bad side', () => {
+    const home = RemoveLastGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      side: 'home',
+    })
+    expect(home.success).toBe(true)
+    const away = RemoveLastGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      side: 'away',
+    })
+    expect(away.success).toBe(true)
+    const bad = RemoveLastGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      side: 'left',
+    })
+    expect(bad.success).toBe(false)
   })
 })

@@ -10,6 +10,7 @@ import type {
   LogPkAttemptInput,
   LogSubstitutionInput,
   LogTeamEventInput,
+  RemoveLastGoalInput,
   MatchActionResult,
 } from '@/schemas/match-actions'
 
@@ -129,4 +130,17 @@ export async function apiFinalizeReview(
   input: FinalizeReviewInput,
 ): Promise<MatchActionResult<{ status: string }>> {
   return postMatchAction('/api/match/finalize-review', input)
+}
+
+export async function apiRemoveLastGoal(
+  input: RemoveLastGoalInput,
+): Promise<
+  MatchActionResult<{
+    homeScore: number
+    awayScore: number
+    removedPairedShot: boolean
+    eventType: string
+  }>
+> {
+  return postMatchAction('/api/match/remove-last-goal', input)
 }

@@ -380,6 +380,14 @@ export const LogFormationInputSchema = z
 
 export type LogFormationInput = z.infer<typeof LogFormationInputSchema>
 
+/** Undo the most recent regulation goal for a side (live dashboard or recap). */
+export const RemoveLastGoalInputSchema = z.object({
+  matchId: z.string().uuid(),
+  side: MatchActionSideSchema,
+})
+
+export type RemoveLastGoalInput = z.infer<typeof RemoveLastGoalInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T

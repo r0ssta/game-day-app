@@ -81,3 +81,104 @@ export function pairedShotType(side: 'home' | 'away'): 'shot_home' | 'shot_away'
   // A save by side X means the other side took a shot.
   return side === 'home' ? 'shot_away' : 'shot_home'
 }
+
+export function findLastGoalEvent<T extends { event_type: string }>(
+  events: T[],
+  side: 'home' | 'away',
+): T | null {
+  const eventType = side === 'home' ? 'goal' : 'opponent_goal'
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.event_type === eventType) return event
+  }
+  return null
+}
+
+export function findPairedGoalShotEvent<
+  T extends { event_type: string; timestamp: number },
+>(events: T[], goalEvent: T): T | null {
+  const shotType = goalEvent.event_type === 'goal' ? 'shot_home' : 'shot_away'
+  return (
+    events.find(
+      (event) =>
+        event.event_type === shotType && event.timestamp === goalEvent.timestamp,
+    ) ?? null
+  )
+}
+
+export async function deleteMatchEventRow(
+  supabase: SupabaseClient,
+  eventId: string,
+): Promise<void> {
+  const { error } = await supabase.from('match_events').delete().eq('id', eventId)
+  if (error) throw error
+}
+
+/**
+ * Rebuild plus/minus from the event timeline (same rules as live goal logging).
+ * Missing plus_minus column is tolerated for older DBs.
+ */
+export async function recomputePlusMinusFromEvents(
+  supabase: SupabaseClient,
+  matchId: string,
+): Promise<void> {
+  const [{ data: events, error: eventsError }, { data: stats, error: statsError }] =
+    await Promise.all([
+      supabase
+        .from('match_events')
+        .select('event_type, player_id')
+        .eq('match_id', matchId)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('match_stats')
+        .select('player_id, attending, is_first_half_starter')
+        .eq('match_id', matchId),
+    ])
+  if (eventsError) throw eventsError
+  if (statsError) throw statsError
+
+  const firstHalfStarterIds = new Set(
+    (stats ?? [])
+      .filter((row) => row.is_first_half_starter)
+      .map((row) => row.player_id as string),
+  )
+  const onField = new Set<string>()
+  const ledger = new Map<string, number>()
+  let sawSub = false
+
+  for (const event of events ?? []) {
+    const type = event.event_type as string
+    const playerId = event.player_id as string | null
+    if (type === 'sub_in' && playerId) {
+      sawSub = true
+      onField.add(playerId)
+    } else if (type === 'sub_out' && playerId) {
+      sawSub = true
+      onField.delete(playerId)
+    } else if (type === 'goal' || type === 'opponent_goal') {
+      if (!sawSub && onField.size === 0) {
+        for (const id of firstHalfStarterIds) onField.add(id)
+      }
+      const delta = type === 'goal' ? 1 : -1
+      for (const id of onField) {
+        ledger.set(id, (ledger.get(id) ?? 0) + delta)
+      }
+    }
+  }
+
+  for (const row of stats ?? []) {
+    if (!row.attending) continue
+    const playerId = row.player_id as string
+    const plusMinus = ledger.get(playerId) ?? 0
+    const { error: updateError } = await supabase
+      .from('match_stats')
+      .update({ plus_minus: plusMinus })
+      .eq('match_id', matchId)
+      .eq('player_id', playerId)
+    if (updateError) {
+      const message = updateError.message?.toLowerCase() ?? ''
+      if (message.includes('plus_minus') && message.includes('column')) continue
+      throw updateError
+    }
+  }
+}
