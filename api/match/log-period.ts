@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { LogPeriodInputSchema } from '../_lib/match-action-schemas'
+import { reportApiError } from '../_lib/sentry'
 import {
   buildMatchStartPush,
   buildPeriodPush,
@@ -232,7 +233,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ ok: true, kind: 'start', period: input.period })
   } catch (err) {
-    console.error('[api/match/log-period]', err)
+    await reportApiError('[api/match/log-period]', err)
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to log period',

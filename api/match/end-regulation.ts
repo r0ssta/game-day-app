@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { EndRegulationInputSchema } from '../_lib/match-action-schemas'
+import { reportApiError } from '../_lib/sentry'
 import { buildFullTimePush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
 import { runMatchWrites } from '../_lib/match-writes'
@@ -152,7 +153,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       enterPenaltyShootout: false,
     })
   } catch (err) {
-    console.error('[api/match/end-regulation]', err)
+    await reportApiError('[api/match/end-regulation]', err)
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to end regulation',

@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { LogCardInputSchema } from '../_lib/match-action-schemas'
+import { reportApiError } from '../_lib/sentry'
 import { buildCardPush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
 import { type MatchEventInsert, runMatchWrites } from '../_lib/match-writes'
@@ -118,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       issueRed,
     })
   } catch (err) {
-    console.error('[api/match/log-card]', err)
+    await reportApiError('[api/match/log-card]', err)
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to log card',

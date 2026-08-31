@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { LogSubstitutionInputSchema } from '../_lib/match-action-schemas'
+import { reportApiError } from '../_lib/sentry'
 import { buildSubstitutionPush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
 import { runMatchWrites } from '../_lib/match-writes'
@@ -125,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ ok: true, kind: input.kind })
   } catch (err) {
-    console.error('[api/match/log-substitution]', err)
+    await reportApiError('[api/match/log-substitution]', err)
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to log substitution',

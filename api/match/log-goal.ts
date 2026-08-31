@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../_lib/auth'
 import { requireMatchAccess } from '../_lib/match-access'
 import { LogGoalInputSchema } from '../_lib/match-action-schemas'
+import { reportApiError } from '../_lib/sentry'
 import { buildGoalPush } from '../_lib/push-copy'
 import { queueTeamWebPush } from '../_lib/send-web-push'
 import { type MatchEventInsert, runMatchWrites } from '../_lib/match-writes'
@@ -104,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       eventType,
     })
   } catch (err) {
-    console.error('[api/match/log-goal]', err)
+    await reportApiError('[api/match/log-goal]', err)
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to log goal',
