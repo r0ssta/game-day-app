@@ -16,16 +16,30 @@ const MATCH_ROUTES = [
 
 const VALID_UUID = '00000000-0000-4000-8000-000000000001'
 
+/** Production allows 20 writes / 10s per IP. Unauth contract bursts may 429 first. */
+async function expectAuthOrRateLimited(
+  response: { status: () => number; json: () => Promise<unknown> },
+  path: string,
+  errorPattern: RegExp,
+) {
+  const status = response.status()
+  expect([401, 429], path).toContain(status)
+  const body = (await response.json()) as { ok?: boolean; error?: string; code?: string }
+  expect(body.ok).toBe(false)
+  if (status === 429) {
+    expect(body.code, path).toBe('rate_limited')
+    return
+  }
+  expect(String(body.error || '').toLowerCase()).toMatch(errorPattern)
+}
+
 test.describe('match API contracts', () => {
   for (const path of MATCH_ROUTES) {
     test(`${path} without Authorization → 401`, async ({ request }) => {
       const response = await request.post(path, {
         data: { matchId: VALID_UUID },
       })
-      expect(response.status(), path).toBe(401)
-      const body = (await response.json()) as { ok?: boolean; error?: string }
-      expect(body.ok).toBe(false)
-      expect(String(body.error || '').toLowerCase()).toMatch(/auth/)
+      await expectAuthOrRateLimited(response, path, /auth/)
     })
 
     test(`${path} with fake Bearer → 401`, async ({ request }) => {
@@ -33,10 +47,7 @@ test.describe('match API contracts', () => {
         headers: { Authorization: 'Bearer not-a-real-token' },
         data: { matchId: VALID_UUID },
       })
-      expect(response.status(), path).toBe(401)
-      const body = (await response.json()) as { ok?: boolean; error?: string }
-      expect(body.ok).toBe(false)
-      expect(String(body.error || '').toLowerCase()).toMatch(/session|auth/)
+      await expectAuthOrRateLimited(response, path, /session|auth/)
     })
 
     test(`${path} GET → 405`, async ({ request }) => {
