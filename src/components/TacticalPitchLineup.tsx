@@ -13,6 +13,7 @@ import {
   resolveSlotLabel,
   type FormationRole,
 } from '@/lib/formations'
+import { hasSlotAssignments } from '@/lib/lineup'
 import type { TeamFormat } from '@/lib/team-format'
 import {
   ROSTER_POSITION_HINT_CLASS,
@@ -243,8 +244,12 @@ export function TacticalPitchLineup({
     },
     [controlledFormationId, onFormationChange],
   )
-  const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>({})
-  const [slotLabelOverrides, setSlotLabelOverrides] = useState<Record<string, string>>({})
+  const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>(() =>
+    hasSlotAssignments(initialSlotAssignments) ? initialSlotAssignments : {},
+  )
+  const [slotLabelOverrides, setSlotLabelOverrides] = useState<Record<string, string>>(
+    () => initialSlotLabelOverrides ?? {},
+  )
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
@@ -306,7 +311,7 @@ export function TacticalPitchLineup({
 
   useEffect(() => {
     const restoredOverrides = initialSlotLabelOverrides ?? {}
-    if (initialSlotAssignments) {
+    if (hasSlotAssignments(initialSlotAssignments)) {
       setSlotAssignments(initialSlotAssignments)
       setSlotLabelOverrides(restoredOverrides)
       publishAssignments(initialSlotAssignments)

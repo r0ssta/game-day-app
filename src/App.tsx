@@ -52,6 +52,7 @@ import {
   getFirstHalfStarterIds,
   getMaxFieldPlayers,
   getSetupLineupBlockReason,
+  hasSlotAssignments,
   isHalftimeLineupValid,
 } from '@/lib/lineup'
 import { resolveSetupLineup } from '@/lib/lineup-presets'
@@ -1793,9 +1794,12 @@ function HalftimeSetupScreen({
           title={`${formatPeriodLong(nextPeriod, totalPeriods)} Lineup`}
           formationId={secondHalfFormation}
           onFormationChange={onSetSecondHalfFormation}
-          initialSlotAssignments={initialSlotAssignments}
+          initialSlotAssignments={
+            hasSlotAssignments(initialSlotAssignments) ? initialSlotAssignments : undefined
+          }
           initialSlotLabelOverrides={initialSlotLabelOverrides}
           assignmentsResetKey={assignmentsResetKey}
+          hydrateFromStarters
           assignmentsRef={halftimeAssignmentsRef}
           slotLabelOverridesRef={halftimeLabelOverridesRef}
           constrainLists={false}
@@ -2062,6 +2066,10 @@ export default function App() {
     hydrateLiveMatch,
     resumeLiveMatchScreen,
     persistMatchClock,
+    noteLocalMatchMutation,
+    claimLocalClock,
+    releaseLocalClock,
+    shouldSkipLiveHydrate,
     matchId,
     players,
     setPlayers,
@@ -2088,7 +2096,6 @@ export default function App() {
     totalPeriods,
     setTotalPeriods,
     running,
-    setRunning,
     periodClockStarted,
     setPeriodClockStarted,
     rosterLoading,
@@ -2229,14 +2236,32 @@ export default function App() {
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
   const [toast, setToast] = useState<string | null>(null)
-  const { syncPending, isPending, run: runOptimisticSync } = useOptimisticSync()
+  const { syncPending, isPending, run: runSync } = useOptimisticSync()
+  const runOptimisticSync = useCallback(
+    <T,>(
+      work: () => Promise<T>,
+      options: {
+        onRevert: () => void
+        onErrorToast: (err: unknown) => void
+        label?: string
+      },
+    ) => {
+      noteLocalMatchMutation()
+      return runSync(work, options)
+    },
+    [noteLocalMatchMutation, runSync],
+  )
   useEffect(() => {
     if (authHealth === 'failed') setToast(AUTH_RECONNECT_TOAST)
   }, [authHealth])
   useLiveMatchSync({
     matchId,
-    enabled: !loading && matchStatus === 'live' && Boolean(matchId),
-    isBlocked: () => isPending(),
+    enabled:
+      !loading &&
+      matchStatus === 'live' &&
+      Boolean(matchId) &&
+      (appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout'),
+    isBlocked: () => isPending() || shouldSkipLiveHydrate(),
     onHydrate: () =>
       hydrateLiveMatch({
         applyMode: appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout',
@@ -2514,21 +2539,27 @@ export default function App() {
   const activeFormation = period === '1st' ? matchFormations.first : matchFormations.second
 
   useEffect(() => {
-    if (appMode !== 'match' || !running || !matchId) return
+    if (appMode !== 'match' || !matchId) return
+    if (!running && !periodClockStarted) return
     const id = setInterval(() => {
-      setSeconds((s) => tickCountdownClock(s, qaSpeedMultiplier))
+      setSeconds((s) => {
+        const next = tickCountdownClock(s, qaSpeedMultiplier)
+        clockSyncRef.current = next
+        return next
+      })
     }, 1000)
     return () => clearInterval(id)
-  }, [appMode, running, matchId, qaSpeedMultiplier, setSeconds])
+  }, [appMode, running, periodClockStarted, matchId, qaSpeedMultiplier, setSeconds])
 
   useEffect(() => {
-    if (appMode !== 'match' || !matchId || !running) return
+    if (appMode !== 'match' || !matchId) return
+    if (!running && !periodClockStarted) return
     const id = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
       persistMatchClock(matchId, clockSyncRef.current)
     }, 5000)
     return () => clearInterval(id)
-  }, [appMode, matchId, running, persistMatchClock])
+  }, [appMode, matchId, running, periodClockStarted, persistMatchClock])
 
   useEffect(() => {
     if (!toast) return
@@ -2770,9 +2801,9 @@ export default function App() {
   }, [matchId, handleDeleteMatch])
 
   const handleEndGame = useCallback(() => {
-    setRunning(false)
+    releaseLocalClock()
     setEndTimingOpen(true)
-  }, [setRunning])
+  }, [releaseLocalClock])
 
   const handleConfirmEndGameTiming = useCallback(
     async (endedOnTime: boolean) => {
@@ -2805,14 +2836,16 @@ export default function App() {
     const stamped = stampAllOnField(players, seconds)
     setPlayers(stamped)
     setPeriodClockStarted(true)
-    setRunning(true)
+    claimLocalClock()
+    noteLocalMatchMutation()
 
     const sidelineMap = buildSidelineNameMap(stamped.filter((p) => p.attending))
     const starters = stamped.filter((p) => p.attending && p.isOnField)
 
     if (matchId) {
-      void (async () => {
-        try {
+      persistMatchClock(matchId, seconds)
+      void runOptimisticSync(
+        async () => {
           assertMatchActionOk(
             await apiLogPeriod({
               matchId,
@@ -2836,10 +2869,13 @@ export default function App() {
               onFieldPlayers: [],
             }),
           )
-        } catch {
-          setToast('Could not sync period start — try again')
-        }
-      })()
+        },
+        {
+          onRevert: () => {},
+          onErrorToast: () => setToast('Could not sync period start — try again'),
+          label: 'first-period-start',
+        },
+      )
     }
 
     const underwayToast = `${formatPeriodLong(currentPeriod, totalPeriods)} underway · ${formatClock(seconds)}`
@@ -2856,7 +2892,7 @@ export default function App() {
     matchId,
     setPlayers,
     setPeriodClockStarted,
-    setRunning,
+    claimLocalClock,
     requestWakeLock,
     currentPeriod,
     totalPeriods,
@@ -2867,10 +2903,13 @@ export default function App() {
     activeTeamSlug,
     activeFormation,
     setToast,
+    persistMatchClock,
+    noteLocalMatchMutation,
+    runOptimisticSync,
   ])
 
   const handleEnterHalftime = useCallback(async () => {
-    setRunning(false)
+    releaseLocalClock()
     const slotAssignments = livePitchRef.current?.getSlotAssignments()
     const slotLabelOverrides = livePitchRef.current?.getSlotLabelOverrides()
     const onFieldBefore = players
@@ -2923,7 +2962,7 @@ export default function App() {
     seconds,
     matchId,
     enterHalftime,
-    setRunning,
+    releaseLocalClock,
     currentPeriod,
     totalPeriods,
     halfLengthMinutes,
@@ -2939,7 +2978,11 @@ export default function App() {
 
   const handleBeginSecondHalf = useCallback(async () => {
     if (!canBeginSecondHalf) return
-    const assignments = halftimeAssignmentsRef.current ?? halftimeSlotAssignments
+    const assignments = hasSlotAssignments(halftimeAssignmentsRef.current)
+      ? halftimeAssignmentsRef.current
+      : hasSlotAssignments(halftimeSlotAssignments)
+        ? halftimeSlotAssignments
+        : undefined
     const labelOverrides = halftimeLabelOverridesRef.current
     const newClock = halfDurationSeconds(halfLengthMinutes)
 
@@ -2949,44 +2992,52 @@ export default function App() {
           requestWakeLock()
         : Promise.resolve({ active: false, blockedByOs: false, usedFallback: false })
 
-    const started = await beginNextPeriod(assignments, labelOverrides)
-    const sidelineMap = buildSidelineNameMap(
-      players.filter((p) => p.attending).concat(started.starters),
+    // Block live-sync hydrate until the period-start write lands — otherwise a
+    // snapshot taken after period end (everyone benched) overwrites the kickoff.
+    const started = await runOptimisticSync(
+      async () => {
+        const next = await beginNextPeriod(assignments, labelOverrides)
+        if (matchId) {
+          const sidelineMap = buildSidelineNameMap(
+            players.filter((p) => p.attending).concat(next.starters),
+          )
+          assertMatchActionOk(
+            await apiLogPeriod({
+              matchId,
+              kind: 'start',
+              period: next.period,
+              totalPeriods,
+              clockSeconds: next.clockSeconds,
+              halfLengthMinutes,
+              formation: next.formation,
+              periodCode: next.periodCode,
+              teamName: matchTeamName.trim() || 'Home',
+              opponent: matchOpponent,
+              teamSlug: activeTeamSlug,
+              insertStarterEvents: true,
+              starters: next.starters.map((p) => ({
+                playerId: p.id,
+                label: formatPlayerLabel(p, sidelineMap),
+                matchPosition: p.matchPosition,
+                subbedInAt: p.subbedInAt,
+                totalSecondsPlayed: p.totalSecondsPlayed,
+              })),
+              onFieldPlayers: [],
+            }),
+          )
+        }
+        return next
+      },
+      {
+        onRevert: () => {},
+        onErrorToast: () => setToast('Could not sync period start — try again'),
+        label: 'period-start',
+      },
     )
 
-    if (matchId) {
-      try {
-        assertMatchActionOk(
-          await apiLogPeriod({
-            matchId,
-            kind: 'start',
-            period: started.period,
-            totalPeriods,
-            clockSeconds: started.clockSeconds,
-            halfLengthMinutes,
-            formation: started.formation,
-            periodCode: started.periodCode,
-            teamName: matchTeamName.trim() || 'Home',
-            opponent: matchOpponent,
-            teamSlug: activeTeamSlug,
-            insertStarterEvents: true,
-            starters: started.starters.map((p) => ({
-              playerId: p.id,
-              label: formatPlayerLabel(p, sidelineMap),
-              matchPosition: p.matchPosition,
-              subbedInAt: p.subbedInAt,
-              totalSecondsPlayed: p.totalSecondsPlayed,
-            })),
-            onFieldPlayers: [],
-          }),
-        )
-      } catch {
-        setToast('Could not sync period start — try again')
-      }
-    }
-
-    const underwayToast = `${formatPeriodLong(started.period, totalPeriods)} underway · ${formatClock(newClock)}`
     const wakeResult = await wakePromise
+    if (!started) return
+    const underwayToast = `${formatPeriodLong(started.period, totalPeriods)} underway · ${formatClock(newClock)}`
     setToast(wakeResult.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
   }, [
     canBeginSecondHalf,
@@ -3001,6 +3052,7 @@ export default function App() {
     matchTeamName,
     matchOpponent,
     setToast,
+    runOptimisticSync,
   ])
 
   const handleShareParentHub = useCallback(async () => {

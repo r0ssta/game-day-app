@@ -1957,10 +1957,13 @@ export function syncMatchClock(matchId: string, remainingSeconds: number) {
   syncMatchRecord(matchId, {
     clock_seconds: clockSeconds,
   })
-  // Persist OT separately so resume can rebuild negative remaining without schema change.
-  void mergeMatchTimingContext(matchId, { addedTimeSeconds: added }).catch((e) =>
-    logSyncError('mergeMatchTimingContext', e),
-  )
+  // Skip the extra match read/write during regulation — it was firing Realtime
+  // hydrates on every heartbeat and slowing live actions.
+  if (added > 0) {
+    void mergeMatchTimingContext(matchId, { addedTimeSeconds: added }).catch((e) =>
+      logSyncError('mergeMatchTimingContext', e),
+    )
+  }
 }
 
 function isOptionalLineupPresetsError(err: unknown): boolean {

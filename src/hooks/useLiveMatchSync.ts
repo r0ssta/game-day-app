@@ -8,6 +8,10 @@ const DEBOUNCE_MS = 250
  * Keep a staff live-match screen in sync with another coach on the same match.
  * Realtime is the fast path; polling covers missed events and tables that are
  * not in the publication yet.
+ *
+ * Intentionally does not subscribe to `matches` UPDATEs — the local clock
+ * heartbeat writes that table every 5s and a full hydrate from those echoes
+ * was snapping the countdown backward and stalling live actions.
  */
 export function useLiveMatchSync(input: {
   matchId: string | null
@@ -49,16 +53,6 @@ export function useLiveMatchSync(input: {
           schema: 'public',
           table: 'match_events',
           filter: `match_id=eq.${matchId}`,
-        },
-        schedule,
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'matches',
-          filter: `id=eq.${matchId}`,
         },
         schedule,
       )

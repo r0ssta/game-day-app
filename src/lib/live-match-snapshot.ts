@@ -19,8 +19,8 @@ import type { AppMode, MatchPlayer, MatchPeriod, RosterPlayer, TotalPeriods } fr
 
 const PERIOD_END_NOTE = 'period_end'
 
-/** Ignore Realtime echoes of our own clock heartbeat. */
-export const CLOCK_ECHO_MS = 2000
+/** Ignore Realtime echoes of our own clock heartbeat. Must exceed the 5s persist interval. */
+export const CLOCK_ECHO_MS = 8000
 /** Snap to the remote countdown when devices have drifted this far. */
 export const CLOCK_ADOPT_DRIFT_SECONDS = 3
 
@@ -50,6 +50,37 @@ export type LiveMatchHydrateResult = {
   seconds: number
 }
 
+/**
+ * After this device kicks off a period, a snapshot fetched during the write still
+ * shows everyone on the bench (period-end status). Adopting it would clear the pitch.
+ */
+export function isStaleKickoffSnapshot(input: {
+  localClockStarted: boolean
+  localOnFieldCount: number
+  remoteOnFieldCount: number
+}): boolean {
+  return (
+    input.localClockStarted &&
+    input.localOnFieldCount > 0 &&
+    input.remoteOnFieldCount === 0
+  )
+}
+
+/**
+ * This device is the live clock source. Remote snapshots are always a few
+ * seconds behind the heartbeat and must not rewind or stop the tick.
+ */
+export function shouldHoldLocalLiveClock(input: {
+  clockOwned: boolean
+  appMode: AppMode
+  periodClockStarted: boolean
+  running: boolean
+}): boolean {
+  if (input.clockOwned) return true
+  if (input.appMode !== 'match') return false
+  return input.periodClockStarted || input.running
+}
+
 export function shouldAdoptRemoteClock(input: {
   localSeconds: number
   remoteSeconds: number
@@ -57,15 +88,29 @@ export function shouldAdoptRemoteClock(input: {
   nowMs: number
   remoteClockStarted: boolean
   localClockStarted: boolean
+  /** This device is ticking locally — never let a hydrate rewind the display. */
+  localRunning: boolean
 }): boolean {
+  // The 5s heartbeat is always behind the live countdown. Actions hydrate from
+  // that snapshot and would put ~5 seconds back on the clock if we adopted it.
+  if (input.localRunning) return false
+
   if (
     input.localClockWrittenAtMs > 0 &&
     input.nowMs - input.localClockWrittenAtMs < CLOCK_ECHO_MS
   ) {
     return false
   }
-  if (input.remoteClockStarted !== input.localClockStarted) return true
-  return Math.abs(input.remoteSeconds - input.localSeconds) > CLOCK_ADOPT_DRIFT_SECONDS
+
+  // Stale snapshot from before this device kicked off — keep the local countdown.
+  if (input.localClockStarted && !input.remoteClockStarted) return false
+
+  // Resume / other staff device started the period — take their clock.
+  if (input.remoteClockStarted && !input.localClockStarted) return true
+
+  // Countdown remaining: a higher remote value is a rewind toward kickoff.
+  // Only catch up when remote is ahead.
+  return input.remoteSeconds < input.localSeconds - CLOCK_ADOPT_DRIFT_SECONDS
 }
 
 export function latestFormationFromEvents(
@@ -101,7 +146,7 @@ export function latestPeriodEndOnFieldIds(
   return ids
 }
 
-export function isActiveStaffMatchScreen(mode: AppMode): boolean {
+export function isActiveStaffMatchScreen(mode: AppMode): mode is StaffLiveAppMode {
   return mode === 'match' || mode === 'halftime' || mode === 'penalty_shootout'
 }
 

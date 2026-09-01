@@ -76,3 +76,10 @@ export function isHalftimeLineupValid(
 ): boolean {
   return countSecondHalfStarters(secondHalfStarters) <= maxFieldPlayers
 }
+
+/** True when a pitch map actually has players in slots — `{}` and all-null maps are empty. */
+export function hasSlotAssignments(
+  assignments?: Record<string, string | null> | null,
+): assignments is Record<string, string | null> {
+  return Boolean(assignments && Object.values(assignments).some(Boolean))
+}
