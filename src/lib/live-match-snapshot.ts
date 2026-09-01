@@ -77,6 +77,9 @@ export function shouldHoldLocalLiveClock(input: {
   running: boolean
 }): boolean {
   if (input.clockOwned) return true
+  // Intermission lineup is local — a period-end snapshot still looks like
+  // 1st-half warmup (clock stopped, everyone benched, current_period=1).
+  if (input.appMode === 'halftime') return true
   if (input.appMode !== 'match') return false
   return input.periodClockStarted || input.running
 }

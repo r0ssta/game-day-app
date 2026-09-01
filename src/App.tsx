@@ -2244,6 +2244,7 @@ export default function App() {
         onRevert: () => void
         onErrorToast: (err: unknown) => void
         label?: string
+        quiet?: boolean
       },
     ) => {
       noteLocalMatchMutation()
@@ -2556,10 +2557,11 @@ export default function App() {
     if (!running && !periodClockStarted) return
     const id = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      if (isPending()) return
       persistMatchClock(matchId, clockSyncRef.current)
     }, 5000)
     return () => clearInterval(id)
-  }, [appMode, matchId, running, periodClockStarted, persistMatchClock])
+  }, [appMode, matchId, running, periodClockStarted, persistMatchClock, isPending])
 
   useEffect(() => {
     if (!toast) return
@@ -2928,30 +2930,34 @@ export default function App() {
     })
 
     if (matchId) {
-      try {
-        assertMatchActionOk(
-          await apiLogPeriod({
-            matchId,
-            kind: 'end',
-            period: endedPeriod,
-            totalPeriods,
-            clockSeconds: seconds,
-            halfLengthMinutes,
-            formation: endedFormation,
-            teamName: matchTeamName.trim() || 'Home',
-            opponent: matchOpponent,
-            teamSlug: activeTeamSlug,
-            homeScore,
-            awayScore,
-            insertStarterEvents: false,
-            starters: [],
-            onFieldPlayers,
-          }),
-        )
-      } catch {
-        setToast('Could not sync period end — try again')
-        return
-      }
+      await runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogPeriod({
+              matchId,
+              kind: 'end',
+              period: endedPeriod,
+              totalPeriods,
+              clockSeconds: seconds,
+              halfLengthMinutes,
+              formation: endedFormation,
+              teamName: matchTeamName.trim() || 'Home',
+              opponent: matchOpponent,
+              teamSlug: activeTeamSlug,
+              homeScore,
+              awayScore,
+              insertStarterEvents: false,
+              starters: [],
+              onFieldPlayers,
+            }),
+          )
+        },
+        {
+          onRevert: () => {},
+          onErrorToast: () => setToast('Could not sync period end — try again'),
+          label: 'period-end',
+        },
+      )
     }
 
     const next = Math.min(totalPeriods, endedPeriod + 1)
@@ -2974,6 +2980,7 @@ export default function App() {
     homeScore,
     awayScore,
     setToast,
+    runOptimisticSync,
   ])
 
   const handleBeginSecondHalf = useCallback(async () => {
@@ -3615,6 +3622,7 @@ export default function App() {
         },
         {
           label: 'logTeamShot',
+          quiet: true,
           onRevert: () => {
             if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
             else setAwayShots((n) => Math.max(0, n - 1))
@@ -3775,6 +3783,7 @@ export default function App() {
         },
         {
           label: 'commitTeamCorner',
+          quiet: true,
           onRevert: () => {
             if (side === 'home') setHomeCorners((n) => Math.max(0, n - 1))
             else setAwayCorners((n) => Math.max(0, n - 1))
@@ -3815,6 +3824,12 @@ export default function App() {
         }
       }
 
+      logTeamShot(side === 'away' ? 'home' : 'away', {
+        silent: true,
+        timestamp: eventTimestamp,
+        persist: false,
+      })
+
       void runOptimisticSync(
         async () => {
           assertMatchActionOk(
@@ -3828,18 +3843,18 @@ export default function App() {
               pairAutoShot: true,
             }),
           )
-          // Paired shot is written server-side; bump local shot counters only.
-          logTeamShot(side === 'away' ? 'home' : 'away', {
-            silent: true,
-            timestamp: eventTimestamp,
-            persist: false,
-          })
         },
         {
           label: 'commitTeamSave',
+          quiet: true,
           onRevert: () => {
-            if (side === 'away') setAwaySaves((n) => Math.max(0, n - 1))
-            else setHomeSaves((n) => Math.max(0, n - 1))
+            if (side === 'away') {
+              setAwaySaves((n) => Math.max(0, n - 1))
+              setHomeShots((n) => Math.max(0, n - 1))
+            } else {
+              setHomeSaves((n) => Math.max(0, n - 1))
+              setAwayShots((n) => Math.max(0, n - 1))
+            }
           },
           onErrorToast: failToast('Could not save — try again'),
         },
@@ -3854,6 +3869,8 @@ export default function App() {
       players,
       setHomeSaves,
       setAwaySaves,
+      setHomeShots,
+      setAwayShots,
       setToast,
       logTeamShot,
       runOptimisticSync,

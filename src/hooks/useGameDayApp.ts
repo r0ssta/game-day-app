@@ -250,6 +250,7 @@ export function useGameDayApp() {
   const hydrateInFlightRef = useRef(false)
   const localWriteGenRef = useRef(0)
   const localClockOwnedRef = useRef(false)
+  const localIntermissionRef = useRef(false)
   const liveStateRef = useRef({
     appMode,
     players,
@@ -353,6 +354,7 @@ export function useGameDayApp() {
 
   const shouldSkipLiveHydrate = useCallback(
     () =>
+      localIntermissionRef.current ||
       shouldHoldLocalLiveClock({
         clockOwned: localClockOwnedRef.current,
         appMode: liveStateRef.current.appMode,
@@ -380,7 +382,7 @@ export function useGameDayApp() {
         if (writeGen !== localWriteGenRef.current) return null
 
         // Kickoff / tick may have started while this snapshot was in flight.
-        if (shouldSkipLiveHydrate()) {
+        if (shouldSkipLiveHydrate() || liveStateRef.current.appMode === 'halftime') {
           const latest = liveStateRef.current
           const localMode = isActiveStaffMatchScreen(latest.appMode)
             ? latest.appMode
@@ -388,7 +390,7 @@ export function useGameDayApp() {
           return {
             ...snapshotHydrateResult(snapshot, latest.seconds),
             mode: localMode,
-            periodClockStarted: true,
+            periodClockStarted: latest.periodClockStarted,
             seconds: latest.seconds,
           }
         }
@@ -557,6 +559,10 @@ export function useGameDayApp() {
 
   const resumeLiveMatchScreen = useCallback(async () => {
     const latest = liveStateRef.current
+    if (localIntermissionRef.current || latest.appMode === 'halftime') {
+      setAppMode('halftime')
+      return
+    }
     if (latest.periodClockStarted || localClockOwnedRef.current) {
       claimLocalClock()
       setAppMode(isActiveStaffMatchScreen(latest.appMode) ? latest.appMode : 'match')
@@ -1487,6 +1493,7 @@ export function useGameDayApp() {
         setPeriod('1st')
         setCurrentPeriod(1)
         setTotalPeriods(matchTotalPeriods)
+        localIntermissionRef.current = false
         releaseLocalClock()
         setPeriodClockStarted(false)
         setFirstHalfStarterIds(input.firstHalfStarterIds)
@@ -1702,6 +1709,7 @@ export function useGameDayApp() {
       setPeriod('1st')
       setCurrentPeriod(1)
       setTotalPeriods(matchTotalPeriods)
+      localIntermissionRef.current = false
       releaseLocalClock()
       setPeriodClockStarted(false)
       setFirstHalfStarterIds(starterIds)
@@ -1748,6 +1756,7 @@ export function useGameDayApp() {
       slotAssignments?: Record<string, string | null>,
       slotLabelOverrides?: Record<string, string>,
     ) => {
+      localIntermissionRef.current = true
       releaseLocalClock()
 
       let nextPlayers: MatchPlayer[] = []
@@ -1802,6 +1811,7 @@ export function useGameDayApp() {
       slotAssignments?: Record<string, string | null>,
       slotLabelOverrides?: Record<string, string> | null,
     ) => {
+      localIntermissionRef.current = false
       claimLocalClock()
       const newClock = initialHalfClock(halfLengthMinutes)
       const formation = matchFormationsRef.current.second
@@ -1879,6 +1889,7 @@ export function useGameDayApp() {
       timing?: { endedOnTime: boolean },
       options?: { enterPenaltyShootout?: boolean },
     ) => {
+      localIntermissionRef.current = false
       releaseLocalClock()
 
       const onFieldPlayerIds = players
@@ -1999,6 +2010,7 @@ export function useGameDayApp() {
     setCurrentPeriod(1)
     setTotalPeriods(DEFAULT_TOTAL_PERIODS)
     setHalfLengthMinutes(DEFAULT_HALF_LENGTH)
+    localIntermissionRef.current = false
     releaseLocalClock()
     setPeriodClockStarted(false)
     setFirstHalfStarterIds([])

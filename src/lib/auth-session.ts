@@ -5,7 +5,9 @@ export const AUTH_RECONNECT_TOAST = 'Reconnecting Auth...'
 /** Refresh a minute before expiry so a locked phone does not send a dead JWT. */
 const EXPIRY_SKEW_SEC = 60
 
-export type SessionRefreshResult = { ok: true } | { ok: false; error: string }
+export type SessionRefreshResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; error: string }
 
 function secondsUntilExpiry(expiresAt: number | undefined): number {
   if (!expiresAt || !Number.isFinite(expiresAt)) return 0
@@ -28,11 +30,11 @@ export async function ensureFreshSession(): Promise<SessionRefreshResult> {
   if (!session?.access_token) return { ok: false, error: 'Not signed in' }
 
   if (!sessionNeedsRefresh(session.expires_at)) {
-    return { ok: true }
+    return { ok: true, accessToken: session.access_token }
   }
 
   const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
   if (refreshError) return { ok: false, error: refreshError.message }
   if (!refreshed.session?.access_token) return { ok: false, error: 'Not signed in' }
-  return { ok: true }
+  return { ok: true, accessToken: refreshed.session.access_token }
 }

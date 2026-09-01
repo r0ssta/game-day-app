@@ -97,22 +97,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const elapsed = halfSeconds - input.clockSeconds
 
       await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
-        for (const player of input.onFieldPlayers) {
-          await tx.insertEvent({
-            match_id: input.matchId,
-            player_id: player.playerId,
-            event_type: 'sub_out',
-            timestamp: elapsed,
-            formation: input.formation,
-            event_notes: PERIOD_END_NOTE,
-            is_pk: false,
-          })
-          await tx.updatePlayerStats(player.playerId, {
-            match_status: 'bench',
-            subbed_in_at: null,
-            total_seconds_played: player.totalSecondsPlayed,
-            total_minutes: player.totalSecondsPlayed / 60,
-          })
+        if (input.onFieldPlayers.length > 0) {
+          await tx.insertEvents(
+            input.onFieldPlayers.map((player) => ({
+              match_id: input.matchId,
+              player_id: player.playerId,
+              event_type: 'sub_out',
+              timestamp: elapsed,
+              formation: input.formation,
+              event_notes: PERIOD_END_NOTE,
+              is_pk: false,
+            })),
+          )
+          await Promise.all(
+            input.onFieldPlayers.map((player) =>
+              tx.updatePlayerStats(player.playerId, {
+                match_status: 'bench',
+                subbed_in_at: null,
+                total_seconds_played: player.totalSecondsPlayed,
+                total_minutes: player.totalSecondsPlayed / 60,
+              }),
+            ),
+          )
         }
 
         await tx.updateMatch({
@@ -154,9 +160,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // kind === 'start'
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
-      if (input.insertStarterEvents) {
-        for (const starter of input.starters) {
-          await tx.insertEvent({
+      if (input.insertStarterEvents && input.starters.length > 0) {
+        await tx.insertEvents(
+          input.starters.map((starter) => ({
             match_id: input.matchId,
             player_id: starter.playerId,
             event_type: 'sub_in',
@@ -164,23 +170,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             formation: input.formation,
             event_notes: startingLineupNote(starter.matchPosition),
             is_pk: false,
-          })
-        }
+          })),
+        )
       }
 
-      for (const starter of input.starters) {
-        const patch: Record<string, unknown> = {
-          match_status: 'on-field',
-          subbed_in_at: starter.subbedInAt ?? null,
-        }
-        if (typeof starter.matchPosition === 'string' && starter.matchPosition.trim()) {
-          patch.match_position = starter.matchPosition.trim()
-        }
-        if (typeof starter.totalSecondsPlayed === 'number') {
-          patch.total_seconds_played = starter.totalSecondsPlayed
-          patch.total_minutes = starter.totalSecondsPlayed / 60
-        }
-        await tx.updatePlayerStats(starter.playerId, patch)
+      if (input.starters.length > 0) {
+        await Promise.all(
+          input.starters.map((starter) => {
+            const patch: Record<string, unknown> = {
+              match_status: 'on-field',
+              subbed_in_at: starter.subbedInAt ?? null,
+            }
+            if (typeof starter.matchPosition === 'string' && starter.matchPosition.trim()) {
+              patch.match_position = starter.matchPosition.trim()
+            }
+            if (typeof starter.totalSecondsPlayed === 'number') {
+              patch.total_seconds_played = starter.totalSecondsPlayed
+              patch.total_minutes = starter.totalSecondsPlayed / 60
+            }
+            return tx.updatePlayerStats(starter.playerId, patch)
+          }),
+        )
       }
 
       const matchPatch: Record<string, unknown> = {

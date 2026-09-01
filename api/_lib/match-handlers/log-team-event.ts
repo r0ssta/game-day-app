@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth.js'
-import { requireMatchAccess } from '../match-access.js'
 import { LogTeamEventInputSchema } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import {
@@ -37,10 +36,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const input = parsed.data
-    const access = await requireMatchAccess(auth.supabase, input.matchId)
-    if ('error' in access) {
-      return res.status(access.status).json({ ok: false, error: access.error })
-    }
 
     const eventType = teamEventType(input.eventKind, input.side)
     const playerId =

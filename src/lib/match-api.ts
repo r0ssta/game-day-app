@@ -1,4 +1,3 @@
-import { supabase } from '@/supabaseClient'
 import { AUTH_RECONNECT_TOAST, ensureFreshSession } from '@/lib/auth-session'
 import type {
   EndRegulationInput,
@@ -34,12 +33,7 @@ export function formatMatchWriteError(err: unknown, fallback: string): string {
 async function accessToken(): Promise<string> {
   const refreshed = await ensureFreshSession()
   if (!refreshed.ok) throw new Error(AUTH_RECONNECT_TOAST)
-
-  const { data, error } = await supabase.auth.getSession()
-  if (error) throw error
-  const token = data.session?.access_token
-  if (!token) throw new Error(AUTH_RECONNECT_TOAST)
-  return token
+  return refreshed.accessToken
 }
 
 async function postMatchAction<T extends Record<string, unknown>>(

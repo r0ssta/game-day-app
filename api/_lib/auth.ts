@@ -8,6 +8,44 @@ export type AuthedContext = {
   accessToken: string
 }
 
+const STAFF_AUTH_TTL_MS = 45_000
+const staffAuthCache = new Map<string, { user: User; at: number }>()
+
+function jwtUnexpired(token: string): boolean {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return false
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      exp?: unknown
+    }
+    return typeof parsed.exp === 'number' && parsed.exp * 1000 > Date.now() + 5_000
+  } catch {
+    return false
+  }
+}
+
+function readCachedStaffUser(token: string): User | null {
+  if (!jwtUnexpired(token)) {
+    staffAuthCache.delete(token)
+    return null
+  }
+  const hit = staffAuthCache.get(token)
+  if (!hit || Date.now() - hit.at >= STAFF_AUTH_TTL_MS) {
+    staffAuthCache.delete(token)
+    return null
+  }
+  return hit.user
+}
+
+function rememberStaffUser(token: string, user: User): void {
+  staffAuthCache.set(token, { user, at: Date.now() })
+  if (staffAuthCache.size <= 200) return
+  const now = Date.now()
+  for (const [key, entry] of staffAuthCache) {
+    if (now - entry.at >= STAFF_AUTH_TTL_MS) staffAuthCache.delete(key)
+  }
+}
+
 function supabaseEnv() {
   return requirePublishableSupabaseEnv()
 }
@@ -74,18 +112,23 @@ export async function requireStaffSession(
     }
   }
 
-  // Validate JWT explicitly — global Authorization headers alone are unreliable
-  // for auth.getUser() in Node/Vite middleware (no browser storage).
-  const authClient = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-  const {
-    data: { user },
-    error: authError,
-  } = await authClient.auth.getUser(accessToken)
-  if (authError || !user) {
-    console.error('[requireStaffSession] getUser', authError?.message ?? 'no user')
-    return { error: 'Invalid session', status: 401 }
+  const cachedUser = readCachedStaffUser(accessToken)
+  let user: User
+  if (cachedUser) {
+    user = cachedUser
+  } else {
+    const authClient = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const {
+      data: { user: fetched },
+      error: authError,
+    } = await authClient.auth.getUser(accessToken)
+    if (authError || !fetched) {
+      console.error('[requireStaffSession] getUser', authError?.message ?? 'no user')
+      return { error: 'Invalid session', status: 401 }
+    }
+    user = fetched
   }
 
   const supabase = createClient(url, key, {
@@ -93,20 +136,23 @@ export async function requireStaffSession(
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  const { data: roleRow, error: roleError } = await supabase
-    .from('user_roles')
-    .select('app_role')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  if (!cachedUser) {
+    const { data: roleRow, error: roleError } = await supabase
+      .from('user_roles')
+      .select('app_role')
+      .eq('user_id', user.id)
+      .maybeSingle()
 
-  if (roleError) {
-    console.error('[requireStaffSession] role lookup', roleError)
-    return { error: 'Failed to verify staff access', status: 500 }
-  }
+    if (roleError) {
+      console.error('[requireStaffSession] role lookup', roleError)
+      return { error: 'Failed to verify staff access', status: 500 }
+    }
 
-  const role = roleRow?.app_role
-  if (!role || role === 'pending') {
-    return { error: 'Staff access required', status: 403 }
+    const role = roleRow?.app_role
+    if (!role || role === 'pending') {
+      return { error: 'Staff access required', status: 403 }
+    }
+    rememberStaffUser(accessToken, user)
   }
 
   return {

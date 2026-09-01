@@ -19,6 +19,8 @@ export function useOptimisticSync() {
     setPendingCount(pendingRef.current)
   }, [])
 
+  const isPending = useCallback(() => pendingRef.current > 0, [])
+
   const run = useCallback(
     async <T,>(
       work: () => Promise<T>,
@@ -26,9 +28,11 @@ export function useOptimisticSync() {
         onRevert: () => void
         onErrorToast: (err: unknown) => void
         label?: string
+        /** High-frequency events: skip the header spinner so taps feel instant. */
+        quiet?: boolean
       },
     ): Promise<T | null> => {
-      begin()
+      if (!options.quiet) begin()
       try {
         return await work()
       } catch (err) {
@@ -37,7 +41,7 @@ export function useOptimisticSync() {
         options.onErrorToast(err)
         return null
       } finally {
-        end()
+        if (!options.quiet) end()
       }
     },
     [begin, end],
@@ -46,7 +50,7 @@ export function useOptimisticSync() {
   return {
     syncPending: pendingCount > 0,
     pendingCount,
-    isPending: () => pendingRef.current > 0,
+    isPending,
     run,
   }
 }
