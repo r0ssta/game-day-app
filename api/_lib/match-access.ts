@@ -33,6 +33,10 @@ function rememberMatchAccess(match: MatchAccessRow): void {
   }
 }
 
+export function invalidateMatchAccessCache(matchId: string): void {
+  matchAccessCache.delete(matchId)
+}
+
 /**
  * Verify the authenticated staff user can mutate this match.
  * Staff RLS already gates table access; this confirms the match exists and

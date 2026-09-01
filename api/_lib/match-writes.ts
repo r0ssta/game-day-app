@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { invalidateMatchAccessCache } from './match-access.js'
 import { reportApiError } from './sentry.js'
 
 export type MatchEventInsert = {
@@ -112,6 +113,7 @@ export class MatchWriteSession {
     }
     const { error } = await this.supabase.from('matches').update(patch).eq('id', this.matchId)
     if (error) throw error
+    invalidateMatchAccessCache(this.matchId)
   }
 
   async updatePlayerStats(playerId: string, patch: Record<string, unknown>): Promise<void> {
@@ -197,6 +199,7 @@ export class MatchWriteSession {
         .update(this.matchRevert)
         .eq('id', this.matchId)
       if (error) errors.push(error)
+      invalidateMatchAccessCache(this.matchId)
     }
     for (const revert of this.statsReverts) {
       const { error } = await this.supabase

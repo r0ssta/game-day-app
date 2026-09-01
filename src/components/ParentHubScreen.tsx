@@ -278,6 +278,8 @@ function LiveTab({
     }
   }, [liveMatch?.id, hub.players])
 
+  const teamBoxScore = useMemo(() => aggregateTeamShotSaveTotals(events), [events])
+
   if (!liveMatch || !liveMatchState) {
     if (!nextScheduled) {
       return (
@@ -290,7 +292,6 @@ function LiveTab({
   }
 
   const timeline = buildParentTimelineRows(events)
-  const teamBoxScore = useMemo(() => aggregateTeamShotSaveTotals(events), [events])
   const teamBoxScoreLine = hasTeamShotSaveTotals(teamBoxScore)
     ? formatTeamShotSaveLine(teamBoxScore)
     : null

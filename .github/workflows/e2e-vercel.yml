@@ -1,0 +1,74 @@
+name: E2E (Vercel)
+
+# Uses the workflow file on the default branch. Lands after this is merged to main.
+on:
+  deployment_status:
+
+concurrency:
+  group: e2e-vercel-${{ github.event.deployment.sha }}-${{ github.event.deployment_status.environment }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      (
+        github.event.deployment_status.environment == 'Production' ||
+        startsWith(github.event.deployment_status.environment, 'Preview')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.deployment.sha }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Resolve deployment URL
+        id: url
+        env:
+          ENVIRONMENT_URL: ${{ github.event.deployment_status.environment_url }}
+          TARGET_URL: ${{ github.event.deployment_status.target_url }}
+        run: |
+          url="${ENVIRONMENT_URL:-$TARGET_URL}"
+          url="${url%/}"
+          if [ -z "$url" ]; then
+            echo "Vercel deployment URL missing from deployment_status"
+            exit 1
+          fi
+          echo "base=$url" >> "$GITHUB_OUTPUT"
+          echo "Running against $url"
+      - name: Playwright against Vercel
+        env:
+          CI: true
+          PLAYWRIGHT_BASE_URL: ${{ steps.url.outputs.base }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          E2E_STAFF_EMAIL: ${{ secrets.E2E_STAFF_EMAIL }}
+          E2E_STAFF_PASSWORD: ${{ secrets.E2E_STAFF_PASSWORD }}
+          E2E_TEAM_ID: ${{ secrets.E2E_TEAM_ID }}
+          E2E_TEAM_SLUG: ${{ secrets.E2E_TEAM_SLUG }}
+          E2E_SEASON_ID: ${{ secrets.E2E_SEASON_ID }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          env_name="${{ github.event.deployment_status.environment }}"
+          if [ "$env_name" = "Production" ]; then
+            npm run test:e2e:smoke
+          else
+            npm run test:e2e
+          fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-vercel-results
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

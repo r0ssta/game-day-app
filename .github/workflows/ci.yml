@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc -b
+      - run: npm test
+      - name: Require e2e secrets
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          E2E_STAFF_EMAIL: ${{ secrets.E2E_STAFF_EMAIL }}
+          E2E_STAFF_PASSWORD: ${{ secrets.E2E_STAFF_PASSWORD }}
+          E2E_TEAM_ID: ${{ secrets.E2E_TEAM_ID }}
+          E2E_TEAM_SLUG: ${{ secrets.E2E_TEAM_SLUG }}
+        run: |
+          missing=0
+          for name in VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY E2E_STAFF_EMAIL E2E_STAFF_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing GitHub Actions secret: $name"
+              missing=1
+            fi
+          done
+          if [ -z "$E2E_TEAM_ID" ] && [ -z "$E2E_TEAM_SLUG" ]; then
+            echo "Missing GitHub Actions secret: E2E_TEAM_ID or E2E_TEAM_SLUG"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "Add these repository secrets so Playwright can hit Parent Hub and /api/match."
+            exit 1
+          fi
+      - run: npx playwright install --with-deps chromium
+      - name: Playwright
+        env:
+          CI: true
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          E2E_STAFF_EMAIL: ${{ secrets.E2E_STAFF_EMAIL }}
+          E2E_STAFF_PASSWORD: ${{ secrets.E2E_STAFF_PASSWORD }}
+          E2E_TEAM_ID: ${{ secrets.E2E_TEAM_ID }}
+          E2E_TEAM_SLUG: ${{ secrets.E2E_TEAM_SLUG }}
+          E2E_SEASON_ID: ${{ secrets.E2E_SEASON_ID }}
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

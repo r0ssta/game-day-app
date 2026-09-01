@@ -4,10 +4,14 @@ const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173)
 const HOST = process.env.PLAYWRIGHT_HOST || '127.0.0.1'
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://${HOST}:${PORT}`
 
+const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim()
+
 /**
  * Smoke + API contract tests against the local Vite dev server (SPA +
  * `/api/match/*` + `/api/manifest` middleware). Override with
  * PLAYWRIGHT_BASE_URL to hit a deployed environment.
+ *
+ * Staff write tests skip locally without E2E_STAFF_* credentials; in CI they fail.
  */
 export default defineConfig({
   testDir: './e2e',
@@ -24,6 +28,12 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    extraHTTPHeaders: vercelBypass
+      ? {
+          'x-vercel-protection-bypass': vercelBypass,
+          'x-vercel-set-bypass-cookie': 'true',
+        }
+      : undefined,
   },
   projects: [
     {
