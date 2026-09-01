@@ -1,3 +1,4 @@
+import { isAutomationStaffEmail } from '@/lib/automation-staff'
 import {
   resolvePlayerNameFields,
 } from '@/lib/player-names'
@@ -788,6 +789,7 @@ export async function fetchTeamCoachingStaff(teamId: string): Promise<TeamCoachi
 
   const resolveName = (userId: string): string | null => {
     const profile = profileById.get(userId)
+    if (isAutomationStaffEmail(profile?.email)) return null
     const fromProfile = profile?.display_name?.trim()
     if (fromProfile) return fromProfile
     const fromRole = roleNameById.get(userId)?.trim()
@@ -841,6 +843,7 @@ export async function fetchClubStaffCoachNames(): Promise<string[]> {
     roleDisplayName: string | null | undefined,
   ): string | null => {
     const profile = profileById.get(userId)
+    if (isAutomationStaffEmail(profile?.email)) return null
     const fromProfile = profile?.display_name?.trim()
     if (fromProfile) return fromProfile
     const fromRole = roleDisplayName?.trim()
@@ -2286,16 +2289,19 @@ export async function fetchClubAdminUsers(): Promise<ClubAdminUserRow[]> {
     teamsByUser.set(row.user_id, list)
   }
 
-  return (profilesRes.data ?? []).map((profile) => {
+  return (profilesRes.data ?? []).flatMap((profile) => {
+    if (isAutomationStaffEmail(profile.email)) return []
     const roleRow = roleByUser.get(profile.id)
     const roleValue = roleRow?.app_role
-    return {
-      id: profile.id,
-      email: profile.email,
-      displayName: profile.display_name ?? roleRow?.display_name ?? null,
-      appRole: isAppRole(roleValue) ? roleValue : 'pending',
-      teamAssignments: teamsByUser.get(profile.id) ?? [],
-    }
+    return [
+      {
+        id: profile.id,
+        email: profile.email,
+        displayName: profile.display_name ?? roleRow?.display_name ?? null,
+        appRole: isAppRole(roleValue) ? roleValue : 'pending',
+        teamAssignments: teamsByUser.get(profile.id) ?? [],
+      },
+    ]
   })
 }
 
