@@ -68,8 +68,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })
       }
       await tx.insertEvents(events)
-      await tx.updateMatch({ home_score: nextHome, away_score: nextAway })
-      await tx.bumpOnFieldPlusMinus(input.onFieldPlayerIds, plusMinusDelta)
+      await Promise.all([
+        tx.updateMatch({ home_score: nextHome, away_score: nextAway }),
+        tx.bumpOnFieldPlusMinus(input.onFieldPlayerIds, plusMinusDelta),
+      ])
     })
 
     const push = buildGoalPush({

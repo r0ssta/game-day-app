@@ -12,6 +12,27 @@ export type MatchAccessRow = {
   is_test: boolean
 }
 
+const MATCH_ACCESS_TTL_MS = 60_000
+const matchAccessCache = new Map<string, { match: MatchAccessRow; at: number }>()
+
+function readCachedMatchAccess(matchId: string): MatchAccessRow | null {
+  const hit = matchAccessCache.get(matchId)
+  if (!hit || Date.now() - hit.at >= MATCH_ACCESS_TTL_MS) {
+    matchAccessCache.delete(matchId)
+    return null
+  }
+  return hit.match
+}
+
+function rememberMatchAccess(match: MatchAccessRow): void {
+  matchAccessCache.set(match.id, { match, at: Date.now() })
+  if (matchAccessCache.size <= 200) return
+  const now = Date.now()
+  for (const [key, entry] of matchAccessCache) {
+    if (now - entry.at >= MATCH_ACCESS_TTL_MS) matchAccessCache.delete(key)
+  }
+}
+
 /**
  * Verify the authenticated staff user can mutate this match.
  * Staff RLS already gates table access; this confirms the match exists and
@@ -21,6 +42,9 @@ export async function requireMatchAccess(
   supabase: SupabaseClient,
   matchId: string,
 ): Promise<{ match: MatchAccessRow } | { error: string; status: number }> {
+  const cached = readCachedMatchAccess(matchId)
+  if (cached) return { match: cached }
+
   const { data, error } = await supabase
     .from('matches')
     .select(
@@ -37,10 +61,10 @@ export async function requireMatchAccess(
     return { error: 'Match not found or access denied', status: 404 }
   }
 
-  return {
-    match: {
-      ...(data as Omit<MatchAccessRow, 'is_test'>),
-      is_test: Boolean((data as { is_test?: boolean }).is_test),
-    },
+  const match: MatchAccessRow = {
+    ...(data as Omit<MatchAccessRow, 'is_test'>),
+    is_test: Boolean((data as { is_test?: boolean }).is_test),
   }
+  rememberMatchAccess(match)
+  return { match }
 }

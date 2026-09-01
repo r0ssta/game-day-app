@@ -3323,6 +3323,7 @@ export default function App() {
         },
         {
           label: 'handleLiveSubIn',
+          quiet: true,
           onRevert: () => setPlayers(previousPlayers),
           onErrorToast: failToast('Could not save sub — try again'),
         },
@@ -3378,6 +3379,7 @@ export default function App() {
         },
         {
           label: 'handleLiveSubOut',
+          quiet: true,
           onRevert: () => setPlayers(previousPlayers),
           onErrorToast: failToast('Could not save sub — try again'),
         },
@@ -3442,6 +3444,7 @@ export default function App() {
         },
         {
           label: 'handleLiveSwap',
+          quiet: true,
           onRevert: () => setPlayers(previousPlayers),
           onErrorToast: failToast('Could not save sub — try again'),
         },
@@ -3729,6 +3732,7 @@ export default function App() {
         },
         {
           label: 'commitOpponentGoal',
+          quiet: true,
           onRevert: () => {
             setAwayScore(awayBefore)
             setAwayShots((n) => Math.max(0, n - 1))
@@ -3933,6 +3937,7 @@ export default function App() {
         },
         {
           label: 'commitOurGoal',
+          quiet: true,
           onRevert: () => {
             setHomeScore(homeBefore)
             setHomeShots((n) => Math.max(0, n - 1))

@@ -160,11 +160,22 @@ export class MatchWriteSession {
       if (isMissingPlusMinusColumn(error)) return
       throw error
     }
-    for (const row of stats ?? []) {
-      await this.updatePlayerStats(row.player_id as string, {
-        plus_minus: (row.plus_minus ?? 0) + delta,
-      })
-    }
+    await Promise.all(
+      (stats ?? []).map(async (row) => {
+        const playerId = row.player_id as string
+        const previous = (row.plus_minus as number | null) ?? 0
+        this.statsReverts.push({ playerId, patch: { plus_minus: previous } })
+        const { error: updateError } = await this.supabase
+          .from('match_stats')
+          .update({ plus_minus: previous + delta })
+          .eq('match_id', this.matchId)
+          .eq('player_id', playerId)
+        if (updateError) {
+          if (isMissingPlusMinusColumn(updateError)) return
+          throw updateError
+        }
+      }),
+    )
   }
 
   async rollback(): Promise<void> {

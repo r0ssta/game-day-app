@@ -5,7 +5,7 @@ import { LogSubstitutionInputSchema } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import { buildSubstitutionPush } from '../push-copy.js'
 import { queueTeamWebPush } from '../send-web-push.js'
-import { runMatchWrites } from '../match-writes.js'
+import { type MatchEventInsert, runMatchWrites } from '../match-writes.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -43,8 +43,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const doIn = input.kind === 'in' || input.kind === 'swap'
 
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      const events: MatchEventInsert[] = []
+      const statsUpdates: Array<Promise<void>> = []
+
       if (doOut && input.fieldPlayerId) {
-        await tx.insertEvent({
+        events.push({
           match_id: input.matchId,
           player_id: input.fieldPlayerId,
           event_type: 'sub_out',
@@ -52,17 +55,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           formation: input.formation,
           is_pk: false,
         })
-        await tx.updatePlayerStats(input.fieldPlayerId, {
-          match_status: 'bench',
-          subbed_in_at: null,
-          total_seconds_played: input.fieldTotalSecondsPlayed ?? 0,
-          total_minutes: (input.fieldTotalSecondsPlayed ?? 0) / 60,
-        })
+        statsUpdates.push(
+          tx.updatePlayerStats(input.fieldPlayerId, {
+            match_status: 'bench',
+            subbed_in_at: null,
+            total_seconds_played: input.fieldTotalSecondsPlayed ?? 0,
+            total_minutes: (input.fieldTotalSecondsPlayed ?? 0) / 60,
+          }),
+        )
       }
 
       if (doIn && input.benchPlayerId) {
         const position = input.tacticalPosition?.trim() || null
-        await tx.insertEvent({
+        events.push({
           match_id: input.matchId,
           player_id: input.benchPlayerId,
           event_type: 'sub_in',
@@ -76,8 +81,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           subbed_in_at: input.benchSubbedInAt ?? null,
         }
         if (position) patch.match_position = position
-        await tx.updatePlayerStats(input.benchPlayerId, patch)
+        statsUpdates.push(tx.updatePlayerStats(input.benchPlayerId, patch))
       }
+
+      if (events.length > 0) await tx.insertEvents(events)
+      if (statsUpdates.length > 0) await Promise.all(statsUpdates)
     })
 
     if (!access.match.is_test) {
