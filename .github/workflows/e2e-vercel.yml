@@ -1,9 +1,8 @@
 name: E2E (Vercel)
 
-# Uses the workflow file on the default branch. Vercel GitHub deployments are
-# named "Production – <project>" / "Preview – <project>", not "Production".
-# Only the live app (game-day-app-chvm). Full Playwright on every successful
-# deploy, including Production — this repo ships from main, not PRs.
+# Uses the workflow file on the default branch. Vercel names GitHub
+# environments "Production", "Preview", or "Production – <project>".
+# Full Playwright on every successful chvm deploy (this repo ships from main).
 on:
   deployment_status:
 
@@ -15,10 +14,10 @@ jobs:
   playwright:
     if: >-
       github.event.deployment_status.state == 'success' &&
-      contains(github.event.deployment_status.environment, 'game-day-app-chvm') &&
       (
-        startsWith(github.event.deployment_status.environment, 'Production') ||
-        startsWith(github.event.deployment_status.environment, 'Preview')
+        github.event.deployment_status.environment == 'Production' ||
+        github.event.deployment_status.environment == 'Preview' ||
+        contains(github.event.deployment_status.environment, 'game-day-app-chvm')
       )
     runs-on: ubuntu-latest
     timeout-minutes: 20
