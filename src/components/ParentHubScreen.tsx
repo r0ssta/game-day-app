@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, ChevronRight, Radio, ScrollText } from 'lucide-react'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { EnableAlertsButton } from '@/components/EnableAlertsButton'
 import { InstallPrompt } from '@/components/InstallPrompt'
-import { ParentFinishedMatchDetail } from '@/components/ParentFinishedMatchDetail'
+import { Spinner } from '@/components/Spinner'
 import { formatTeamDisplayName } from '@/lib/age-groups'
 import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-schedule'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
@@ -35,6 +35,12 @@ import {
 import { APP_CONTAINER } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/supabaseClient'
+
+const ParentFinishedMatchDetail = lazy(() =>
+  import('@/components/ParentFinishedMatchDetail').then((m) => ({
+    default: m.ParentFinishedMatchDetail,
+  })),
+)
 
 type TabId = 'live' | 'schedule' | 'recaps'
 
@@ -574,7 +580,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
 
       <header className="border-b border-border bg-background/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className={`${APP_CONTAINER} space-y-3`}>
-          <ClubBrandMark size="sm" />
+          <ClubBrandMark size="sm" priority />
           <div>
             <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
               {teamLabel}
@@ -594,12 +600,14 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
           ) : !hub ? (
             <p className="text-sm font-semibold text-muted-foreground">Loading team…</p>
           ) : selectedMatch && isParentHubFinishedMatch(selectedMatch.status) ? (
-            <ParentFinishedMatchDetail
-              match={selectedMatch}
-              players={hub.players}
-              opponent={selectedMatch.opponent}
-              onBack={() => setSelectedMatchId(null)}
-            />
+            <Suspense fallback={<Spinner />}>
+              <ParentFinishedMatchDetail
+                match={selectedMatch}
+                players={hub.players}
+                opponent={selectedMatch.opponent}
+                onBack={() => setSelectedMatchId(null)}
+              />
+            </Suspense>
           ) : tab === 'live' ? (
             <LiveTab hub={hub} matches={hub.matches} />
           ) : tab === 'schedule' ? (

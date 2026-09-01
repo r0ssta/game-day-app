@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { invalidateByTag } from '@vercel/functions'
 
 export const PARENT_HUB_CACHE_TTL_SEC = 60
-export const PARENT_HUB_SWR_SEC = 300
+export const PARENT_HUB_SWR_SEC = 30
 
 export function parentHubCacheTag(slug: string): string {
   return `parent-hub-${slug.trim().toLowerCase()}`
@@ -10,12 +10,10 @@ export function parentHubCacheTag(slug: string): string {
 
 export function applyParentHubCacheHeaders(res: VercelResponse, slug: string): void {
   const tag = parentHubCacheTag(slug)
-  // Browser always revalidates; Vercel CDN holds the payload and can purge by tag.
-  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
-  res.setHeader(
-    'Vercel-CDN-Cache-Control',
-    `public, s-maxage=${PARENT_HUB_CACHE_TTL_SEC}, stale-while-revalidate=${PARENT_HUB_SWR_SEC}`,
-  )
+  const cacheControl = `public, s-maxage=${PARENT_HUB_CACHE_TTL_SEC}, stale-while-revalidate=${PARENT_HUB_SWR_SEC}`
+  // Shared caches (Vercel edge) hold the payload for 60s and may serve stale for 30s.
+  res.setHeader('Cache-Control', cacheControl)
+  res.setHeader('Vercel-CDN-Cache-Control', cacheControl)
   res.setHeader('Vercel-Cache-Tag', tag)
 }
 

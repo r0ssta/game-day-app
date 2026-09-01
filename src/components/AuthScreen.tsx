@@ -159,7 +159,7 @@ export function AuthScreen() {
     <main className={`${APP_SHELL} flex min-h-dvh items-center justify-center px-4 py-10`}>
       <div className={`${APP_CONTAINER} w-full max-w-md`}>
         <div className="mb-6 flex items-start justify-between gap-3">
-          <ClubBrandMark size="lg" />
+          <ClubBrandMark size="lg" priority />
           <button
             type="button"
             onClick={toggleSunlightMode}

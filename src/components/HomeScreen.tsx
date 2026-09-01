@@ -59,7 +59,7 @@ export function HomeScreen({
       <div className={`${APP_CONTAINER} flex min-h-full flex-col pb-10 pt-8 md:pb-12 md:pt-10`}>
         <header className="mb-6 flex flex-col items-center gap-2 text-center">
           <h1 className="sr-only">Home</h1>
-          <ClubBrandMark size="lg" align="center" />
+          <ClubBrandMark size="lg" align="center" priority />
         </header>
 
         <TeamSelector

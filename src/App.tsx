@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type ReactNode } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type ReactNode } from 'react'
 import {
   CheckCircle2,
   Goal,
@@ -10,17 +10,11 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { EndMatchTimingModal } from '@/components/EndMatchTimingModal'
-import { CardWizardModal } from '@/components/CardWizardModal'
-import { GoalWizardModal, type GoalWizardStep, type GoalWizardTeam } from '@/components/GoalWizardModal'
 import { HomeScreen } from '@/components/HomeScreen'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
 import { SubCountdownTimer } from '@/components/SubCountdownTimer'
-import { PenaltyShootoutScreen } from '@/components/PenaltyShootoutScreen'
-import { ReportingScreen } from '@/components/ReportingScreen'
 import { BackToHomeButton, ScreenHeader } from '@/components/AppNavigation'
 import {
   AppNavDrawer,
@@ -30,19 +24,17 @@ import {
   type AppNavSection,
 } from '@/components/AppNavDrawer'
 import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
+import { ModalSuspense, ScreenSuspense } from '@/components/Spinner'
 import { teamsForSelector } from '@/lib/team-context'
 import { formatTeamDisplayName } from '@/lib/age-groups'
 import { resolveTeamAgeGroup } from '@/lib/season-roster'
 import type { ReportingTab } from '@/components/reporting/ReportingTabBar'
-import { TeamManagementScreen } from '@/components/TeamManagementScreen'
+import type { GoalWizardStep, GoalWizardTeam } from '@/components/GoalWizardModal'
 import {
   LiveTacticalPitch,
   type LiveTacticalPitchHandle,
   type PositionReassignUpdate,
 } from '@/components/LiveTacticalPitch'
-import { PostGameRecap } from '@/components/PostGameRecap'
-import { MatchRecapHistoryScreen } from '@/components/MatchRecapHistoryScreen'
-import { ClubAdminScreen } from '@/components/ClubAdminScreen'
 import {
   DEFAULT_PRIMARY_POSITION,
   DEFAULT_SECONDARY_POSITION,
@@ -148,6 +140,37 @@ import {
   MODAL_PANEL,
   TOUCH_ICON_BUTTON,
 } from '@/lib/layout'
+
+const ReportingScreen = lazy(() =>
+  import('@/components/ReportingScreen').then((m) => ({ default: m.ReportingScreen })),
+)
+const TeamManagementScreen = lazy(() =>
+  import('@/components/TeamManagementScreen').then((m) => ({ default: m.TeamManagementScreen })),
+)
+const PostGameRecap = lazy(() =>
+  import('@/components/PostGameRecap').then((m) => ({ default: m.PostGameRecap })),
+)
+const MatchRecapHistoryScreen = lazy(() =>
+  import('@/components/MatchRecapHistoryScreen').then((m) => ({ default: m.MatchRecapHistoryScreen })),
+)
+const ClubAdminScreen = lazy(() =>
+  import('@/components/ClubAdminScreen').then((m) => ({ default: m.ClubAdminScreen })),
+)
+const PenaltyShootoutScreen = lazy(() =>
+  import('@/components/PenaltyShootoutScreen').then((m) => ({ default: m.PenaltyShootoutScreen })),
+)
+const GoalWizardModal = lazy(() =>
+  import('@/components/GoalWizardModal').then((m) => ({ default: m.GoalWizardModal })),
+)
+const CardWizardModal = lazy(() =>
+  import('@/components/CardWizardModal').then((m) => ({ default: m.CardWizardModal })),
+)
+const DeleteMatchConfirmModal = lazy(() =>
+  import('@/components/DeleteMatchConfirmModal').then((m) => ({ default: m.DeleteMatchConfirmModal })),
+)
+const EndMatchTimingModal = lazy(() =>
+  import('@/components/EndMatchTimingModal').then((m) => ({ default: m.EndMatchTimingModal })),
+)
 
 function nextJerseyNumber(roster: RosterPlayer[]) {
   const used = new Set(roster.map((p) => p.number).filter((n): n is number => n !== null))
@@ -4510,50 +4533,66 @@ export default function App() {
         ) : null}
       </StickyMatchActionBar>
 
-      <GoalWizardModal
-        open={goalWizardOpen}
-        team={goalWizardTeam}
-        step={goalWizardStep}
-        isPk={goalIsPk}
-        players={players}
-        scorerId={goalScorerId}
-        onSelectGoalType={handleSelectGoalType}
-        onSelectScorer={handleSelectGoalScorer}
-        onSelectAssist={handleCompleteGoal}
-        onClose={closeGoalWizard}
-      />
+      {goalWizardOpen ? (
+        <ModalSuspense>
+          <GoalWizardModal
+            open={goalWizardOpen}
+            team={goalWizardTeam}
+            step={goalWizardStep}
+            isPk={goalIsPk}
+            players={players}
+            scorerId={goalScorerId}
+            onSelectGoalType={handleSelectGoalType}
+            onSelectScorer={handleSelectGoalScorer}
+            onSelectAssist={handleCompleteGoal}
+            onClose={closeGoalWizard}
+          />
+        </ModalSuspense>
+      ) : null}
 
-      <CardWizardModal
-        open={cardWizardOpen}
-        players={players}
-        onConfirm={handleConfirmCard}
-        onClose={() => setCardWizardOpen(false)}
-      />
+      {cardWizardOpen ? (
+        <ModalSuspense>
+          <CardWizardModal
+            open={cardWizardOpen}
+            players={players}
+            onConfirm={handleConfirmCard}
+            onClose={() => setCardWizardOpen(false)}
+          />
+        </ModalSuspense>
+      ) : null}
 
-      <DeleteMatchConfirmModal
-        open={liveDeleteConfirmOpen && canDeleteMatches}
-        matchLabel={
-          matchId
-            ? `${matchTeamName || 'Team'} vs ${matchOpponent.trim() || 'Opponent'}`
-            : undefined
-        }
-        busy={liveDeleting}
-        onCancel={() => {
-          if (!liveDeleting) setLiveDeleteConfirmOpen(false)
-        }}
-        onConfirm={() => void handleConfirmLiveDeleteMatch()}
-      />
+      {liveDeleteConfirmOpen && canDeleteMatches ? (
+        <ModalSuspense>
+          <DeleteMatchConfirmModal
+            open={liveDeleteConfirmOpen && canDeleteMatches}
+            matchLabel={
+              matchId
+                ? `${matchTeamName || 'Team'} vs ${matchOpponent.trim() || 'Opponent'}`
+                : undefined
+            }
+            busy={liveDeleting}
+            onCancel={() => {
+              if (!liveDeleting) setLiveDeleteConfirmOpen(false)
+            }}
+            onConfirm={() => void handleConfirmLiveDeleteMatch()}
+          />
+        </ModalSuspense>
+      ) : null}
 
-      <EndMatchTimingModal
-        open={endTimingOpen}
-        remainingSeconds={seconds}
-        busy={endingMatch}
-        onCancel={() => {
-          if (!endingMatch) setEndTimingOpen(false)
-        }}
-        onEndedOnTime={() => void handleConfirmEndGameTiming(true)}
-        onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
-      />
+      {endTimingOpen ? (
+        <ModalSuspense>
+          <EndMatchTimingModal
+            open={endTimingOpen}
+            remainingSeconds={seconds}
+            busy={endingMatch}
+            onCancel={() => {
+              if (!endingMatch) setEndTimingOpen(false)
+            }}
+            onEndedOnTime={() => void handleConfirmEndGameTiming(true)}
+            onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
+          />
+        </ModalSuspense>
+      ) : null}
     </main>
     </ErrorBoundary>
   )
@@ -4575,7 +4614,9 @@ export default function App() {
         userEmail={user?.email ?? null}
         onSignOut={() => void signOut()}
       />
-      <AppNavShell>{renderScreen()}</AppNavShell>
+      <AppNavShell>
+        <ScreenSuspense>{renderScreen()}</ScreenSuspense>
+      </AppNavShell>
       {toastOverlay}
     </>
   )

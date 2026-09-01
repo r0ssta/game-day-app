@@ -1,4 +1,4 @@
-import { CLUB_CREST_SRC, CLUB_NAME, CLUB_NAME_FULL } from '@/lib/branding'
+import { CLUB_CREST_AVIF_SRC, CLUB_CREST_SRC, CLUB_CREST_WEBP_SRC, CLUB_NAME, CLUB_NAME_FULL } from '@/lib/branding'
 import { cn } from '@/lib/utils'
 
 type ClubBrandMarkProps = {
@@ -7,6 +7,10 @@ type ClubBrandMarkProps = {
   size?: 'sm' | 'md' | 'lg'
   showName?: boolean
   align?: 'left' | 'center'
+  /** Use lazy for off-screen / below-fold marks (e.g. closed nav drawer). */
+  loading?: 'eager' | 'lazy'
+  /** Hint the browser this is the LCP image (auth / home hero). */
+  priority?: boolean
 }
 
 const CREST_SIZE = {
@@ -20,7 +24,12 @@ export function ClubBrandMark({
   size = 'md',
   showName = true,
   align = 'left',
+  loading = 'eager',
+  priority = false,
 }: ClubBrandMarkProps) {
+  const pixelSize = size === 'lg' ? 80 : size === 'md' ? 48 : 36
+  const displaySize = align === 'center' && size === 'lg' ? 80 : pixelSize
+
   return (
     <div
       className={cn(
@@ -29,17 +38,24 @@ export function ClubBrandMark({
         className,
       )}
     >
-      <img
-        src={CLUB_CREST_SRC}
-        alt={`${CLUB_NAME_FULL} crest`}
-        className={cn(
-          CREST_SIZE[size],
-          'shrink-0 object-contain drop-shadow-md',
-          align === 'center' && size === 'lg' && 'size-20',
-        )}
-        width={size === 'lg' ? 80 : size === 'md' ? 48 : 36}
-        height={size === 'lg' ? 80 : size === 'md' ? 48 : 36}
-      />
+      <picture>
+        <source type="image/avif" srcSet={CLUB_CREST_AVIF_SRC} />
+        <source type="image/webp" srcSet={CLUB_CREST_WEBP_SRC} />
+        <img
+          src={CLUB_CREST_SRC}
+          alt={`${CLUB_NAME_FULL} crest`}
+          className={cn(
+            CREST_SIZE[size],
+            'shrink-0 object-contain drop-shadow-md',
+            align === 'center' && size === 'lg' && 'size-20',
+          )}
+          width={displaySize}
+          height={displaySize}
+          decoding="async"
+          loading={priority ? 'eager' : loading}
+          fetchPriority={priority ? 'high' : 'auto'}
+        />
+      </picture>
       {showName ? (
         <div className={cn(align === 'center' && 'space-y-1')}>
           {align === 'center' ? (

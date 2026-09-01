@@ -8,15 +8,17 @@ import {
   hasTeamShotSaveTotals,
 } from '@/lib/match-shot-save'
 import {
-  buildParentMatchPlayerStats,
   buildParentTimelineRows,
   fetchParentLiveEvents,
   filterParentLiveTimeline,
   formatParentEventLine,
   type ParentHubMatch,
   type ParentHubPlayer,
-  type ParentMatchPlayerStat,
 } from '@/lib/parent-hub'
+import {
+  buildParentMatchPlayerStats,
+  type ParentMatchPlayerStat,
+} from '@/lib/parent-match-stats'
 import { cn } from '@/lib/utils'
 
 type ParentFinishedMatchDetailProps = {

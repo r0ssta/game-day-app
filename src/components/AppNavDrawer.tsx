@@ -13,7 +13,7 @@ import {
 import { SunlightModeToggle } from '@/components/SunlightModeToggle'
 import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
-import { CLUB_CREST_SRC, CLUB_SHORT_NAME } from '@/lib/branding'
+import { CLUB_CREST_AVIF_SRC, CLUB_CREST_SRC, CLUB_CREST_WEBP_SRC, CLUB_SHORT_NAME } from '@/lib/branding'
 import { APP_CONTAINER, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
@@ -222,13 +222,19 @@ export function AppNavDrawer({
             disabledReason={teamSwitchDisabled ? 'Team locked during live match' : undefined}
           />
 
-          <img
-            src={CLUB_CREST_SRC}
-            alt={CLUB_SHORT_NAME}
-            className="ml-auto size-9 shrink-0 object-contain"
-            width={36}
-            height={36}
-          />
+          <picture>
+            <source type="image/avif" srcSet={CLUB_CREST_AVIF_SRC} />
+            <source type="image/webp" srcSet={CLUB_CREST_WEBP_SRC} />
+            <img
+              src={CLUB_CREST_SRC}
+              alt={CLUB_SHORT_NAME}
+              className="ml-auto size-9 shrink-0 object-contain"
+              width={36}
+              height={36}
+              decoding="async"
+              loading="eager"
+            />
+          </picture>
 
           <SunlightModeToggle className="shrink-0 shadow-sm" />
         </div>
@@ -253,7 +259,7 @@ export function AppNavDrawer({
       >
         <div className="space-y-3 border-b border-border px-4 py-3">
           <div className="min-w-0 space-y-2">
-            <ClubBrandMark size="sm" />
+            <ClubBrandMark size="sm" loading="lazy" />
             {teamLabel ? (
               <p className="truncate text-xs text-muted-foreground">Viewing {teamLabel}</p>
             ) : null}

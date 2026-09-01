@@ -1,12 +1,11 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { lazy, StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import '@fontsource/bebas-neue/latin-400.css'
 import './index.css'
-import App from './App.tsx'
 import { AuthScreen } from '@/components/AuthScreen'
 import { PendingAccessScreen } from '@/components/PendingAccessScreen'
-import { ParentHubScreen } from '@/components/ParentHubScreen'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { StatTrackerScreen } from '@/components/StatTrackerScreen'
+import { ScreenSuspense } from '@/components/Spinner'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
 import { initSentry } from '@/lib/sentry'
@@ -23,6 +22,14 @@ import {
 } from '@/lib/parent-hub-pwa'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
+
+const App = lazy(() => import('./App.tsx'))
+const ParentHubScreen = lazy(() =>
+  import('@/components/ParentHubScreen').then((m) => ({ default: m.ParentHubScreen })),
+)
+const StatTrackerScreen = lazy(() =>
+  import('@/components/StatTrackerScreen').then((m) => ({ default: m.StatTrackerScreen })),
+)
 
 initSentry()
 
@@ -66,7 +73,11 @@ function AuthenticatedApp() {
     return <PendingAccessScreen />
   }
 
-  return <App />
+  return (
+    <ScreenSuspense>
+      <App />
+    </ScreenSuspense>
+  )
 }
 
 function Root() {
@@ -100,7 +111,9 @@ function Root() {
   return (
     <SunlightModeProvider>
       {trackerRoute ? (
-        <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
+        <ScreenSuspense>
+          <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />
+        </ScreenSuspense>
       ) : parentHubRoute ? (
         <ErrorBoundary
           sectionLabel="Parent Hub"
@@ -109,7 +122,9 @@ function Root() {
           }
           className="min-h-dvh bg-background"
         >
-          <ParentHubScreen route={parentHubRoute} />
+          <ScreenSuspense>
+            <ParentHubScreen route={parentHubRoute} />
+          </ScreenSuspense>
         </ErrorBoundary>
       ) : (
         <AuthProvider>

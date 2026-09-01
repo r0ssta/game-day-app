@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import { formatPlusMinus } from '@/lib/plus-minus'
@@ -14,10 +14,16 @@ import {
   type PlayerSeasonStats,
 } from '@/lib/season-reporting'
 import { fetchPlayerSeasonRatingTrend } from '@/lib/supabase-api'
-import { PlayerRatingChart } from '@/components/reporting/PlayerRatingChart'
+import { Spinner } from '@/components/Spinner'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import type { RosterPlayer } from '@/types/match'
+
+const PlayerRatingChart = lazy(() =>
+  import('@/components/reporting/PlayerRatingChart').then((m) => ({
+    default: m.PlayerRatingChart,
+  })),
+)
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
@@ -127,7 +133,9 @@ export function PlayerSeasonProfileView({
             <p className="mt-4 py-8 text-center text-sm text-muted-foreground">Loading trend…</p>
           ) : (
             <div className="mt-4 min-w-0">
-              <PlayerRatingChart points={ratingTrend.points} />
+              <Suspense fallback={<Spinner className="h-52 min-h-52 sm:h-56" />}>
+                <PlayerRatingChart points={ratingTrend.points} />
+              </Suspense>
             </div>
           )}
         </section>

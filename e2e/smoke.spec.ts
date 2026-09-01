@@ -73,5 +73,9 @@ test.describe('smoke', () => {
     expect(String(payload.teamSlug || '').toLowerCase()).toBe(HUB_SLUG)
     expect(payload.teamName, 'teamName present').toBeTruthy()
     expect(Array.isArray(payload.matches), 'matches array').toBeTruthy()
+
+    const cacheControl = response.headers()['cache-control'] || ''
+    expect(cacheControl).toMatch(/s-maxage=60/)
+    expect(cacheControl).toMatch(/stale-while-revalidate=30/)
   })
 })
