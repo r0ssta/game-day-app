@@ -2,7 +2,8 @@ name: E2E (Vercel)
 
 # Uses the workflow file on the default branch. Vercel GitHub deployments are
 # named "Production – <project>" / "Preview – <project>", not "Production".
-# This repo is linked to multiple Vercel projects; only the live app (chvm).
+# Only the live app (game-day-app-chvm). Full Playwright on every successful
+# deploy, including Production — this repo ships from main, not PRs.
 on:
   deployment_status:
 
@@ -60,13 +61,8 @@ jobs:
           E2E_SEASON_ID: ${{ secrets.E2E_SEASON_ID }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          env_name="${{ github.event.deployment_status.environment }}"
-          echo "Environment: $env_name"
-          if [[ "$env_name" == Production* ]]; then
-            npm run test:e2e:smoke
-          else
-            npm run test:e2e
-          fi
+          echo "Environment: ${{ github.event.deployment_status.environment }}"
+          npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
