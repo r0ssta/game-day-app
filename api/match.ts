@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight } from './_lib/auth.js'
 import { checkWriteRateLimit, rejectTooManyRequests } from './_lib/rate-limit.js'
 import { assertNoClientLeakedSecrets } from './_lib/server-env.js'
+import { revalidateParentHubFromRequest } from './_lib/parent-hub-cache.js'
 import endRegulation from './_lib/match-handlers/end-regulation.js'
 import finalizePk from './_lib/match-handlers/finalize-pk.js'
 import finalizeReview from './_lib/match-handlers/finalize-review.js'
@@ -67,5 +68,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  return impl(req, res)
+  const result = await impl(req, res)
+  const status = res.statusCode || 200
+  if (status < 400) {
+    revalidateParentHubFromRequest(req)
+  }
+  return result
 }

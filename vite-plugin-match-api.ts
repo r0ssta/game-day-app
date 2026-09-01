@@ -7,13 +7,21 @@ type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown>
 
 const MATCH_API_MODULE = '/api/match.ts'
 const SEND_WEB_PUSH_MODULE = '/api/send-web-push.ts'
+const HUB_API_MODULE = '/api/hub.ts'
 
 function routeModule(pathname: string): string | null {
   if (pathname === '/api/send-web-push') return SEND_WEB_PUSH_MODULE
+  if (pathname === '/api/hub' || pathname.startsWith('/api/hub/')) return HUB_API_MODULE
   if (pathname === '/api/match' || pathname.startsWith('/api/match/')) {
     return MATCH_API_MODULE
   }
   return null
+}
+
+function hubSlugFromPath(pathname: string): string | undefined {
+  if (!pathname.startsWith('/api/hub/')) return undefined
+  const slug = pathname.slice('/api/hub/'.length).split('/')[0]
+  return slug || undefined
 }
 
 function matchActionFromPath(pathname: string): string | undefined {
@@ -68,7 +76,7 @@ function injectServerEnv(mode: string) {
 }
 
 /**
- * Local stand-in for Vercel match orchestration + push routes so
+ * Local stand-in for Vercel match, hub, and push routes so
  * `vite` / `vite preview` can exercise them without `vercel dev`.
  */
 export function matchApiPlugin(mode = 'development'): Plugin {
@@ -94,6 +102,8 @@ export function matchApiPlugin(mode = 'development'): Plugin {
       const query = Object.fromEntries(url?.searchParams.entries() ?? [])
       const action = matchActionFromPath(pathname)
       if (action && !query.action) query.action = action
+      const hubSlug = hubSlugFromPath(pathname)
+      if (hubSlug && !query.slug) query.slug = hubSlug
       const vercelReq = Object.assign(req, {
         query,
         body,

@@ -12,7 +12,9 @@ function supabaseEnv() {
   return requirePublishableSupabaseEnv()
 }
 
-/** User-scoped Supabase client from `Authorization: Bearer <access_token>`. */
+/** User-scoped Supabase client from `Authorization: Bearer <access_token>`.
+ * Uses the Data API (HTTPS), not a Postgres TCP connection.
+ */
 export function createUserSupabaseClient(authHeader: string): SupabaseClient {
   const { url, key } = supabaseEnv()
   return createClient(url, key, {

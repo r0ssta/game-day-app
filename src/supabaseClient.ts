@@ -15,4 +15,5 @@ if (!supabaseUrl || !supabasePublishableKey) {
   )
 }
 
+/** Browser + staff client: HTTPS Data API (already pooled). Not a Postgres TCP URL. */
 export const supabase = createClient(supabaseUrl, supabasePublishableKey)

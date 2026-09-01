@@ -89,6 +89,8 @@ registerRoute(
 registerRoute(
   ({ url }) =>
     url.pathname.startsWith('/api/manifest') ||
+    url.pathname === '/api/hub' ||
+    url.pathname.startsWith('/api/hub/') ||
     (isSupabaseHost(url) && isParentHubCacheableRpc(url)),
   parentHubApiStrategy,
   'GET',

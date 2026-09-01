@@ -5,6 +5,10 @@
       "destination": "/api/match?action=:action"
     },
     {
+      "source": "/api/hub/:slug",
+      "destination": "/api/hub?slug=:slug"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

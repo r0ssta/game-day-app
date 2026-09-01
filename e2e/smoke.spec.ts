@@ -61,4 +61,17 @@ test.describe('smoke', () => {
 
     expect(String(manifest.id || '')).toContain(expectedPath)
   })
+
+  test('cached Parent Hub API /api/hub/blitz returns team payload', async ({ request }) => {
+    const response = await request.get(`/api/hub/${HUB_SLUG}`)
+    expect(response.ok(), `hub api status ${response.status()}`).toBeTruthy()
+    const payload = (await response.json()) as {
+      teamSlug?: string
+      teamName?: string
+      matches?: unknown[]
+    }
+    expect(String(payload.teamSlug || '').toLowerCase()).toBe(HUB_SLUG)
+    expect(payload.teamName, 'teamName present').toBeTruthy()
+    expect(Array.isArray(payload.matches), 'matches array').toBeTruthy()
+  })
 })
