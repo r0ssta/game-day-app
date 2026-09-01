@@ -1,6 +1,11 @@
 /**
  * Server-only env access. Never import this module from `src/` —
  * Vite would bundle it into the browser.
+ *
+ * Vercel match/hub/push functions talk to Supabase over HTTPS (PostgREST + Auth).
+ * That path is already pooled by Supabase — do not open a `pg` TCP client from
+ * serverless handlers (port 5432 or 6543). Direct Postgres is for migrations
+ * and one-off scripts only; those should use the Transaction pooler on port 6543.
  */
 
 function read(name: string): string {

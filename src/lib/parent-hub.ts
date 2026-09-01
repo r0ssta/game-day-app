@@ -293,6 +293,14 @@ function normalizeParentHubPayload(data: unknown): ParentHubPayload {
 
 export async function fetchParentHub(route: ParentHubRoute): Promise<ParentHubPayload> {
   if (route.kind === 'slug') {
+    try {
+      const response = await fetch(`/api/hub/${encodeURIComponent(route.slug)}`)
+      if (response.ok) {
+        return normalizeParentHubPayload(await response.json())
+      }
+    } catch {
+      // Fall through to the public RPC when the cached edge route is down.
+    }
     const { data, error } = await supabase.rpc('get_parent_hub_by_slug', {
       p_slug: route.slug,
     })

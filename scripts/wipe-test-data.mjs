@@ -58,7 +58,10 @@ function buildPoolerFallbackUrls(databaseUrl) {
     const session = new URL(`postgresql://aws-0-${region}.pooler.supabase.com:5432/${database}`)
     session.username = `postgres.${projectRef}`
     session.password = password
-    return [session.toString()]
+    const txn = new URL(`postgresql://aws-0-${region}.pooler.supabase.com:6543/${database}`)
+    txn.username = `postgres.${projectRef}`
+    txn.password = password
+    return [txn.toString(), session.toString()]
   })
 }
 

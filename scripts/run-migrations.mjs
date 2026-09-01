@@ -89,7 +89,7 @@ function buildPoolerFallbackUrls(databaseUrl) {
     txn.password = password
     if (parsed.search) txn.search = parsed.search
 
-    return [session.toString(), txn.toString()]
+    return [txn.toString(), session.toString()]
   })
 }
 
@@ -189,13 +189,14 @@ Missing database connection string.
 
 Add this to .env (not committed to git):
 
-  SUPABASE_DB_URL=postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
+  SUPABASE_DB_URL=postgresql://postgres.[project-ref]:[password]@aws-0-us-east-2.pooler.supabase.com:6543/postgres
 
 Find it in Supabase Dashboard:
-  Project Settings → Database → Connection string → URI
+  Project Settings → Database → Connection string → URI (mode: Transaction, port 6543)
 
-Prefer the Session pooler URI if the direct db.* host fails (IPv6-only networks):
-  postgresql://postgres.[project-ref]:[password]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+Direct db.*:5432 is IPv6-only. Session pooler (:5432 on *.pooler.supabase.com) is for
+long-lived clients. Vercel functions should not use this URL at all — they use the
+HTTPS Data API (VITE_SUPABASE_URL).
 
 Then run:
   npm run db:migrate:baseline   # once, if your DB already has these changes

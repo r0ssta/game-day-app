@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/supabaseClient'
+import { ensureFreshSession, sessionNeedsRefresh } from '@/lib/auth-session'
 import {
   type AppRole,
   type TeamRole,
@@ -52,6 +53,8 @@ type AuthContextValue = {
   verifyLoginOtp: (email: string, token: string) => Promise<void>
   signOut: () => Promise<void>
   refreshRole: () => Promise<void>
+  /** Foreground session refresh: ok, in flight, or refresh failed. */
+  authHealth: 'ok' | 'reconnecting' | 'failed'
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -115,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [teamMemberships, setTeamMemberships] = useState<TeamMembership[]>([])
   const [sessionLoading, setSessionLoading] = useState(true)
   const [accessLoading, setAccessLoading] = useState(false)
+  const [authHealth, setAuthHealth] = useState<'ok' | 'reconnecting' | 'failed'>('ok')
 
   const loadAccess = useCallback(async (userId: string | undefined | null) => {
     if (!userId) {
@@ -158,9 +162,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession)
       setUser(nextSession?.user ?? null)
+      if (event === 'SIGNED_OUT') {
+        setAuthHealth('ok')
+      } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        setAuthHealth('ok')
+      }
       finishSessionBootstrap()
     })
 
@@ -170,6 +179,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (sessionLoading) return
+
+    const refreshOnForeground = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!session) return
+      if (!sessionNeedsRefresh(session.expires_at)) {
+        setAuthHealth('ok')
+        return
+      }
+      setAuthHealth('reconnecting')
+      void ensureFreshSession().then((result) => {
+        setAuthHealth(result.ok ? 'ok' : 'failed')
+      })
+    }
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshOnForeground()
+    }
+
+    document.addEventListener('visibilitychange', refreshOnForeground)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', refreshOnForeground)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [sessionLoading, session])
 
   useEffect(() => {
     if (sessionLoading) return
@@ -275,6 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyLoginOtp,
       signOut,
       refreshRole,
+      authHealth,
     }),
     [
       session,
@@ -290,6 +328,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyLoginOtp,
       signOut,
       refreshRole,
+      authHealth,
     ],
   )
 

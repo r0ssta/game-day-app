@@ -1,4 +1,5 @@
 import { supabase } from '@/supabaseClient'
+import { AUTH_RECONNECT_TOAST, ensureFreshSession } from '@/lib/auth-session'
 import type {
   EndRegulationInput,
   FinalizePkInput,
@@ -18,6 +19,9 @@ export const RATE_LIMITED_TOAST =
   'Slow down — too many match updates. Try again in a few seconds.'
 
 export function formatMatchWriteError(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message === AUTH_RECONNECT_TOAST) {
+    return AUTH_RECONNECT_TOAST
+  }
   if (
     err instanceof Error &&
     (err.message === RATE_LIMITED_TOAST || /too many requests/i.test(err.message))
@@ -28,15 +32,13 @@ export function formatMatchWriteError(err: unknown, fallback: string): string {
 }
 
 async function accessToken(): Promise<string> {
-  // Prefer validated user + refreshed session so we don't send a stale JWT.
-  const { data: userData, error: userError } = await supabase.auth.getUser()
-  if (userError) throw userError
-  if (!userData.user) throw new Error('Not signed in')
+  const refreshed = await ensureFreshSession()
+  if (!refreshed.ok) throw new Error(AUTH_RECONNECT_TOAST)
 
   const { data, error } = await supabase.auth.getSession()
   if (error) throw error
   const token = data.session?.access_token
-  if (!token) throw new Error('Not signed in')
+  if (!token) throw new Error(AUTH_RECONNECT_TOAST)
   return token
 }
 

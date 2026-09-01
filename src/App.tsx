@@ -104,6 +104,7 @@ import {
   fetchPendingReviewMatchesByTeamId,
 } from '@/lib/supabase-api'
 import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, formatMatchWriteError } from '@/lib/match-api'
+import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { useLiveMatchSync } from '@/hooks/useLiveMatchSync'
@@ -2025,6 +2026,7 @@ export default function App() {
     role,
     user,
     signOut,
+    authHealth,
   } = useAuth()
 
   const {
@@ -2205,6 +2207,9 @@ export default function App() {
 
   const [toast, setToast] = useState<string | null>(null)
   const { syncPending, isPending, run: runOptimisticSync } = useOptimisticSync()
+  useEffect(() => {
+    if (authHealth === 'failed') setToast(AUTH_RECONNECT_TOAST)
+  }, [authHealth])
   useLiveMatchSync({
     matchId,
     enabled: !loading && matchStatus === 'live' && Boolean(matchId),
@@ -2505,7 +2510,11 @@ export default function App() {
   useEffect(() => {
     if (!toast) return
     const durationMs =
-      toast === WAKE_LOCK_BLOCKED_TOAST || toast.startsWith('Parent alerts') ? 5000 : 2200
+      toast === WAKE_LOCK_BLOCKED_TOAST ||
+      toast === AUTH_RECONNECT_TOAST ||
+      toast.startsWith('Parent alerts')
+        ? 5000
+        : 2200
     const id = setTimeout(() => setToast(null), durationMs)
     return () => clearTimeout(id)
   }, [toast])
