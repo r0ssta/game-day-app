@@ -175,6 +175,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (input.starters.length > 0) {
+        const freezeFirstHalfKickoff = input.period <= 1
+        const starterIds = new Set(input.starters.map((starter) => starter.playerId))
         await Promise.all(
           input.starters.map((starter) => {
             const patch: Record<string, unknown> = {
@@ -188,9 +190,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               patch.total_seconds_played = starter.totalSecondsPlayed
               patch.total_minutes = starter.totalSecondsPlayed / 60
             }
+            if (freezeFirstHalfKickoff) {
+              patch.is_first_half_starter = true
+            }
             return tx.updatePlayerStats(starter.playerId, patch)
           }),
         )
+        if (freezeFirstHalfKickoff) {
+          const { data: statRows, error: statsError } = await auth.supabase
+            .from('match_stats')
+            .select('player_id')
+            .eq('match_id', input.matchId)
+          if (statsError) throw statsError
+          await Promise.all(
+            (statRows ?? [])
+              .map((row) => row.player_id as string)
+              .filter((playerId) => playerId && !starterIds.has(playerId))
+              .map((playerId) =>
+                tx.updatePlayerStats(playerId, { is_first_half_starter: false }),
+              ),
+          )
+        }
       }
 
       const matchPatch: Record<string, unknown> = {

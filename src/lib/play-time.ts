@@ -56,6 +56,17 @@ export function finalizeAllOnField(players: MatchPlayer[], remainingSeconds: num
   )
 }
 
+/**
+ * Freeze the 1st-half starting XI from whoever is actually on the pitch at kickoff.
+ * Setup-time flags can drift if the coach rearranges on the ready screen.
+ */
+export function freezeFirstHalfStarters(players: MatchPlayer[]): MatchPlayer[] {
+  return players.map((player) => ({
+    ...player,
+    isFirstHalfStarter: Boolean(player.attending && player.isOnField),
+  }))
+}
+
 /** First clock start in a period — only stamp players not yet tracking a stint. */
 export function stampOnFieldAtClock(
   players: MatchPlayer[],

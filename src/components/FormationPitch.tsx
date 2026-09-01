@@ -247,6 +247,9 @@ function PitchSlotVisual({
                 !player.needsSubCue &&
                   (selected ? 'border-white ring-2 ring-white/80' : 'border-neon-foreground/30'),
                 player.needsSubCue && selected && 'ring-4 ring-white/70',
+                player.didNotStartFirstHalf &&
+                  !player.needsSubCue &&
+                  'ring-2 ring-amber-300 ring-offset-1 ring-offset-transparent',
                 dropHighlight && 'ring-2 ring-athletic',
               )}
             >
@@ -259,7 +262,7 @@ function PitchSlotVisual({
               ) : null}
               {player.didNotStartFirstHalf ? (
                 <span
-                  className="absolute -right-0.5 bottom-0 rounded border border-slate-700/30 bg-slate-800 px-0.5 py-px text-[7px] font-black uppercase leading-none tracking-wide text-white shadow"
+                  className="absolute -right-1 bottom-0 z-10 rounded border border-amber-700/40 bg-amber-400 px-0.5 py-px text-[8px] font-black uppercase leading-none tracking-wide text-slate-900 shadow"
                   title="Didn't start 1st half"
                   aria-label="Didn't start 1st half"
                 >

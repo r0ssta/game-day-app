@@ -2263,6 +2263,7 @@ export function useGameDayApp() {
     periodClockStarted,
     setPeriodClockStarted,
     firstHalfStarterIds,
+    setFirstHalfStarterIds,
     secondHalfStarterIds,
     halftimeSecondHalf,
     setHalftimeStarter,

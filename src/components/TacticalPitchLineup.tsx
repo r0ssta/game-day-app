@@ -153,7 +153,7 @@ function PoolPlayerChip({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1">
-            <span className="truncate text-sm font-bold text-foreground">{player.name}</span>
+            <span className="min-w-0 truncate text-sm font-bold text-foreground">{player.name}</span>
             {player.minutesLabel ? (
               <span className="font-mono text-xs font-black tabular-nums text-slate-700">
                 {player.minutesLabel}
@@ -163,7 +163,7 @@ function PoolPlayerChip({
             {player.didNotStartFirstHalf ? (
               <span
                 title="Didn't start 1st half"
-                className="rounded bg-slate-800 px-1 py-0.5 text-[9px] font-black uppercase tracking-wide text-white"
+                className="shrink-0 rounded bg-amber-400 px-1 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-900"
               >
                 Didn&apos;t start 1st
               </span>

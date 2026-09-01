@@ -74,6 +74,7 @@ import {
   applySubOut,
   applySubstitution,
   formatPlayingTimeBadge,
+  freezeFirstHalfStarters,
   stampAllOnField,
 } from '@/lib/play-time'
 import {
@@ -2098,6 +2099,7 @@ export default function App() {
     running,
     periodClockStarted,
     setPeriodClockStarted,
+    setFirstHalfStarterIds,
     rosterLoading,
     activeTeamId,
     setActiveTeamId,
@@ -2835,8 +2837,11 @@ export default function App() {
   )
 
   const handleStartFirstHalf = useCallback(() => {
-    const stamped = stampAllOnField(players, seconds)
+    const stamped = freezeFirstHalfStarters(stampAllOnField(players, seconds))
     setPlayers(stamped)
+    setFirstHalfStarterIds(
+      stamped.filter((player) => player.isFirstHalfStarter).map((player) => player.id),
+    )
     setPeriodClockStarted(true)
     claimLocalClock()
     noteLocalMatchMutation()
@@ -2893,6 +2898,7 @@ export default function App() {
     seconds,
     matchId,
     setPlayers,
+    setFirstHalfStarterIds,
     setPeriodClockStarted,
     claimLocalClock,
     requestWakeLock,
