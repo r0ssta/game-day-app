@@ -457,11 +457,14 @@ export function FormationPitch({
   const [labelEditorSlotId, setLabelEditorSlotId] = useState<string | null>(null)
   const pitchSurfaceRef = useRef<HTMLDivElement>(null)
 
-  // Reset coordinates when the formation template changes.
+  const slotSignature = formation.slots.map((slot) => slot.id).join(',')
+
+  // Reset coordinates when the formation template or slot set changes
+  // (e.g. 9v9 3-3-2 remapped onto 7v7 2-3-1).
   useEffect(() => {
     setPitchSlots(cloneFormationSlots(formation.slots))
     setLabelEditorSlotId(null)
-  }, [formation.id]) // eslint-disable-line react-hooks/exhaustive-deps -- template identity only
+  }, [formation.id, slotSignature]) // eslint-disable-line react-hooks/exhaustive-deps -- template identity only
 
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const activeDragPlayer = activeDragPlayerId ? playerById.get(activeDragPlayerId) ?? null : null

@@ -46,7 +46,11 @@ import { useWakeLock, WAKE_LOCK_BLOCKED_TOAST } from '@/hooks/useWakeLock'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatAppRoleLabel } from '@/lib/staff-roles'
 import type { FormationRole, FormationRemapResult } from '@/lib/formations'
-import { getFormationLabel, matchPositionsFromSlotAssignments } from '@/lib/formations'
+import {
+  getFormationLabel,
+  matchPositionsFromSlotAssignments,
+  resolveFormationIdForFormat,
+} from '@/lib/formations'
 import {
   getAttendingIds,
   getFirstHalfStarterIds,
@@ -2539,7 +2543,10 @@ export default function App() {
       : null)
   const canStartMatch = startMatchBlockReason === null && Boolean(activeTeamId)
   const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf, maxFieldPlayers)
-  const activeFormation = period === '1st' ? matchFormations.first : matchFormations.second
+  const activeFormation = resolveFormationIdForFormat(
+    period === '1st' ? matchFormations.first : matchFormations.second,
+    activeTeamFormat,
+  )
 
   useEffect(() => {
     if (appMode !== 'match' || !matchId) return
@@ -2662,7 +2669,7 @@ export default function App() {
             ...matchPositions,
             ...matchPositionsFromSlotAssignments(
               slotAssignments,
-              matchFormations.first,
+              resolveFormationIdForFormat(matchFormations.first, activeTeamFormat),
               activeTeamFormat,
               labelOverrides,
             ),
@@ -2699,7 +2706,10 @@ export default function App() {
       absentPlayers,
       firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
       matchPositions: resolvedMatchPositions,
-      firstHalfFormation: matchFormations.first,
+      firstHalfFormation: resolveFormationIdForFormat(
+        matchFormations.first,
+        activeTeamFormat,
+      ),
       subIntervalSeconds:
         ENABLE_SUB_ASSISTANT && rotationMinutes != null && rotationMinutes > 0
           ? rotationMinutes * 60
@@ -4275,7 +4285,10 @@ export default function App() {
           onSetupSubIntervalMinutesChange={setSetupSubIntervalMinutes}
           masterRoster={masterRoster}
           setupLineup={setupLineup}
-          firstHalfFormation={matchFormations.first}
+          firstHalfFormation={resolveFormationIdForFormat(
+            matchFormations.first,
+            activeTeamFormat,
+          )}
           onSetFirstHalfFormation={setFirstHalfFormation}
           onSetAttending={setPlayerAttending}
           onSetStartFirstHalf={setStartFirstHalf}
@@ -4419,7 +4432,10 @@ export default function App() {
           nextPeriod={Math.min(totalPeriods, currentPeriod + 1)}
           totalPeriods={totalPeriods}
           players={players}
-          secondHalfFormation={matchFormations.second}
+          secondHalfFormation={resolveFormationIdForFormat(
+            matchFormations.second,
+            activeTeamFormat,
+          )}
           onSetSecondHalfFormation={setSecondHalfFormation}
           secondHalfStarters={halftimeSecondHalf}
           initialSlotAssignments={halftimeSlotAssignments}

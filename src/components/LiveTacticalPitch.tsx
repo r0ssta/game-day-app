@@ -13,6 +13,7 @@ import {
   buildAssignmentsFromStarters,
   getFormationById,
   getFormationsForFormat,
+  reconcileSlotAssignments,
   remapFormationSlotAssignments,
   resolveSlotLabel,
   type FormationRemapResult,
@@ -365,22 +366,35 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     }, [periodKey, formationId])
 
     useEffect(() => {
-      if (hydratedKeyRef.current === periodKey) return
-      hydratedKeyRef.current = periodKey
+      const hydrateKey = `${periodKey}:${formation.id}`
+      if (hydratedKeyRef.current === hydrateKey) return
+      hydratedKeyRef.current = hydrateKey
+
+      const playerSummaries = players.map((p) => ({
+        id: p.id,
+        matchPosition: p.matchPosition,
+        position: p.position,
+      }))
+      const onFieldIds = new Set(
+        players.filter((p) => p.attending && p.isOnField).map((p) => p.id),
+      )
 
       if (initialSlotAssignments && Object.values(initialSlotAssignments).some(Boolean)) {
-        setSlotAssignments(initialSlotAssignments)
+        setSlotAssignments(
+          reconcileSlotAssignments(
+            formation,
+            initialSlotAssignments,
+            playerSummaries,
+            onFieldIds,
+          ),
+        )
         skipOnFieldSyncRef.current = true
         return
       }
 
       const starters = Object.fromEntries(players.map((p) => [p.id, p.attending && p.isOnField]))
       setSlotAssignments(
-        buildAssignmentsFromStarters(
-          formation,
-          players.map((p) => ({ id: p.id, matchPosition: p.matchPosition, position: p.position })),
-          starters,
-        ),
+        buildAssignmentsFromStarters(formation, playerSummaries, starters),
       )
       skipOnFieldSyncRef.current = true
     }, [periodKey, formation, players, initialSlotAssignments])
@@ -391,19 +405,19 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         return
       }
 
+      const onFieldIds = new Set(onFieldPlayers.map((p) => p.id))
+      const playerSummaries = players.map((p) => ({
+        id: p.id,
+        matchPosition: p.matchPosition,
+        position: p.position,
+      }))
+
       setSlotAssignments((prev) => {
-        const onFieldIds = new Set(onFieldPlayers.map((p) => p.id))
-        let changed = false
-        const next = { ...prev }
-        for (const [slotId, playerId] of Object.entries(next)) {
-          if (playerId && !onFieldIds.has(playerId)) {
-            next[slotId] = null
-            changed = true
-          }
-        }
-        return changed ? next : prev
+        const next = reconcileSlotAssignments(formation, prev, playerSummaries, onFieldIds)
+        const sameSlots = formation.slots.every((slot) => prev[slot.id] === next[slot.id])
+        return sameSlots ? prev : next
       })
-    }, [onFieldPlayers])
+    }, [onFieldPlayers, formation, players])
 
     // Only show on-field occupants on the pitch; empty gaps stay clickable for insert.
     const displaySlotAssignments = useMemo(() => {
@@ -638,7 +652,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         </div>
 
         <select
-          value={formationId}
+          value={formation.id}
           onChange={(e) => handleFormationChange(e.target.value)}
           aria-label="Formation"
           className="min-h-11 w-full touch-manipulation rounded-lg border border-border bg-card px-3 py-3 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"

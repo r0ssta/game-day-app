@@ -9,6 +9,7 @@ import {
   getDefaultFormationId,
   getFormationById,
   getFormationsForFormat,
+  reconcileSlotAssignments,
   remapFormationSlotAssignments,
   resolveSlotLabel,
   type FormationRole,
@@ -255,10 +256,14 @@ export function TacticalPitchLineup({
 
   const formation = getFormationById(formationId, teamFormat)
 
-  const assignedPlayerIds = useMemo(
-    () => new Set(Object.values(slotAssignments).filter((id): id is string => Boolean(id))),
-    [slotAssignments],
-  )
+  const assignedPlayerIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const slot of formation.slots) {
+      const playerId = slotAssignments[slot.id]
+      if (playerId) ids.add(playerId)
+    }
+    return ids
+  }, [formation.slots, slotAssignments])
 
   const starterCount = assignedPlayerIds.size
 
@@ -310,22 +315,59 @@ export function TacticalPitchLineup({
   )
 
   useEffect(() => {
+    setSlotAssignments((prev) => {
+      if (!Object.values(prev).some(Boolean)) return prev
+      const eligible = new Set(
+        Object.values(prev).filter((id): id is string => Boolean(id)),
+      )
+      const next = reconcileSlotAssignments(
+        formation,
+        prev,
+        players.map((p) => ({
+          id: p.id,
+          matchPosition: p.matchPosition ?? p.meta,
+          position: p.matchPosition ?? p.meta,
+        })),
+        eligible,
+      )
+      if (formation.slots.every((slot) => prev[slot.id] === next[slot.id])) return prev
+      publishAssignments(next)
+      return next
+    })
+    // Re-home leftover 9v9 keys when the resolved shape changes (3-3-2 → 2-3-1).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formation identity only
+  }, [formation.id])
+
+  useEffect(() => {
     const restoredOverrides = initialSlotLabelOverrides ?? {}
     if (hasSlotAssignments(initialSlotAssignments)) {
-      setSlotAssignments(initialSlotAssignments)
+      const eligible = new Set(
+        Object.values(initialSlotAssignments).filter((id): id is string => Boolean(id)),
+      )
+      const reconciled = reconcileSlotAssignments(
+        formation,
+        initialSlotAssignments,
+        players.map((p) => ({
+          id: p.id,
+          matchPosition: p.matchPosition ?? p.meta,
+          position: p.matchPosition ?? p.meta,
+        })),
+        eligible,
+      )
+      setSlotAssignments(reconciled)
       setSlotLabelOverrides(restoredOverrides)
-      publishAssignments(initialSlotAssignments)
+      publishAssignments(reconciled)
       publishLabelOverrides(restoredOverrides)
       setSelectedPlayerId(null)
       setSelectedSlotId(null)
 
       const assignedIds = new Set(
-        Object.values(initialSlotAssignments).filter((id): id is string => Boolean(id)),
+        Object.values(reconciled).filter((id): id is string => Boolean(id)),
       )
       for (const player of players) {
         if (attending[player.id] === false) continue
         if (assignedIds.has(player.id)) {
-          const slotId = Object.entries(initialSlotAssignments).find(([, id]) => id === player.id)?.[0]
+          const slotId = Object.entries(reconciled).find(([, id]) => id === player.id)?.[0]
           const slot = formation.slots.find((s) => s.id === slotId)
           if (slot) {
             onAssignStarter(player.id, slot.role, resolveSlotLabel(slot, restoredOverrides))
@@ -561,7 +603,7 @@ export function TacticalPitchLineup({
         </label>
         <select
           id="formation-select"
-          value={formationId}
+          value={formation.id}
           onChange={(e) => handleFormationChange(e.target.value)}
           className="min-h-11 w-full touch-manipulation rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
         >

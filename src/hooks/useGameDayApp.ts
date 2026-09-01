@@ -31,6 +31,7 @@ import {
   DEFAULT_FORMATION_ID,
   getDefaultFormationId,
   isFormationValidForFormat,
+  resolveFormationIdForFormat,
 } from '@/lib/formations'
 import { applyPresetToSetup, applyPresetToHalftime, buildFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
 import {
@@ -505,10 +506,14 @@ export function useGameDayApp() {
 
         if (formationId) {
           const nextCurrent = result.currentPeriod
+          const teamFormat = normalizeTeamFormat(
+            teams.find((team) => team.id === match.team_id)?.format,
+          )
+          const resolvedFormation = resolveFormationIdForFormat(formationId, teamFormat)
           setMatchFormations((prev) =>
             nextCurrent <= 1
-              ? { ...prev, first: formationId }
-              : { ...prev, second: formationId },
+              ? { ...prev, first: resolvedFormation }
+              : { ...prev, second: resolvedFormation },
           )
         }
 
@@ -554,7 +559,7 @@ export function useGameDayApp() {
         hydrateInFlightRef.current = false
       }
     },
-    [applyMatchPeriodState, claimLocalClock, shouldSkipLiveHydrate],
+    [applyMatchPeriodState, claimLocalClock, shouldSkipLiveHydrate, teams],
   )
 
   const resumeLiveMatchScreen = useCallback(async () => {
@@ -1183,6 +1188,18 @@ export function useGameDayApp() {
     return normalizeTeamFormat(team?.format)
   }, [teams, selectedTeamId])
 
+  // Default state is the 9v9 3-3-2. A 7v7 team (U9/U10) must never keep that
+  // shape — it draws nine slots with only seven allowed on the field.
+  useEffect(() => {
+    if (!selectedTeamId) return
+    setMatchFormations((prev) => {
+      const first = resolveFormationIdForFormat(prev.first, activeTeamFormat)
+      const second = resolveFormationIdForFormat(prev.second, activeTeamFormat)
+      if (first === prev.first && second === prev.second) return prev
+      return { first, second }
+    })
+  }, [activeTeamFormat, selectedTeamId])
+
   const activeTeamScope = useMemo(
     (): TeamScope | null =>
       resolveTeamScope(
@@ -1500,8 +1517,14 @@ export function useGameDayApp() {
         setSecondHalfStarterIds([])
         setHalftimeSecondHalf({})
         setMatchFormations({
-          first: input.firstHalfFormation,
-          second: input.firstHalfFormation,
+          first: resolveFormationIdForFormat(
+            input.firstHalfFormation,
+            normalizeTeamFormat(teams.find((team) => team.id === input.teamId)?.format),
+          ),
+          second: resolveFormationIdForFormat(
+            input.firstHalfFormation,
+            normalizeTeamFormat(teams.find((team) => team.id === input.teamId)?.format),
+          ),
         })
         setMatchTeamName(input.teamName)
         setMatchCoachName(input.coachName)
@@ -1668,11 +1691,10 @@ export function useGameDayApp() {
           : null
       const preloadFormation =
         typeof rawContext?.preloadFormation === 'string' ? rawContext.preloadFormation.trim() : ''
-      const formation =
-        preloadFormation ||
-        matchFormations.first ||
-        getDefaultFormationId(normalizeTeamFormat(team.format)) ||
-        DEFAULT_FORMATION_ID
+      const formation = resolveFormationIdForFormat(
+        preloadFormation || matchFormations.first,
+        normalizeTeamFormat(team.format),
+      )
 
       await ensureStartingLineupEvents(match.id, matchPlayers, formation)
       const halfLen = match.period_length ?? match.half_length
@@ -1814,7 +1836,10 @@ export function useGameDayApp() {
       localIntermissionRef.current = false
       claimLocalClock()
       const newClock = initialHalfClock(halfLengthMinutes)
-      const formation = matchFormationsRef.current.second
+      const formation = resolveFormationIdForFormat(
+        matchFormationsRef.current.second,
+        activeTeamFormat,
+      )
       const nextPeriodIndex = Math.min(totalPeriods, currentPeriod + 1)
       const nextPeriodCode = periodIndexToCode(nextPeriodIndex)
 
@@ -1839,6 +1864,7 @@ export function useGameDayApp() {
           slotAssignments,
           formation,
           slotLabelOverrides,
+          activeTeamFormat,
         )
       }
       const stamped = stampAllOnField(linedUp, newClock)
@@ -1869,6 +1895,7 @@ export function useGameDayApp() {
       }
     },
     [
+      activeTeamFormat,
       halftimeSecondHalf,
       halfLengthMinutes,
       totalPeriods,

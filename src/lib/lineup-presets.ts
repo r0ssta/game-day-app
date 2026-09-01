@@ -2,6 +2,7 @@ import {
   getFormationById,
   getDefaultFormationId,
   isFormationValidForFormat,
+  reconcileSlotAssignments,
   resolveSlotLabel,
   type Formation,
 } from '@/lib/formations'
@@ -78,26 +79,17 @@ export function sanitizeSlotAssignments(
   rosterIds: Set<string>,
   formation: Formation,
 ): Record<string, string | null> {
-  const validSlotIds = new Set(formation.slots.map((s) => s.id))
-  const used = new Set<string>()
-  const result: Record<string, string | null> = Object.fromEntries(
-    formation.slots.map((s) => [s.id, null]),
+  const eligible = new Set(
+    Object.values(slotAssignments).filter(
+      (playerId): playerId is string => Boolean(playerId) && rosterIds.has(playerId),
+    ),
   )
-
-  for (const slot of formation.slots) {
-    const playerId = slotAssignments[slot.id]
-    if (
-      playerId &&
-      rosterIds.has(playerId) &&
-      !used.has(playerId) &&
-      validSlotIds.has(slot.id)
-    ) {
-      result[slot.id] = playerId
-      used.add(playerId)
-    }
-  }
-
-  return result
+  return reconcileSlotAssignments(
+    formation,
+    slotAssignments,
+    [...eligible].map((id) => ({ id })),
+    eligible,
+  )
 }
 
 export function applyPresetToSetup(

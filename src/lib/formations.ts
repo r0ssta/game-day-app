@@ -331,6 +331,15 @@ export function isFormationValidForFormat(formationId: string, format: TeamForma
   return formation?.format === format
 }
 
+/** Drop a 9v9/11v11 shape onto a 7v7 team (and the reverse) so the pitch slot count matches the format. */
+export function resolveFormationIdForFormat(
+  formationId: string | null | undefined,
+  format: TeamFormat,
+): string {
+  if (formationId && isFormationValidForFormat(formationId, format)) return formationId
+  return getDefaultFormationId(format)
+}
+
 export function getFormationById(id: string, format?: TeamFormat): Formation {
   const found = FORMATIONS.find((formation) => formation.id === id)
   if (found && (!format || found.format === format)) return found
@@ -479,4 +488,65 @@ export function remapFormationSlotAssignments(
     positionUpdates,
     overflowPlayerIds,
   }
+}
+
+/**
+ * Keep players already sitting on valid slots, then pour leftover keys (e.g. 9v9
+ * `fwd-l` / `fwd-r`) and unplaced eligible players into empty slots.
+ * Does not reshuffle occupied slots — safe to run on live sync.
+ */
+export function reconcileSlotAssignments(
+  formation: Formation,
+  currentAssignments: Record<string, string | null>,
+  players: { id: string; matchPosition?: string; position?: string }[],
+  eligiblePlayerIds: Set<string>,
+): Record<string, string | null> {
+  const next: Record<string, string | null> = Object.fromEntries(
+    formation.slots.map((slot) => [slot.id, null]),
+  )
+  const used = new Set<string>()
+  const slotIdSet = new Set(formation.slots.map((slot) => slot.id))
+  const playerById = new Map(players.map((player) => [player.id, player]))
+
+  for (const slot of formation.slots) {
+    const playerId = currentAssignments[slot.id]
+    if (playerId && eligiblePlayerIds.has(playerId) && !used.has(playerId)) {
+      next[slot.id] = playerId
+      used.add(playerId)
+    }
+  }
+
+  const leftoverIds: string[] = []
+  for (const [slotId, playerId] of Object.entries(currentAssignments)) {
+    if (!playerId || used.has(playerId) || !eligiblePlayerIds.has(playerId)) continue
+    if (!slotIdSet.has(slotId)) leftoverIds.push(playerId)
+  }
+  const missing = [...eligiblePlayerIds].filter((playerId) => !used.has(playerId))
+  const pool = [...new Set([...leftoverIds, ...missing])]
+
+  for (const slot of formation.slots) {
+    if (next[slot.id]) continue
+    let pick: string | null = null
+    let bestScore = 0
+    for (const playerId of pool) {
+      if (used.has(playerId)) continue
+      const player = playerById.get(playerId)
+      if (!player) {
+        if (!pick) pick = playerId
+        continue
+      }
+      const score = scorePlayerForSlot(player, slot)
+      if (score > bestScore) {
+        bestScore = score
+        pick = playerId
+      }
+    }
+    if (!pick) pick = pool.find((playerId) => !used.has(playerId)) ?? null
+    if (pick) {
+      next[slot.id] = pick
+      used.add(pick)
+    }
+  }
+
+  return next
 }
