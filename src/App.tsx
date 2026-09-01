@@ -82,7 +82,6 @@ import {
   applySubstitution,
   formatPlayingTimeBadge,
   stampAllOnField,
-  stampOnFieldAtClock,
 } from '@/lib/play-time'
 import {
   elapsedInHalf,
@@ -99,9 +98,7 @@ import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
 import {
-  syncMatchClock,
   syncMatchRecord,
-  syncMatchStats,
   ensureStatTrackerToken,
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
@@ -109,11 +106,9 @@ import {
 import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, formatMatchWriteError } from '@/lib/match-api'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
+import { useLiveMatchSync } from '@/hooks/useLiveMatchSync'
 import { cn } from '@/lib/utils'
-import {
-  shouldEnterPenaltyShootout,
-  shouldResumePenaltyShootout,
-} from '@/lib/penalty-kicks'
+import { shouldEnterPenaltyShootout } from '@/lib/penalty-kicks'
 import { findActiveOnFieldGoalkeeper } from '@/lib/match-shot-save'
 import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import type { DbMatch } from '@/types/database'
@@ -138,7 +133,6 @@ import {
   formatPeriodLong,
   formatPeriodShort,
   intermissionTitle,
-  isIntermissionSetup,
   periodLengthOptions,
   resolveMatchFormatDefaults,
   startNextPeriodButtonLabel,
@@ -2040,6 +2034,9 @@ export default function App() {
     masterRoster,
     appMode,
     setAppMode,
+    hydrateLiveMatch,
+    resumeLiveMatchScreen,
+    persistMatchClock,
     matchId,
     players,
     setPlayers,
@@ -2207,7 +2204,16 @@ export default function App() {
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
   const [toast, setToast] = useState<string | null>(null)
-  const { syncPending, run: runOptimisticSync } = useOptimisticSync()
+  const { syncPending, isPending, run: runOptimisticSync } = useOptimisticSync()
+  useLiveMatchSync({
+    matchId,
+    enabled: !loading && matchStatus === 'live' && Boolean(matchId),
+    isBlocked: () => isPending(),
+    onHydrate: () =>
+      hydrateLiveMatch({
+        applyMode: appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout',
+      }),
+  })
   const failToast = useCallback(
     (fallback: string) => (err: unknown) => {
       setToast(formatMatchWriteError(err, fallback))
@@ -2288,30 +2294,7 @@ export default function App() {
             break
           }
           if (hasLiveMatch) {
-            const inHalftimeSetup = isIntermissionSetup({
-              periodClockStarted,
-              currentPeriod,
-              totalPeriods,
-              hasIntermissionLineup: Object.keys(halftimeSecondHalf).length > 0,
-            })
-            const inPenaltyShootout = shouldResumePenaltyShootout({
-              status: 'live',
-              period,
-              period_clock_started: periodClockStarted,
-              home_score: homeScore,
-              away_score: awayScore,
-              goes_to_pks: matchGoesToPks,
-              pk_winner_is_us: pkWinnerIsUs,
-              total_periods: totalPeriods,
-              current_period: currentPeriod,
-            })
-            setAppMode(
-              inHalftimeSetup
-                ? 'halftime'
-                : inPenaltyShootout
-                  ? 'penalty_shootout'
-                  : 'match',
-            )
+            void resumeLiveMatchScreen()
           } else if (hasPendingRecap && matchId) {
             setRecapReturnMode('home')
             setAppMode('recap')
@@ -2360,15 +2343,7 @@ export default function App() {
       hasLiveMatch,
       hasPendingRecap,
       matchId,
-      halftimeSecondHalf,
-      period,
-      currentPeriod,
-      totalPeriods,
-      periodClockStarted,
-      homeScore,
-      awayScore,
-      matchGoesToPks,
-      pkWinnerIsUs,
+      resumeLiveMatchScreen,
       setAppMode,
     ],
   )
@@ -2388,11 +2363,11 @@ export default function App() {
   const halftimeAssignmentsRef = useRef<Record<string, string | null> | null>(null)
   const halftimeLabelOverridesRef = useRef<Record<string, string> | null>(null)
 
-  const clockSyncRef = useRef({ homeScore, awayScore, seconds, period, periodClockStarted })
+  const clockSyncRef = useRef(seconds)
 
   useEffect(() => {
-    clockSyncRef.current = { homeScore, awayScore, seconds, period, periodClockStarted }
-  }, [homeScore, awayScore, seconds, period, periodClockStarted])
+    clockSyncRef.current = seconds
+  }, [seconds])
 
   useEffect(() => {
     if (!activeTeamId) {
@@ -2519,19 +2494,13 @@ export default function App() {
   }, [appMode, running, matchId, qaSpeedMultiplier, setSeconds])
 
   useEffect(() => {
-    if (appMode !== 'match' || !matchId) return
+    if (appMode !== 'match' || !matchId || !running) return
     const id = setInterval(() => {
-      const clock = clockSyncRef.current
-      syncMatchClock(matchId, {
-        homeScore: clock.homeScore,
-        awayScore: clock.awayScore,
-        seconds: clock.seconds,
-        period: clock.period,
-        periodClockStarted: clock.periodClockStarted,
-      })
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      persistMatchClock(matchId, clockSyncRef.current)
     }, 5000)
     return () => clearInterval(id)
-  }, [appMode, matchId])
+  }, [appMode, matchId, running, persistMatchClock])
 
   useEffect(() => {
     if (!toast) return
@@ -4082,39 +4051,7 @@ export default function App() {
         }}
         onViewRecaps={() => setAppMode('recap_history')}
         onResumeMatch={() => {
-          const inHalftimeSetup = isIntermissionSetup({
-            periodClockStarted,
-            currentPeriod,
-            totalPeriods,
-            hasIntermissionLineup: Object.keys(halftimeSecondHalf).length > 0,
-          })
-          const inPenaltyShootout = shouldResumePenaltyShootout({
-            status: 'live',
-            period,
-            period_clock_started: periodClockStarted,
-            home_score: homeScore,
-            away_score: awayScore,
-            goes_to_pks: matchGoesToPks,
-            pk_winner_is_us: pkWinnerIsUs,
-            total_periods: totalPeriods,
-            current_period: currentPeriod,
-          })
-          if (!inHalftimeSetup && !inPenaltyShootout) {
-            if (periodClockStarted) {
-              setRunning(true)
-              setPlayers((prev) => {
-                const stamped = stampOnFieldAtClock(prev, seconds)
-                const needsPersist = stamped.some(
-                  (player, index) => player.subbedInAt !== prev[index]?.subbedInAt,
-                )
-                if (matchId && needsPersist) syncMatchStats(matchId, stamped)
-                return stamped
-              })
-            }
-            setAppMode('match')
-            return
-          }
-          setAppMode(inHalftimeSetup ? 'halftime' : 'penalty_shootout')
+          void resumeLiveMatchScreen()
         }}
       />
     )

@@ -39,7 +39,7 @@ import type {
   SeasonStatus,
 } from '@/types/database'
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
-import type { Impact, MatchPeriod, MatchPlayer, RosterPlayer } from '@/types/match'
+import type { Impact, MatchPlayer, RosterPlayer } from '@/types/match'
 import {
   abbreviateOpponentName,
   buildPlayerRatingTrend,
@@ -1946,23 +1946,16 @@ export function rebuildMatchPlayers(
     .filter((p): p is MatchPlayer => p !== null)
 }
 
-export type MatchClockPatch = {
-  homeScore: number
-  awayScore: number
-  seconds: number
-  period: MatchPeriod
-  periodClockStarted: boolean
-}
-
-export function syncMatchClock(matchId: string, clock: MatchClockPatch) {
-  const clockSeconds = persistableClockSeconds(clock.seconds)
-  const added = addedTimeSeconds(clock.seconds)
+/**
+ * Persist the running countdown only.
+ * Scores, period, and period_clock_started are written by match APIs — a second
+ * staff device's heartbeat must not clobber those.
+ */
+export function syncMatchClock(matchId: string, remainingSeconds: number) {
+  const clockSeconds = persistableClockSeconds(remainingSeconds)
+  const added = addedTimeSeconds(remainingSeconds)
   syncMatchRecord(matchId, {
-    home_score: clock.homeScore,
-    away_score: clock.awayScore,
     clock_seconds: clockSeconds,
-    period: clock.period,
-    period_clock_started: clock.periodClockStarted,
   })
   // Persist OT separately so resume can rebuild negative remaining without schema change.
   void mergeMatchTimingContext(matchId, { addedTimeSeconds: added }).catch((e) =>
