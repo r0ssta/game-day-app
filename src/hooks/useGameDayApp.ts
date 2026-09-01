@@ -10,6 +10,7 @@ import {
   applySlotAssignmentPositions,
   finalizeAllOnField,
   stampAllOnField,
+  stampOnFieldAtClock,
 } from '@/lib/play-time'
 import {
   defaultMatchDate,
@@ -76,6 +77,7 @@ import {
   backfillMissingGoalShots,
   resolveCoachIdForName,
   resolveMatchCoachName,
+  syncMatchClock,
   syncMatchRecord,
   syncMatchStats,
   updateLineupPreset,
@@ -117,6 +119,13 @@ import {
 } from '@/lib/season-roster'
 import { applyCardsFromEvents } from '@/lib/match-cards'
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
+import {
+  fetchLiveMatchSnapshot,
+  isActiveStaffMatchScreen,
+  shouldAdoptRemoteClock,
+  snapshotHydrateResult,
+  type LiveMatchHydrateResult,
+} from '@/lib/live-match-snapshot'
 import { apiEndRegulation, apiFinalizePk } from '@/lib/match-api'
 import {
   defaultPeriodLengthMinutes,
@@ -225,6 +234,16 @@ export function useGameDayApp() {
 
   const periodRef = useRef(period)
   const matchFormationsRef = useRef(matchFormations)
+  const matchIdRef = useRef(matchId)
+  const lastClockWriteAtRef = useRef(0)
+  const hydrateInFlightRef = useRef(false)
+  const liveStateRef = useRef({
+    appMode,
+    players,
+    masterRoster,
+    seconds,
+    periodClockStarted,
+  })
   const setupCoachPrefillRef = useRef<{ appMode: AppMode; teamId: string | null }>({
     appMode: 'home',
     teamId: null,
@@ -237,6 +256,20 @@ export function useGameDayApp() {
   useEffect(() => {
     matchFormationsRef.current = matchFormations
   }, [matchFormations])
+
+  useEffect(() => {
+    matchIdRef.current = matchId
+  }, [matchId])
+
+  useEffect(() => {
+    liveStateRef.current = {
+      appMode,
+      players,
+      masterRoster,
+      seconds,
+      periodClockStarted,
+    }
+  }, [appMode, players, masterRoster, seconds, periodClockStarted])
 
   const getActiveFormation = useCallback(() => {
     return periodRef.current === '1st'
@@ -272,6 +305,142 @@ export function useGameDayApp() {
     },
     [],
   )
+
+  const persistMatchClock = useCallback((targetMatchId: string, remainingSeconds: number) => {
+    lastClockWriteAtRef.current = Date.now()
+    syncMatchClock(targetMatchId, remainingSeconds)
+  }, [])
+
+  const hydrateLiveMatch = useCallback(
+    async (options?: {
+      applyMode?: boolean
+      force?: boolean
+    }): Promise<LiveMatchHydrateResult | null> => {
+      const targetMatchId = matchIdRef.current
+      if (!targetMatchId) return null
+      if (!options?.force && hydrateInFlightRef.current) return null
+      hydrateInFlightRef.current = true
+      try {
+        const latest = liveStateRef.current
+        const snapshot = await fetchLiveMatchSnapshot(targetMatchId, latest.masterRoster)
+        if (!snapshot || matchIdRef.current !== targetMatchId) return null
+
+        const {
+          match,
+          roster,
+          players: remotePlayers,
+          shotSaveTotals,
+          clockSeconds,
+          formationId,
+          endedOnFieldIds,
+        } = snapshot
+        const result = snapshotHydrateResult(snapshot, clockSeconds)
+
+        if (roster !== latest.masterRoster) {
+          setMasterRoster(roster)
+        }
+
+        setMatchStatus(match.status)
+        setHomeScore(match.home_score)
+        setAwayScore(match.away_score)
+        setHomeShots(shotSaveTotals.homeShots)
+        setAwayShots(shotSaveTotals.awayShots)
+        setHomeSaves(shotSaveTotals.homeSaves)
+        setAwaySaves(shotSaveTotals.awaySaves)
+        setHomeCorners(shotSaveTotals.homeCorners)
+        setAwayCorners(shotSaveTotals.awayCorners)
+        setHomePkScore(match.home_pk_score ?? 0)
+        setAwayPkScore(match.away_pk_score ?? 0)
+        setPkWinnerIsUs(match.pk_winner_is_us ?? null)
+        setPkGkPlayerId(match.pk_gk_player_id ?? null)
+        setMatchGoesToPks(Boolean(match.goes_to_pks))
+        applyMatchPeriodState(match)
+        setPeriodClockStarted(match.period_clock_started)
+        setSubIntervalSeconds(match.sub_interval_seconds ?? null)
+        setGkPlaysFullHalf(match.gk_plays_full_half !== false)
+        setFirstHalfStarterIds(
+          snapshot.players
+            .filter((player) => player.isFirstHalfStarter)
+            .map((player) => player.id),
+        )
+        setSecondHalfStarterIds(
+          snapshot.players
+            .filter((player) => player.isSecondHalfStarter)
+            .map((player) => player.id),
+        )
+
+        const adoptClock = shouldAdoptRemoteClock({
+          localSeconds: latest.seconds,
+          remoteSeconds: clockSeconds,
+          localClockWrittenAtMs: lastClockWriteAtRef.current,
+          nowMs: Date.now(),
+          remoteClockStarted: match.period_clock_started,
+          localClockStarted: latest.periodClockStarted,
+        })
+        const displaySeconds = adoptClock ? clockSeconds : latest.seconds
+        if (adoptClock) {
+          setSeconds(clockSeconds)
+        }
+
+        let nextPlayers = remotePlayers
+        if (result.mode === 'match' && match.period_clock_started) {
+          nextPlayers = stampOnFieldAtClock(remotePlayers, displaySeconds)
+        }
+        setPlayers(nextPlayers)
+
+        if (formationId) {
+          const nextCurrent = result.currentPeriod
+          setMatchFormations((prev) =>
+            nextCurrent <= 1
+              ? { ...prev, first: formationId }
+              : { ...prev, second: formationId },
+          )
+        }
+
+        if (result.mode === 'halftime') {
+          setHalftimeSecondHalf((prev) => {
+            if (Object.keys(prev).length > 0) return prev
+            const seed =
+              endedOnFieldIds.length > 0
+                ? endedOnFieldIds
+                : latest.players.filter((player) => player.isOnField).map((player) => player.id)
+            if (seed.length === 0) return prev
+            const attending = new Set(
+              nextPlayers.filter((player) => player.attending).map((player) => player.id),
+            )
+            return Object.fromEntries(
+              seed.filter((id) => attending.has(id)).map((id) => [id, true]),
+            )
+          })
+        }
+
+        const followRemoteMode =
+          Boolean(options?.applyMode) || isActiveStaffMatchScreen(latest.appMode)
+        if (followRemoteMode) {
+          setAppMode(result.mode)
+          setRunning(result.mode === 'match' && match.period_clock_started)
+        } else {
+          setRunning(false)
+        }
+
+        return { ...result, seconds: displaySeconds }
+      } catch (err) {
+        console.warn('[live-sync] hydrate failed', err)
+        return null
+      } finally {
+        hydrateInFlightRef.current = false
+      }
+    },
+    [applyMatchPeriodState],
+  )
+
+  const resumeLiveMatchScreen = useCallback(async () => {
+    const result = await hydrateLiveMatch({ applyMode: true, force: true })
+    if (result) return
+    const latest = liveStateRef.current
+    if (latest.periodClockStarted) setRunning(true)
+    setAppMode(isActiveStaffMatchScreen(latest.appMode) ? latest.appMode : 'match')
+  }, [hydrateLiveMatch])
 
   const applyRoster = useCallback((roster: RosterPlayer[]) => {
     setMasterRoster(roster)
@@ -1904,6 +2073,9 @@ export function useGameDayApp() {
     masterRoster,
     appMode,
     setAppMode,
+    hydrateLiveMatch,
+    resumeLiveMatchScreen,
+    persistMatchClock,
     matchId,
     players,
     setPlayers,

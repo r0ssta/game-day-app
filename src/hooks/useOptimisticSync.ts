@@ -46,6 +46,7 @@ export function useOptimisticSync() {
   return {
     syncPending: pendingCount > 0,
     pendingCount,
+    isPending: () => pendingRef.current > 0,
     run,
   }
 }

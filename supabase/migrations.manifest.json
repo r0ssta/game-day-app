@@ -51,6 +51,7 @@
     "supabase-fix-u13-maroon-final-score-migration.sql",
     "supabase-parent-finished-match-events-migration.sql",
     "supabase-match-is-test-migration.sql",
-    "supabase-fk-indexes-migration.sql"
+    "supabase-fk-indexes-migration.sql",
+    "supabase-realtime-match-tables-migration.sql"
   ]
 }
