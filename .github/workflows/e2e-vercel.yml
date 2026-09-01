@@ -1,6 +1,8 @@
 name: E2E (Vercel)
 
-# Uses the workflow file on the default branch. Lands after this is merged to main.
+# Uses the workflow file on the default branch. Vercel GitHub deployments are
+# named "Production – <project>" / "Preview – <project>", not "Production".
+# This repo is linked to multiple Vercel projects; only the live app (chvm).
 on:
   deployment_status:
 
@@ -12,8 +14,9 @@ jobs:
   playwright:
     if: >-
       github.event.deployment_status.state == 'success' &&
+      contains(github.event.deployment_status.environment, 'game-day-app-chvm') &&
       (
-        github.event.deployment_status.environment == 'Production' ||
+        startsWith(github.event.deployment_status.environment, 'Production') ||
         startsWith(github.event.deployment_status.environment, 'Preview')
       )
     runs-on: ubuntu-latest
@@ -58,7 +61,8 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           env_name="${{ github.event.deployment_status.environment }}"
-          if [ "$env_name" = "Production" ]; then
+          echo "Environment: $env_name"
+          if [[ "$env_name" == Production* ]]; then
             npm run test:e2e:smoke
           else
             npm run test:e2e
