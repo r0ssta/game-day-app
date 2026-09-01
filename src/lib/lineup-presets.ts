@@ -81,7 +81,8 @@ export function sanitizeSlotAssignments(
 ): Record<string, string | null> {
   const eligible = new Set(
     Object.values(slotAssignments).filter(
-      (playerId): playerId is string => Boolean(playerId) && rosterIds.has(playerId),
+      (playerId): playerId is string =>
+        typeof playerId === 'string' && rosterIds.has(playerId),
     ),
   )
   return reconcileSlotAssignments(
