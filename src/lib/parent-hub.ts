@@ -1,6 +1,7 @@
 import {
   isPeriodEndSubEvent,
   isStartingLineupEvent,
+  isTaggedStartingLineupNote,
   parsePositionSwitchNote,
   parseStartingLineupPosition,
   parseTacticalPositionNote,
@@ -726,8 +727,15 @@ export function sortParentLiveTimelineNewestFirst(
 }
 
 /**
- * Infer 1H/2H/… from chronology: a new starting-lineup batch after non-lineup
- * events means the next period (period-end rows are filtered out of the feed).
+ * Infer 1H/2H/… from chronology.
+ *
+ * A tagged `starting_lineup|` batch after gameplay starts the next period.
+ * Pre-kickoff tweaks (position changes, a single sub_in @ 0:00 with a slot
+ * code) must stay in the current period — treating them as a new lineup was
+ * creating a phantom 3H and dumping 2nd-half minutes there.
+ *
+ * Legacy matches without the tag still advance when the clock resets to
+ * kickoff and a sub_in is logged.
  */
 export function assignParentEventPeriodIndexes(
   events: ParentLiveEvent[],
@@ -737,21 +745,25 @@ export function assignParentEventPeriodIndexes(
   )
   let period = 1
   let hadNonLineupInPeriod = false
+  let lastTimestamp = 0
   const periodById = new Map<string, number>()
 
   for (const event of chrono) {
-    const isLineup = isStartingLineupEvent(
-      event.eventType,
-      event.eventNotes,
-      event.timestamp,
-    )
-    if (isLineup && hadNonLineupInPeriod) {
+    const taggedLineup =
+      event.eventType === 'sub_in' && isTaggedStartingLineupNote(event.eventNotes)
+    const clockResetToKickoff =
+      event.eventType === 'sub_in' &&
+      event.timestamp <= 0 &&
+      event.timestamp < lastTimestamp - 30
+
+    if (hadNonLineupInPeriod && (taggedLineup || clockResetToKickoff)) {
       period += 1
       hadNonLineupInPeriod = false
     }
-    if (!isLineup) {
+    if (!taggedLineup) {
       hadNonLineupInPeriod = true
     }
+    lastTimestamp = event.timestamp
     periodById.set(event.id, period)
   }
 

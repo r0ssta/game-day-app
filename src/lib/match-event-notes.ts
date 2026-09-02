@@ -20,16 +20,20 @@ export function parseStartingLineupPosition(notes: string | null | undefined): s
   return null
 }
 
+export function isTaggedStartingLineupNote(notes: string | null | undefined): boolean {
+  const raw = (notes ?? '').trim()
+  return raw.startsWith(STARTING_LINEUP_NOTE_PREFIX) || raw === 'starting_lineup'
+}
+
 export function isStartingLineupEvent(
   eventType: string,
   notes: string | null | undefined,
   timestamp: number,
 ): boolean {
   if (eventType !== 'sub_in') return false
-  const raw = (notes ?? '').trim()
-  if (raw.startsWith(STARTING_LINEUP_NOTE_PREFIX) || raw === 'starting_lineup') return true
+  if (isTaggedStartingLineupNote(notes)) return true
   // Legacy: kickoff starters were sub_in @ 0 with a position code in notes.
-  return timestamp <= 0 && Boolean(parseStartingLineupPosition(raw))
+  return timestamp <= 0 && Boolean(parseStartingLineupPosition(notes))
 }
 
 export function isPeriodEndSubEvent(

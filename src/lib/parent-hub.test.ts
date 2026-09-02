@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { startingLineupNote } from './match-event-notes'
 import {
+  assignParentEventPeriodIndexes,
   buildParentTimelineRows,
   formatParentEventLine,
   formatParentHubWallClock,
@@ -229,6 +230,90 @@ describe('buildParentTimelineRows', () => {
     expect(isParentTimelineHighlight(lineup)).toBe(true)
     expect(isParentTimelineHighlight(goal)).toBe(true)
     expect(isParentTimelineHighlight(ended)).toBe(true)
+  })
+})
+
+describe('assignParentEventPeriodIndexes', () => {
+  it('keeps pre-kickoff slot tweaks in 1H so 2nd-half kickoff is 2H, not 3H', () => {
+    const periodById = assignParentEventPeriodIndexes([
+      event({
+        id: 'lu1',
+        eventType: 'sub_in',
+        timestamp: 0,
+        eventNotes: startingLineupNote('ST'),
+        createdAt: '2026-08-29T18:33:50.000Z',
+      }),
+      event({
+        id: 'pos',
+        eventType: 'position_change',
+        timestamp: 0,
+        eventNotes: 'CM',
+        createdAt: '2026-08-29T18:34:06.000Z',
+      }),
+      event({
+        id: 'tweak',
+        eventType: 'sub_in',
+        timestamp: 0,
+        eventNotes: 'CM',
+        createdAt: '2026-08-29T18:34:53.000Z',
+      }),
+      event({
+        id: 'goal',
+        eventType: 'goal',
+        timestamp: 101,
+        createdAt: '2026-08-29T18:39:13.000Z',
+      }),
+      event({
+        id: 'end1',
+        eventType: 'sub_out',
+        timestamp: 2127,
+        eventNotes: 'period_end',
+        createdAt: '2026-08-29T19:13:32.000Z',
+      }),
+      event({
+        id: 'lu2',
+        eventType: 'sub_in',
+        timestamp: 0,
+        eventNotes: startingLineupNote('GK'),
+        createdAt: '2026-08-29T19:22:03.000Z',
+      }),
+    ])
+
+    expect(periodById.get('lu1')).toBe(1)
+    expect(periodById.get('tweak')).toBe(1)
+    expect(periodById.get('goal')).toBe(1)
+    expect(periodById.get('end1')).toBe(1)
+    expect(periodById.get('lu2')).toBe(2)
+  })
+
+  it('still advances on a legacy untagged 2nd-half kickoff', () => {
+    const periodById = assignParentEventPeriodIndexes([
+      event({
+        id: 'lu1',
+        eventType: 'sub_in',
+        timestamp: 0,
+        eventNotes: 'ST',
+        createdAt: '2026-08-29T18:00:00.000Z',
+      }),
+      event({
+        id: 'end1',
+        eventType: 'sub_out',
+        timestamp: 1800,
+        eventNotes: 'period_end',
+        createdAt: '2026-08-29T18:30:00.000Z',
+      }),
+      event({
+        id: 'lu2',
+        eventType: 'sub_in',
+        timestamp: 0,
+        eventNotes: 'CM',
+        createdAt: '2026-08-29T18:40:00.000Z',
+      }),
+    ])
+
+    expect(periodById.get('lu1')).toBe(1)
+    expect(periodById.get('end1')).toBe(1)
+    expect(periodById.get('lu2')).toBe(2)
   })
 })
 

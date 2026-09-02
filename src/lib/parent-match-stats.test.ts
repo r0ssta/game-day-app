@@ -132,4 +132,86 @@ describe('buildParentMatchPlayerStats', () => {
     expect(formatParentCountingStats(bess.halves[1])).toBe('SV 1')
     expect(formatParentPositionsLine(bess.total.positions)).not.toContain('STARTING_LINEUP')
   })
+
+  it('does not invent a 3rd half after a pre-kickoff lineup tweak', () => {
+    const rows = buildParentMatchPlayerStats(
+      [
+        event({
+          id: 'lu-ada',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('ST'),
+          createdAt: '2026-08-29T18:33:50.000Z',
+        }),
+        event({
+          id: 'lu-bess',
+          eventType: 'sub_in',
+          playerId: BESS,
+          playerName: 'Bess',
+          jersey: 1,
+          eventNotes: startingLineupNote('GK'),
+          createdAt: '2026-08-29T18:33:50.050Z',
+        }),
+        event({
+          id: 'tweak-pos',
+          eventType: 'position_change',
+          eventNotes: 'CM',
+          createdAt: '2026-08-29T18:34:06.000Z',
+        }),
+        event({
+          id: 'tweak-in',
+          eventType: 'sub_in',
+          playerId: BESS,
+          playerName: 'Bess',
+          jersey: 1,
+          eventNotes: 'CM',
+          createdAt: '2026-08-29T18:34:53.000Z',
+        }),
+        event({
+          id: 'tweak-out',
+          eventType: 'sub_out',
+          eventNotes: null,
+          createdAt: '2026-08-29T18:34:53.000Z',
+        }),
+        event({
+          id: 'end1-bess',
+          eventType: 'sub_out',
+          playerId: BESS,
+          playerName: 'Bess',
+          timestamp: 2127,
+          eventNotes: 'period_end',
+          createdAt: '2026-08-29T19:13:32.000Z',
+        }),
+        event({
+          id: 'lu2-bess',
+          eventType: 'sub_in',
+          playerId: BESS,
+          playerName: 'Bess',
+          jersey: 1,
+          eventNotes: startingLineupNote('GK'),
+          createdAt: '2026-08-29T19:22:03.000Z',
+        }),
+        event({
+          id: 'end2-bess',
+          eventType: 'sub_out',
+          playerId: BESS,
+          playerName: 'Bess',
+          timestamp: 2197,
+          eventNotes: 'period_end',
+          createdAt: '2026-08-29T19:58:51.000Z',
+        }),
+      ],
+      'm1',
+      40,
+      players,
+    )
+
+    const bess = rows.find((row) => row.playerId === BESS)!
+    expect(bess.extraHalves).toEqual([])
+    expect(bess.halves[0].started).toBe(true)
+    expect(bess.halves[0].seconds).toBe(2127)
+    expect(bess.halves[1].started).toBe(true)
+    expect(bess.halves[1].seconds).toBe(2197)
+    expect(bess.total.seconds).toBe(4324)
+    expect(formatParentTotalRole(bess)).toBe('Started both')
+  })
 })
