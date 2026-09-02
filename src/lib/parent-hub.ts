@@ -2,6 +2,7 @@ import {
   isPeriodEndSubEvent,
   isStartingLineupEvent,
   parseStartingLineupPosition,
+  parseTacticalPositionNote,
 } from '@/lib/match-event-notes'
 import { supabase } from '@/supabaseClient'
 import { ENABLE_PARENT_HUB } from '@/lib/feature-flags'
@@ -779,14 +780,90 @@ export type ParentTimelineRow =
       label: string
       players: string[]
     }
+  | {
+      kind: 'period_end'
+      id: string
+      sortAt: string
+      periodIndex: number
+      label: string
+    }
+
+export function formatParentPeriodEndedLabel(
+  periodIndex: number,
+  totalPeriods?: number | null,
+): string {
+  if (totalPeriods === 3) {
+    const labels = ['1st period ended', '2nd period ended', '3rd period ended'] as const
+    return labels[Math.min(3, Math.max(1, periodIndex)) - 1] ?? `${periodIndex}th period ended`
+  }
+  return periodIndex <= 1 ? '1st half ended' : '2nd half ended'
+}
+
+function synthesizePeriodEndRows(
+  events: ParentLiveEvent[],
+  totalPeriods?: number | null,
+): Extract<ParentTimelineRow, { kind: 'period_end' }>[] {
+  const periodById = assignParentEventPeriodIndexes(events)
+  const groups = new Map<number, ParentLiveEvent[]>()
+  for (const event of events) {
+    if (!isPeriodEndSubEvent(event.eventType, event.eventNotes)) continue
+    const period = periodById.get(event.id) ?? 1
+    const bucket = groups.get(period) ?? []
+    bucket.push(event)
+    groups.set(period, bucket)
+  }
+
+  const rows: Extract<ParentTimelineRow, { kind: 'period_end' }>[] = []
+  for (const [periodIndex, batch] of groups) {
+    const chrono = [...batch].sort(
+      (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+    )
+    const newest = chrono[chrono.length - 1]!
+    rows.push({
+      kind: 'period_end',
+      id: `period-end-${periodIndex}-${chrono[0]!.id}`,
+      sortAt: newest.createdAt,
+      periodIndex,
+      label: formatParentPeriodEndedLabel(periodIndex, totalPeriods),
+    })
+  }
+  return rows
+}
+
+/**
+ * Hide the auto-inserted shot that accompanies a goal or a save so the feed
+ * shows one card, not "shot" + "goal" or "shot" + "save".
+ */
+export function hidePairedParentShots(events: ParentLiveEvent[]): ParentLiveEvent[] {
+  const hide = new Set<string>()
+  const takeShot = (type: 'shot_home' | 'shot_away', timestamp: number) => {
+    const shot = events.find(
+      (event) =>
+        event.eventType === type && event.timestamp === timestamp && !hide.has(event.id),
+    )
+    if (shot) hide.add(shot.id)
+  }
+
+  for (const event of events) {
+    if (event.eventType === 'goal') takeShot('shot_home', event.timestamp)
+    if (event.eventType === 'opponent_goal') takeShot('shot_away', event.timestamp)
+    if (event.eventType === 'save_home') takeShot('shot_away', event.timestamp)
+    if (event.eventType === 'save_away') takeShot('shot_home', event.timestamp)
+  }
+
+  return events.filter((event) => !hide.has(event.id))
+}
 
 /**
  * Collapse per-player starting-lineup `sub_in` rows into one timeline card per
  * period so parents see a single "Starting lineup" notice, not nine.
  */
-export function buildParentTimelineRows(events: ParentLiveEvent[]): ParentTimelineRow[] {
-  const filtered = filterParentLiveTimeline(events)
-  const periodById = assignParentEventPeriodIndexes(filtered)
+export function buildParentTimelineRows(
+  events: ParentLiveEvent[],
+  options?: { totalPeriods?: number | null },
+): ParentTimelineRow[] {
+  const filtered = hidePairedParentShots(filterParentLiveTimeline(events))
+  const periodById = assignParentEventPeriodIndexes(events)
   const lineupByPeriod = new Map<number, ParentLiveEvent[]>()
   const other: ParentLiveEvent[] = []
 
@@ -825,6 +902,8 @@ export function buildParentTimelineRows(events: ParentLiveEvent[]): ParentTimeli
     })
   }
 
+  rows.push(...synthesizePeriodEndRows(events, options?.totalPeriods))
+
   return rows.sort(
     (a, b) => b.sortAt.localeCompare(a.sortAt) || b.id.localeCompare(a.id),
   )
@@ -833,18 +912,22 @@ export function buildParentTimelineRows(events: ParentLiveEvent[]): ParentTimeli
 export function formatParentEventLine(
   event: ParentLiveEvent,
   opponent: string,
-  options?: { periodIndex?: number },
+  options?: { periodIndex?: number; teamName?: string },
 ): string {
   const periodIndex = options?.periodIndex ?? 1
   const periodPrefix = periodIndex > 1 ? `${periodIndex}H ` : ''
   const minute = `${periodPrefix}${Math.max(0, Math.floor(event.timestamp / 60))}'`
   const name = event.playerName?.trim() || 'Player'
   const opponentLabel = opponent.trim() || 'Opponent'
+  const teamLabel = options?.teamName?.trim() || 'Home'
+  const position = parseTacticalPositionNote(event.eventNotes)
 
   if (isStartingLineupEvent(event.eventType, event.eventNotes, event.timestamp)) {
-    const position = parseStartingLineupPosition(event.eventNotes)
+    const lineupPosition = parseStartingLineupPosition(event.eventNotes)
     const lineupLabel = periodIndex > 1 ? `${periodIndex}H lineup` : 'Starting lineup'
-    return position ? `${lineupLabel} · ${name} · ${position}` : `${lineupLabel} · ${name}`
+    return lineupPosition
+      ? `${lineupLabel} · ${name} · ${lineupPosition}`
+      : `${lineupLabel} · ${name}`
   }
 
   switch (event.eventType) {
@@ -859,19 +942,23 @@ export function formatParentEventLine(
     case 'red_card':
       return `${minute} Red · ${name}`
     case 'sub_in':
-      return `${minute} Sub ON · ${name}`
+      return position ? `${minute} Sub ON · ${name} · ${position}` : `${minute} Sub ON · ${name}`
     case 'sub_out':
       return `${minute} Sub OFF · ${name}`
+    case 'position_change':
+      return position
+        ? `${minute} Position · ${name} · ${position}`
+        : `${minute} Position · ${name}`
     case 'shot_home':
-      return `${minute} Shot · Home`
+      return `${minute} Shot · ${teamLabel}`
     case 'shot_away':
       return `${minute} Shot · ${opponentLabel}`
     case 'save_home':
-      return `${minute} Save · ${name !== 'Player' ? name : 'Home'}`
+      return `${minute} Shot by ${opponentLabel}, save`
     case 'save_away':
-      return `${minute} Save · ${opponentLabel}`
+      return `${minute} Shot by ${teamLabel}, save`
     case 'corner_home':
-      return `${minute} Corner · Home`
+      return `${minute} Corner · ${teamLabel}`
     case 'corner_away':
       return `${minute} Corner · ${opponentLabel}`
     default:
@@ -887,6 +974,7 @@ export const PARENT_HUB_LIVE_EVENT_TYPES = [
   'red_card',
   'sub_in',
   'sub_out',
+  'position_change',
   'shot_home',
   'shot_away',
   'save_home',
@@ -904,7 +992,7 @@ export function isParentHubLiveEventType(value: string): value is ParentHubLiveE
 /**
  * Parent timeline rules:
  * - Collapse kickoff/period starters into one grouped "Starting lineup" card
- * - Hide period-end mass sub-offs
+ * - Hide period-end mass sub-offs (shown as one "half ended" card instead)
  * - Hide legacy untagged kickoff sub_out noise
  */
 export function shouldShowParentLiveEvent(
@@ -919,9 +1007,17 @@ export function shouldShowParentLiveEvent(
   return true
 }
 
+/** Keep period-end markers in memory so the timeline can emit a half-ended card. */
+export function isParentHubTrackedLiveEvent(
+  event: Pick<ParentLiveEvent, 'eventType' | 'eventNotes'>,
+): boolean {
+  if (isPeriodEndSubEvent(event.eventType, event.eventNotes)) return true
+  return isParentHubLiveEventType(event.eventType)
+}
+
 /**
  * Hide untagged mass sub-offs at the same clock second (half/full-time clears).
- * Tagged `period_end` rows are already excluded by shouldShowParentLiveEvent.
+ * Tagged `period_end` rows stay in the raw list and become a single period-end card.
  */
 export function filterParentLiveTimeline(events: ParentLiveEvent[]): ParentLiveEvent[] {
   const subOutCounts = new Map<number, number>()

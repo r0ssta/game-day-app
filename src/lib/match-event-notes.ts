@@ -38,3 +38,11 @@ export function isPeriodEndSubEvent(
 ): boolean {
   return eventType === 'sub_out' && (notes ?? '').trim() === PERIOD_END_NOTE
 }
+
+/** Mid-game sub / position-change notes store the tactical slot (ST, LCB, …). */
+export function parseTacticalPositionNote(notes: string | null | undefined): string | null {
+  const raw = (notes ?? '').trim()
+  if (!raw || raw === PERIOD_END_NOTE || raw === 'starting_lineup') return null
+  if (raw.startsWith(STARTING_LINEUP_NOTE_PREFIX)) return null
+  return raw
+}

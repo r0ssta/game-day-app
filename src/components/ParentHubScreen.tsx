@@ -12,12 +12,10 @@ import {
   buildParentTimelineRows,
   fetchParentHub,
   fetchParentLiveEvents,
-  filterParentLiveTimeline,
   formatParentEventLine,
   isParentHubFinishedMatch,
-  isParentHubLiveEventType,
   isParentHubStaffPreviewRequest,
-  shouldShowParentLiveEvent,
+  isParentHubTrackedLiveEvent,
   type ParentHubMatch,
   type ParentHubPayload,
   type ParentHubRoute,
@@ -91,7 +89,6 @@ function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
   }, [])
 
   const remainingMs = kickoff ? kickoff.getTime() - now : 0
-  const starters = match.starters ?? []
 
   return (
     <div className="space-y-4">
@@ -118,26 +115,9 @@ function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
         <h3 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
           Starting lineup
         </h3>
-        {starters.length === 0 ? (
-          <p className="rounded-xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-            Lineup will appear once the coach preloads the match.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {starters.map((player) => {
-              const name = formatPlayerFullName(player.firstName, player.lastName)
-              const label = player.number != null ? `#${player.number} ${name}` : name
-              return (
-                <li
-                  key={player.id}
-                  className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground"
-                >
-                  {label}
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <p className="rounded-xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+          Lineup will appear when the half starts.
+        </p>
       </div>
     </div>
   )
@@ -181,7 +161,7 @@ function LiveTab({
           includeTest: Boolean(liveMatch.isTest || hub.staffPreview),
         })
         if (!cancelled) {
-          setEvents(filterParentLiveTimeline(rows))
+          setEvents(rows)
         }
       } catch (err) {
         console.warn('[ParentHub] live events hydrate failed', err)
@@ -225,13 +205,9 @@ function LiveTab({
             assist_player_id: string | null
             created_at: string
           }
-          if (!isParentHubLiveEventType(row.event_type)) {
-            return
-          }
           if (
-            !shouldShowParentLiveEvent({
+            !isParentHubTrackedLiveEvent({
               eventType: row.event_type,
-              timestamp: row.timestamp,
               eventNotes: row.event_notes,
             })
           ) {
@@ -260,7 +236,7 @@ function LiveTab({
           }
           setEvents((prev) => {
             if (prev.some((e) => e.id === nextEvent.id)) return prev
-            return filterParentLiveTimeline([...prev, nextEvent])
+            return [...prev, nextEvent]
           })
           setLiveMatchState((prev) => {
             if (!prev) return prev
@@ -294,7 +270,10 @@ function LiveTab({
     return <ScheduledKickoffCard match={nextScheduled} />
   }
 
-  const timeline = buildParentTimelineRows(events)
+  const teamLabel = formatTeamDisplayName(hub.teamName, hub.ageGroup)
+  const timeline = buildParentTimelineRows(events, {
+    totalPeriods: liveMatchState.total_periods,
+  })
   const teamBoxScoreLine = hasTeamShotSaveTotals(teamBoxScore)
     ? formatTeamShotSaveLine(teamBoxScore)
     : null
@@ -343,9 +322,12 @@ function LiveTab({
                       {row.players.join(' · ')}
                     </p>
                   </div>
+                ) : row.kind === 'period_end' ? (
+                  row.label
                 ) : (
                   formatParentEventLine(row.event, liveMatchState.opponent, {
                     periodIndex: row.periodIndex,
+                    teamName: teamLabel,
                   })
                 )}
               </li>
@@ -621,6 +603,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
                 match={selectedMatch}
                 players={hub.players}
                 opponent={selectedMatch.opponent}
+                teamName={teamLabel}
                 onBack={() => setSelectedMatchId(null)}
               />
             </Suspense>

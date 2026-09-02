@@ -10,7 +10,6 @@ import {
 import {
   buildParentTimelineRows,
   fetchParentLiveEvents,
-  filterParentLiveTimeline,
   formatParentEventLine,
   type ParentHubMatch,
   type ParentHubPlayer,
@@ -25,6 +24,7 @@ type ParentFinishedMatchDetailProps = {
   match: ParentHubMatch
   players: ParentHubPlayer[]
   opponent: string
+  teamName: string
   onBack: () => void
 }
 
@@ -44,6 +44,7 @@ export function ParentFinishedMatchDetail({
   match,
   players,
   opponent,
+  teamName,
   onBack,
 }: ParentFinishedMatchDetailProps) {
   const [loading, setLoading] = useState(true)
@@ -94,7 +95,7 @@ export function ParentFinishedMatchDetail({
 
   const timeline = useMemo(() => {
     if (!eventsLoaded) return []
-    return buildParentTimelineRows(filterParentLiveTimeline(rawEvents))
+    return buildParentTimelineRows(rawEvents, { totalPeriods: match.total_periods })
   }, [eventsLoaded, rawEvents])
 
   const teamBoxScore = useMemo(() => aggregateTeamShotSaveTotals(rawEvents), [rawEvents])
@@ -210,9 +211,12 @@ export function ParentFinishedMatchDetail({
                           {row.players.join(' · ')}
                         </p>
                       </div>
+                    ) : row.kind === 'period_end' ? (
+                      row.label
                     ) : (
                       formatParentEventLine(row.event, opponent, {
                         periodIndex: row.periodIndex,
+                        teamName,
                       })
                     )}
                   </li>
