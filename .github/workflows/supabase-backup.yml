@@ -1,0 +1,54 @@
+name: Supabase backup
+
+# Nightly logical dump for the free-tier project. Also run by hand from
+# Actions → Supabase backup → Run workflow before large schema changes.
+# Requires repository secret SUPABASE_DB_URL.
+# Use the Session pooler (port 5432 on *.pooler.supabase.com), not the
+# Transaction pooler (6543) and not IPv6-only db.*:5432 — pg_dump needs a
+# session, and GitHub-hosted runners are IPv4.
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Require SUPABASE_DB_URL
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "Missing GitHub Actions secret: SUPABASE_DB_URL"
+            echo "Add the Session pooler URL (port 5432) as a repository secret."
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump schema
+        run: supabase db dump --db-url "$SUPABASE_DB_URL" -f schema.sql
+
+      - name: Dump data
+        run: supabase db dump --db-url "$SUPABASE_DB_URL" -f data.sql --data-only
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: supabase-daily-backup
+          path: |
+            schema.sql
+            data.sql
+          retention-days: 30
+          if-no-files-found: error
