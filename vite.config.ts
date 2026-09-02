@@ -31,8 +31,11 @@ export default defineConfig(({ mode }) => ({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      registerType: 'autoUpdate',
-      // Registration is handled in-app via workbox-window (push + Parent Hub).
+      // Prompt (not autoUpdate) so a waiting worker sits until the user taps refresh.
+      registerType: 'prompt',
+      // Parent Hub only — never control staff login at /.
+      scope: '/hub/',
+      // Registration + needRefresh toast live in `virtual:pwa-register`.
       injectRegister: false,
       // Dynamic per-team manifest lives at /api/manifest — do not emit a static one.
       manifest: false,

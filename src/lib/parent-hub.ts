@@ -385,25 +385,13 @@ export async function registerParentServiceWorker(): Promise<ServiceWorkerRegist
   try {
     // Old root-scoped workers can keep serving a stale shell (missing VAPID) on /hub/*.
     await unregisterRootScopedParentServiceWorker({ force: true })
-
-    const { Workbox } = await import('workbox-window')
-    const wb = new Workbox('/sw.js', { scope: '/hub/' })
-    let waitingForUpdate = false
-
-    // Activate updated SW promptly so Parent Hub gets fresh shell + strategies.
-    wb.addEventListener('waiting', () => {
-      waitingForUpdate = true
-      void wb.messageSkipWaiting()
-    })
-    wb.addEventListener('controlling', () => {
-      if (!waitingForUpdate) return
-      window.location.reload()
-    })
-
-    const registration = await wb.register({ immediate: true })
-    // Pull the latest precache even when an older hub SW is already active.
-    void registration?.update()
-    return registration ?? (await navigator.serviceWorker.ready)
+    const { registerPwaUpdates } = await import('@/lib/pwa-updates')
+    const registration = await registerPwaUpdates()
+    return (
+      registration ??
+      (await navigator.serviceWorker.getRegistration('/hub/')) ??
+      (await navigator.serviceWorker.ready)
+    )
   } catch (err) {
     console.warn('[sw] register failed', err)
     return null

@@ -5,6 +5,7 @@ import './index.css'
 import { AuthScreen } from '@/components/AuthScreen'
 import { PendingAccessScreen } from '@/components/PendingAccessScreen'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { PwaUpdateToast } from '@/components/PwaUpdateToast'
 import { ScreenSuspense } from '@/components/Spinner'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
@@ -110,6 +111,7 @@ function Root() {
   // Public Parent Hub bypasses AuthProvider entirely — logged-in coaches still see the hub.
   return (
     <SunlightModeProvider>
+      <PwaUpdateToast />
       {trackerRoute ? (
         <ScreenSuspense>
           <StatTrackerScreen matchId={trackerRoute.matchId} token={trackerRoute.token} />

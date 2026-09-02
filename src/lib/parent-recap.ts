@@ -116,7 +116,10 @@ export function buildParentRecapEmailDraft(
   return { subject, body: bodyParts.join('\n'), playerLines: input.playerLines }
 }
 
-/** True when a client-side OpenAI key is configured for parent-recap drafting. */
+/**
+ * True when a client-side OpenAI key is configured for parent-recap drafting.
+ * Do not set VITE_OPENAI_API_KEY — that prefixes a secret into the browser bundle.
+ */
 export function isParentRecapAiDraftEnabled(): boolean {
   const key = import.meta.env.VITE_OPENAI_API_KEY
   return typeof key === 'string' && key.trim().length > 0

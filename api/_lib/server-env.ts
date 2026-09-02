@@ -14,10 +14,11 @@ function read(name: string): string {
 
 /** Fail closed if a secret was accidentally given a VITE_ prefix. */
 export function assertNoClientLeakedSecrets(): void {
-  if (read('VITE_SUPABASE_SERVICE_ROLE_KEY')) {
-    throw new Error(
-      'VITE_SUPABASE_SERVICE_ROLE_KEY must not be set. Service role keys are server-only.',
-    )
+  for (const name of Object.keys(process.env)) {
+    if (!read(name)) continue
+    if (/^VITE_.*SERVICE_ROLE/i.test(name)) {
+      throw new Error(`${name} must not be set. Service role keys are server-only.`)
+    }
   }
   if (read('VITE_VAPID_PRIVATE_KEY')) {
     throw new Error(

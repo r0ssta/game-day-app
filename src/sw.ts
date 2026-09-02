@@ -24,8 +24,8 @@ precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
 clientsClaim()
 
-self.skipWaiting()
-
+// Do not skipWaiting() on install — a new CI build stays waiting until the
+// in-app toast calls updateServiceWorker(true) → SKIP_WAITING.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     void self.skipWaiting()
@@ -34,11 +34,14 @@ self.addEventListener('message', (event) => {
 
 // SPA navigations under /hub/* → cached index.html shell
 // (SW is registered with scope /hub/ so coach login at / is never controlled.)
-registerRoute(
-  new NavigationRoute(createHandlerBoundToURL('/index.html'), {
-    denylist: [/^\/api\//],
-  }),
-)
+// Dev injectManifest has an empty precache, so createHandlerBoundToURL throws.
+if (import.meta.env.PROD) {
+  registerRoute(
+    new NavigationRoute(createHandlerBoundToURL('/index.html'), {
+      denylist: [/^\/api\//],
+    }),
+  )
+}
 
 const LIVE_EVENTS_RPC = '/rest/v1/rpc/get_parent_live_events'
 
