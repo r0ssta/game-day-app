@@ -418,7 +418,7 @@ function scorePlayerForSlot(
 
 export type FormationRemapResult = {
   slotAssignments: Record<string, string | null>
-  positionUpdates: Array<{ playerId: string; position: string }>
+  positionUpdates: Array<{ playerId: string; position: string; previousPosition?: string }>
   overflowPlayerIds: string[]
 }
 
@@ -448,14 +448,19 @@ export function remapFormationSlotAssignments(
   ].filter((playerId) => !options?.eligiblePlayerIds || options.eligiblePlayerIds.has(playerId))
 
   const used = new Set<string>()
-  const positionUpdates: Array<{ playerId: string; position: string }> = []
+  const positionUpdates: Array<{ playerId: string; position: string; previousPosition?: string }> =
+    []
 
   const assign = (slot: FormationSlot, playerId: string) => {
     nextAssignments[slot.id] = playerId
     used.add(playerId)
+    const player = playerById.get(playerId)
+    const previous = (player?.matchPosition ?? player?.position ?? '').trim()
+    const position = mapSlot(slot)
     positionUpdates.push({
       playerId,
-      position: mapSlot(slot),
+      position,
+      ...(previous ? { previousPosition: previous } : {}),
     })
   }
 

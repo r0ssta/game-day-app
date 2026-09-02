@@ -12,7 +12,6 @@ import {
   buildParentTimelineRows,
   fetchParentHub,
   fetchParentLiveEvents,
-  formatParentEventLine,
   isParentHubFinishedMatch,
   isParentHubStaffPreviewRequest,
   isParentHubTrackedLiveEvent,
@@ -21,11 +20,9 @@ import {
   type ParentHubRoute,
   type ParentLiveEvent,
 } from '@/lib/parent-hub'
-import {
-  aggregateTeamShotSaveTotals,
-  formatTeamShotSaveLine,
-  hasTeamShotSaveTotals,
-} from '@/lib/match-shot-save'
+import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
+import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
+import { ParentTimelineList } from '@/components/ParentTimelineList'
 import {
   applyParentHubManifestLink,
   applyParentHubPwaHead,
@@ -274,10 +271,6 @@ function LiveTab({
   const timeline = buildParentTimelineRows(events, {
     totalPeriods: liveMatchState.total_periods,
   })
-  const teamBoxScoreLine = hasTeamShotSaveTotals(teamBoxScore)
-    ? formatTeamShotSaveLine(teamBoxScore)
-    : null
-
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-neon/40 bg-neon/10 px-4 py-4">
@@ -293,11 +286,11 @@ function LiveTab({
             {liveMatchState.period_clock_started ? 'In progress' : 'Warmup / break'}
           </span>
         </div>
-        {teamBoxScoreLine ? (
-          <p className="mt-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-            {teamBoxScoreLine}
-          </p>
-        ) : null}
+        <ParentTeamBoxScore
+          totals={teamBoxScore}
+          teamName={teamLabel}
+          opponent={liveMatchState.opponent}
+        />
       </div>
 
       <div>
@@ -309,30 +302,11 @@ function LiveTab({
             Waiting for the first event…
           </p>
         ) : (
-          <ul className="space-y-2">
-            {timeline.map((row) => (
-              <li
-                key={row.id}
-                className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground"
-              >
-                {row.kind === 'lineup' ? (
-                  <div>
-                    <p>{row.label}</p>
-                    <p className="mt-1 text-xs font-medium leading-relaxed text-muted-foreground">
-                      {row.players.join(' · ')}
-                    </p>
-                  </div>
-                ) : row.kind === 'period_end' ? (
-                  row.label
-                ) : (
-                  formatParentEventLine(row.event, liveMatchState.opponent, {
-                    periodIndex: row.periodIndex,
-                    teamName: teamLabel,
-                  })
-                )}
-              </li>
-            ))}
-          </ul>
+          <ParentTimelineList
+            rows={timeline}
+            opponent={liveMatchState.opponent}
+            teamName={teamLabel}
+          />
         )}
       </div>
     </div>

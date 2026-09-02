@@ -351,6 +351,7 @@ export const LogFormationInputSchema = z
         z.object({
           playerId: z.string().uuid(),
           position: z.string().min(1),
+          previousPosition: z.string().optional(),
         }),
       )
       .default([]),

@@ -3,9 +3,13 @@ import { startingLineupNote } from './match-event-notes'
 import {
   buildParentTimelineRows,
   formatParentEventLine,
+  formatParentHubWallClock,
   formatParentPeriodEndedLabel,
+  formatParentTimelineRowCopy,
   hidePairedParentShots,
   isParentHubStaffPreviewRequest,
+  isParentTimelineHighlight,
+  parentLiveEventsFromMatchEvents,
   type ParentLiveEvent,
 } from './parent-hub'
 
@@ -33,41 +37,63 @@ describe('isParentHubStaffPreviewRequest', () => {
   })
 })
 
+describe('formatParentHubWallClock', () => {
+  it('formats created_at in Eastern time', () => {
+    expect(formatParentHubWallClock('2026-09-02T18:00:00.000Z')).toBe('2:00 PM')
+    expect(formatParentHubWallClock('2026-01-15T18:00:00.000Z')).toBe('1:00 PM')
+  })
+})
+
 describe('formatParentEventLine', () => {
   const names = { teamName: 'U11 Blitz', periodIndex: 1 }
+  const clock = ' · 2:00 PM'
 
   it('uses team names instead of home/away', () => {
     expect(formatParentEventLine(event({ id: 's', eventType: 'shot_home' }), 'Rivals', names)).toBe(
-      "2' Shot · U11 Blitz",
+      `1H 2' Shot · U11 Blitz${clock}`,
     )
     expect(formatParentEventLine(event({ id: 's', eventType: 'shot_away' }), 'Rivals', names)).toBe(
-      "2' Shot · Rivals",
+      `1H 2' Shot · Rivals${clock}`,
     )
     expect(formatParentEventLine(event({ id: 'c', eventType: 'corner_home' }), 'Rivals', names)).toBe(
-      "2' Corner · U11 Blitz",
+      `1H 2' Corner · U11 Blitz${clock}`,
     )
   })
 
-  it('combines a save with the shooting team', () => {
-    expect(formatParentEventLine(event({ id: 'sv', eventType: 'save_home' }), 'Rivals', names)).toBe(
-      "2' Shot by Rivals, save",
-    )
-    expect(formatParentEventLine(event({ id: 'sv', eventType: 'save_away' }), 'Rivals', names)).toBe(
-      "2' Shot by U11 Blitz, save",
-    )
-  })
-
-  it('includes the position on a sub in and a positional move', () => {
-    expect(
-      formatParentEventLine(event({ id: 'in', eventType: 'sub_in', eventNotes: 'ST' }), 'Rivals', names),
-    ).toBe("2' Sub ON · Ada · ST")
+  it('credits a known home goalkeeper and uses team name otherwise', () => {
     expect(
       formatParentEventLine(
-        event({ id: 'mv', eventType: 'position_change', eventNotes: 'LCM' }),
+        event({ id: 'sv', eventType: 'save_home', playerName: 'Maya' }),
+        'test1',
+        names,
+      ),
+    ).toBe(`1H 2' Shot by test1, Save by Maya${clock}`)
+    expect(
+      formatParentEventLine(event({ id: 'sv', eventType: 'save_home', playerName: null }), 'test1', names),
+    ).toBe(`1H 2' Save by U11 Blitz${clock}`)
+    expect(formatParentEventLine(event({ id: 'sv', eventType: 'save_away' }), 'Rivals', names)).toBe(
+      `1H 2' Save by Rivals${clock}`,
+    )
+  })
+
+  it('includes the position on a sub in', () => {
+    expect(
+      formatParentEventLine(event({ id: 'in', eventType: 'sub_in', eventNotes: 'ST' }), 'Rivals', names),
+    ).toBe(`1H 2' Sub ON · Ada · ST${clock}`)
+  })
+
+  it('capitalizes Assist by on a goal', () => {
+    expect(
+      formatParentEventLine(
+        event({
+          id: 'g',
+          eventType: 'goal',
+          assistPlayerName: 'Bess',
+        }),
         'Rivals',
         names,
       ),
-    ).toBe("2' Position · Ada · LCM")
+    ).toBe(`1H 2' GOAL · Ada · Assist by Bess${clock}`)
   })
 })
 
@@ -140,11 +166,116 @@ describe('buildParentTimelineRows', () => {
     expect(rows.map((row) => row.kind)).toEqual(['period_end'])
     expect(rows[0]).toMatchObject({ label: '1st half ended' })
   })
+
+  it('collapses a two-player positional swap into one line', () => {
+    const rows = buildParentTimelineRows([
+      event({
+        id: 'sw-1',
+        eventType: 'position_change',
+        eventNotes: 'LCM→ST',
+        playerName: 'Ada',
+        createdAt: '2026-09-02T18:00:00.000Z',
+      }),
+      event({
+        id: 'sw-2',
+        eventType: 'position_change',
+        eventNotes: 'ST→LCM',
+        playerId: 'p2',
+        playerName: 'Bess',
+        createdAt: '2026-09-02T18:00:00.200Z',
+      }),
+    ])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      kind: 'switch',
+      label: 'Switched Position: Ada LCM ST and Bess ST LCM',
+    })
+    expect(formatParentTimelineRowCopy(rows[0]!, 'Rivals').title).toBe(
+      '1H Switched Position: Ada LCM ST and Bess ST LCM · 2:00 PM',
+    )
+  })
+
+  it('prefixes first-half lineup and highlights kickoff, goals, and half end', () => {
+    const rows = buildParentTimelineRows(
+      [
+        event({
+          id: 'lu',
+          eventType: 'sub_in',
+          timestamp: 0,
+          eventNotes: startingLineupNote('GK'),
+          createdAt: '2026-09-02T18:00:00.000Z',
+        }),
+        event({
+          id: 'g',
+          eventType: 'goal',
+          timestamp: 90,
+          createdAt: '2026-09-02T18:02:00.000Z',
+        }),
+        event({
+          id: 'end',
+          eventType: 'sub_out',
+          timestamp: 400,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-02T18:10:00.000Z',
+        }),
+      ],
+      { totalPeriods: 2 },
+    )
+    const lineup = rows.find((row) => row.kind === 'lineup')!
+    const goal = rows.find((row) => row.kind === 'event')!
+    const ended = rows.find((row) => row.kind === 'period_end')!
+    expect(formatParentTimelineRowCopy(lineup, 'Rivals').title).toBe('1H lineup · 2:00 PM')
+    expect(formatParentTimelineRowCopy(ended, 'Rivals').title).toBe('1H 1st half ended · 2:10 PM')
+    expect(isParentTimelineHighlight(lineup)).toBe(true)
+    expect(isParentTimelineHighlight(goal)).toBe(true)
+    expect(isParentTimelineHighlight(ended)).toBe(true)
+  })
 })
 
 describe('formatParentPeriodEndedLabel', () => {
   it('uses half copy for 2-period matches', () => {
     expect(formatParentPeriodEndedLabel(1, 2)).toBe('1st half ended')
     expect(formatParentPeriodEndedLabel(2, 2)).toBe('2nd half ended')
+  })
+})
+
+describe('parentLiveEventsFromMatchEvents', () => {
+  it('maps staff match events onto the Parent Hub feed shape', () => {
+    const rows = parentLiveEventsFromMatchEvents(
+      [
+        {
+          id: 'g1',
+          match_id: 'm1',
+          player_id: 'p1',
+          event_type: 'goal',
+          timestamp: 90,
+          event_notes: null,
+          assist_player_id: 'p2',
+          is_pk: false,
+          created_at: '2026-09-02T18:00:00.000Z',
+        },
+        {
+          id: 'noise',
+          match_id: 'm1',
+          player_id: 'p1',
+          event_type: 'formation_change',
+          timestamp: 40,
+          event_notes: '4-3-3',
+          assist_player_id: null,
+          created_at: '2026-09-02T18:00:01.000Z',
+        },
+      ],
+      [
+        { id: 'p1', firstName: 'Ada', lastName: 'Lovelace', number: 7 },
+        { id: 'p2', firstName: 'Bess', lastName: 'Coleman', number: 10 },
+      ],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      eventType: 'goal',
+      playerName: 'Ada Lovelace',
+      assistPlayerName: 'Bess Coleman',
+      jersey: 7,
+    })
   })
 })

@@ -52,7 +52,16 @@ import {
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
+import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
+import {
+  parentLiveEventsFromMatchEvents,
+  toParentHubPlayers,
+} from '@/lib/parent-hub'
+import {
+  ParentMatchRecapView,
+  RecapPerspectiveTabs,
+} from '@/components/ParentMatchRecapView'
 import { ENABLE_POSITIONAL_RECAP_RATINGS } from '@/lib/feature-flags'
 import {
   PLAYER_RATINGS,
@@ -173,6 +182,7 @@ export function PostGameRecap({
   const [matchRecord, setMatchRecord] = useState<DbMatch | null>(null)
   const [matchEvents, setMatchEvents] = useState<DbMatchEvent[]>([])
   const [parentRecapOpen, setParentRecapOpen] = useState(false)
+  const [recapView, setRecapView] = useState<'coach' | 'hub'>('coach')
   const [qualitativeContext, setQualitativeContext] = useState<QualitativeContext>(
     EMPTY_QUALITATIVE_CONTEXT,
   )
@@ -633,6 +643,12 @@ export function PostGameRecap({
     pk_winner_is_us: pkWinnerIsUs,
   })
   const deleteMatchLabel = `${teamName} ${scoreLabel} ${formatOpponentPrefix(locationType)} ${opponent.trim() || 'Opponent'}`
+  const hubWhen = matchRecord ? formatMatchDisplayDateTime(matchRecord) : null
+  const hubEvents = useMemo(
+    () => parentLiveEventsFromMatchEvents(matchEvents, players),
+    [matchEvents, players],
+  )
+  const hubPlayers = useMemo(() => toParentHubPlayers(players), [players])
 
   if (loading) {
     return (
@@ -721,6 +737,37 @@ export function PostGameRecap({
           {onHome ? <BackToHomeButton onClick={() => void handleExit()} /> : null}
         </header>
 
+        <RecapPerspectiveTabs value={recapView} onChange={setRecapView} />
+
+        {recapView === 'hub' ? (
+          <div className="space-y-3">
+            <p className="rounded-xl border border-neon/30 bg-neon/10 px-3 py-2 text-xs font-semibold text-foreground">
+              This is the Team Hub recap families see — player minutes, box score, and the match
+              timeline.
+            </p>
+            <ParentMatchRecapView
+              events={hubEvents}
+              players={hubPlayers}
+              matchId={matchId}
+              halfLengthMinutes={halfLengthMinutes}
+              totalPeriods={matchRecord?.total_periods}
+              opponent={opponent}
+              teamName={teamName}
+              homeScore={homeScore}
+              awayScore={awayScore}
+              homePkScore={homePkScore}
+              awayPkScore={awayPkScore}
+              pkWinnerIsUs={pkWinnerIsUs}
+              dateLabel={hubWhen?.dateLabel}
+              timeLabel={hubWhen?.timeLabel}
+              recap={parentFacingRecap}
+              heading="Parent Hub"
+            />
+          </div>
+        ) : null}
+
+        {recapView === 'coach' ? (
+        <>
         <button
           type="button"
           onClick={() => setParentRecapOpen(true)}
@@ -998,6 +1045,8 @@ export function PostGameRecap({
             })}
           </ul>
         </section>
+        </>
+        ) : null}
 
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className={`${APP_CONTAINER} flex flex-col gap-2`}>

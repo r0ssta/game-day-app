@@ -43,6 +43,7 @@ const IMPACT_RING: Record<Impact, string> = {
 export type PositionReassignUpdate = {
   playerId: string
   position: string
+  previousPosition?: string
 }
 
 type LiveTacticalPitchProps = {
@@ -462,14 +463,20 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         if (!sourceSlot) return
 
         const targetPosition = resolveSlotLabel(targetSlot, slotLabelOverrides)
+        const sourcePosition = resolveSlotLabel(sourceSlot, slotLabelOverrides)
         const updates: PositionReassignUpdate[] = [
-          { playerId: movedPlayerId, position: targetPosition },
+          {
+            playerId: movedPlayerId,
+            position: targetPosition,
+            previousPosition: sourcePosition,
+          },
         ]
 
         if (occupantId && occupantId !== movedPlayerId) {
           updates.push({
             playerId: occupantId,
-            position: resolveSlotLabel(sourceSlot, slotLabelOverrides),
+            position: sourcePosition,
+            previousPosition: targetPosition,
           })
         }
 

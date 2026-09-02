@@ -134,6 +134,28 @@ export function applySlotAssignmentPositions(
   })
 }
 
+/** Who is on the pitch at kickoff — slot occupants beat stale player flags. */
+export function applyKickoffSlotLineup(
+  players: MatchPlayer[],
+  slotAssignments: Record<string, string | null>,
+  formationId: string,
+  slotLabelOverrides?: Record<string, string> | null,
+  teamFormat?: TeamFormat,
+): MatchPlayer[] {
+  const onFieldIds = new Set(
+    Object.values(slotAssignments).filter((id): id is string => Boolean(id)),
+  )
+  return applySlotAssignmentPositions(
+    players,
+    slotAssignments,
+    formationId,
+    slotLabelOverrides,
+    teamFormat,
+  ).map((player) =>
+    player.attending ? { ...player, isOnField: onFieldIds.has(player.id) } : player,
+  )
+}
+
 export function applySubstitution(
   players: MatchPlayer[],
   benchId: string,

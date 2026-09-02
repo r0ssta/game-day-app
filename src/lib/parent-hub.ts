@@ -1,6 +1,7 @@
 import {
   isPeriodEndSubEvent,
   isStartingLineupEvent,
+  parsePositionSwitchNote,
   parseStartingLineupPosition,
   parseTacticalPositionNote,
 } from '@/lib/match-event-notes'
@@ -11,6 +12,7 @@ import {
   isStandalonePwa,
   readRememberedParentHubSlug,
 } from '@/lib/parent-hub-pwa'
+import { formatPlayerFullName } from '@/lib/player-names'
 import { ParentHubPayloadSchema } from '@/schemas'
 import { parseDbRow } from '@/lib/zod-parse'
 import {
@@ -787,6 +789,32 @@ export type ParentTimelineRow =
       periodIndex: number
       label: string
     }
+  | {
+      kind: 'switch'
+      id: string
+      sortAt: string
+      periodIndex: number
+      label: string
+    }
+
+const PARENT_HUB_TIME_ZONE = 'America/New_York'
+const POSITION_SWITCH_GROUP_MS = 2500
+
+export function formatParentHubWallClock(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: PARENT_HUB_TIME_ZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date)
+}
+
+export function withParentHubWallClock(line: string, iso: string): string {
+  const clock = formatParentHubWallClock(iso)
+  return clock ? `${line} · ${clock}` : line
+}
 
 export function formatParentPeriodEndedLabel(
   periodIndex: number,
@@ -854,6 +882,56 @@ export function hidePairedParentShots(events: ParentLiveEvent[]): ParentLiveEven
   return events.filter((event) => !hide.has(event.id))
 }
 
+function createdAtMs(iso: string): number {
+  const value = new Date(iso).getTime()
+  return Number.isNaN(value) ? 0 : value
+}
+
+function formatPositionSwitchPart(event: ParentLiveEvent): string {
+  const name = event.playerName?.trim() || 'Player'
+  const parsed = parsePositionSwitchNote(event.eventNotes)
+  if (parsed?.from && parsed.to) return `${name} ${parsed.from} ${parsed.to}`
+  if (parsed?.to) return `${name} ${parsed.to}`
+  return name
+}
+
+export function formatPositionSwitchLabel(events: ParentLiveEvent[]): string {
+  return `Switched Position: ${events.map(formatPositionSwitchPart).join(' and ')}`
+}
+
+function synthesizePositionSwitchRows(
+  events: ParentLiveEvent[],
+  periodById: Map<string, number>,
+): { rows: Extract<ParentTimelineRow, { kind: 'switch' }>[]; usedIds: Set<string> } {
+  const usedIds = new Set<string>()
+  const rows: Extract<ParentTimelineRow, { kind: 'switch' }>[] = []
+  const changes = events.filter((event) => event.eventType === 'position_change')
+
+  for (const event of changes) {
+    if (usedIds.has(event.id)) continue
+    const anchor = createdAtMs(event.createdAt)
+    const batch = changes.filter((candidate) => {
+      if (usedIds.has(candidate.id)) return false
+      if (candidate.timestamp !== event.timestamp) return false
+      return Math.abs(createdAtMs(candidate.createdAt) - anchor) <= POSITION_SWITCH_GROUP_MS
+    })
+    for (const member of batch) usedIds.add(member.id)
+    const chrono = [...batch].sort(
+      (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+    )
+    const newest = chrono[chrono.length - 1]!
+    rows.push({
+      kind: 'switch',
+      id: `switch-${chrono[0]!.id}`,
+      sortAt: newest.createdAt,
+      periodIndex: periodById.get(event.id) ?? 1,
+      label: formatPositionSwitchLabel(chrono),
+    })
+  }
+
+  return { rows, usedIds }
+}
+
 /**
  * Collapse per-player starting-lineup `sub_in` rows into one timeline card per
  * period so parents see a single "Starting lineup" notice, not nine.
@@ -865,6 +943,7 @@ export function buildParentTimelineRows(
   const filtered = hidePairedParentShots(filterParentLiveTimeline(events))
   const periodById = assignParentEventPeriodIndexes(events)
   const lineupByPeriod = new Map<number, ParentLiveEvent[]>()
+  const switches = synthesizePositionSwitchRows(filtered, periodById)
   const other: ParentLiveEvent[] = []
 
   for (const event of filtered) {
@@ -875,6 +954,7 @@ export function buildParentTimelineRows(
       lineupByPeriod.set(period, bucket)
       continue
     }
+    if (switches.usedIds.has(event.id)) continue
     other.push(event)
   }
 
@@ -891,7 +971,7 @@ export function buildParentTimelineRows(
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     )
     const newest = chrono[chrono.length - 1]!
-    const label = periodIndex > 1 ? `${periodIndex}H lineup` : 'Starting lineup'
+    const label = `${periodIndex}H lineup`
     rows.push({
       kind: 'lineup',
       id: `lineup-${periodIndex}-${chrono[0]!.id}`,
@@ -902,6 +982,7 @@ export function buildParentTimelineRows(
     })
   }
 
+  rows.push(...switches.rows)
   rows.push(...synthesizePeriodEndRows(events, options?.totalPeriods))
 
   return rows.sort(
@@ -915,55 +996,107 @@ export function formatParentEventLine(
   options?: { periodIndex?: number; teamName?: string },
 ): string {
   const periodIndex = options?.periodIndex ?? 1
-  const periodPrefix = periodIndex > 1 ? `${periodIndex}H ` : ''
+  const periodPrefix = `${periodIndex}H `
   const minute = `${periodPrefix}${Math.max(0, Math.floor(event.timestamp / 60))}'`
   const name = event.playerName?.trim() || 'Player'
   const opponentLabel = opponent.trim() || 'Opponent'
   const teamLabel = options?.teamName?.trim() || 'Home'
   const position = parseTacticalPositionNote(event.eventNotes)
 
+  let line: string
   if (isStartingLineupEvent(event.eventType, event.eventNotes, event.timestamp)) {
     const lineupPosition = parseStartingLineupPosition(event.eventNotes)
-    const lineupLabel = periodIndex > 1 ? `${periodIndex}H lineup` : 'Starting lineup'
-    return lineupPosition
+    const lineupLabel = `${periodIndex}H lineup`
+    line = lineupPosition
       ? `${lineupLabel} · ${name} · ${lineupPosition}`
       : `${lineupLabel} · ${name}`
+  } else {
+    switch (event.eventType) {
+      case 'goal':
+        line = `${minute} GOAL · ${name}${event.isPk ? ' (PK)' : ''}${
+          event.assistPlayerName ? ` · Assist by ${event.assistPlayerName}` : ''
+        }`
+        break
+      case 'opponent_goal':
+        line = `${minute} ${opponentLabel} Goal${event.isPk ? ' (PK)' : ''}`
+        break
+      case 'yellow_card':
+        line = `${minute} Yellow · ${name}`
+        break
+      case 'red_card':
+        line = `${minute} Red · ${name}`
+        break
+      case 'sub_in':
+        line = position
+          ? `${minute} Sub ON · ${name} · ${position}`
+          : `${minute} Sub ON · ${name}`
+        break
+      case 'sub_out':
+        line = `${minute} Sub OFF · ${name}`
+        break
+      case 'position_change':
+        line = `${minute} ${formatPositionSwitchLabel([event])}`
+        break
+      case 'shot_home':
+        line = `${minute} Shot · ${teamLabel}`
+        break
+      case 'shot_away':
+        line = `${minute} Shot · ${opponentLabel}`
+        break
+      case 'save_home': {
+        const gkName = event.playerName?.trim()
+        line = gkName
+          ? `${minute} Shot by ${opponentLabel}, Save by ${gkName}`
+          : `${minute} Save by ${teamLabel}`
+        break
+      }
+      case 'save_away':
+        line = `${minute} Save by ${opponentLabel}`
+        break
+      case 'corner_home':
+        line = `${minute} Corner · ${teamLabel}`
+        break
+      case 'corner_away':
+        line = `${minute} Corner · ${opponentLabel}`
+        break
+      default:
+        line = `${minute} ${event.eventType}`
+    }
   }
 
-  switch (event.eventType) {
-    case 'goal':
-      return `${minute} GOAL · ${name}${event.isPk ? ' (PK)' : ''}${
-        event.assistPlayerName ? ` · assist ${event.assistPlayerName}` : ''
-      }`
-    case 'opponent_goal':
-      return `${minute} ${opponentLabel} goal${event.isPk ? ' (PK)' : ''}`
-    case 'yellow_card':
-      return `${minute} Yellow · ${name}`
-    case 'red_card':
-      return `${minute} Red · ${name}`
-    case 'sub_in':
-      return position ? `${minute} Sub ON · ${name} · ${position}` : `${minute} Sub ON · ${name}`
-    case 'sub_out':
-      return `${minute} Sub OFF · ${name}`
-    case 'position_change':
-      return position
-        ? `${minute} Position · ${name} · ${position}`
-        : `${minute} Position · ${name}`
-    case 'shot_home':
-      return `${minute} Shot · ${teamLabel}`
-    case 'shot_away':
-      return `${minute} Shot · ${opponentLabel}`
-    case 'save_home':
-      return `${minute} Shot by ${opponentLabel}, save`
-    case 'save_away':
-      return `${minute} Shot by ${teamLabel}, save`
-    case 'corner_home':
-      return `${minute} Corner · ${teamLabel}`
-    case 'corner_away':
-      return `${minute} Corner · ${opponentLabel}`
-    default:
-      return `${minute} ${event.eventType}`
+  return withParentHubWallClock(line, event.createdAt)
+}
+
+export function formatParentTimelineRowCopy(
+  row: ParentTimelineRow,
+  opponent: string,
+  options?: { teamName?: string },
+): { title: string; detail?: string } {
+  const periodPrefix = `${row.periodIndex}H `
+  if (row.kind === 'lineup') {
+    return {
+      title: withParentHubWallClock(row.label, row.sortAt),
+      detail: row.players.join(' · '),
+    }
   }
+  if (row.kind === 'period_end') {
+    return { title: withParentHubWallClock(`${periodPrefix}${row.label}`, row.sortAt) }
+  }
+  if (row.kind === 'switch') {
+    return { title: withParentHubWallClock(`${periodPrefix}${row.label}`, row.sortAt) }
+  }
+  return {
+    title: formatParentEventLine(row.event, opponent, {
+      periodIndex: row.periodIndex,
+      teamName: options?.teamName,
+    }),
+  }
+}
+
+export function isParentTimelineHighlight(row: ParentTimelineRow): boolean {
+  if (row.kind === 'lineup' || row.kind === 'period_end') return true
+  if (row.kind !== 'event') return false
+  return row.event.eventType === 'goal' || row.event.eventType === 'opponent_goal'
 }
 
 /** Event types shown on the public Parent Hub live timeline. */
@@ -1013,6 +1146,81 @@ export function isParentHubTrackedLiveEvent(
 ): boolean {
   if (isPeriodEndSubEvent(event.eventType, event.eventNotes)) return true
   return isParentHubLiveEventType(event.eventType)
+}
+
+type MatchEventLike = {
+  id: string
+  match_id: string
+  player_id: string | null
+  event_type: string
+  timestamp: number
+  event_notes: string | null
+  assist_player_id: string | null
+  is_pk?: boolean | null
+  created_at: string
+}
+
+type NamedPlayerLike = {
+  id: string
+  firstName: string
+  lastName: string
+  number: number | null
+}
+
+/** Staff recap → the same event shape Parent Hub uses (no public RPC). */
+export function parentLiveEventsFromMatchEvents(
+  events: MatchEventLike[],
+  players: NamedPlayerLike[],
+): ParentLiveEvent[] {
+  const byId = new Map(players.map((player) => [player.id, player] as const))
+  const nameOf = (playerId: string | null) => {
+    if (!playerId) return null
+    const player = byId.get(playerId)
+    return player ? formatPlayerFullName(player.firstName, player.lastName) : null
+  }
+
+  return events
+    .filter((event) => {
+      const tracked = isParentHubTrackedLiveEvent({
+        eventType: event.event_type,
+        eventNotes: event.event_notes,
+      })
+      if (!tracked) return false
+      if (
+        event.event_type === 'sub_out' &&
+        event.timestamp <= 0 &&
+        !isPeriodEndSubEvent(event.event_type, event.event_notes)
+      ) {
+        return false
+      }
+      return true
+    })
+    .map((event) => {
+      const player = event.player_id ? byId.get(event.player_id) : undefined
+      return {
+        id: event.id,
+        matchId: event.match_id,
+        playerId: event.player_id,
+        playerName: nameOf(event.player_id),
+        jersey: player?.number ?? null,
+        eventType: event.event_type,
+        timestamp: event.timestamp,
+        eventNotes: event.event_notes,
+        isPk: event.is_pk ?? false,
+        assistPlayerId: event.assist_player_id,
+        assistPlayerName: nameOf(event.assist_player_id),
+        createdAt: event.created_at,
+      }
+    })
+}
+
+export function toParentHubPlayers(players: NamedPlayerLike[]): ParentHubPlayer[] {
+  return players.map((player) => ({
+    id: player.id,
+    firstName: player.firstName,
+    lastName: player.lastName,
+    number: player.number,
+  }))
 }
 
 /**

@@ -160,6 +160,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // kind === 'start'
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      if (input.insertStarterEvents && input.period <= 1) {
+        const { data: existing, error: existingError } = await auth.supabase
+          .from('match_events')
+          .select('id, event_notes')
+          .eq('match_id', input.matchId)
+          .eq('event_type', 'sub_in')
+          .eq('timestamp', 0)
+        if (existingError) throw existingError
+        const staleIds = (existing ?? [])
+          .filter((row) => {
+            const notes = String(row.event_notes ?? '').trim()
+            return notes.startsWith(STARTING_LINEUP_NOTE_PREFIX) || notes === 'starting_lineup'
+          })
+          .map((row) => row.id as string)
+        if (staleIds.length > 0) {
+          await tx.deleteEvents(staleIds)
+        }
+      }
+
       if (input.insertStarterEvents && input.starters.length > 0) {
         await tx.insertEvents(
           input.starters.map((starter) => ({
@@ -207,7 +226,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               .map((row) => row.player_id as string)
               .filter((playerId) => playerId && !starterIds.has(playerId))
               .map((playerId) =>
-                tx.updatePlayerStats(playerId, { is_first_half_starter: false }),
+                tx.updatePlayerStats(playerId, {
+                  is_first_half_starter: false,
+                  match_status: 'bench',
+                  subbed_in_at: null,
+                }),
               ),
           )
         }

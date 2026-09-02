@@ -39,10 +39,46 @@ export function isPeriodEndSubEvent(
   return eventType === 'sub_out' && (notes ?? '').trim() === PERIOD_END_NOTE
 }
 
-/** Mid-game sub / position-change notes store the tactical slot (ST, LCB, …). */
-export function parseTacticalPositionNote(notes: string | null | undefined): string | null {
+const POSITION_SWITCH_SEPARATOR = '→'
+
+/** Persist a positional move as `LCM→ST` so the hub can show previous and new. */
+export function positionSwitchNote(
+  previousPosition: string | null | undefined,
+  nextPosition: string | null | undefined,
+): string {
+  const to = (nextPosition ?? '').trim()
+  const from = (previousPosition ?? '').trim()
+  if (from && to && from !== to) return `${from}${POSITION_SWITCH_SEPARATOR}${to}`
+  return to
+}
+
+export function parsePositionSwitchNote(
+  notes: string | null | undefined,
+): { from: string | null; to: string } | null {
   const raw = (notes ?? '').trim()
   if (!raw || raw === PERIOD_END_NOTE || raw === 'starting_lineup') return null
   if (raw.startsWith(STARTING_LINEUP_NOTE_PREFIX)) return null
-  return raw
+  const arrow = raw.match(/^(.+?)\s*(?:→|->)\s*(.+)$/)
+  if (arrow) {
+    const from = arrow[1]!.trim()
+    const to = arrow[2]!.trim()
+    if (!to) return null
+    return { from: from || null, to }
+  }
+  return { from: null, to: raw }
+}
+
+/** Mid-game sub / position-change notes store the tactical slot (ST, LCB, …). */
+export function parseTacticalPositionNote(notes: string | null | undefined): string | null {
+  return parsePositionSwitchNote(notes)?.to ?? null
+}
+
+/** Pitch slot for recap minutes — strips `starting_lineup|` and `LCM→ST`. */
+export function cleanRecapPositionNote(notes: string | null | undefined): string | null {
+  const raw = (notes ?? '').trim()
+  if (!raw || raw === PERIOD_END_NOTE || raw === 'starting_lineup') return null
+  if (raw.startsWith(STARTING_LINEUP_NOTE_PREFIX)) {
+    return parseStartingLineupPosition(raw)
+  }
+  return parsePositionSwitchNote(raw)?.to ?? null
 }

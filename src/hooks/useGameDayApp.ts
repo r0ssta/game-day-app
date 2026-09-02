@@ -54,7 +54,6 @@ import {
   deleteMatchRecord,
   deleteLineupPreset,
   dbPlayerToRoster,
-  ensureStartingLineupEvents,
   fetchActiveMatch,
   fetchMatchBundleById,
   promoteScheduledMatchToLive,
@@ -1618,7 +1617,6 @@ export function useGameDayApp() {
           input.matchPositions,
           input.firstHalfFormation,
           input.absentPlayers ?? [],
-          { writeStartingLineupEvents: false },
         )
 
         await saveQualitativeContext(match.id, {
@@ -1696,7 +1694,6 @@ export function useGameDayApp() {
         normalizeTeamFormat(team.format),
       )
 
-      await ensureStartingLineupEvents(match.id, matchPlayers, formation)
       const halfLen = match.period_length ?? match.half_length
       const clock = initialHalfClock(halfLen)
       await syncMatchRecord(match.id, {

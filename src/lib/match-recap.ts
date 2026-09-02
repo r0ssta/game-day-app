@@ -1,3 +1,4 @@
+import { cleanRecapPositionNote } from '@/lib/match-event-notes'
 import { normalizeRecapPosition } from '@/lib/positions'
 import { formatOpponentWithVenue } from '@/lib/match-location'
 import { formatPlayerFullName } from '@/lib/player-names'
@@ -94,7 +95,8 @@ export function buildAbsoluteMatchTimeline(
 }
 
 function addRecapPosition(positions: string[], rawPosition: string | null | undefined) {
-  const position = normalizeRecapPosition(rawPosition?.trim() ?? '')
+  const cleaned = cleanRecapPositionNote(rawPosition) ?? rawPosition?.trim() ?? ''
+  const position = normalizeRecapPosition(cleaned)
   if (!position || position === '—') return
   if (!positions.includes(position)) positions.push(position)
 }

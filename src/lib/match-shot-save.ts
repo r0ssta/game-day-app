@@ -71,7 +71,7 @@ export function aggregateTeamShotSaveTotals(
   return totals
 }
 
-function isGoalkeeperPosition(position: string | null | undefined): boolean {
+export function isGoalkeeperPosition(position: string | null | undefined): boolean {
   if (!position) return false
   const normalized = position.trim().toUpperCase()
   return (
@@ -106,4 +106,18 @@ export function hasTeamShotSaveTotals(totals: TeamShotSaveTotals): boolean {
 
 export function formatTeamShotSaveLine(totals: TeamShotSaveTotals): string {
   return `Shots ${totals.homeShots}–${totals.awayShots} · Saves ${totals.homeSaves}–${totals.awaySaves} · Corners ${totals.homeCorners}–${totals.awayCorners}`
+}
+
+export type NamedTeamBoxScoreRow = {
+  label: string
+  us: number
+  them: number
+}
+
+export function namedTeamBoxScoreRows(totals: TeamShotSaveTotals): NamedTeamBoxScoreRow[] {
+  return [
+    { label: 'Shots', us: totals.homeShots, them: totals.awayShots },
+    { label: 'Saves', us: totals.homeSaves, them: totals.awaySaves },
+    { label: 'Corners', us: totals.homeCorners, them: totals.awayCorners },
+  ]
 }

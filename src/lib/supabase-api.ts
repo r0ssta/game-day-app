@@ -13,7 +13,6 @@ import { supabase } from '@/supabaseClient'
 import { createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso, formatMatchDisplayDateTime } from '@/lib/match-schedule'
-import { startingLineupNote } from '@/lib/match-event-notes'
 import type { LocationType } from '@/lib/match-location'
 import {
   addedTimeSeconds,
@@ -1143,11 +1142,9 @@ export async function createMatchStats(
   attendingPlayers: RosterPlayer[],
   firstHalfStarterIds: string[],
   matchPositions: Record<string, string>,
-  formation: string,
+  _formation: string,
   absentPlayers: RosterPlayer[] = [],
-  options?: { writeStartingLineupEvents?: boolean },
 ): Promise<MatchPlayer[]> {
-  const writeStartingLineupEvents = options?.writeStartingLineupEvents !== false
   const firstSet = new Set(firstHalfStarterIds)
   const attendingIds = new Set(attendingPlayers.map((player) => player.id))
 
@@ -1181,55 +1178,8 @@ export async function createMatchStats(
     if (error) throw error
   }
 
-  const starterEvents = matchPlayers
-    .filter((p) => p.attending && p.isOnField)
-    .map((p) =>
-      matchEventToRow({
-        matchId,
-        playerId: p.id,
-        eventType: 'sub_in',
-        timestamp: 0,
-        formation,
-        eventNotes: startingLineupNote(p.matchPosition),
-      }),
-    )
-
-  if (writeStartingLineupEvents) {
-    await insertMatchEventRows(starterEvents)
-  }
-
-  // Live match state only needs attending players on the pitch/bench.
+  // Kickoff lineup events are written when staff taps Start half, not here.
   return matchPlayers.filter((player) => player.attending)
-}
-
-/** Persist kickoff starter events for a match that was preloaded without them. */
-export async function ensureStartingLineupEvents(
-  matchId: string,
-  players: MatchPlayer[],
-  formation: string,
-): Promise<void> {
-  const { count, error } = await supabase
-    .from('match_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('match_id', matchId)
-    .eq('event_type', 'sub_in')
-    .eq('timestamp', 0)
-  if (error) throw error
-  if ((count ?? 0) > 0) return
-
-  const starterEvents = players
-    .filter((p) => p.attending && p.isOnField)
-    .map((p) =>
-      matchEventToRow({
-        matchId,
-        playerId: p.id,
-        eventType: 'sub_in',
-        timestamp: 0,
-        formation,
-        eventNotes: startingLineupNote(p.matchPosition),
-      }),
-    )
-  await insertMatchEventRows(starterEvents)
 }
 
 export async function promoteScheduledMatchToLive(matchId: string): Promise<DbMatch> {
@@ -1237,7 +1187,7 @@ export async function promoteScheduledMatchToLive(matchId: string): Promise<DbMa
     .from('matches')
     .update({
       status: 'live',
-      period_clock_started: true,
+      period_clock_started: false,
       current_period: 1,
       period: '1st',
     })

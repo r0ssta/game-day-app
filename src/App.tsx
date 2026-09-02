@@ -74,6 +74,7 @@ import {
   shareParentHubLink,
 } from '@/lib/parent-hub'
 import {
+  applyKickoffSlotLineup,
   applySubIn,
   applySubOut,
   applySubstitution,
@@ -2859,7 +2860,19 @@ export default function App() {
   )
 
   const handleStartFirstHalf = useCallback(() => {
-    const stamped = freezeFirstHalfStarters(stampAllOnField(players, seconds))
+    const assignments = livePitchRef.current?.getSlotAssignments()
+    const labelOverrides = livePitchRef.current?.getSlotLabelOverrides()
+    const kickoffPlayers =
+      assignments && hasSlotAssignments(assignments)
+        ? applyKickoffSlotLineup(
+            players,
+            assignments,
+            activeFormation,
+            labelOverrides,
+            activeTeamFormat,
+          )
+        : players
+    const stamped = freezeFirstHalfStarters(stampAllOnField(kickoffPlayers, seconds))
     setPlayers(stamped)
     setFirstHalfStarterIds(
       stamped.filter((player) => player.isFirstHalfStarter).map((player) => player.id),
@@ -2887,7 +2900,7 @@ export default function App() {
               teamName: matchTeamName.trim() || 'Home',
               opponent: matchOpponent,
               teamSlug: activeTeamSlug,
-              insertStarterEvents: false,
+              insertStarterEvents: true,
               starters: starters.map((p) => ({
                 playerId: p.id,
                 label: formatPlayerLabel(p, sidelineMap),
@@ -2932,6 +2945,7 @@ export default function App() {
     matchOpponent,
     activeTeamSlug,
     activeFormation,
+    activeTeamFormat,
     setToast,
     persistMatchClock,
     noteLocalMatchMutation,
@@ -3228,6 +3242,8 @@ export default function App() {
           : ''
       setToast(`Formation · ${nextLabel}${overflowNote}`)
 
+      if (!periodClockStarted) return
+
       void runOptimisticSync(
         async () => {
           assertMatchActionOk(
@@ -3265,6 +3281,7 @@ export default function App() {
       halfLengthMinutes,
       activeFormation,
       players,
+      periodClockStarted,
       setActiveFormation,
       setPlayers,
       runOptimisticSync,
@@ -3286,6 +3303,19 @@ export default function App() {
       const labels = updates.map((u) => u.position).join(' · ')
       setToast(`Position · ${labels}`)
 
+      if (!periodClockStarted) return
+
+      const positionUpdates = updates.map((update) => {
+        const previous =
+          update.previousPosition ??
+          previousPlayers.find((player) => player.id === update.playerId)?.matchPosition
+        return {
+          playerId: update.playerId,
+          position: update.position,
+          ...(previous ? { previousPosition: previous } : {}),
+        }
+      })
+
       void runOptimisticSync(
         async () => {
           assertMatchActionOk(
@@ -3294,7 +3324,7 @@ export default function App() {
               kind: 'reassign',
               timestamp: eventTimestamp,
               formation: activeFormation,
-              positionUpdates: updates,
+              positionUpdates,
               overflowPlayers: [],
             }),
           )
@@ -3306,7 +3336,16 @@ export default function App() {
         },
       )
     },
-    [matchId, seconds, halfLengthMinutes, activeFormation, players, setPlayers, runOptimisticSync],
+    [
+      matchId,
+      seconds,
+      halfLengthMinutes,
+      activeFormation,
+      players,
+      periodClockStarted,
+      setPlayers,
+      runOptimisticSync,
+    ],
   )
 
   const handleLiveSubIn = useCallback(
@@ -3330,6 +3369,8 @@ export default function App() {
       setPlayers(next)
       const label = formatPlayerLabel(benchPlayer, sidelineMap)
       setToast(`Sub in · ${label}`)
+
+      if (!periodClockStarted) return
 
       void runOptimisticSync(
         async () => {
@@ -3364,6 +3405,7 @@ export default function App() {
       halfLengthMinutes,
       activeFormation,
       maxFieldPlayers,
+      periodClockStarted,
       setPlayers,
       currentPeriod,
       totalPeriods,
@@ -3387,6 +3429,8 @@ export default function App() {
       setPlayers(next)
       const label = formatPlayerLabel(fieldPlayer, sidelineMap)
       setToast(`Sub out · ${label}`)
+
+      if (!periodClockStarted) return
 
       void runOptimisticSync(
         async () => {
@@ -3419,6 +3463,7 @@ export default function App() {
       seconds,
       halfLengthMinutes,
       activeFormation,
+      periodClockStarted,
       setPlayers,
       currentPeriod,
       totalPeriods,
@@ -3448,6 +3493,8 @@ export default function App() {
       const onLabel = formatPlayerLabel(benchPlayer, sidelineMap)
       const offLabel = formatPlayerLabel(fieldPlayer, sidelineMap)
       setToast(`Sub · ${onLabel} for ${offLabel}`)
+
+      if (!periodClockStarted) return
 
       void runOptimisticSync(
         async () => {
@@ -3484,6 +3531,7 @@ export default function App() {
       seconds,
       halfLengthMinutes,
       activeFormation,
+      periodClockStarted,
       setPlayers,
       currentPeriod,
       totalPeriods,

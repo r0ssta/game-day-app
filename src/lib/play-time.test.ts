@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MatchPlayer } from '@/types/match'
 import {
+  applyKickoffSlotLineup,
   applySubstitution,
   formatPlayingTimeBadge,
   freezeFirstHalfStarters,
@@ -68,6 +69,24 @@ describe('play-time', () => {
     expect(on?.isOnField).toBe(true)
     expect(on?.subbedInAt).toBe(1500)
     expect(getLiveSecondsPlayed(on!, 1200)).toBe(300)
+  })
+
+  it('uses the current pitch slots as the kickoff XI', () => {
+    const linedUp = applyKickoffSlotLineup(
+      [
+        player({ id: FIELD, isOnField: false, matchPosition: 'CM' }),
+        player({ id: BENCH, isOnField: true, matchPosition: 'ST', isFirstHalfStarter: true }),
+      ],
+      { gk: FIELD },
+      '2-3-1',
+      undefined,
+      '7v7',
+    )
+    expect(linedUp.find((row) => row.id === FIELD)).toMatchObject({
+      isOnField: true,
+      matchPosition: 'GK',
+    })
+    expect(linedUp.find((row) => row.id === BENCH)?.isOnField).toBe(false)
   })
 
   it('formats playing time as whole minutes', () => {
