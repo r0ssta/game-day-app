@@ -16,6 +16,7 @@ import {
   formatParentEventLine,
   isParentHubFinishedMatch,
   isParentHubLiveEventType,
+  isParentHubStaffPreviewRequest,
   shouldShowParentLiveEvent,
   type ParentHubMatch,
   type ParentHubPayload,
@@ -149,10 +150,10 @@ function LiveTab({
   hub: ParentHubPayload
   matches: ParentHubMatch[]
 }) {
-  const liveMatch = useMemo(
-    () => matches.find((m) => m.status === 'live') ?? null,
-    [matches],
-  )
+  const liveMatch = useMemo(() => {
+    const live = matches.filter((m) => m.status === 'live')
+    return live.find((m) => m.isTest) ?? live[0] ?? null
+  }, [matches])
   const nextScheduled = useMemo(() => {
     const upcoming = matches
       .filter((m) => m.status === 'scheduled')
@@ -176,7 +177,9 @@ function LiveTab({
 
     const loadEvents = async () => {
       try {
-        const rows = await fetchParentLiveEvents(liveMatch.id)
+        const rows = await fetchParentLiveEvents(liveMatch.id, {
+          includeTest: Boolean(liveMatch.isTest || hub.staffPreview),
+        })
         if (!cancelled) {
           setEvents(filterParentLiveTimeline(rows))
         }
@@ -299,7 +302,9 @@ function LiveTab({
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-neon/40 bg-neon/10 px-4 py-4">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-neon">Live</p>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-neon">
+          {liveMatchState.isTest ? 'Live · Test match' : 'Live'}
+        </p>
         <p className="mt-1 font-display text-2xl font-bold uppercase text-foreground">
           vs {liveMatchState.opponent || 'Opponent'}
         </p>
@@ -384,6 +389,7 @@ function ScheduleTab({
             <div className="min-w-0">
               <p className="truncate font-bold text-foreground">
                 vs {match.opponent || 'Opponent'}
+                {match.isTest ? ' · Test' : ''}
               </p>
               <p className="text-xs text-muted-foreground">
                 {when.dateLabel} · {when.timeLabel}
@@ -518,19 +524,21 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
     })
   }, [hub])
 
+  const staffPreviewRequested = isParentHubStaffPreviewRequest()
+
   const reload = useCallback(async () => {
-    const payload = await fetchParentHub(route)
+    const payload = await fetchParentHub(route, { includeTest: staffPreviewRequested })
     setHub(payload)
     // Canonicalize legacy UUID / query links to /hub/:slug once resolved.
     if (payload.teamSlug) {
       const canonical = `/hub/${encodeURIComponent(payload.teamSlug)}`
-      const pathMismatch = window.location.pathname !== canonical
-      const hasQuery = Boolean(window.location.search)
-      if (pathMismatch || hasQuery) {
-        window.history.replaceState(null, '', canonical)
+      const next = staffPreviewRequested ? `${canonical}?preview=1` : canonical
+      const current = `${window.location.pathname}${window.location.search}`
+      if (current !== next) {
+        window.history.replaceState(null, '', next)
       }
     }
-  }, [route])
+  }, [route, staffPreviewRequested])
 
   useEffect(() => {
     let cancelled = false
@@ -588,6 +596,13 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             </h1>
             <p className="text-sm text-muted-foreground">Live scores · schedule · match stats</p>
           </div>
+          {staffPreviewRequested ? (
+            <p className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-100">
+              {hub?.staffPreview
+                ? 'Staff preview — testing matches are visible only to you. Parents are not notified.'
+                : 'Staff preview — sign in as a coach on this team to see testing matches.'}
+            </p>
+          ) : null}
           {hub ? <EnableAlertsButton teamId={hub.teamId} players={hub.players} /> : null}
         </div>
       </header>

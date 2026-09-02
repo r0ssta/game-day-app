@@ -141,6 +141,7 @@ const ParentHubMatchSchema = z
     clock_seconds: z.number().catch(0),
     parent_facing_recap: z.string().nullable().catch(null),
     starters: z.array(ParentHubPlayerSchema).optional().catch([]),
+    isTest: z.boolean().catch(false),
   })
   .passthrough()
 
@@ -154,4 +155,5 @@ export const ParentHubPayloadSchema = z.object({
   logoUrl: z.string().nullable().catch(null),
   players: z.array(ParentHubPlayerSchema).catch([]),
   matches: z.array(ParentHubMatchSchema).catch([]),
+  staffPreview: z.boolean().catch(false),
 })

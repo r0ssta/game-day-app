@@ -69,7 +69,9 @@ export function ParentFinishedMatchDetail({
       setLoading(true)
       setLoadError(null)
       try {
-        const events = await fetchParentLiveEvents(match.id)
+        const events = await fetchParentLiveEvents(match.id, {
+          includeTest: Boolean(match.isTest),
+        })
         if (cancelled) return
         setRawEvents(events)
         setPlayerStats(

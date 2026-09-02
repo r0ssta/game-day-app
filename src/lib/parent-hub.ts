@@ -63,6 +63,8 @@ export type ParentHubMatch = {
   clock_seconds: number
   parent_facing_recap: string | null
   starters?: ParentHubPlayer[]
+  /** Present when staff preview included this testing match. */
+  isTest?: boolean
 }
 
 export type ParentHubPayload = {
@@ -74,6 +76,8 @@ export type ParentHubPayload = {
   logoUrl: string | null
   players: ParentHubPlayer[]
   matches: ParentHubMatch[]
+  /** True when the viewer is staff and test matches were included. */
+  staffPreview?: boolean
 }
 
 export type ParentHubRoute =
@@ -159,6 +163,15 @@ export function parseParentHubRoute(): ParentHubRoute | null {
 export function buildParentHubUrl(teamSlug: string): string {
   const slug = teamSlug.trim().toLowerCase()
   return `${window.location.origin}/hub/${encodeURIComponent(slug)}`
+}
+
+/** Staff-only preview of testing matches. Parents never see this URL’s extra data. */
+export function buildParentHubPreviewUrl(teamSlug: string): string {
+  return `${buildParentHubUrl(teamSlug)}?preview=1`
+}
+
+export function isParentHubStaffPreviewRequest(search = window.location.search): boolean {
+  return new URLSearchParams(search).get('preview') === '1'
 }
 
 /** Deep link when only the team id is known (push fallback). */
@@ -276,6 +289,7 @@ function normalizeParentHubPayload(data: unknown): ParentHubPayload {
     players: parsed.players ?? [],
     matches: (parsed.matches ?? []).map((match) => ({
       ...match,
+      isTest: Boolean(match.isTest),
       starters: Array.isArray(match.starters)
         ? match.starters.map((player) => ({
             id: player.id,
@@ -285,10 +299,35 @@ function normalizeParentHubPayload(data: unknown): ParentHubPayload {
           }))
         : [],
     })),
+    staffPreview: Boolean(parsed.staffPreview),
   }
 }
 
-export async function fetchParentHub(route: ParentHubRoute): Promise<ParentHubPayload> {
+export async function fetchParentHub(
+  route: ParentHubRoute,
+  options?: { includeTest?: boolean },
+): Promise<ParentHubPayload> {
+  const includeTest = Boolean(options?.includeTest)
+
+  // Never use the cached public /api/hub for staff preview — that response is
+  // shared with parents and must stay free of testing matches.
+  if (includeTest) {
+    if (route.kind === 'slug') {
+      const { data, error } = await supabase.rpc('get_parent_hub_by_slug', {
+        p_slug: route.slug,
+        p_include_test: true,
+      })
+      if (error) throw error
+      return normalizeParentHubPayload(data)
+    }
+    const { data, error } = await supabase.rpc('get_parent_hub', {
+      p_team_id: route.teamId,
+      p_include_test: true,
+    })
+    if (error) throw error
+    return normalizeParentHubPayload(data)
+  }
+
   if (route.kind === 'slug') {
     try {
       const response = await fetch(`/api/hub/${encodeURIComponent(route.slug)}`)
@@ -312,10 +351,16 @@ export async function fetchParentHub(route: ParentHubRoute): Promise<ParentHubPa
   return normalizeParentHubPayload(data)
 }
 
-export async function fetchParentLiveEvents(matchId: string): Promise<ParentLiveEvent[]> {
-  const { data, error } = await supabase.rpc('get_parent_live_events', {
-    p_match_id: matchId,
-  })
+export async function fetchParentLiveEvents(
+  matchId: string,
+  options?: { includeTest?: boolean },
+): Promise<ParentLiveEvent[]> {
+  const { data, error } = await supabase.rpc(
+    'get_parent_live_events',
+    options?.includeTest
+      ? { p_match_id: matchId, p_include_test: true }
+      : { p_match_id: matchId },
+  )
   if (error) throw error
   return Array.isArray(data) ? (data as ParentLiveEvent[]) : []
 }
