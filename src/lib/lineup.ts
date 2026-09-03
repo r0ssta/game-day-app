@@ -1,9 +1,6 @@
 import { getMaxFieldPlayersForFormat, type TeamFormat } from '@/lib/team-format'
 import type { SetupLineup } from '@/types/match'
 
-/** @deprecated Use getMaxFieldPlayersForFormat(teamFormat) instead */
-export const MAX_FIELD_PLAYERS = 9
-
 export function getMaxFieldPlayers(format: TeamFormat): number {
   return getMaxFieldPlayersForFormat(format)
 }

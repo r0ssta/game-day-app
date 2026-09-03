@@ -86,11 +86,8 @@ export const MatchSchema: z.ZodType<DbMatch> = z
   })
   .passthrough() as z.ZodType<DbMatch>
 
-/**
- * Post-match player evaluation (`match_reviews`) — 1–5 rating scale.
- * Alias: EvaluationSchema per product request.
- */
-export const EvaluationSchema: z.ZodType<DbMatchReview> = z
+/** Post-match player rating row from `public.match_reviews` (1–5 scale). */
+export const MatchReviewSchema: z.ZodType<DbMatchReview> = z
   .object({
     id: z.string().min(1),
     match_id: z.string().min(1),
@@ -103,13 +100,10 @@ export const EvaluationSchema: z.ZodType<DbMatchReview> = z
   })
   .passthrough() as z.ZodType<DbMatchReview>
 
-/** @deprecated Prefer EvaluationSchema — kept as a clear MatchReview alias. */
-export const MatchReviewSchema = EvaluationSchema
-
 export type Team = z.infer<typeof TeamSchema>
 export type Player = z.infer<typeof PlayerSchema>
 export type Match = z.infer<typeof MatchSchema>
-export type Evaluation = z.infer<typeof EvaluationSchema>
+export type MatchReview = z.infer<typeof MatchReviewSchema>
 
 const ParentHubPlayerSchema = z.object({
   id: z.string().min(1),

@@ -29,13 +29,16 @@ export type DbPlayer = {
   jersey: number | null
   age_group: string
   active_status: boolean
-  /** @deprecated Prefer match_stats.is_match_guest for match-day guests. */
+  /**
+   * Legacy players column. Match-day guests are `match_stats.is_match_guest`.
+   * Still present on club-pool rows; do not treat as the live-match guest flag.
+   */
   is_guest: boolean
   position: string
   primary_position: string | null
   secondary_position: string | null
   created_at: string
-  /** @deprecated Legacy column — may exist before name migration */
+  /** Legacy `players.name` column from before first/last split — read-only fallback. */
   name?: string
 }
 
@@ -112,7 +115,7 @@ export type DbMatch = {
 export type QualitativeContextJson = {
   executionScore?: number | null
   opponentTier?: string | null
-  /** @deprecated Legacy key — read-only */
+  /** Legacy qualitative-context key — read `opponentTier` instead. */
   oppositionStrength?: string | null
   endedOnTime?: boolean | null
   addedTimeSeconds?: number
@@ -177,6 +180,12 @@ export type DbMatchStat = {
   match_id: string
   player_id: string
   total_minutes: number
+  /**
+   * Legacy -1 / 0 / 1 field mirrored from the recap rating when a review is saved.
+   * Live match +/- impact still writes here; post-match 1–5 ratings live on
+   * `match_reviews.rating`. Do not treat this as the player rating or mutate it
+   * as a new feature surface — use `ratingToLegacyImpactScore` when syncing a recap.
+   */
   impact_score: number
   match_status: 'on-field' | 'bench' | 'absent'
   match_position: string

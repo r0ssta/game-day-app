@@ -43,10 +43,6 @@ type AuthContextValue = {
   getTeamRole: (teamId: string | null | undefined) => TeamRole | null
   canDeleteMatchesForTeam: (teamId: string | null | undefined) => boolean
   canUseSprocketForTeam: (teamId: string | null | undefined) => boolean
-  /** @deprecated Prefer canDeleteMatchesForTeam(activeTeamId) */
-  canDeleteMatches: boolean
-  /** @deprecated Prefer canUseSprocketForTeam(activeTeamId) */
-  canUseSprocketIntegration: boolean
   /** Send an email OTP (PWA-friendly; no magic-link redirect). */
   sendLoginOtp: (email: string) => Promise<void>
   /** Verify the email OTP and establish a session. */
@@ -305,9 +301,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getTeamRole,
       canDeleteMatchesForTeam,
       canUseSprocketForTeam,
-      // Legacy globals: directors only until caller passes a team id.
-      canDeleteMatches: canDeleteMatches(role, null),
-      canUseSprocketIntegration: canUseSprocketIntegration(role, null),
       sendLoginOtp,
       verifyLoginOtp,
       signOut,

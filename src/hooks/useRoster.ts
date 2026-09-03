@@ -342,14 +342,6 @@ export function useRoster({
     [selectedTeamId],
   )
 
-  /** @deprecated Prefer setTeamActive(teamId, false) */
-  const removeTeam = useCallback(
-    async (teamId: string) => {
-      await setTeamActive(teamId, false)
-    },
-    [setTeamActive],
-  )
-
   const updateTeamFormat = useCallback(
     async (format: TeamFormat) => {
       if (!selectedTeamId) throw new Error('Select a team first')
@@ -652,7 +644,6 @@ export function useRoster({
     updateTeamAgeGroup,
     updateTeamProfile,
     setTeamActive,
-    removeTeam,
     updateTeamFormat,
     addPlayer,
     addGuestFromPool,

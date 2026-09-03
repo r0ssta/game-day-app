@@ -166,7 +166,6 @@ export function useMatchState() {
     updateTeamAgeGroup,
     updateTeamProfile,
     setTeamActive,
-    removeTeam,
     updateTeamFormat,
     addPlayer: addPlayerToRoster,
     addGuestFromPool: addGuestToRoster,
@@ -1384,9 +1383,6 @@ export function useMatchState() {
     [releaseLocalClock],
   )
 
-  /** @deprecated Prefer enterIntermission — kept for call sites still using the old name. */
-  const enterHalftime = enterIntermission
-
   const setHalftimeStarter = useCallback((id: string, starts: boolean) => {
     setHalftimeSecondHalf((prev) => ({ ...prev, [id]: starts }))
   }, [])
@@ -1470,9 +1466,6 @@ export function useMatchState() {
       setPeriodClockStarted,
     ],
   )
-
-  /** @deprecated Prefer beginNextPeriod */
-  const beginSecondHalf = beginNextPeriod
 
   const finishGame = useCallback(
     async (
@@ -1709,9 +1702,6 @@ export function useMatchState() {
     setAppMode('recap')
   }, [applyMatchPeriodState])
 
-  /** @deprecated Use openMatchRecap */
-  const openPendingReviewRecap = openMatchRecap
-
   const endMatch = useCallback(async () => {
     if (matchId) {
       await completeMatch(matchId)
@@ -1798,15 +1788,12 @@ export function useMatchState() {
     setSetupSlotLabelOverrides,
     setupPitchKey,
     halftimePitchKey,
-    enterHalftime,
     enterIntermission,
-    beginSecondHalf,
     beginNextPeriod,
     finishGame,
     finalizePenaltyShootout,
     returnToHome,
     openMatchRecap,
-    openPendingReviewRecap,
     matchStatus,
     hasLiveMatch: matchStatus === 'live' && Boolean(matchId),
     hasPendingRecap: matchStatus === 'pending_review' && Boolean(matchId),
@@ -1874,7 +1861,6 @@ export function useMatchState() {
     createTeam,
     updateTeamProfile,
     setTeamActive,
-    removeTeam,
     addPlayer,
     addGuestFromPool,
     updatePlayer,

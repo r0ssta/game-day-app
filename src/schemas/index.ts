@@ -2,13 +2,12 @@ export {
   TeamSchema,
   PlayerSchema,
   MatchSchema,
-  EvaluationSchema,
   MatchReviewSchema,
   ParentHubPayloadSchema,
   type Team,
   type Player,
   type Match,
-  type Evaluation,
+  type MatchReview,
 } from '@/schemas/database'
 
 export {

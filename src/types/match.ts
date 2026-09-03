@@ -56,9 +56,6 @@ export type MatchPlayer = RosterPlayer & {
   isSentOff: boolean
 }
 
-/** @deprecated Use MatchPlayer in match context */
-export type Player = MatchPlayer
-
 export type MatchSetupConfig = {
   locationType: 'home' | 'away'
   tournamentGame: boolean

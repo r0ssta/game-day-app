@@ -25,7 +25,10 @@ export function legacyImpactScoreToRating(score: number): PlayerRating {
   return 3
 }
 
-/** Keep match_stats.impact_score (-1/0/1) roughly aligned when saving a recap rating. */
+/**
+ * Mirror a 1–5 recap rating onto `match_stats.impact_score` (-1/0/1).
+ * That column is legacy storage only — do not use it as the rating API.
+ */
 export function ratingToLegacyImpactScore(rating: PlayerRating): number {
   if (rating <= 2) return -1
   if (rating >= 4) return 1

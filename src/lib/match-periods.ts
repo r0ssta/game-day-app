@@ -1,6 +1,6 @@
 import type { MatchPeriod } from '@/types/match'
 import type { DbMatch } from '@/types/database'
-import { normalizeAgeGroup, type AgeGroup } from '@/lib/age-groups'
+import { normalizeAgeGroup } from '@/lib/age-groups'
 import type { TeamFormat } from '@/lib/team-format'
 
 export type TotalPeriods = 2 | 3
@@ -135,17 +135,6 @@ export function resolveMatchFormatDefaults(input: {
     totalPeriods: 3,
     periodLengthMinutes: defaultPeriodLengthMinutes(3),
   }
-}
-
-/** @deprecated Prefer resolveMatchFormatDefaults */
-export function resolveMatchFormatForTournament(
-  tournamentGame: boolean,
-  ageGroup?: AgeGroup | string | null,
-): {
-  totalPeriods: TotalPeriods
-  periodLengthMinutes: number
-} {
-  return resolveMatchFormatDefaults({ tournamentGame, ageGroup })
 }
 
 /** True when regulation has ended and the coach is on an intermission lineup screen. */

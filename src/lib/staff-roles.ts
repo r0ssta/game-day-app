@@ -14,9 +14,6 @@ export type AssignableAppRole = (typeof ASSIGNABLE_APP_ROLES)[number]
 export const TEAM_ROLES = ['head_coach', 'assistant_coach'] as const
 export type TeamRole = (typeof TEAM_ROLES)[number]
 
-/** @deprecated Use AppRole — kept for gradual rename of local vars. */
-export type StaffRole = AppRole
-
 export function isAppRole(value: unknown): value is AppRole {
   return typeof value === 'string' && (APP_ROLES as readonly string[]).includes(value)
 }
@@ -31,21 +28,6 @@ export function isAssignableAppRole(value: unknown): value is AssignableAppRole 
 
 export function isTeamRole(value: unknown): value is TeamRole {
   return typeof value === 'string' && (TEAM_ROLES as readonly string[]).includes(value)
-}
-
-/** @deprecated Use isAppRole */
-export function isStaffRole(value: unknown): value is AppRole {
-  return isAppRole(value)
-}
-
-/** @deprecated Use isActiveAppRole */
-export function isActiveStaffRole(value: unknown): value is ActiveAppRole {
-  return isActiveAppRole(value)
-}
-
-/** @deprecated Use isAssignableAppRole */
-export function isAssignableStaffRole(value: unknown): value is AssignableAppRole {
-  return isAssignableAppRole(value)
 }
 
 export function canAccessClubAdmin(appRole: AppRole | null | undefined): boolean {
@@ -98,14 +80,3 @@ export function formatTeamRoleLabel(role: TeamRole): string {
   }
 }
 
-/** @deprecated Use formatAppRoleLabel */
-export function formatStaffRoleLabel(role: AppRole): string {
-  return formatAppRoleLabel(role)
-}
-
-/** Legacy assignable union — maps old invite roles away from app roles. */
-export const ASSIGNABLE_STAFF_ROLES = ASSIGNABLE_APP_ROLES
-export type AssignableStaffRole = AssignableAppRole
-export const ACTIVE_STAFF_ROLES = ACTIVE_APP_ROLES
-export type ActiveStaffRole = ActiveAppRole
-export const STAFF_ROLES = APP_ROLES

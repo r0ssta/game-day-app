@@ -413,7 +413,7 @@ export function indexSavedReviews(
     player_id: string
     position?: string | null
     rating?: number | null
-    /** @deprecated Legacy column name before 1–5 migration */
+    /** Legacy match_reviews column name before the 1–5 `rating` migration. */
     impact_score?: number | null
     review_notes: string | null
   }>,

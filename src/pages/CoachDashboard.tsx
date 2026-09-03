@@ -270,7 +270,7 @@ export function CoachDashboard() {
     setSetupSlotLabelOverrides,
     setupPitchKey,
     halftimePitchKey,
-    enterHalftime,
+    enterIntermission,
     beginNextPeriod,
     finishGame,
     finalizePenaltyShootout,
@@ -1042,7 +1042,7 @@ export function CoachDashboard() {
     const endedPeriod = currentPeriod
     const endedFormation = activeFormation
 
-    const nextPlayers = await enterHalftime(seconds, slotAssignments, slotLabelOverrides)
+    const nextPlayers = await enterIntermission(seconds, slotAssignments, slotLabelOverrides)
     const onFieldPlayers = onFieldBefore.map((playerId) => {
       const player = nextPlayers.find((p) => p.id === playerId)
       return {
@@ -1089,7 +1089,7 @@ export function CoachDashboard() {
   }, [
     seconds,
     matchId,
-    enterHalftime,
+    enterIntermission,
     releaseLocalClock,
     currentPeriod,
     totalPeriods,

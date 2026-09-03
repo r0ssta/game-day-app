@@ -63,7 +63,7 @@ import {
 } from '@/lib/staff-roles'
 import { type AgeGroup, formatForAgeGroup } from '@/lib/age-groups'
 import {
-  EvaluationSchema,
+  MatchReviewSchema,
   MatchSchema,
   PlayerSchema,
   TeamSchema,
@@ -716,11 +716,6 @@ export async function setTeamActiveStatus(
     .single()
   if (error) throw error
   return data
-}
-
-/** @deprecated Prefer setTeamActiveStatus(teamId, false). Hard delete is disabled. */
-export async function deleteTeam(teamId: string): Promise<void> {
-  await setTeamActiveStatus(teamId, false)
 }
 
 export async function updateTeamPrimaryCoachName(
@@ -1450,11 +1445,6 @@ export async function saveInternalCoachNotes(matchId: string, internalCoachNotes
   throw error
 }
 
-/** @deprecated Use saveInternalCoachNotes */
-export async function saveCoachMatchSummary(matchId: string, coachSummaryNotes: string) {
-  return saveInternalCoachNotes(matchId, coachSummaryNotes)
-}
-
 export async function saveParentFacingRecap(matchId: string, parentFacingRecap: string) {
   const notes = parentFacingRecap.trim() || null
   const { error } = await supabase
@@ -1652,7 +1642,7 @@ export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[
     .from('match_reviews')
     .select('*')
     .eq('match_id', matchId)
-  if (!error) return parseDbRows(EvaluationSchema, data, 'matchReviews')
+  if (!error) return parseDbRows(MatchReviewSchema, data, 'matchReviews')
   if (isOptionalTableError(error)) {
     console.warn('[fetchMatchReviews] match_reviews unavailable:', formatSupabaseError(error))
     return []
@@ -2275,14 +2265,6 @@ export async function updateClubUserAppRole(
     .update({ app_role: appRole, updated_at: new Date().toISOString() })
     .eq('user_id', userId)
   if (error) throw error
-}
-
-/** @deprecated Use updateClubUserAppRole */
-export async function updateClubUserRole(
-  userId: string,
-  role: AssignableAppRole | 'pending',
-): Promise<void> {
-  return updateClubUserAppRole(userId, role)
 }
 
 export async function replaceClubUserTeams(

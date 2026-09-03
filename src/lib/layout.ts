@@ -31,9 +31,6 @@ export const PITCH_BENCH_SIDEBAR =
 /** Bench column in page-scroll contexts — lists grow; parent page is the only scroller. */
 export const PITCH_BENCH_SIDEBAR_FLOW = 'flex min-w-0 flex-col gap-4'
 
-/** @deprecated Prefer PITCH_BENCH_SIDEBAR_FLOW — kept as alias so live match doesn't nest scroll. */
-export const PITCH_BENCH_SIDEBAR_CAPPED = PITCH_BENCH_SIDEBAR_FLOW
-
 export const MODAL_OVERLAY =
   'fixed inset-0 z-[100] flex flex-col justify-end bg-background/80 p-0 backdrop-blur-sm md:items-center md:justify-center md:p-4'
 
