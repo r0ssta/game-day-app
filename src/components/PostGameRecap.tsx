@@ -44,6 +44,8 @@ import {
   formatTeamShotSaveLine,
   hasTeamShotSaveTotals,
 } from '@/lib/match-shot-save'
+import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
+import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import {
   formatOpponentPrefix,
   formatOpponentWithVenue,
@@ -649,6 +651,14 @@ export function PostGameRecap({
     [matchEvents, players],
   )
   const hubPlayers = useMemo(() => toParentHubPlayers(players), [players])
+  const coachBoxScore = useMemo(
+    () =>
+      buildParentTeamBoxScore(hubEvents, {
+        halfLengthMinutes,
+        totalPeriods: matchRecord?.total_periods,
+      }),
+    [halfLengthMinutes, hubEvents, matchRecord?.total_periods],
+  )
 
   if (loading) {
     return (
@@ -852,17 +862,12 @@ export function PostGameRecap({
           readOnly={readOnly}
         />
 
-        {teamShotSaveLine ? (
+        {coachBoxScore.hasStats || coachBoxScore.playedLengthLabel ? (
           <section className="rounded-xl border border-athletic/40 bg-athletic/5 p-4">
             <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
               Box Score
             </h2>
-            <p className="mt-2 text-sm font-semibold tabular-nums text-foreground">
-              {teamShotSaveLine}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Home (us) – Away (opponent)
-            </p>
+            <ParentTeamBoxScore model={coachBoxScore} teamName={teamName} opponent={opponent} />
           </section>
         ) : null}
 

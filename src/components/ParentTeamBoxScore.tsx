@@ -22,7 +22,7 @@ function ScorePair({
   return (
     <span
       className={cn(
-        'font-mono text-[13px] font-bold tabular-nums sm:text-sm',
+        'font-mono text-sm font-bold tabular-nums sm:text-base',
         emphasize ? 'text-foreground' : 'text-foreground/90',
       )}
     >
@@ -93,7 +93,7 @@ export function ParentTeamBoxScore({
             <span className="text-muted-foreground"> – </span>
             {them}
           </p>
-          <div className="mt-2 max-w-sm">
+          <div className="mt-2 w-full min-w-0">
             <table className="w-full table-fixed border-collapse text-center">
               <caption className="sr-only">
                 Goals, shots, corners, and saves by half for {us} versus {them}
