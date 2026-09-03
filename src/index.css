@@ -23,6 +23,8 @@
   --color-danger-foreground: oklch(0.98 0 0);
 
   --color-field: oklch(0.19 0.04 145);
+  --color-electric: oklch(0.86 0.22 145);
+  --color-electric-foreground: oklch(0.16 0.05 145);
 }
 
 @layer base {
@@ -356,5 +358,18 @@
   to {
     transform: translateX(-50%);
   }
+}
+
+.landing-page {
+  color-scheme: dark;
+}
+
+.landing-pitch-grid {
+  background-image:
+    linear-gradient(rgba(57, 255, 138, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 255, 138, 0.045) 1px, transparent 1px),
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(57, 255, 138, 0.16), transparent 55%);
+  background-size: 48px 48px, 48px 48px, 100% 100%;
+  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
 }
 

@@ -185,9 +185,9 @@ export function buildParentHubUrlByTeamId(teamId: string): string {
 }
 
 /**
- * If a Home Screen / standalone launch landed on the coach root (`/`) instead of
- * `/hub/:slug`, rewrite to the remembered Parent Hub before auth mounts.
- * Returns true when the location was corrected.
+ * If a Home Screen / standalone launch landed on the marketing root (`/`) or
+ * staff app (`/coach`) instead of `/hub/:slug`, rewrite to the remembered
+ * Parent Hub before those shells mount. Returns true when the location was corrected.
  */
 export function restoreStandaloneParentHubPath(): boolean {
   if (typeof window === 'undefined') return false
@@ -195,13 +195,15 @@ export function restoreStandaloneParentHubPath(): boolean {
   if (parseParentHubRoute()) return false
 
   const path = window.location.pathname
-  // Only bounce bare app roots — never hijack tracker or other public routes.
+  // Only bounce marketing / staff roots — never hijack tracker or other public routes.
   const isCoachRoot =
     path === '/' ||
     path === '' ||
     path === '/index.html' ||
     path === '/coach' ||
-    path.startsWith('/coach/')
+    path.startsWith('/coach/') ||
+    path === '/admin' ||
+    path.startsWith('/admin/')
   if (!isCoachRoot) return false
 
   const slug = readRememberedParentHubSlug()
@@ -223,7 +225,7 @@ export async function shareParentHubLink(
   if (typeof navigator.share === 'function') {
     try {
       // iOS (and some Android share targets) ignore `url` and substitute the
-      // current document URL instead — from the coach app that is Staff Login (/).
+      // current document URL instead — from the coach app that is Staff Login (/coach).
       // Only pass `url` when we are already on a Parent Hub route.
       const sharingFromHub = parseParentHubRoute() != null
       if (sharingFromHub) {
@@ -251,7 +253,7 @@ export async function shareParentHubLink(
 
 /**
  * When an installed PWA is opened via a captured link, Chromium may launch at
- * start_url (/) and deliver the intended URL through launchQueue instead.
+ * start_url and deliver the intended URL through launchQueue instead.
  */
 export function installParentHubLaunchConsumer(): void {
   const launchQueue = (

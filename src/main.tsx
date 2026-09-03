@@ -3,12 +3,15 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource/bebas-neue/latin-400.css'
 import './index.css'
 import { AuthScreen } from '@/components/AuthScreen'
+import { LandingPage } from '@/components/LandingPage'
 import { PendingAccessScreen } from '@/components/PendingAccessScreen'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { PwaUpdateToast } from '@/components/PwaUpdateToast'
 import { ScreenSuspense } from '@/components/Spinner'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
+import { isCoachAppPath } from '@/lib/app-routes'
+import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import { initSentry } from '@/lib/sentry'
 import {
   installParentHubLaunchConsumer,
@@ -57,6 +60,10 @@ function bootstrapParentHubRoute() {
 function AuthenticatedApp() {
   const { loading, accessLoading, isAuthenticated, isActiveStaff } = useAuth()
 
+  useEffect(() => {
+    document.title = APP_DOCUMENT_TITLE
+  }, [])
+
   if (loading) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background px-4">
@@ -84,6 +91,7 @@ function AuthenticatedApp() {
 function Root() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
   const [parentHubRoute, setParentHubRoute] = useState(() => bootstrapParentHubRoute())
+  const [coachRoute, setCoachRoute] = useState(() => isCoachAppPath(window.location.pathname))
 
   useEffect(() => {
     if (parentHubRoute) {
@@ -98,6 +106,7 @@ function Root() {
       const nextHub = bootstrapParentHubRoute()
       setTrackerRoute(parseStatTrackerRoute())
       setParentHubRoute(nextHub)
+      setCoachRoute(isCoachAppPath(window.location.pathname))
     }
     syncRoute()
     window.addEventListener('hashchange', syncRoute)
@@ -128,10 +137,12 @@ function Root() {
             <ParentHubScreen route={parentHubRoute} />
           </ScreenSuspense>
         </ErrorBoundary>
-      ) : (
+      ) : coachRoute ? (
         <AuthProvider>
           <AuthenticatedApp />
         </AuthProvider>
+      ) : (
+        <LandingPage />
       )}
     </SunlightModeProvider>
   )
