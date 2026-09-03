@@ -57,6 +57,7 @@ import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import {
+  buildParentTimelineRows,
   parentLiveEventsFromMatchEvents,
   toParentHubPlayers,
 } from '@/lib/parent-hub'
@@ -64,6 +65,7 @@ import {
   ParentMatchRecapView,
   RecapPerspectiveTabs,
 } from '@/components/ParentMatchRecapView'
+import { LiveGameFeed } from '@/components/ParentTimelineList'
 import { ENABLE_POSITIONAL_RECAP_RATINGS } from '@/lib/feature-flags'
 import {
   PLAYER_RATINGS,
@@ -659,6 +661,13 @@ export function PostGameRecap({
       }),
     [halfLengthMinutes, hubEvents, matchRecord?.total_periods],
   )
+  const coachFeed = useMemo(
+    () =>
+      buildParentTimelineRows(hubEvents, {
+        totalPeriods: matchRecord?.total_periods,
+      }),
+    [hubEvents, matchRecord?.total_periods],
+  )
 
   if (loading) {
     return (
@@ -752,8 +761,8 @@ export function PostGameRecap({
         {recapView === 'hub' ? (
           <div className="space-y-3">
             <p className="rounded-xl border border-neon/30 bg-neon/10 px-3 py-2 text-xs font-semibold text-foreground">
-              This is the Team Hub recap families see — player minutes, box score, and the match
-              timeline.
+              This is the Team Hub recap families see — player minutes, box score, and the live
+              game feed. It is available for every match, including when no one has alerts on.
             </p>
             <ParentMatchRecapView
               events={hubEvents}
@@ -771,7 +780,7 @@ export function PostGameRecap({
               dateLabel={hubWhen?.dateLabel}
               timeLabel={hubWhen?.timeLabel}
               recap={parentFacingRecap}
-              heading="Parent Hub"
+              heading="Live game feed"
             />
           </div>
         ) : null}
@@ -870,6 +879,8 @@ export function PostGameRecap({
             <ParentTeamBoxScore model={coachBoxScore} teamName={teamName} opponent={opponent} />
           </section>
         ) : null}
+
+        <LiveGameFeed rows={coachFeed} opponent={opponent} teamName={teamName} />
 
         {disciplineSummaries.length > 0 ? (
           <section className="rounded-xl border border-amber-400/40 bg-amber-400/5 p-4">

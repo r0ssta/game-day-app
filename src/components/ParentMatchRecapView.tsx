@@ -17,7 +17,7 @@ import {
   type ParentMatchPlayerStat,
 } from '@/lib/parent-match-stats'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
-import { ParentTimelineList } from '@/components/ParentTimelineList'
+import { LiveGameFeed } from '@/components/ParentTimelineList'
 import { cn } from '@/lib/utils'
 
 function formatJersey(number: number | null): string {
@@ -207,14 +207,7 @@ export function ParentMatchRecapView({
         </section>
       ) : null}
 
-      {timeline.length > 0 ? (
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Timeline
-          </h2>
-          <ParentTimelineList rows={timeline} opponent={opponent} teamName={teamName} />
-        </section>
-      ) : null}
+      <LiveGameFeed rows={timeline} opponent={opponent} teamName={teamName} />
     </div>
   )
 }
@@ -235,7 +228,7 @@ export function RecapPerspectiveTabs({
       {(
         [
           { id: 'coach', label: 'Coach review' },
-          { id: 'hub', label: 'Parent Hub' },
+          { id: 'hub', label: 'Live game feed' },
         ] as const
       ).map((tab) => {
         const active = value === tab.id
