@@ -320,35 +320,33 @@ function LiveTab({
   )
 }
 
-function ScheduleTab({
-  matches,
-  onSelectMatch,
-}: {
-  matches: ParentHubMatch[]
-  onSelectMatch: (match: ParentHubMatch) => void
-}) {
-  const sorted = useMemo(
-    () => [...matches].sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a)),
+function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
+  const upcoming = useMemo(
+    () =>
+      matches
+        .filter((match) => !isParentHubFinishedMatch(match.status))
+        .sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a)),
     [matches],
   )
 
-  if (sorted.length === 0) {
+  if (upcoming.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        No fixtures yet.
+        No upcoming fixtures.
       </p>
     )
   }
 
   return (
     <ul className="space-y-2">
-      {sorted.map((match) => {
+      {upcoming.map((match) => {
         const when = formatMatchDisplayDateTime(match)
-        const isDone = isParentHubFinishedMatch(match.status)
         const isLive = match.status === 'live'
-        const isSelectable = isDone
-        const row = (
-          <>
+        return (
+          <li
+            key={match.id}
+            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3"
+          >
             <div className="min-w-0">
               <p className="truncate font-bold text-foreground">
                 vs {match.opponent || 'Opponent'}
@@ -360,40 +358,14 @@ function ScheduleTab({
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2 text-right">
-              {isDone || isLive ? (
+              {isLive ? (
                 <Scoreline match={match} />
               ) : (
                 <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   Upcoming
                 </span>
               )}
-              {isSelectable ? (
-                <ChevronRight className="size-4 text-muted-foreground" strokeWidth={2.25} />
-              ) : null}
             </div>
-          </>
-        )
-
-        if (isSelectable) {
-          return (
-            <li key={match.id}>
-              <button
-                type="button"
-                onClick={() => onSelectMatch(match)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3 text-left active:scale-[0.99]"
-              >
-                {row}
-              </button>
-            </li>
-          )
-        }
-
-        return (
-          <li
-            key={match.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3"
-          >
-            {row}
           </li>
         )
       })}
@@ -591,7 +563,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
           ) : tab === 'live' ? (
             <LiveTab hub={hub} matches={hub.matches} />
           ) : tab === 'schedule' ? (
-            <ScheduleTab matches={hub.matches} onSelectMatch={handleSelectFinishedMatch} />
+            <ScheduleTab matches={hub.matches} />
           ) : (
             <RecapsTab matches={hub.matches} onSelectMatch={handleSelectFinishedMatch} />
           )}
