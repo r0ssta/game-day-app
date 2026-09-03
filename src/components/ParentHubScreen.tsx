@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronRight, Radio, ScrollText } from 'lucide-react'
+import { ChevronRight, Radio, ScrollText } from 'lucide-react'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { EnableAlertsButton } from '@/components/EnableAlertsButton'
 import { InstallPrompt } from '@/components/InstallPrompt'
@@ -38,7 +38,7 @@ const ParentFinishedMatchDetail = lazy(() =>
   })),
 )
 
-type TabId = 'live' | 'schedule' | 'recaps'
+type TabId = 'live' | 'recaps'
 
 type ParentHubScreenProps = {
   route: ParentHubRoute
@@ -307,59 +307,6 @@ function LiveTab({
   )
 }
 
-function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
-  const upcoming = useMemo(
-    () =>
-      matches
-        .filter((match) => !isParentHubFinishedMatch(match.status))
-        .sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a)),
-    [matches],
-  )
-
-  if (upcoming.length === 0) {
-    return (
-      <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        No upcoming fixtures.
-      </p>
-    )
-  }
-
-  return (
-    <ul className="space-y-2">
-      {upcoming.map((match) => {
-        const when = formatMatchDisplayDateTime(match)
-        const isLive = match.status === 'live'
-        return (
-          <li
-            key={match.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3"
-          >
-            <div className="min-w-0">
-              <p className="truncate font-bold text-foreground">
-                vs {match.opponent || 'Opponent'}
-                {match.isTest ? ' · Test' : ''}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {when.dateLabel} · {when.timeLabel}
-                {isLive ? ' · LIVE' : ''}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2 text-right">
-              {isLive ? (
-                <Scoreline match={match} />
-              ) : (
-                <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                  Upcoming
-                </span>
-              )}
-            </div>
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
-
 function RecapsTab({
   matches,
   onSelectMatch,
@@ -501,7 +448,6 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
 
   const tabs: { id: TabId; label: string; icon: typeof Radio }[] = [
     { id: 'live', label: 'Live', icon: Radio },
-    { id: 'schedule', label: 'Schedule', icon: CalendarDays },
     { id: 'recaps', label: 'Recaps', icon: ScrollText },
   ]
 
@@ -516,7 +462,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
               {teamLabel}
             </h1>
-            <p className="text-sm text-muted-foreground">Live scores · schedule · match stats</p>
+            <p className="text-sm text-muted-foreground">Live scores · match recaps</p>
           </div>
           {staffPreviewRequested ? (
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-100">
@@ -549,8 +495,6 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             </Suspense>
           ) : tab === 'live' ? (
             <LiveTab hub={hub} matches={hub.matches} />
-          ) : tab === 'schedule' ? (
-            <ScheduleTab matches={hub.matches} />
           ) : (
             <RecapsTab matches={hub.matches} onSelectMatch={handleSelectFinishedMatch} />
           )}
@@ -563,7 +507,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
           selectedMatch ? 'hidden' : undefined,
         )}
       >
-        <div className={`${APP_CONTAINER} grid grid-cols-3 gap-1`}>
+        <div className={`${APP_CONTAINER} grid grid-cols-2 gap-1`}>
           {tabs.map(({ id, label, icon: Icon }) => {
             const active = tab === id
             return (

@@ -16,7 +16,7 @@ export const ENABLE_STAT_TRACKER = false
  */
 export const ENABLE_POSITIONAL_RECAP_RATINGS = false
 /**
- * Parent / Fan Team Hub PWA (read-only live feed, schedule, recaps, web push).
+ * Parent / Fan Team Hub PWA (read-only live feed, recaps, web push).
  * Requires `.env.local` VAPID keys + `/api/send-web-push` (see `api/send-web-push.ts`).
  */
 export const ENABLE_PARENT_HUB = true

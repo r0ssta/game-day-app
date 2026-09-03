@@ -220,7 +220,7 @@ export async function shareParentHubLink(
 ): Promise<'shared' | 'copied'> {
   const url = buildParentHubUrl(teamSlug)
   const title = `${teamLabel} · Team Hub`
-  const text = `Follow ${teamLabel} live scores, schedule, and match recaps:\n${url}`
+  const text = `Follow ${teamLabel} live scores and match recaps:\n${url}`
 
   if (typeof navigator.share === 'function') {
     try {

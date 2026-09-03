@@ -14,11 +14,11 @@ test.describe('smoke', () => {
     expect(response, 'navigation response').toBeTruthy()
     expect(response!.ok(), `expected OK status, got ${response!.status()}`).toBeTruthy()
 
-    // Core shell: team title + bottom tab bar (Live / Schedule / Recaps).
+    // Core shell: team title + bottom tab bar (Live / Recaps).
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     await expect(page.getByRole('button', { name: /^Live$/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Schedule$/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /^Recaps$/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Schedule$/i })).toHaveCount(0)
 
     // Hub finished loading team data (not stuck on error / perpetual loading).
     await expect(page.getByText('Loading team…')).toHaveCount(0)

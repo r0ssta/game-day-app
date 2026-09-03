@@ -56,7 +56,7 @@ function buildManifest(input: {
       id: startPath,
       name: input.name,
       short_name: shortName(input.name),
-      description: `Live scores, schedule, and match recaps for ${input.name}.`,
+      description: `Live scores and match recaps for ${input.name}.`,
       start_url: `${input.origin}${startPath}`,
       scope: `${input.origin}/hub/`,
       display: 'standalone' as const,
