@@ -3,7 +3,6 @@ import { KeyRound, Mail, SunMedium, UserPlus } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSunlightMode } from '@/contexts/SunlightModeContext'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
-import { navigateApp } from '@/lib/app-routes'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
@@ -363,13 +362,6 @@ export function AuthScreen() {
               : 'Already registered? Use Sign In. New to the club? Switch to Create Account.'}
           </p>
         </form>
-        <button
-          type="button"
-          onClick={() => navigateApp('/')}
-          className="mt-5 w-full text-center text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground"
-        >
-          Back to Game Day
-        </button>
       </div>
     </main>
   )

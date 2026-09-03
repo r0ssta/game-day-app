@@ -10,7 +10,7 @@ import { PwaUpdateToast } from '@/components/PwaUpdateToast'
 import { ScreenSuspense } from '@/components/Spinner'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
-import { isCoachAppPath } from '@/lib/app-routes'
+import { isLandingPath } from '@/lib/app-routes'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import { initSentry } from '@/lib/sentry'
 import {
@@ -91,7 +91,7 @@ function AuthenticatedApp() {
 function Root() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
   const [parentHubRoute, setParentHubRoute] = useState(() => bootstrapParentHubRoute())
-  const [coachRoute, setCoachRoute] = useState(() => isCoachAppPath(window.location.pathname))
+  const [landingRoute, setLandingRoute] = useState(() => isLandingPath(window.location.pathname))
 
   useEffect(() => {
     if (parentHubRoute) {
@@ -106,7 +106,7 @@ function Root() {
       const nextHub = bootstrapParentHubRoute()
       setTrackerRoute(parseStatTrackerRoute())
       setParentHubRoute(nextHub)
-      setCoachRoute(isCoachAppPath(window.location.pathname))
+      setLandingRoute(isLandingPath(window.location.pathname))
     }
     syncRoute()
     window.addEventListener('hashchange', syncRoute)
@@ -137,12 +137,12 @@ function Root() {
             <ParentHubScreen route={parentHubRoute} />
           </ScreenSuspense>
         </ErrorBoundary>
-      ) : coachRoute ? (
+      ) : landingRoute ? (
+        <LandingPage />
+      ) : (
         <AuthProvider>
           <AuthenticatedApp />
         </AuthProvider>
-      ) : (
-        <LandingPage />
       )}
     </SunlightModeProvider>
   )

@@ -16,7 +16,7 @@ import {
   CLUB_CREST_WEBP_SRC,
   CLUB_NAME_FULL,
 } from '@/lib/branding'
-import { navigateApp } from '@/lib/app-routes'
+import { LANDING_PATH, navigateApp } from '@/lib/app-routes'
 import { cn } from '@/lib/utils'
 
 const LANDING_TITLE = 'Game Day · Coach-first youth soccer'
@@ -107,7 +107,7 @@ export function LandingPage() {
 
       <header className="relative z-10 border-b border-white/10">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <a href="/" className="flex items-center gap-2.5 no-underline">
+          <a href={LANDING_PATH} className="flex items-center gap-2.5 no-underline">
             <span className="flex size-9 items-center justify-center rounded-lg border border-[#39FF8A]/40 bg-[#39FF8A]/10 font-display text-lg leading-none text-[#39FF8A]">
               GD
             </span>
@@ -122,7 +122,7 @@ export function LandingPage() {
           </a>
           <button
             type="button"
-            onClick={() => navigateApp('/coach')}
+            onClick={() => navigateApp('/')}
             className="min-h-11 touch-manipulation rounded-xl border border-white/15 px-3 text-xs font-bold uppercase tracking-wide text-white/80 transition-colors hover:border-[#39FF8A]/50 hover:text-[#39FF8A]"
           >
             Staff Login
@@ -319,7 +319,7 @@ export function LandingPage() {
           </p>
           <button
             type="button"
-            onClick={() => navigateApp('/coach')}
+            onClick={() => navigateApp('/')}
             className="text-xs font-bold uppercase tracking-wide text-white/50 hover:text-[#39FF8A]"
           >
             Staff / Admin

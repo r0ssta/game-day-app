@@ -83,13 +83,13 @@ function buildManifest(input: {
   }
 
   // Slug-less requests are for the coach app — never advertise an installable
-  // "Team Hub" that starts at Staff Login (/coach) or the marketing root (/).
+  // "Team Hub" that starts at Staff Login (/).
   return {
     id: '/coach',
     name: 'Virginia Velocity · Game Day',
     short_name: 'Game Day',
     description: 'Coach match control for Virginia Velocity.',
-    start_url: `${input.origin}/coach`,
+    start_url: `${input.origin}/`,
     scope: `${input.origin}/`,
     display: 'browser' as const,
     background_color: theme,

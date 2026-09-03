@@ -1,5 +1,3 @@
-import { withCoachPath } from '@/lib/app-routes'
-
 /**
  * Canonical URL used for Supabase Auth magic-link / OTP redirects.
  *
@@ -7,20 +5,19 @@ import { withCoachPath } from '@/lib/app-routes'
  * Production builds prefer VITE_SITE_URL so emails never fall back to a
  * localhost Site URL misconfiguration. Keep production + localhost in
  * Supabase Auth → URL Configuration → Redirect URLs.
- * Staff login lives at `/coach` — never bounce a magic link onto the marketing root.
  */
 export function getAuthRedirectUrl(): string {
   if (import.meta.env.DEV && typeof window !== 'undefined' && window.location?.origin) {
-    return withCoachPath(window.location.origin)
+    return window.location.origin
   }
 
   const configured = (import.meta.env.VITE_SITE_URL as string | undefined)?.trim()
   if (configured) {
-    return withCoachPath(configured)
+    return configured.replace(/\/$/, '')
   }
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return withCoachPath(window.location.origin)
+    return window.location.origin
   }
   // Production fallback when env is missing (Vercel deploy of this app).
-  return withCoachPath('https://game-day-app-chvm.vercel.app')
+  return 'https://game-day-app-chvm.vercel.app'
 }
