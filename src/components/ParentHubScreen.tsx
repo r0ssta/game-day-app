@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronRight, Radio, ScrollText } from 'lucide-react'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { EnableAlertsButton } from '@/components/EnableAlertsButton'
@@ -28,11 +28,12 @@ import {
   applyParentHubPwaHead,
   rememberParentHubSlug,
 } from '@/lib/parent-hub-pwa'
+import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { APP_CONTAINER } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/supabaseClient'
 
-const ParentFinishedMatchDetail = lazy(() =>
+const ParentFinishedMatchDetail = lazyWithChunkReload(() =>
   import('@/components/ParentFinishedMatchDetail').then((m) => ({
     default: m.ParentFinishedMatchDetail,
   })),

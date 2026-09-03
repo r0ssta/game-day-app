@@ -1,4 +1,4 @@
-import { lazy, StrictMode, useEffect, useState } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource/bebas-neue/latin-400.css'
 import './index.css'
@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
 import { isLandingPath } from '@/lib/app-routes'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
+import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { initSentry } from '@/lib/sentry'
 import {
   installParentHubLaunchConsumer,
@@ -27,11 +28,11 @@ import {
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 
-const App = lazy(() => import('./App.tsx'))
-const ParentHubScreen = lazy(() =>
+const App = lazyWithChunkReload(() => import('./App.tsx'))
+const ParentHubScreen = lazyWithChunkReload(() =>
   import('@/components/ParentHubScreen').then((m) => ({ default: m.ParentHubScreen })),
 )
-const StatTrackerScreen = lazy(() =>
+const StatTrackerScreen = lazyWithChunkReload(() =>
   import('@/components/StatTrackerScreen').then((m) => ({ default: m.StatTrackerScreen })),
 )
 
@@ -141,7 +142,9 @@ function Root() {
         <LandingPage />
       ) : (
         <AuthProvider>
-          <AuthenticatedApp />
+          <ErrorBoundary sectionLabel="Staff app" className="min-h-dvh bg-background">
+            <AuthenticatedApp />
+          </ErrorBoundary>
         </AuthProvider>
       )}
     </SunlightModeProvider>
