@@ -3,12 +3,26 @@ import webpush from 'web-push'
 import { reportApiError } from './sentry.js'
 import { requireVapidConfig } from './server-env.js'
 
+const DEFAULT_PUSH_ICON = '/branding/virginia-velocity-crest.png'
+
+/** Standard Web Push notification fields shown by the Parent Hub service worker. */
+export type WebPushPayload = {
+  title: string
+  body: string
+  icon: string
+  badge: string
+  url: string
+  tag?: string
+}
+
 export type SendWebPushInput = {
   teamId: string
   title?: string
   body: string
   url?: string
   tag?: string
+  icon?: string
+  badge?: string
   playerId?: string | null
   eventType?: string
 }
@@ -35,7 +49,8 @@ function configureVapid() {
 }
 
 /**
- * Fan out a web push to Parent Hub subscribers for a team.
+ * Single parent-notification pipeline for live match events (goal, period, card,
+ * full time, PKs) and the `/api/send-web-push` HTTP wrapper.
  * Uses the caller's user-scoped Supabase client (RLS applies).
  * Failures are logged and returned as soft results — match writes should not roll back.
  */
@@ -88,9 +103,11 @@ export async function sendTeamWebPush(
   const payload = JSON.stringify({
     title,
     body,
+    icon: input.icon?.trim() || DEFAULT_PUSH_ICON,
+    badge: input.badge?.trim() || DEFAULT_PUSH_ICON,
     url: input.url ?? '/',
     tag: input.tag ?? 'vvfc-match',
-  })
+  } satisfies WebPushPayload)
 
   let sent = 0
   let failed = 0

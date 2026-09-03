@@ -141,6 +141,8 @@ self.addEventListener('push', (event) => {
   let payload = {
     title: 'Virginia Velocity',
     body: 'Match update',
+    icon: '/branding/virginia-velocity-crest.png',
+    badge: '/branding/virginia-velocity-crest.png',
     url: '/',
     tag: 'vvfc-match',
   }
@@ -151,6 +153,8 @@ self.addEventListener('push', (event) => {
       payload = {
         title: typeof data.title === 'string' ? data.title : payload.title,
         body: typeof data.body === 'string' ? data.body : payload.body,
+        icon: typeof data.icon === 'string' ? data.icon : payload.icon,
+        badge: typeof data.badge === 'string' ? data.badge : payload.badge,
         url: typeof data.url === 'string' ? data.url : payload.url,
         tag: typeof data.tag === 'string' ? data.tag : payload.tag,
       }
@@ -167,8 +171,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: '/branding/virginia-velocity-crest.png',
-      badge: '/branding/virginia-velocity-crest.png',
+      icon: payload.icon,
+      badge: payload.badge,
       tag: payload.tag,
       renotify: true,
       data: { url: payload.url },

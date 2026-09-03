@@ -11,6 +11,8 @@ type SendBody = {
   body?: string
   url?: string
   tag?: string
+  icon?: string
+  badge?: string
   playerId?: string | null
   eventType?: string
 }
@@ -57,6 +59,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body,
       url: input.url,
       tag: input.tag,
+      icon: input.icon,
+      badge: input.badge,
       playerId: input.playerId,
       eventType: input.eventType,
     })

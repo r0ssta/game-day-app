@@ -26,6 +26,7 @@ import {
 import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEventType, type StatTrackerRosterPlayer, rosterPlayerFromDb } from '@/lib/stat-tracker'
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import type {
+  Database,
   DbCoach,
   DbLineupPreset,
   DbMatch,
@@ -163,7 +164,9 @@ async function insertMatchEventRows(
 ): Promise<void> {
   if (rows.length === 0) return
 
-  const { error } = await supabase.from('match_events').insert(rows)
+  const { error } = await supabase
+    .from('match_events')
+    .insert(rows as Database['public']['Tables']['match_events']['Insert'][])
   if (!error) return
 
   if (isMissingColumnError(error)) {
@@ -184,7 +187,9 @@ async function insertMatchEventRows(
       }
       return keep
     })
-    const { error: legacyError } = await supabase.from('match_events').insert(withoutExtendedColumns)
+    const { error: legacyError } = await supabase
+      .from('match_events')
+      .insert(withoutExtendedColumns as Database['public']['Tables']['match_events']['Insert'][])
     if (legacyError) throw legacyError
     return
   }
@@ -1048,7 +1053,11 @@ export async function createMatchRecord(input: {
 
   let lastError: unknown = null
   for (const payload of payloadAttempts) {
-    const { data, error } = await supabase.from('matches').insert(payload).select().single()
+    const { data, error } = await supabase
+      .from('matches')
+      .insert(payload as Database['public']['Tables']['matches']['Insert'])
+      .select()
+      .single()
     if (!error) return data
     lastError = error
     if (!isMissingColumnError(error)) break
@@ -1802,7 +1811,9 @@ export async function savePostGameReview(
       }))
       const { error: legacyError } = await supabase
         .from('match_reviews')
-        .upsert(legacyRows, { onConflict: 'match_id,player_id' })
+        .upsert(legacyRows as unknown as Database['public']['Tables']['match_reviews']['Insert'][], {
+          onConflict: 'match_id,player_id',
+        })
       if (legacyError && !isOptionalTableError(legacyError)) throw legacyError
     } else {
       console.warn('[savePostGameReview] match_reviews unavailable:', formatSupabaseError(reviewError))

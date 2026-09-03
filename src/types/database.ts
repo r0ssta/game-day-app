@@ -263,9 +263,33 @@ export type DbStaffInvite = {
   accepted_user_id: string | null
 }
 
+/** JSON values returned by public RPCs (Parent Hub, invites, web push). */
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+type ForeignKey = {
+  foreignKeyName: string
+  columns: string[]
+  isOneToOne?: boolean
+  referencedRelation: string
+  referencedColumns: string[]
+}
+
+/** supabase-js requires `Relationships` on every table; default to none. */
+type WithRelationships<T> = {
+  [K in keyof T]: T[K] extends { Relationships: ForeignKey[] }
+    ? T[K]
+    : T[K] & { Relationships: [] }
+}
+
 export type Database = {
   public: {
-    Tables: {
+    Tables: WithRelationships<{
       teams: {
         Row: DbTeam
         Insert: Omit<DbTeam, 'id' | 'created_at' | 'slug' | 'brand_color' | 'logo_url'> & {
@@ -278,14 +302,95 @@ export type Database = {
         }
         Update: Partial<DbTeam>
       }
-      coaches: { Row: DbCoach; Insert: Omit<DbCoach, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbCoach> }
-      players: { Row: DbPlayer; Insert: Omit<DbPlayer, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbPlayer> }
-      matches: { Row: DbMatch; Insert: Partial<DbMatch> & Pick<DbMatch, 'team_id'>; Update: Partial<DbMatch> }
-      match_events: { Row: DbMatchEvent; Insert: Omit<DbMatchEvent, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchEvent> }
-      match_stats: { Row: DbMatchStat; Insert: Omit<DbMatchStat, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStat> }
-      match_reviews: { Row: DbMatchReview; Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchReview> }
-      match_stat_trackers: { Row: DbMatchStatTracker; Insert: Omit<DbMatchStatTracker, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DbMatchStatTracker> }
-      lineup_presets: { Row: DbLineupPreset; Insert: Omit<DbLineupPreset, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<DbLineupPreset> }
+      coaches: {
+        Row: DbCoach
+        Insert: Omit<DbCoach, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<DbCoach>
+      }
+      players: {
+        Row: DbPlayer
+        Insert: Omit<DbPlayer, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<DbPlayer>
+      }
+      matches: {
+        Row: DbMatch
+        Insert: Partial<DbMatch> & Pick<DbMatch, 'team_id'>
+        Update: Partial<DbMatch>
+      }
+      match_events: {
+        Row: DbMatchEvent
+        Insert: Omit<DbMatchEvent, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<DbMatchEvent>
+        Relationships: [
+          {
+            foreignKeyName: 'match_events_match_id_fkey'
+            columns: ['match_id']
+            isOneToOne: false
+            referencedRelation: 'matches'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      match_stats: {
+        Row: DbMatchStat
+        Insert: Omit<DbMatchStat, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<DbMatchStat>
+        Relationships: [
+          {
+            foreignKeyName: 'match_stats_match_id_fkey'
+            columns: ['match_id']
+            isOneToOne: false
+            referencedRelation: 'matches'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'match_stats_player_id_fkey'
+            columns: ['player_id']
+            isOneToOne: false
+            referencedRelation: 'players'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      match_reviews: {
+        Row: DbMatchReview
+        Insert: Omit<DbMatchReview, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<DbMatchReview>
+        Relationships: [
+          {
+            foreignKeyName: 'match_reviews_match_id_fkey'
+            columns: ['match_id']
+            isOneToOne: false
+            referencedRelation: 'matches'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'match_reviews_player_id_fkey'
+            columns: ['player_id']
+            isOneToOne: false
+            referencedRelation: 'players'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      match_stat_trackers: {
+        Row: DbMatchStatTracker
+        Insert: Omit<DbMatchStatTracker, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<DbMatchStatTracker>
+      }
+      lineup_presets: {
+        Row: DbLineupPreset
+        Insert: Omit<DbLineupPreset, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<DbLineupPreset>
+      }
       web_push_subscriptions: {
         Row: DbWebPushSubscription
         Insert: Omit<DbWebPushSubscription, 'id' | 'created_at' | 'updated_at'> & {
@@ -295,10 +400,158 @@ export type Database = {
         }
         Update: Partial<DbWebPushSubscription>
       }
-      user_roles: { Row: DbUserRole; Insert: Omit<DbUserRole, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbUserRole> }
-      profiles: { Row: DbProfile; Insert: Omit<DbProfile, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<DbProfile> }
-      team_members: { Row: DbTeamMember; Insert: Omit<DbTeamMember, 'created_at'> & { created_at?: string }; Update: Partial<DbTeamMember> }
-      staff_invites: { Row: DbStaffInvite; Insert: Omit<DbStaffInvite, 'id' | 'created_at' | 'accepted_at' | 'accepted_user_id' | 'status'> & { id?: string; created_at?: string; status?: DbStaffInvite['status']; accepted_at?: string | null; accepted_user_id?: string | null }; Update: Partial<DbStaffInvite> }
+      user_roles: {
+        Row: DbUserRole
+        Insert: Omit<DbUserRole, 'created_at' | 'updated_at'> & {
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<DbUserRole>
+      }
+      profiles: {
+        Row: DbProfile
+        Insert: Omit<DbProfile, 'created_at' | 'updated_at'> & {
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<DbProfile>
+      }
+      team_members: {
+        Row: DbTeamMember
+        Insert: Omit<DbTeamMember, 'created_at'> & { created_at?: string }
+        Update: Partial<DbTeamMember>
+      }
+      staff_invites: {
+        Row: DbStaffInvite
+        Insert: Omit<
+          DbStaffInvite,
+          'id' | 'created_at' | 'accepted_at' | 'accepted_user_id' | 'status'
+        > & {
+          id?: string
+          created_at?: string
+          status?: DbStaffInvite['status']
+          accepted_at?: string | null
+          accepted_user_id?: string | null
+        }
+        Update: Partial<DbStaffInvite>
+      }
+      seasons: {
+        Row: DbSeason
+        Insert: Omit<DbSeason, 'id' | 'created_at' | 'status'> & {
+          id?: string
+          created_at?: string
+          status?: SeasonStatus
+        }
+        Update: Partial<DbSeason>
+      }
+      season_rosters: {
+        Row: DbSeasonRoster
+        Insert: Omit<DbSeasonRoster, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+          primary_jersey_number?: number | null
+        }
+        Update: Partial<DbSeasonRoster>
+        Relationships: [
+          {
+            foreignKeyName: 'season_rosters_season_id_fkey'
+            columns: ['season_id']
+            isOneToOne: false
+            referencedRelation: 'seasons'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'season_rosters_team_id_fkey'
+            columns: ['team_id']
+            isOneToOne: false
+            referencedRelation: 'teams'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'season_rosters_player_id_fkey'
+            columns: ['player_id']
+            isOneToOne: false
+            referencedRelation: 'players'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+    }>
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      set_active_season: {
+        Args: { p_season_id: string }
+        Returns: DbSeason
+      }
+      get_parent_hub: {
+        Args: { p_team_id: string; p_include_test?: boolean }
+        Returns: Json
+      }
+      get_parent_hub_by_slug: {
+        Args: { p_slug: string; p_include_test?: boolean }
+        Returns: Json
+      }
+      get_parent_live_events: {
+        Args: { p_match_id: string; p_include_test?: boolean }
+        Returns: Json
+      }
+      subscribe_parent_web_push: {
+        Args: {
+          p_team_id: string
+          p_endpoint: string
+          p_p256dh: string
+          p_auth: string
+          p_target_player_id?: string | null
+          p_user_agent?: string | null
+        }
+        Returns: Json
+      }
+      log_stat_tracker_event: {
+        Args: {
+          p_match_id: string
+          p_token: string
+          p_event_type: string
+          p_timestamp: number
+          p_player_id?: string | null
+          p_event_notes?: string | null
+        }
+        Returns: undefined
+      }
+      delete_staff_user: {
+        Args: { p_user_id: string }
+        Returns: undefined
+      }
+      update_staff_display_name: {
+        Args: { p_user_id: string; p_display_name: string }
+        Returns: undefined
+      }
+      create_staff_invite: {
+        Args: {
+          p_email: string
+          p_app_role: 'director' | 'coach'
+          p_team_ids: string[]
+          p_display_name?: string | null
+          p_default_team_role?: 'head_coach' | 'assistant_coach'
+          p_team_roles?: Array<'head_coach' | 'assistant_coach'>
+        }
+        Returns: Json
+      }
+      cancel_staff_invite: {
+        Args: { p_invite_id: string }
+        Returns: undefined
+      }
+      claim_bootstrap_director: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }

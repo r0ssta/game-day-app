@@ -674,6 +674,8 @@ export function notifyWebPush(input: {
           playerId: input.playerId ?? null,
           url: input.url ?? hubUrl,
           tag: `vvfc-${input.eventType}`,
+          icon: '/branding/virginia-velocity-crest.png',
+          badge: '/branding/virginia-velocity-crest.png',
         }),
       })
 
