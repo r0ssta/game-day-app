@@ -5,7 +5,7 @@ import {
   isStartingLineupEvent,
 } from '@/lib/match-event-notes'
 import { formatRecapMinutes } from '@/lib/match-recap'
-import { isGoalkeeperPosition, unpairedShotImpliesSave } from '@/lib/match-shot-save'
+import { isGoalkeeperPosition } from '@/lib/match-shot-save'
 import {
   assignParentEventPeriodIndexes,
   type ParentHubPlayer,
@@ -211,15 +211,6 @@ export function buildParentMatchPlayerStats(
 
     if (event.eventType === 'goal' && event.assistPlayerId) {
       halfForPeriod(ensurePlayer(event.assistPlayerId).halves, period).assists += 1
-    }
-
-    if (event.eventType === 'shot_away' && unpairedShotImpliesSave(chrono, event)) {
-      for (const [playerId, row] of byPlayer) {
-        if (row.open && isGoalkeeperPosition(row.open.position)) {
-          halfForPeriod(row.halves, period).saves += 1
-          break
-        }
-      }
     }
 
     if (!event.playerId) continue

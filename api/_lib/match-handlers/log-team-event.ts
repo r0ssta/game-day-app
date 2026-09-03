@@ -5,7 +5,6 @@ import { LogTeamEventInputSchema } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import {
   type MatchEventInsert,
-  pairedSaveType,
   pairedShotType,
   runMatchWrites,
   teamEventType,
@@ -44,16 +43,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const eventType = teamEventType(input.eventKind, input.side)
-    const attributedGk = input.playerId ?? null
+    const playerId =
+      input.eventKind === 'save' && input.side === 'home'
+        ? (input.playerId ?? null)
+        : null
     const pairAutoShot = input.eventKind === 'save' && input.pairAutoShot
-    const pairAutoSave = input.eventKind === 'shot'
 
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
       const rows: MatchEventInsert[] = [
         {
           match_id: input.matchId,
-          player_id:
-            input.eventKind === 'save' && input.side === 'home' ? attributedGk : null,
+          player_id: playerId,
           event_type: eventType,
           timestamp: input.timestamp,
           formation: input.formation,
@@ -70,24 +70,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           is_pk: false,
         })
       }
-      if (pairAutoSave) {
-        rows.push({
-          match_id: input.matchId,
-          player_id: input.side === 'away' ? attributedGk : null,
-          event_type: pairedSaveType(input.side),
-          timestamp: input.timestamp,
-          formation: input.formation,
-          is_pk: false,
-        })
-      }
       await tx.insertEvents(rows)
     })
 
     return res.status(200).json({
       ok: true,
       eventType,
-      pairedShot: pairAutoShot,
-      pairedSave: pairAutoSave,
+      pairedShot: input.eventKind === 'save' && input.pairAutoShot,
     })
   } catch (err) {
     await reportApiError('[api/match/log-team-event]', err)

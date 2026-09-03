@@ -88,61 +88,36 @@ export function applyTeamBoxScoreEvent(
   }
 }
 
-/**
- * Coaches often tap Shot, not Save. A logged shot that did not become a goal
- * is a shot the other keeper stopped — fill saves from that identity so the
- * recap does not stay 0–0 when shots were recorded.
- */
-export function reconcileSavesFromShots<T extends TeamShotSaveTotals & Partial<TeamBoxScoreTotals>>(
-  totals: T,
-): T {
-  const homeGoals = totals.homeGoals ?? 0
-  const awayGoals = totals.awayGoals ?? 0
-  return {
-    ...totals,
-    homeSaves: Math.max(totals.homeSaves, Math.max(0, totals.awayShots - awayGoals)),
-    awaySaves: Math.max(totals.awaySaves, Math.max(0, totals.homeShots - homeGoals)),
-  }
-}
-
-type ShotSaveEventLike = {
-  event_type?: string
-  eventType?: string
-  timestamp?: number
-  is_pk?: boolean | null
-  isPk?: boolean | null
-}
-
-function eventTypeOf(event: ShotSaveEventLike): string {
-  return event.event_type ?? event.eventType ?? ''
-}
-
-/** True when this shot is not already paired with a goal or an explicit save. */
-export function unpairedShotImpliesSave(
-  events: ShotSaveEventLike[],
-  shot: ShotSaveEventLike,
-): boolean {
-  const type = eventTypeOf(shot)
-  if (type !== 'shot_home' && type !== 'shot_away') return false
-  const goalType = type === 'shot_home' ? 'goal' : 'opponent_goal'
-  const saveType = type === 'shot_home' ? 'save_away' : 'save_home'
-  const timestamp = shot.timestamp
-  if (timestamp == null) return false
-  const hasPair = (want: string) =>
-    events.some((event) => eventTypeOf(event) === want && event.timestamp === timestamp)
-  return !hasPair(goalType) && !hasPair(saveType)
-}
-
-export function aggregateTeamBoxScoreTotals(events: ShotSaveEventLike[]): TeamBoxScoreTotals {
-  const totals = emptyTeamBoxScoreTotals()
+export function aggregateTeamShotSaveTotals(
+  events: Array<{ event_type?: string; eventType?: string }>,
+): TeamShotSaveTotals {
+  const totals = emptyTeamShotSaveTotals()
   for (const event of events) {
-    applyTeamBoxScoreEvent(totals, eventTypeOf(event), event.is_pk ?? event.isPk)
+    const eventType = event.event_type ?? event.eventType
+    switch (eventType) {
+      case 'shot_home':
+        totals.homeShots += 1
+        break
+      case 'shot_away':
+        totals.awayShots += 1
+        break
+      case 'save_home':
+        totals.homeSaves += 1
+        break
+      case 'save_away':
+        totals.awaySaves += 1
+        break
+      case 'corner_home':
+        totals.homeCorners += 1
+        break
+      case 'corner_away':
+        totals.awayCorners += 1
+        break
+      default:
+        break
+    }
   }
-  return reconcileSavesFromShots(totals)
-}
-
-export function aggregateTeamShotSaveTotals(events: ShotSaveEventLike[]): TeamShotSaveTotals {
-  return aggregateTeamBoxScoreTotals(events)
+  return totals
 }
 
 export function isGoalkeeperPosition(position: string | null | undefined): boolean {

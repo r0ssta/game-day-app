@@ -256,11 +256,6 @@ export function pairedShotType(side: 'home' | 'away'): 'shot_home' | 'shot_away'
   return side === 'home' ? 'shot_away' : 'shot_home'
 }
 
-export function pairedSaveType(side: 'home' | 'away'): 'save_home' | 'save_away' {
-  // A shot by side X is stopped by the other keeper (unless it became a goal).
-  return side === 'home' ? 'save_away' : 'save_home'
-}
-
 export function findLastGoalEvent<T extends { event_type: string }>(
   events: T[],
   side: 'home' | 'away',

@@ -133,53 +133,6 @@ describe('buildParentMatchPlayerStats', () => {
     expect(formatParentPositionsLine(bess.total.positions)).not.toContain('STARTING_LINEUP')
   })
 
-  it('credits the on-pitch GK when an opponent shot is not a goal or logged save', () => {
-    const rows = buildParentMatchPlayerStats(
-      [
-        event({
-          id: 'lu-bess',
-          eventType: 'sub_in',
-          playerId: BESS,
-          playerName: 'Bess',
-          jersey: 1,
-          eventNotes: startingLineupNote('GK'),
-          createdAt: '2026-09-02T18:00:00.000Z',
-        }),
-        event({
-          id: 'shot',
-          eventType: 'shot_away',
-          playerId: null,
-          playerName: null,
-          timestamp: 90,
-          createdAt: '2026-09-02T18:02:00.000Z',
-        }),
-        event({
-          id: 'goal-shot',
-          eventType: 'shot_away',
-          playerId: null,
-          playerName: null,
-          timestamp: 200,
-          createdAt: '2026-09-02T18:04:00.000Z',
-        }),
-        event({
-          id: 'goal',
-          eventType: 'opponent_goal',
-          playerId: null,
-          playerName: null,
-          timestamp: 200,
-          createdAt: '2026-09-02T18:04:00.050Z',
-        }),
-      ],
-      'm1',
-      30,
-      players,
-    )
-
-    const bess = rows.find((row) => row.playerId === BESS)!
-    expect(bess.halves[0].saves).toBe(1)
-    expect(formatParentCountingStats(bess.halves[0])).toBe('SV 1')
-  })
-
   it('does not invent a 3rd half after a pre-kickoff lineup tweak', () => {
     const rows = buildParentMatchPlayerStats(
       [

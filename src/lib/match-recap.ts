@@ -1,5 +1,4 @@
 import { cleanRecapPositionNote } from '@/lib/match-event-notes'
-import { isGoalkeeperPosition, unpairedShotImpliesSave } from '@/lib/match-shot-save'
 import { normalizeRecapPosition } from '@/lib/positions'
 import { formatOpponentWithVenue } from '@/lib/match-location'
 import { formatPlayerFullName } from '@/lib/player-names'
@@ -173,18 +172,9 @@ export function aggregatePlayerRecaps(
     return stats.get(playerId)!
   }
 
-  const openStints = new Map<string, { start: number; position: string }>()
+  const openStints = new Map<string, number>()
 
   for (const event of timeline) {
-    if (event.event_type === 'shot_away' && unpairedShotImpliesSave(timeline, event)) {
-      for (const [playerId, stint] of openStints) {
-        if (isGoalkeeperPosition(stint.position)) {
-          ensure(playerId).saves += 1
-          break
-        }
-      }
-    }
-
     if (
       event.event_type === 'opponent_goal' ||
       event.event_type === 'shot_home' ||
@@ -201,20 +191,13 @@ export function aggregatePlayerRecaps(
     }
 
     const row = ensure(event.player_id)
-    const position = cleanRecapPositionNote(event.event_notes) ?? ''
 
     switch (event.event_type) {
       case 'sub_in':
-        openStints.set(event.player_id, { start: event.absTimestamp, position })
+        openStints.set(event.player_id, event.absTimestamp)
         break
-      case 'position_change': {
-        const open = openStints.get(event.player_id)
-        if (open) open.position = position
-        else openStints.set(event.player_id, { start: event.absTimestamp, position })
-        break
-      }
       case 'sub_out': {
-        const start = openStints.get(event.player_id)?.start
+        const start = openStints.get(event.player_id)
         if (start !== undefined) {
           row.totalSeconds += Math.max(0, event.absTimestamp - start)
           openStints.delete(event.player_id)
