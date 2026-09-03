@@ -79,7 +79,7 @@ export function ParentFinishedMatchDetail({
           events={rawEvents}
           players={players}
           matchId={match.id}
-          halfLengthMinutes={match.half_length}
+          halfLengthMinutes={match.period_length ?? match.half_length}
           totalPeriods={match.total_periods}
           opponent={opponent}
           teamName={teamName}

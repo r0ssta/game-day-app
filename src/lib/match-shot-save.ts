@@ -17,6 +17,11 @@ export type TeamShotSaveTotals = {
   awayCorners: number
 }
 
+export type TeamBoxScoreTotals = TeamShotSaveTotals & {
+  homeGoals: number
+  awayGoals: number
+}
+
 export function isTeamShotSaveEventType(value: string): value is TeamShotSaveEventType {
   return (
     value === 'shot_home' ||
@@ -36,6 +41,50 @@ export function emptyTeamShotSaveTotals(): TeamShotSaveTotals {
     awaySaves: 0,
     homeCorners: 0,
     awayCorners: 0,
+  }
+}
+
+export function emptyTeamBoxScoreTotals(): TeamBoxScoreTotals {
+  return {
+    ...emptyTeamShotSaveTotals(),
+    homeGoals: 0,
+    awayGoals: 0,
+  }
+}
+
+export function applyTeamBoxScoreEvent(
+  totals: TeamBoxScoreTotals,
+  eventType: string,
+  isPk?: boolean | null,
+): void {
+  if (isPk && (eventType === 'goal' || eventType === 'opponent_goal')) return
+  switch (eventType) {
+    case 'goal':
+      totals.homeGoals += 1
+      break
+    case 'opponent_goal':
+      totals.awayGoals += 1
+      break
+    case 'shot_home':
+      totals.homeShots += 1
+      break
+    case 'shot_away':
+      totals.awayShots += 1
+      break
+    case 'save_home':
+      totals.homeSaves += 1
+      break
+    case 'save_away':
+      totals.awaySaves += 1
+      break
+    case 'corner_home':
+      totals.homeCorners += 1
+      break
+    case 'corner_away':
+      totals.awayCorners += 1
+      break
+    default:
+      break
   }
 }
 
@@ -102,6 +151,10 @@ export function hasTeamShotSaveTotals(totals: TeamShotSaveTotals): boolean {
       totals.awayCorners >
     0
   )
+}
+
+export function hasTeamBoxScoreTotals(totals: TeamBoxScoreTotals): boolean {
+  return hasTeamShotSaveTotals(totals) || totals.homeGoals + totals.awayGoals > 0
 }
 
 export function formatTeamShotSaveLine(totals: TeamShotSaveTotals): string {

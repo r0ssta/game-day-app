@@ -20,7 +20,7 @@ import {
   type ParentHubRoute,
   type ParentLiveEvent,
 } from '@/lib/parent-hub'
-import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
+import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import { ParentTimelineList } from '@/components/ParentTimelineList'
 import {
@@ -254,7 +254,14 @@ function LiveTab({
     }
   }, [liveMatch?.id, hub.players])
 
-  const teamBoxScore = useMemo(() => aggregateTeamShotSaveTotals(events), [events])
+  const teamBoxScore = useMemo(
+    () =>
+      buildParentTeamBoxScore(events, {
+        halfLengthMinutes: liveMatch?.period_length ?? liveMatch?.half_length ?? 30,
+        totalPeriods: liveMatch?.total_periods,
+      }),
+    [events, liveMatch?.half_length, liveMatch?.period_length, liveMatch?.total_periods],
+  )
 
   if (!liveMatch || !liveMatchState) {
     if (!nextScheduled) {
@@ -287,7 +294,7 @@ function LiveTab({
           </span>
         </div>
         <ParentTeamBoxScore
-          totals={teamBoxScore}
+          model={teamBoxScore}
           teamName={teamLabel}
           opponent={liveMatchState.opponent}
         />

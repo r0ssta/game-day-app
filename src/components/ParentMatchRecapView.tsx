@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
-import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
+import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import {
   buildParentTimelineRows,
@@ -138,7 +138,14 @@ export function ParentMatchRecapView({
     () => buildParentTimelineRows(events, { totalPeriods }),
     [events, totalPeriods],
   )
-  const teamBoxScore = useMemo(() => aggregateTeamShotSaveTotals(events), [events])
+  const teamBoxScore = useMemo(
+    () =>
+      buildParentTeamBoxScore(events, {
+        halfLengthMinutes,
+        totalPeriods,
+      }),
+    [events, halfLengthMinutes, totalPeriods],
+  )
   const score = formatMatchResultScore({
     home_score: homeScore,
     away_score: awayScore,
@@ -164,7 +171,10 @@ export function ParentMatchRecapView({
           <p className="mt-1 text-sm font-semibold text-muted-foreground">{when}</p>
         ) : null}
         <p className="mt-3 font-mono text-3xl font-black tabular-nums text-foreground">{score}</p>
-        <ParentTeamBoxScore totals={teamBoxScore} teamName={teamName} opponent={opponent} />
+        <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          Overall
+        </p>
+        <ParentTeamBoxScore model={teamBoxScore} teamName={teamName} opponent={opponent} />
       </div>
 
       <section>
