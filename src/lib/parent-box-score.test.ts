@@ -129,6 +129,53 @@ describe('buildParentTeamBoxScore', () => {
     expect(model.hasStats).toBe(true)
   })
 
+  it('counts unpaired shots as the other team’s saves', () => {
+    const model = buildParentTeamBoxScore(
+      [
+        event({
+          id: 's1',
+          eventType: 'shot_home',
+          timestamp: 100,
+          createdAt: '2026-09-02T18:02:00.000Z',
+        }),
+        event({
+          id: 's2',
+          eventType: 'shot_home',
+          timestamp: 200,
+          createdAt: '2026-09-02T18:04:00.000Z',
+        }),
+        event({
+          id: 's3',
+          eventType: 'shot_home',
+          timestamp: 300,
+          createdAt: '2026-09-02T18:06:00.000Z',
+        }),
+        event({
+          id: 'g1',
+          eventType: 'goal',
+          timestamp: 300,
+          createdAt: '2026-09-02T18:06:00.050Z',
+        }),
+        event({
+          id: 'sa',
+          eventType: 'shot_away',
+          timestamp: 400,
+          createdAt: '2026-09-02T18:08:00.000Z',
+        }),
+      ],
+      { halfLengthMinutes: 30, totalPeriods: 2 },
+    )
+
+    expect(model.total).toMatchObject({
+      homeShots: 3,
+      awayShots: 1,
+      homeGoals: 1,
+      awayGoals: 0,
+      homeSaves: 1,
+      awaySaves: 2,
+    })
+  })
+
   it('prefers period_end timestamps over a later sub-off in the same half', () => {
     const seconds = computeParentPeriodPlayedSeconds([
       event({

@@ -3677,6 +3677,12 @@ export default function App() {
       } else {
         setAwayShots((n) => n + 1)
       }
+      const persistShot = options?.persist !== false
+      const gk = persistShot && side === 'away' ? findActiveOnFieldGoalkeeper(players) : null
+      if (persistShot) {
+        if (side === 'home') setAwaySaves((n) => n + 1)
+        else setHomeSaves((n) => n + 1)
+      }
       if (options?.persist === false) {
         if (!options?.silent) {
           setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
@@ -3695,6 +3701,7 @@ export default function App() {
               eventKind: 'shot',
               timestamp: eventTimestamp,
               formation: activeFormation,
+              playerId: gk?.id ?? null,
               pairAutoShot: false,
             }),
           )
@@ -3703,8 +3710,13 @@ export default function App() {
           label: 'logTeamShot',
           quiet: true,
           onRevert: () => {
-            if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
-            else setAwayShots((n) => Math.max(0, n - 1))
+            if (side === 'home') {
+              setHomeShots((n) => Math.max(0, n - 1))
+              setAwaySaves((n) => Math.max(0, n - 1))
+            } else {
+              setAwayShots((n) => Math.max(0, n - 1))
+              setHomeSaves((n) => Math.max(0, n - 1))
+            }
           },
           onErrorToast: failToast('Could not save shot — try again'),
         },
@@ -3716,8 +3728,11 @@ export default function App() {
       seconds,
       halfLengthMinutes,
       activeFormation,
+      players,
       setHomeShots,
       setAwayShots,
+      setHomeSaves,
+      setAwaySaves,
       setToast,
       runOptimisticSync,
     ],

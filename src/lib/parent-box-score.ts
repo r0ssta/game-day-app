@@ -4,6 +4,7 @@ import {
   applyTeamBoxScoreEvent,
   emptyTeamBoxScoreTotals,
   hasTeamBoxScoreTotals,
+  reconcileSavesFromShots,
   type TeamBoxScoreTotals,
 } from '@/lib/match-shot-save'
 import { assignParentEventPeriodIndexes, type ParentLiveEvent } from '@/lib/parent-hub'
@@ -84,14 +85,15 @@ export function buildParentTeamBoxScore(
     byPeriod.set(period, bucket)
   }
 
-  for (const bucket of byPeriod.values()) {
-    mergeBoxScore(total, bucket)
-  }
-
   const playedByPeriod = computeParentPeriodPlayedSeconds(events)
   const extraCount = Math.max(byPeriod.size, playedByPeriod.length)
   const periodLabels = periodColumnLabels(options.totalPeriods, extraCount)
-  const periods = periodLabels.map((_, index) => byPeriod.get(index + 1) ?? emptyTeamBoxScoreTotals())
+  const periods = periodLabels.map((_, index) =>
+    reconcileSavesFromShots(byPeriod.get(index + 1) ?? emptyTeamBoxScoreTotals()),
+  )
+  for (const bucket of periods) {
+    mergeBoxScore(total, bucket)
+  }
   const playedSeconds = playedByPeriod.reduce((sum, seconds) => sum + seconds, 0)
 
   return {
