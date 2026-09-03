@@ -21,7 +21,6 @@ import {
   type ParentLiveEvent,
 } from '@/lib/parent-hub'
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
-import { ParentMatchRecapView } from '@/components/ParentMatchRecapView'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import { LiveGameFeed } from '@/components/ParentTimelineList'
 import {
@@ -121,80 +120,6 @@ function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
   )
 }
 
-function LatestFinishedMatch({
-  match,
-  hub,
-}: {
-  match: ParentHubMatch
-  hub: ParentHubPayload
-}) {
-  const [events, setEvents] = useState<ParentLiveEvent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const when = formatMatchDisplayDateTime(match)
-  const teamLabel = formatTeamDisplayName(hub.teamName, hub.ageGroup)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setLoadError(null)
-    void fetchParentLiveEvents(match.id, {
-      includeTest: Boolean(match.isTest || hub.staffPreview),
-    })
-      .then((rows) => {
-        if (!cancelled) setEvents(rows)
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Could not load live game feed')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [hub.staffPreview, match.id, match.isTest])
-
-  if (loading) {
-    return (
-      <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        Loading live game feed…
-      </p>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <p className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm font-semibold text-danger">
-        {loadError}
-      </p>
-    )
-  }
-
-  return (
-    <ParentMatchRecapView
-      events={events}
-      players={hub.players}
-      matchId={match.id}
-      halfLengthMinutes={match.period_length ?? match.half_length}
-      totalPeriods={match.total_periods}
-      opponent={match.opponent}
-      teamName={teamLabel}
-      homeScore={match.home_score}
-      awayScore={match.away_score}
-      homePkScore={match.home_pk_score}
-      awayPkScore={match.away_pk_score}
-      pkWinnerIsUs={match.pk_winner_is_us}
-      dateLabel={when.dateLabel}
-      timeLabel={when.timeLabel}
-      recap={match.parent_facing_recap ?? ''}
-      heading="Live game feed"
-    />
-  )
-}
-
 function LiveTab({
   hub,
   matches,
@@ -212,13 +137,6 @@ function LiveTab({
       .sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b))
     return upcoming[0] ?? null
   }, [matches])
-  const latestFinished = useMemo(() => {
-    const finished = matches
-      .filter((match) => isParentHubFinishedMatch(match.status))
-      .sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
-    return finished[0] ?? null
-  }, [matches])
-
   const [events, setEvents] = useState<ParentLiveEvent[]>([])
   const [liveMatchState, setLiveMatchState] = useState<ParentHubMatch | null>(liveMatch)
 
@@ -346,10 +264,9 @@ function LiveTab({
 
   if (!liveMatch || !liveMatchState) {
     if (nextScheduled) return <ScheduledKickoffCard match={nextScheduled} />
-    if (latestFinished) return <LatestFinishedMatch match={latestFinished} hub={hub} />
     return (
       <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        No live match right now. Check back on game day.
+        No live match right now. Check Recaps for finished games.
       </p>
     )
   }
