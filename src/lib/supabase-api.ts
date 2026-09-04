@@ -1137,19 +1137,27 @@ export async function fetchScheduledMatchesByTeamId(teamId: string): Promise<DbM
   )
 }
 
-export async function createMatchStats(
-  matchId: string,
+function uniqueByPlayerId<T extends { id: string }>(players: T[]): T[] {
+  const seen = new Set<string>()
+  return players.filter((player) => {
+    if (!player.id || seen.has(player.id)) return false
+    seen.add(player.id)
+    return true
+  })
+}
+
+function buildMatchStatPlayers(
   attendingPlayers: RosterPlayer[],
   firstHalfStarterIds: string[],
   matchPositions: Record<string, string>,
-  _formation: string,
   absentPlayers: RosterPlayer[] = [],
-): Promise<MatchPlayer[]> {
+): MatchPlayer[] {
   const firstSet = new Set(firstHalfStarterIds)
-  const attendingIds = new Set(attendingPlayers.map((player) => player.id))
+  const uniqueAttending = uniqueByPlayerId(attendingPlayers)
+  const attendingIds = new Set(uniqueAttending.map((player) => player.id))
 
-  const matchPlayers = [
-    ...attendingPlayers.map((player) => {
+  return [
+    ...uniqueAttending.map((player) => {
       const isFirstHalfStarter = firstSet.has(player.id)
       return createMatchPlayer(player, {
         attending: true,
@@ -1159,7 +1167,7 @@ export async function createMatchStats(
         matchPosition: matchPositions[player.id] ?? player.position,
       })
     }),
-    ...absentPlayers
+    ...uniqueByPlayerId(absentPlayers)
       .filter((player) => !attendingIds.has(player.id))
       .map((player) =>
         createMatchPlayer(player, {
@@ -1171,6 +1179,22 @@ export async function createMatchStats(
         }),
       ),
   ]
+}
+
+export async function createMatchStats(
+  matchId: string,
+  attendingPlayers: RosterPlayer[],
+  firstHalfStarterIds: string[],
+  matchPositions: Record<string, string>,
+  _formation: string,
+  absentPlayers: RosterPlayer[] = [],
+): Promise<MatchPlayer[]> {
+  const matchPlayers = buildMatchStatPlayers(
+    attendingPlayers,
+    firstHalfStarterIds,
+    matchPositions,
+    absentPlayers,
+  )
 
   const rows = matchPlayers.map((p) => matchPlayerToStatPayload(matchId, p))
   if (rows.length > 0) {
@@ -1187,19 +1211,41 @@ export async function replaceMatchStats(
   attendingPlayers: RosterPlayer[],
   firstHalfStarterIds: string[],
   matchPositions: Record<string, string>,
-  formation: string,
+  _formation: string,
   absentPlayers: RosterPlayer[] = [],
 ): Promise<MatchPlayer[]> {
-  const { error } = await supabase.from('match_stats').delete().eq('match_id', matchId)
-  if (error) throw error
-  return createMatchStats(
-    matchId,
+  const matchPlayers = buildMatchStatPlayers(
     attendingPlayers,
     firstHalfStarterIds,
     matchPositions,
-    formation,
     absentPlayers,
   )
+  await upsertMatchStats(matchId, matchPlayers)
+
+  const keepIds = new Set(matchPlayers.map((player) => player.id))
+  const { data: existing, error: listError } = await supabase
+    .from('match_stats')
+    .select('player_id')
+    .eq('match_id', matchId)
+  if (listError) throw listError
+
+  const removeIds = [
+    ...new Set(
+      (existing ?? [])
+        .map((row) => row.player_id)
+        .filter((id): id is string => Boolean(id) && !keepIds.has(id)),
+    ),
+  ]
+  if (removeIds.length > 0) {
+    const { error } = await supabase
+      .from('match_stats')
+      .delete()
+      .eq('match_id', matchId)
+      .in('player_id', removeIds)
+    if (error) throw error
+  }
+
+  return matchPlayers.filter((player) => player.attending)
 }
 
 export async function promoteScheduledMatchToLive(matchId: string): Promise<DbMatch> {
