@@ -1244,11 +1244,13 @@ export async function fetchMatchBundleById(matchId: string): Promise<ActiveMatch
   return { match, team, coach: coach ?? null, stats }
 }
 
-export async function fetchActiveMatch(): Promise<ActiveMatchBundle | null> {
+/** Latest live match for one team. Directors can see every team — never pick another team's game. */
+export async function fetchActiveMatch(teamId: string): Promise<ActiveMatchBundle | null> {
   const { data: matchRaw, error: matchError } = await supabase
     .from('matches')
     .select('*')
     .eq('status', 'live')
+    .eq('team_id', teamId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()

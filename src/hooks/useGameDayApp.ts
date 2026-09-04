@@ -670,10 +670,20 @@ export function useGameDayApp() {
         setActiveSeasonState(activeSeasonData)
         setClubStaffCoachNames(clubStaffNames)
 
-        const active = await fetchActiveMatch()
+        let resolvedTeamId: string | null = null
+        if (teamsData.length > 0) {
+          const activeTeams = teamsData.filter((team) => team.active_status !== false)
+          const selectable = activeTeams.length > 0 ? activeTeams : teamsData
+          const persistedTeamId = readPersistedActiveTeamId()
+          const persistedTeam = persistedTeamId
+            ? selectable.find((team) => team.id === persistedTeamId)
+            : null
+          resolvedTeamId = persistedTeam?.id ?? selectable[0]?.id ?? null
+        }
+
+        const active = resolvedTeamId ? await fetchActiveMatch(resolvedTeamId) : null
         if (cancelled) return
 
-        let resolvedTeamId: string | null = null
         const seasonIdForRoster =
           active?.match.season_id ?? activeSeasonData?.id ?? null
 
@@ -772,16 +782,9 @@ export function useGameDayApp() {
           setSecondHalfStarterIds(
             stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id),
           )
-        } else if (teamsData.length > 0) {
-          const activeTeams = teamsData.filter((team) => team.active_status !== false)
-          const selectable = activeTeams.length > 0 ? activeTeams : teamsData
-          const persistedTeamId = readPersistedActiveTeamId()
-          const persistedTeam = persistedTeamId
-            ? selectable.find((team) => team.id === persistedTeamId)
-            : null
-          resolvedTeamId = persistedTeam?.id ?? selectable[0]?.id ?? null
+        } else if (resolvedTeamId) {
           setSelectedTeamId(resolvedTeamId)
-          if (resolvedTeamId) persistActiveTeamId(resolvedTeamId)
+          persistActiveTeamId(resolvedTeamId)
         }
 
         if (resolvedTeamId) {
@@ -1571,7 +1574,7 @@ export function useGameDayApp() {
       subIntervalSeconds?: number | null
       gkPlaysFullHalf?: boolean
     }) => {
-      const existing = await fetchActiveMatch()
+      const existing = await fetchActiveMatch(input.teamId)
       if (existing) {
         await completeMatch(existing.match.id)
       }
@@ -1851,7 +1854,10 @@ export function useGameDayApp() {
    */
   const startLiveMatch = useCallback(
     async (scheduledMatchId: string) => {
-      const existingLive = await fetchActiveMatch()
+      const scheduled = await fetchMatchBundleById(scheduledMatchId)
+      if (!scheduled) throw new Error('Could not load the scheduled match')
+
+      const existingLive = await fetchActiveMatch(scheduled.match.team_id)
       if (existingLive && existingLive.match.id !== scheduledMatchId) {
         throw new Error('Finish or resume the current live match before starting another.')
       }
@@ -1861,7 +1867,10 @@ export function useGameDayApp() {
           ? existingLive.match
           : await promoteScheduledMatchToLive(scheduledMatchId)
 
-      const bundle = await fetchMatchBundleById(promoted.id)
+      const bundle =
+        existingLive?.match.id === scheduledMatchId
+          ? existingLive
+          : await fetchMatchBundleById(promoted.id)
       if (!bundle) throw new Error('Could not load the scheduled match')
 
       const { match, team, coach, stats } = bundle
