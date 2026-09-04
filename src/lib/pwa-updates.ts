@@ -8,6 +8,25 @@ let started = false
 let updateServiceWorker: ((reloadPage?: boolean) => Promise<void>) | null = null
 let registrationPromise: Promise<ServiceWorkerRegistration | null> | null = null
 
+/** iOS Safari rejects `registration.update()` when the SW graph is empty. */
+export function isIgnorableSwUpdateError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = 'name' in error ? String(error.name) : ''
+  const message = 'message' in error ? String(error.message) : ''
+  return name === 'InvalidStateError' && /newestWorker is null/i.test(message)
+}
+
+function safeRegistrationUpdate(registration: ServiceWorkerRegistration): void {
+  if (!registration.installing && !registration.waiting && !registration.active) {
+    return
+  }
+  void registration.update().catch((error: unknown) => {
+    if (!isIgnorableSwUpdateError(error)) {
+      console.warn('[sw] update check failed', error)
+    }
+  })
+}
+
 function emitNeedRefresh(next: boolean) {
   needRefresh = next
   for (const listener of listeners) listener(next)
@@ -49,9 +68,9 @@ export function registerPwaUpdates(): Promise<ServiceWorkerRegistration | null> 
       onRegisteredSW(_swUrl, registration) {
         finish(registration ?? null)
         if (!registration) return
-        void registration.update()
+        safeRegistrationUpdate(registration)
         window.setInterval(() => {
-          void registration.update()
+          safeRegistrationUpdate(registration)
         }, 60 * 60 * 1000)
       },
       onRegisterError(error) {
@@ -66,7 +85,17 @@ export function registerPwaUpdates(): Promise<ServiceWorkerRegistration | null> 
 
 /** Activate the waiting worker and reload so the new CI build takes over. */
 export async function updatePwaServiceWorker(): Promise<void> {
-  if (!updateServiceWorker) return
   emitNeedRefresh(false)
-  await updateServiceWorker(true)
+  try {
+    if (updateServiceWorker) {
+      await updateServiceWorker(true)
+    }
+  } catch (error) {
+    if (!isIgnorableSwUpdateError(error)) {
+      console.warn('[sw] activate waiting worker failed', error)
+    }
+    if (typeof window !== 'undefined') {
+      window.location.reload()
+    }
+  }
 }

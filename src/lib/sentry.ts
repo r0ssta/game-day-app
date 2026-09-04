@@ -15,6 +15,8 @@ export function initSentry(): void {
     sendDefaultPii: false,
     integrations: [Sentry.browserTracingIntegration()],
     tracesSampleRate: import.meta.env.PROD ? 0.15 : 1.0,
+    // iOS Safari rejects SW update() when newestWorker is gone — not actionable.
+    ignoreErrors: ['newestWorker is null'],
     // Avoid noisy local Vite HMR noise in development unless debugging.
     enabled: Boolean(dsn),
   })
