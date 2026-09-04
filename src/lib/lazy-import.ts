@@ -47,7 +47,7 @@ export function loadWithChunkReload<T>(importer: () => Promise<T>): Promise<T> {
   )
 }
 
-export function lazyWithChunkReload<T extends ComponentType>(
+export function lazyWithChunkReload<T extends ComponentType<any>>(
   importer: () => Promise<{ default: T }>,
 ): LazyExoticComponent<T> {
   return lazy(() => loadWithChunkReload(importer))
