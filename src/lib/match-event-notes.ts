@@ -1,3 +1,5 @@
+import { parseOpponentGoalCategory } from '@/schemas/match-actions'
+
 /** Markers stored in match_events.event_notes for Parent Hub formatting. */
 
 export const STARTING_LINEUP_NOTE_PREFIX = 'starting_lineup|'
@@ -62,6 +64,7 @@ export function parsePositionSwitchNote(
   const raw = (notes ?? '').trim()
   if (!raw || raw === PERIOD_END_NOTE || raw === 'starting_lineup') return null
   if (raw.startsWith(STARTING_LINEUP_NOTE_PREFIX)) return null
+  if (parseOpponentGoalCategory(raw)) return null
   const arrow = raw.match(/^(.+?)\s*(?:→|->)\s*(.+)$/)
   if (arrow) {
     const from = arrow[1]!.trim()

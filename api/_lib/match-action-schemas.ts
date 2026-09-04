@@ -23,6 +23,24 @@ export const LogTeamEventInputSchema = z.object({
 
 export type LogTeamEventInput = z.infer<typeof LogTeamEventInputSchema>
 
+/** Coach-facing labels stored on match_events.event_notes for opponent_goal. */
+export const OPPONENT_GOAL_CATEGORIES = [
+  'Unforced Error',
+  'Caught on the Counter',
+  'Set Piece / PK',
+  'Great Play',
+] as const
+
+export const OpponentGoalCategorySchema = z.enum(OPPONENT_GOAL_CATEGORIES)
+export type OpponentGoalCategory = z.infer<typeof OpponentGoalCategorySchema>
+
+export function parseOpponentGoalCategory(
+  notes: string | null | undefined,
+): OpponentGoalCategory | null {
+  const parsed = OpponentGoalCategorySchema.safeParse((notes ?? '').trim())
+  return parsed.success ? parsed.data : null
+}
+
 /** Our goal or opponent goal from the live match dashboard. */
 export const LogGoalInputSchema = z
   .object({
@@ -44,6 +62,11 @@ export const LogGoalInputSchema = z
     /** On-field attending player IDs for plus/minus bump. */
     onFieldPlayerIds: z.array(z.string().uuid()).default([]),
     pairAutoShot: z.boolean().optional().default(true),
+    /**
+     * Optional opponent-goal category. Persisted as match_events.event_notes.
+     * Omit or null when the coach skips a reason.
+     */
+    eventNotes: OpponentGoalCategorySchema.nullable().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.ourGoal && !value.scorerId) {

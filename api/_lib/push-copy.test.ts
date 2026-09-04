@@ -29,4 +29,16 @@ describe('buildGoalPush', () => {
     expect(push.title).toBe('Velocity · Goal conceded')
     expect(push.body).toBe('Rivals PK · 1–1')
   })
+
+  it('includes the opponent-goal category in conceded copy', () => {
+    const push = buildGoalPush({
+      teamName: 'Velocity',
+      opponent: 'Rivals',
+      homeScore: 0,
+      awayScore: 1,
+      ourGoal: false,
+      eventNotes: 'Caught on the Counter',
+    })
+    expect(push.body).toBe('Rivals · Caught on the Counter · 0–1')
+  })
 })

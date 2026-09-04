@@ -6,6 +6,7 @@ import {
   parseStartingLineupPosition,
   parseTacticalPositionNote,
 } from '@/lib/match-event-notes'
+import { parseOpponentGoalCategory } from '@/schemas/match-actions'
 import { supabase } from '@/supabaseClient'
 import { ENABLE_PARENT_HUB } from '@/lib/feature-flags'
 import {
@@ -1031,9 +1032,12 @@ export function formatParentEventLine(
           event.assistPlayerName ? ` · Assist by ${event.assistPlayerName}` : ''
         }`
         break
-      case 'opponent_goal':
-        line = `${minute} ${opponentLabel} Goal${event.isPk ? ' (PK)' : ''}`
+      case 'opponent_goal': {
+        const category = parseOpponentGoalCategory(event.eventNotes)
+        const how = category ? ` · ${category}` : event.isPk ? ' (PK)' : ''
+        line = `${minute} ${opponentLabel} Goal${how}`
         break
+      }
       case 'yellow_card':
         line = `${minute} Yellow · ${name}`
         break
