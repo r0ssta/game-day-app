@@ -117,6 +117,7 @@ import {
   resolveTeamScope,
   type TeamScope,
 } from '@/lib/team-context'
+import { isSessionMatchForSelectedTeam } from '@/lib/match-status'
 import {
   poolPlayerToGuestRoster,
   resolveTeamAgeGroup,
@@ -211,6 +212,8 @@ export function useGameDayApp() {
   const [halftimePitchKey, setHalftimePitchKey] = useState(0)
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const [sessionMatchTeamId, setSessionMatchTeamId] = useState<string | null>(null)
+  const sessionMatchSyncGenRef = useRef(0)
   const [setupCoachName, setSetupCoachName] = useState('')
   const [teamCoachingStaff, setTeamCoachingStaff] = useState<TeamCoachingStaff>({
     headCoaches: [],
@@ -740,6 +743,7 @@ export function useGameDayApp() {
           resolvedTeamId = match.team_id
           setMasterRoster(roster)
           setMatchId(match.id)
+          setSessionMatchTeamId(match.team_id)
           setMatchStatus('live')
           setAppMode('home')
           setPlayers(playersWithCards)
@@ -1188,6 +1192,35 @@ export function useGameDayApp() {
     [refreshLineupPresets],
   )
 
+  const syncSessionMatchForTeam = useCallback(
+    async (teamId: string) => {
+      const gen = ++sessionMatchSyncGenRef.current
+      const active = await fetchActiveMatch(teamId)
+      if (gen !== sessionMatchSyncGenRef.current) return
+
+      if (!active) {
+        setMatchId(null)
+        setSessionMatchTeamId(null)
+        setMatchStatus(null)
+        setMatchTeamName('')
+        setMatchOpponent('')
+        setPlayers([])
+        releaseLocalClock()
+        setPeriodClockStarted(false)
+        setRunning(false)
+        return
+      }
+
+      const { match, team } = active
+      setMatchId(match.id)
+      setSessionMatchTeamId(match.team_id)
+      setMatchStatus(match.status)
+      setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
+      setMatchOpponent(match.opponent)
+    },
+    [releaseLocalClock],
+  )
+
   const setActiveTeamId = useCallback(
     (teamId: string) => {
       setSelectedTeamId(teamId)
@@ -1203,8 +1236,9 @@ export function useGameDayApp() {
       const defaultFormation = getDefaultFormationId(format)
       setMatchFormations({ first: defaultFormation, second: defaultFormation })
       void loadTeamRoster(teamId)
+      void syncSessionMatchForTeam(teamId)
     },
-    [loadTeamRoster, teams],
+    [loadTeamRoster, syncSessionMatchForTeam, teams],
   )
 
   const selectTeam = setActiveTeamId
@@ -1626,6 +1660,7 @@ export function useGameDayApp() {
         )
 
         setMatchId(match.id)
+        setSessionMatchTeamId(input.teamId)
         setMatchStatus('live')
         setAppMode('match')
         setPlayers(matchPlayers)
@@ -1919,6 +1954,7 @@ export function useGameDayApp() {
       setSelectedTeamId(match.team_id)
       setMasterRoster(roster)
       setMatchId(match.id)
+      setSessionMatchTeamId(match.team_id)
       setMatchStatus('live')
       setAppMode('match')
       setPlayers(matchPlayers)
@@ -2280,6 +2316,7 @@ export function useGameDayApp() {
     setMatchDate(defaultMatchDate())
     setMatchTime(defaultMatchTime())
     setMatchId(null)
+    setSessionMatchTeamId(null)
     setMatchStatus(null)
   }, [activeTeamFormat])
 
@@ -2322,6 +2359,7 @@ export function useGameDayApp() {
     setSelectedTeamId(match.team_id)
     setMasterRoster(roster)
     setMatchId(match.id)
+    setSessionMatchTeamId(match.team_id)
     setMatchStatus(match.status)
     setPlayers(matchPlayers)
     setHomeScore(match.home_score)
@@ -2530,8 +2568,20 @@ export function useGameDayApp() {
     openMatchRecap,
     openPendingReviewRecap,
     matchStatus,
-    hasLiveMatch: matchStatus === 'live' && Boolean(matchId),
-    hasPendingRecap: matchStatus === 'pending_review' && Boolean(matchId),
+    hasLiveMatch: isSessionMatchForSelectedTeam(
+      matchStatus,
+      matchId,
+      sessionMatchTeamId,
+      selectedTeamId,
+      'live',
+    ),
+    hasPendingRecap: isSessionMatchForSelectedTeam(
+      matchStatus,
+      matchId,
+      sessionMatchTeamId,
+      selectedTeamId,
+      'pending_review',
+    ),
     selectedTeamId,
     activeTeamId: selectedTeamId,
     activeTeamScope,
