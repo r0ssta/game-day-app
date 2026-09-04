@@ -240,7 +240,7 @@ function PitchSlotVisual({
           {player ? (
             <div
               className={cn(
-                'relative flex size-14 flex-col items-center justify-center rounded-full border-2 shadow-lg',
+                'relative flex h-16 w-[4.25rem] flex-col items-center justify-center rounded-2xl border-2 px-0.5 py-0.5 shadow-lg',
                 player.needsSubCue
                   ? 'border-amber-500 bg-amber-300 text-slate-900 ring-2 ring-amber-400/45'
                   : 'bg-neon text-neon-foreground',
@@ -274,16 +274,16 @@ function PitchSlotVisual({
                   <GripVertical className="size-3" strokeWidth={2.5} aria-hidden />
                 </span>
               ) : null}
-              <span className="font-display text-lg font-black leading-none tabular-nums">
+              <span className="text-[10px] font-semibold leading-none tabular-nums opacity-70">
                 {formatJersey(player.number)}
               </span>
-              <span className="max-w-[52px] truncate text-[9px] font-bold leading-tight">
+              <span className="max-w-[62px] truncate text-xs font-bold leading-tight">
                 {player.shortName ?? player.name}
               </span>
               {player.minutesLabel ? (
                 <span
                   className={cn(
-                    'mt-0.5 font-mono text-[8px] font-black tabular-nums leading-none',
+                    'mt-0.5 font-display text-base font-black tabular-nums leading-none',
                     player.needsSubCue ? 'text-amber-950' : 'text-slate-900',
                   )}
                   title={player.needsSubCue ? 'Long stint — consider a sub' : undefined}
