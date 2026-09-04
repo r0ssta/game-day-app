@@ -1182,6 +1182,26 @@ export async function createMatchStats(
   return matchPlayers.filter((player) => player.attending)
 }
 
+export async function replaceMatchStats(
+  matchId: string,
+  attendingPlayers: RosterPlayer[],
+  firstHalfStarterIds: string[],
+  matchPositions: Record<string, string>,
+  formation: string,
+  absentPlayers: RosterPlayer[] = [],
+): Promise<MatchPlayer[]> {
+  const { error } = await supabase.from('match_stats').delete().eq('match_id', matchId)
+  if (error) throw error
+  return createMatchStats(
+    matchId,
+    attendingPlayers,
+    firstHalfStarterIds,
+    matchPositions,
+    formation,
+    absentPlayers,
+  )
+}
+
 export async function promoteScheduledMatchToLive(matchId: string): Promise<DbMatch> {
   const { data, error } = await supabase
     .from('matches')
@@ -1266,15 +1286,61 @@ export async function updateMatchRecord(
       | 'period'
       | 'period_clock_started'
       | 'status'
+      | 'opponent'
+      | 'date'
+      | 'match_date'
+      | 'match_time'
+      | 'location'
+      | 'location_type'
       | 'half_length'
       | 'period_length'
       | 'total_periods'
       | 'current_period'
+      | 'tournament_game'
+      | 'is_test'
+      | 'goes_to_pks'
+      | 'coach_id'
+      | 'coach_name'
+      | 'sub_interval_seconds'
+      | 'gk_plays_full_half'
     >
   >,
 ) {
-  const { error } = await supabase.from('matches').update(patch).eq('id', matchId)
-  if (error) throw error
+  const optionalKeys = [
+    'match_date',
+    'match_time',
+    'location_type',
+    'period_length',
+    'total_periods',
+    'current_period',
+    'pk_gk_player_id',
+    'pk_winner_is_us',
+    'home_pk_score',
+    'away_pk_score',
+    'tournament_game',
+    'is_test',
+    'goes_to_pks',
+    'coach_name',
+    'sub_interval_seconds',
+    'gk_plays_full_half',
+  ] as const
+
+  let remaining: Record<string, unknown> = { ...patch }
+  let lastError: unknown = null
+
+  for (;;) {
+    const { error } = await supabase.from('matches').update(remaining).eq('id', matchId)
+    if (!error) return
+    lastError = error
+    if (!isMissingColumnError(error)) break
+    const message = formatSupabaseError(error).toLowerCase()
+    const toDrop = optionalKeys.filter((key) => key in remaining && message.includes(key))
+    if (toDrop.length === 0) break
+    remaining = { ...remaining }
+    for (const key of toDrop) delete remaining[key]
+  }
+
+  throw new Error(formatSupabaseError(lastError))
 }
 
 export async function upsertMatchStat(matchId: string, player: MatchPlayer) {

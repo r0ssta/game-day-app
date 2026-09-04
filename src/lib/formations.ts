@@ -318,6 +318,44 @@ export function matchPositionsFromSlotAssignments(
   return positions
 }
 
+/** Rebuild pitch slots from saved starter positions (best-effort label match). */
+export function slotAssignmentsFromMatchPositions(
+  formationId: string,
+  starters: Array<{ playerId: string; position: string }>,
+  format?: TeamFormat,
+): Record<string, string | null> {
+  const formation = getFormationById(formationId, format)
+  const assignments: Record<string, string | null> = {}
+  for (const slot of formation.slots) assignments[slot.id] = null
+
+  const usedSlots = new Set<string>()
+  const placed = new Set<string>()
+
+  for (const starter of starters) {
+    const pos = starter.position.trim().toUpperCase()
+    if (!pos) continue
+    const slot = formation.slots.find(
+      (entry) =>
+        !usedSlots.has(entry.id) &&
+        (entry.label.toUpperCase() === pos || entry.id.toUpperCase() === pos),
+    )
+    if (!slot) continue
+    assignments[slot.id] = starter.playerId
+    usedSlots.add(slot.id)
+    placed.add(starter.playerId)
+  }
+
+  for (const starter of starters) {
+    if (placed.has(starter.playerId)) continue
+    const empty = formation.slots.find((entry) => !assignments[entry.id])
+    if (!empty) continue
+    assignments[empty.id] = starter.playerId
+    placed.add(starter.playerId)
+  }
+
+  return assignments
+}
+
 export function getFormationsForFormat(format: TeamFormat): Formation[] {
   return FORMATIONS.filter((formation) => formation.format === format)
 }

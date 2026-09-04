@@ -1107,6 +1107,7 @@ type SetupScreenProps = {
   onEditPlayer: (id: string) => void
   onScheduleMatch: () => void
   onStartLiveNow: () => void
+  isEditingScheduled?: boolean
   canStartMatch: boolean
   startMatchBlockReason: string | null
   schedulingMatch?: boolean
@@ -1176,6 +1177,7 @@ function SetupScreen({
   onEditPlayer,
   onScheduleMatch,
   onStartLiveNow,
+  isEditingScheduled = false,
   canStartMatch,
   startMatchBlockReason,
   schedulingMatch,
@@ -1676,7 +1678,11 @@ function SetupScreen({
             className="flex min-h-14 w-full touch-manipulation items-center justify-center gap-3 rounded-xl bg-neon py-5 text-neon-foreground shadow-lg shadow-neon/20 transition-transform active:scale-[0.98] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="font-display text-2xl font-bold uppercase tracking-wide sm:text-3xl">
-              {schedulingMatch ? 'Saving…' : 'Schedule Match'}
+              {schedulingMatch
+                ? 'Saving…'
+                : isEditingScheduled
+                  ? 'Save Changes'
+                  : 'Schedule Match'}
             </span>
           </button>
           <button
@@ -1693,8 +1699,9 @@ function SetupScreen({
             </p>
           ) : (
             <p className="text-center text-xs text-muted-foreground">
-              Schedule saves lineup without going live. Start Live Now opens the match screen
-              immediately.
+              {isEditingScheduled
+                ? 'Save Changes updates this scheduled game. Start Live Now opens it on the match screen.'
+                : 'Schedule saves lineup without going live. Start Live Now opens the match screen immediately.'}
             </p>
           )}
         </div>
@@ -2131,7 +2138,9 @@ export default function App() {
     matchTeamName,
     matchCoachName,
     matchOpponent,
+    setMatchOpponent,
     matchLocationType,
+    setMatchLocationType,
     matchGoesToPks,
     homePkScore,
     setHomePkScore,
@@ -2226,6 +2235,10 @@ export default function App() {
     createScheduledMatch,
     removeScheduledMatch,
     loadScheduledMatchIntoSetup,
+    editScheduledMatch,
+    clearEditingScheduledMatch,
+    editingScheduledMatchId,
+    openingScheduledEditId,
     deleteMatch,
   } = useGameDayApp()
 
@@ -2758,9 +2771,16 @@ export default function App() {
 
     setSchedulingMatch(true)
     try {
-      await schedulePreloadedMatch(payload)
+      await schedulePreloadedMatch({
+        ...payload,
+        existingMatchId: editingScheduledMatchId ?? undefined,
+      })
       setQaSpeedMultiplier(1)
-      setToast('Match scheduled — use Get Ready for Game on Home when it is time')
+      setToast(
+        editingScheduledMatchId
+          ? 'Scheduled match updated'
+          : 'Match scheduled — use Get Ready for Game on Home when it is time',
+      )
     } catch (err) {
       setToast(formatSupabaseError(err))
     } finally {
@@ -2772,6 +2792,7 @@ export default function App() {
     startingMatch,
     buildSetupMatchPayload,
     schedulePreloadedMatch,
+    editingScheduledMatchId,
   ])
 
   const handleStartMatch = useCallback(async () => {
@@ -2781,7 +2802,16 @@ export default function App() {
 
     setStartingMatch(true)
     try {
-      await beginMatch(payload)
+      if (editingScheduledMatchId) {
+        await schedulePreloadedMatch({
+          ...payload,
+          existingMatchId: editingScheduledMatchId,
+          navigateHome: false,
+        })
+        await startLiveMatch(editingScheduledMatchId)
+      } else {
+        await beginMatch(payload)
+      }
       setQaSpeedMultiplier(1)
       setToast(`Live match ready · ${formatPeriodLong(1, payload.totalPeriods)}`)
     } catch (err) {
@@ -2795,6 +2825,9 @@ export default function App() {
     schedulingMatch,
     buildSetupMatchPayload,
     beginMatch,
+    editingScheduledMatchId,
+    schedulePreloadedMatch,
+    startLiveMatch,
   ])
 
   const handleStartLiveScheduledMatch = useCallback(
@@ -2811,6 +2844,18 @@ export default function App() {
       }
     },
     [hasLiveMatch, startingLiveMatchId, startLiveMatch],
+  )
+
+  const handleEditScheduledMatch = useCallback(
+    async (scheduledMatchId: string) => {
+      if (openingScheduledEditId) return
+      try {
+        await editScheduledMatch(scheduledMatchId)
+      } catch (err) {
+        setToast(formatSupabaseError(err))
+      }
+    },
+    [openingScheduledEditId, editScheduledMatch],
   )
 
   const handleConfirmLiveDeleteMatch = useCallback(async () => {
@@ -4223,9 +4268,14 @@ export default function App() {
         onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
         scheduledMatches={scheduledMatches}
         scheduledLoading={scheduledLoading}
-        onScheduleNewGame={() => setAppMode('match_setup')}
+        onScheduleNewGame={() => {
+          clearEditingScheduledMatch()
+          setAppMode('match_setup')
+        }}
         onStartLiveMatch={(id) => void handleStartLiveScheduledMatch(id)}
         startingLiveMatchId={startingLiveMatchId}
+        onEditScheduledMatch={(id) => void handleEditScheduledMatch(id)}
+        openingScheduledEditId={openingScheduledEditId}
         onTeamManagement={() => setAppMode('team')}
         onReporting={() => {
           setReportingTab('matches')
@@ -4356,6 +4406,7 @@ export default function App() {
           onEditPlayer={openEditPlayer}
           onScheduleMatch={() => void handleScheduleMatch()}
           onStartLiveNow={() => void handleStartMatch()}
+          isEditingScheduled={Boolean(editingScheduledMatchId)}
           canStartMatch={canStartMatch && !startingMatch && !schedulingMatch}
           startMatchBlockReason={
             schedulingMatch
@@ -4369,7 +4420,10 @@ export default function App() {
           attendingCount={attendingCount}
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadLineupPreset}
-          onBackToHome={() => setAppMode('home')}
+          onBackToHome={() => {
+            clearEditingScheduledMatch()
+            setAppMode('home')
+          }}
           onShareParentHub={ENABLE_PARENT_HUB ? () => void handleShareParentHub() : undefined}
           parentHubUrl={
             ENABLE_PARENT_HUB && activeTeamSlug ? buildParentHubUrl(activeTeamSlug) : null
@@ -4576,6 +4630,19 @@ export default function App() {
             matchStatus === 'final' &&
             (recapReturnMode === 'recap_history' || recapReturnMode === 'reporting')
           }
+          onMatchDetailsSaved={({
+            opponent,
+            periodLengthMinutes,
+            locationType,
+            matchDate,
+            matchTime,
+          }) => {
+            setMatchOpponent(opponent)
+            setHalfLengthMinutes(periodLengthMinutes)
+            setMatchLocationType(locationType)
+            setMatchDate(matchDate)
+            setMatchTime(matchTime)
+          }}
           onFinalize={() => void handleFinalizeRecap()}
           onDeleteMatch={handleDeleteMatch}
           canDeleteMatches={canDeleteMatches}

@@ -17,6 +17,7 @@ import {
   defaultMatchDate,
   defaultMatchTime,
   getMatchSortTimestamp,
+  matchDateTimeIso,
   normalizeMatchTimeForInput,
 } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
@@ -32,6 +33,7 @@ import {
   getDefaultFormationId,
   isFormationValidForFormat,
   resolveFormationIdForFormat,
+  slotAssignmentsFromMatchPositions,
 } from '@/lib/formations'
 import { applyPresetToSetup, applyPresetToHalftime, buildFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
 import {
@@ -50,6 +52,7 @@ import {
   completeMatch,
   createMatchRecord,
   createMatchStats,
+  replaceMatchStats,
   createScheduledMatchRecord,
   deleteMatchRecord,
   deleteLineupPreset,
@@ -81,6 +84,7 @@ import {
   syncMatchClock,
   syncMatchRecord,
   syncMatchStats,
+  updateMatchRecord,
   updateLineupPreset,
   updateTeamFormat as updateTeamFormatApi,
   updateTeamAgeGroup as updateTeamAgeGroupApi,
@@ -194,6 +198,8 @@ export function useGameDayApp() {
   const [lineupPresets, setLineupPresets] = useState<DbLineupPreset[]>([])
   const [scheduledMatches, setScheduledMatches] = useState<DbMatch[]>([])
   const [scheduledLoading, setScheduledLoading] = useState(false)
+  const [editingScheduledMatchId, setEditingScheduledMatchId] = useState<string | null>(null)
+  const [openingScheduledEditId, setOpeningScheduledEditId] = useState<string | null>(null)
   const [teamRoster, setTeamRoster] = useState<RosterPlayer[]>([])
   const [setupSlotAssignments, setSetupSlotAssignments] = useState<
     Record<string, string | null> | undefined
@@ -263,6 +269,13 @@ export function useGameDayApp() {
     appMode: 'home',
     teamId: null,
   })
+  const pendingScheduledSetupRef = useRef<{
+    extraPlayers: RosterPlayer[]
+    lineup: SetupLineup
+    positions: MatchPositionsConfig
+    formationId: string
+    slotAssignments: Record<string, string | null>
+  } | null>(null)
 
   useEffect(() => {
     periodRef.current = period
@@ -583,9 +596,30 @@ export function useGameDayApp() {
   }, [hydrateLiveMatch, claimLocalClock])
 
   const applyRoster = useCallback((roster: RosterPlayer[]) => {
-    setMasterRoster(roster)
-    setSetupLineup(createDefaultSetupLineup(roster.map((p) => p.id)))
-    setMatchPositions(ensureMatchPositions(roster))
+    const pending = pendingScheduledSetupRef.current
+    const extra = pending?.extraPlayers ?? []
+    const extraIds = new Set(roster.map((player) => player.id))
+    const nextRoster =
+      extra.length > 0
+        ? [...roster, ...extra.filter((player) => !extraIds.has(player.id))]
+        : roster
+    setMasterRoster(nextRoster)
+    if (pending) {
+      pendingScheduledSetupRef.current = null
+      const ids = nextRoster.map((player) => player.id)
+      setSetupLineup(ensureSetupLineup(ids, pending.lineup))
+      setMatchPositions(ensureMatchPositions(nextRoster, pending.positions))
+      setMatchFormations((prev) => ({
+        ...prev,
+        first: pending.formationId,
+        second: pending.formationId,
+      }))
+      setSetupSlotAssignments(pending.slotAssignments)
+      setSetupPitchKey((key) => key + 1)
+      return
+    }
+    setSetupLineup(createDefaultSetupLineup(nextRoster.map((p) => p.id)))
+    setMatchPositions(ensureMatchPositions(nextRoster))
   }, [])
 
   const loadTeamRoster = useCallback(
@@ -971,6 +1005,105 @@ export function useGameDayApp() {
       setAppMode('match_setup')
     },
     [selectedTeamId, teams, applyMatchPeriodState],
+  )
+
+  const clearEditingScheduledMatch = useCallback(() => {
+    pendingScheduledSetupRef.current = null
+    setEditingScheduledMatchId(null)
+    setOpeningScheduledEditId(null)
+  }, [])
+
+  const editScheduledMatch = useCallback(
+    async (matchId: string) => {
+      setOpeningScheduledEditId(matchId)
+      try {
+        const bundle = await fetchMatchBundleById(matchId)
+        if (!bundle) throw new Error('Could not load the scheduled match')
+        const { match, team, stats } = bundle
+        if (match.status !== 'scheduled') {
+          throw new Error('That match is no longer scheduled')
+        }
+
+        const seasonIdForRoster = match.season_id ?? activeSeason?.id ?? null
+        const entries = seasonIdForRoster
+          ? await fetchSeasonRosterPlayers(seasonIdForRoster, match.team_id, {
+              includeInactive: true,
+            })
+          : []
+        const roster = seasonRosterToPlayers(entries, match.team_id)
+        const rosterIds = new Set(roster.map((player) => player.id))
+        const missingIds = stats
+          .map((row) => row.player_id)
+          .filter((id) => id && !rosterIds.has(id))
+        const extraPlayers =
+          missingIds.length > 0
+            ? (await fetchPlayersByIds(missingIds)).map((guest) =>
+                poolPlayerToGuestRoster(guest, match.team_id),
+              )
+            : []
+        const matchPlayers = rebuildMatchPlayers([...roster, ...extraPlayers], stats)
+
+        const attending: Record<string, boolean> = {}
+        const startFirstHalf: Record<string, boolean> = {}
+        const positions: MatchPositionsConfig = {}
+        for (const player of matchPlayers) {
+          attending[player.id] = player.attending
+          startFirstHalf[player.id] = player.isFirstHalfStarter || player.isOnField
+          positions[player.id] = player.matchPosition
+        }
+
+        const teamFormat = normalizeTeamFormat(team.format)
+        const rawContext =
+          match.qualitative_context && typeof match.qualitative_context === 'object'
+            ? (match.qualitative_context as Record<string, unknown>)
+            : null
+        const preloadFormation =
+          typeof rawContext?.preloadFormation === 'string'
+            ? rawContext.preloadFormation.trim()
+            : ''
+        const formationId = resolveFormationIdForFormat(
+          preloadFormation || matchFormations.first,
+          teamFormat,
+        )
+        const starters = matchPlayers
+          .filter((player) => player.isFirstHalfStarter || player.isOnField)
+          .map((player) => ({ playerId: player.id, position: player.matchPosition }))
+
+        pendingScheduledSetupRef.current = {
+          extraPlayers,
+          lineup: { attending, startFirstHalf },
+          positions,
+          formationId,
+          slotAssignments: slotAssignmentsFromMatchPositions(formationId, starters, teamFormat),
+        }
+
+        setSelectedTeamId(match.team_id)
+        setOpponent(match.opponent)
+        setLocationType(resolveMatchLocationType(match))
+        setTournamentGame(Boolean(match.tournament_game))
+        setIsTestMatch(Boolean(match.is_test))
+        setGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
+        applyMatchPeriodState(match)
+        setMatchDate(match.match_date ?? match.date.slice(0, 10))
+        setMatchTime(normalizeMatchTimeForInput(match.match_time))
+        setGkPlaysFullHalf(match.gk_plays_full_half !== false)
+        setSetupSubIntervalMinutes(
+          typeof match.sub_interval_seconds === 'number' && match.sub_interval_seconds > 0
+            ? Math.round(match.sub_interval_seconds / 60)
+            : null,
+        )
+        const coach =
+          match.coach_name?.trim() ||
+          team.primary_coach_name?.trim() ||
+          ''
+        if (coach) setSetupCoachName(coach)
+        setEditingScheduledMatchId(match.id)
+        setAppMode('match_setup')
+      } finally {
+        setOpeningScheduledEditId(null)
+      }
+    },
+    [activeSeason, applyMatchPeriodState, matchFormations.first],
   )
 
   const applyLineupPreset = useCallback(
@@ -1572,6 +1705,8 @@ export function useGameDayApp() {
       firstHalfFormation: string
       subIntervalSeconds?: number | null
       gkPlaysFullHalf?: boolean
+      existingMatchId?: string
+      navigateHome?: boolean
     }) => {
       const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
       const allowsThree = supportsThreePeriodFormat({
@@ -1584,6 +1719,72 @@ export function useGameDayApp() {
           : input.totalPeriods === 3
             ? 3
             : 2
+      const matchTimeDb =
+        input.matchTime.trim().length === 5
+          ? `${input.matchTime.trim()}:00`
+          : input.matchTime.trim() || null
+
+      if (input.existingMatchId) {
+        const coachId = await resolveCoachIdForName(input.coachName)
+        await updateMatchRecord(input.existingMatchId, {
+          opponent: input.opponent,
+          location: input.locationType,
+          location_type: input.locationType,
+          tournament_game: input.tournamentGame,
+          is_test: Boolean(input.isTest),
+          goes_to_pks: goesToPks,
+          half_length: input.halfLength,
+          period_length: input.halfLength,
+          total_periods: matchTotalPeriods,
+          match_date: input.matchDate.trim() || null,
+          match_time: matchTimeDb,
+          date: matchDateTimeIso(input.matchDate, input.matchTime),
+          coach_id: coachId,
+          coach_name: input.coachName.trim() || null,
+          sub_interval_seconds: input.subIntervalSeconds ?? null,
+          gk_plays_full_half: input.gkPlaysFullHalf ?? true,
+        })
+        await replaceMatchStats(
+          input.existingMatchId,
+          input.attendingPlayers,
+          input.firstHalfStarterIds,
+          input.matchPositions,
+          input.firstHalfFormation,
+          input.absentPlayers ?? [],
+        )
+        await saveQualitativeContext(input.existingMatchId, {
+          preloadFormation: input.firstHalfFormation,
+        })
+        setScheduledMatches((prev) =>
+          prev
+            .map((row) =>
+              row.id === input.existingMatchId
+                ? {
+                    ...row,
+                    opponent: input.opponent,
+                    location: input.locationType,
+                    location_type: input.locationType,
+                    tournament_game: input.tournamentGame,
+                    is_test: Boolean(input.isTest),
+                    goes_to_pks: goesToPks,
+                    half_length: input.halfLength,
+                    period_length: input.halfLength,
+                    total_periods: matchTotalPeriods,
+                    match_date: input.matchDate.trim() || null,
+                    match_time: matchTimeDb,
+                    date: matchDateTimeIso(input.matchDate, input.matchTime),
+                    coach_name: input.coachName.trim() || row.coach_name,
+                    sub_interval_seconds: input.subIntervalSeconds ?? null,
+                    gk_plays_full_half: input.gkPlaysFullHalf ?? true,
+                  }
+                : row,
+            )
+            .sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b)),
+        )
+        setEditingScheduledMatchId(null)
+        if (input.navigateHome !== false) setAppMode('home')
+        return input.existingMatchId
+      }
 
       let createdMatchId: string | null = null
       try {
@@ -2340,7 +2541,9 @@ export function useGameDayApp() {
     matchTeamName,
     matchCoachName,
     matchOpponent,
+    setMatchOpponent,
     matchLocationType,
+    setMatchLocationType,
     matchTournamentGame,
     matchIsTest,
     matchGoesToPks,
@@ -2409,6 +2612,10 @@ export function useGameDayApp() {
     createScheduledMatch,
     removeScheduledMatch,
     loadScheduledMatchIntoSetup,
+    editScheduledMatch,
+    clearEditingScheduledMatch,
+    editingScheduledMatchId,
+    openingScheduledEditId,
     deleteMatch,
   }
 }
