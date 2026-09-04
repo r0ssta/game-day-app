@@ -137,17 +137,17 @@ function BenchPlayerRow({
     <>
       <div
         className={cn(
-          'flex size-11 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
+          'flex size-8 shrink-0 items-center justify-center rounded-lg border-2 text-[10px] font-semibold tabular-nums',
           onSetImpact ? IMPACT_RING[player.impact] : 'border-border',
-          'bg-secondary text-foreground',
+          'bg-secondary text-muted-foreground',
         )}
       >
         {formatJersey(player.number)}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="truncate text-base font-bold text-foreground">{displayName}</span>
-          <span className="font-mono text-xs font-bold tabular-nums text-blue-400">
+          <span className="font-display text-xl font-black tabular-nums leading-none text-blue-400">
             {formatPlayingTimeClock(liveSeconds)}
           </span>
         </div>

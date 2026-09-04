@@ -156,7 +156,7 @@ function PoolPlayerChip({
           <span className="flex flex-wrap items-center gap-1">
             <span className="min-w-0 truncate text-sm font-bold text-foreground">{player.name}</span>
             {player.minutesLabel ? (
-              <span className="font-mono text-xs font-black tabular-nums text-slate-700">
+              <span className="font-display text-lg font-black tabular-nums leading-none text-slate-800">
                 {player.minutesLabel}
               </span>
             ) : null}
