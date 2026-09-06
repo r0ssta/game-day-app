@@ -2764,7 +2764,7 @@ export default function App() {
           : null,
       gkPlaysFullHalf,
       slotAssignments,
-      slotLabelOverrides,
+      slotLabelOverrides: labelOverrides,
     }
   }, [
     activeTeamId,
