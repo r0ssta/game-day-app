@@ -35,7 +35,14 @@ import {
   resolveFormationIdForFormat,
   slotAssignmentsFromMatchPositions,
 } from '@/lib/formations'
-import { applyPresetToSetup, applyPresetToHalftime, buildFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
+import {
+  applyPresetToSetup,
+  applyPresetToHalftime,
+  buildFormationJson,
+  parsePreloadSlotAssignments,
+  parseSlotLabelOverrides,
+  validatePresetFormation,
+} from '@/lib/lineup-presets'
 import {
   normalizeTeamFormat,
   type TeamFormat,
@@ -58,6 +65,7 @@ import {
   deleteLineupPreset,
   dbPlayerToRoster,
   fetchActiveMatch,
+  fetchMatchById,
   fetchMatchBundleById,
   promoteScheduledMatchToLive,
   saveQualitativeContext,
@@ -146,6 +154,22 @@ import {
 
 const DEFAULT_TOTAL_PERIODS: TotalPeriods = 2
 const DEFAULT_HALF_LENGTH = defaultPeriodLengthMinutes(DEFAULT_TOTAL_PERIODS)
+
+function scheduledPreloadContext(input: {
+  firstHalfFormation: string
+  slotAssignments?: Record<string, string | null> | null
+  slotLabelOverrides?: Record<string, string> | null
+}): Record<string, unknown> {
+  const labels = input.slotLabelOverrides
+  return {
+    preloadFormation: input.firstHalfFormation,
+    preloadSlotAssignments: hasSlotAssignments(input.slotAssignments)
+      ? input.slotAssignments
+      : null,
+    preloadSlotLabelOverrides:
+      labels && Object.keys(labels).length > 0 ? labels : null,
+  }
+}
 
 export function useGameDayApp() {
   const [loading, setLoading] = useState(true)
@@ -278,7 +302,9 @@ export function useGameDayApp() {
     positions: MatchPositionsConfig
     formationId: string
     slotAssignments: Record<string, string | null>
+    slotLabelOverrides: Record<string, string>
   } | null>(null)
+  const editingScheduledMatchIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     periodRef.current = period
@@ -617,8 +643,23 @@ export function useGameDayApp() {
         first: pending.formationId,
         second: pending.formationId,
       }))
-      setSetupSlotAssignments(pending.slotAssignments)
+      setSetupSlotAssignments(
+        hasSlotAssignments(pending.slotAssignments) ? pending.slotAssignments : undefined,
+      )
+      setSetupSlotLabelOverrides(
+        Object.keys(pending.slotLabelOverrides).length > 0
+          ? pending.slotLabelOverrides
+          : undefined,
+      )
       setSetupPitchKey((key) => key + 1)
+      return
+    }
+    // A second roster fetch on Edit Scheduled Game used to reset everyone to
+    // attending / no starters, which made Save persist an empty lineup.
+    if (editingScheduledMatchIdRef.current) {
+      const ids = nextRoster.map((player) => player.id)
+      setSetupLineup((prev) => ensureSetupLineup(ids, prev))
+      setMatchPositions((prev) => ensureMatchPositions(nextRoster, prev))
       return
     }
     setSetupLineup(createDefaultSetupLineup(nextRoster.map((p) => p.id)))
@@ -1016,8 +1057,12 @@ export function useGameDayApp() {
 
   const clearEditingScheduledMatch = useCallback(() => {
     pendingScheduledSetupRef.current = null
+    editingScheduledMatchIdRef.current = null
     setEditingScheduledMatchId(null)
     setOpeningScheduledEditId(null)
+    setSetupSlotAssignments(undefined)
+    setSetupSlotLabelOverrides(undefined)
+    setSetupPitchKey((key) => key + 1)
   }, [])
 
   const editScheduledMatch = useCallback(
@@ -1075,14 +1120,43 @@ export function useGameDayApp() {
         const starters = matchPlayers
           .filter((player) => player.isFirstHalfStarter || player.isOnField)
           .map((player) => ({ playerId: player.id, position: player.matchPosition }))
+        const reconstructedSlots = slotAssignmentsFromMatchPositions(
+          formationId,
+          starters,
+          teamFormat,
+        )
+        const persistedSlots = parsePreloadSlotAssignments(rawContext?.preloadSlotAssignments)
+        const slotAssignments = persistedSlots ?? reconstructedSlots
+        const slotLabelOverrides = parseSlotLabelOverrides(rawContext?.preloadSlotLabelOverrides)
+        const lineup = { attending, startFirstHalf }
+        const nextRoster = [...roster, ...extraPlayers]
+        const rosterPlayerIds = nextRoster.map((player) => player.id)
 
         pendingScheduledSetupRef.current = {
           extraPlayers,
-          lineup: { attending, startFirstHalf },
+          lineup,
           positions,
           formationId,
-          slotAssignments: slotAssignmentsFromMatchPositions(formationId, starters, teamFormat),
+          slotAssignments,
+          slotLabelOverrides,
         }
+
+        // Apply before match_setup mounts so the pitch hydrates with the saved
+        // lineup. loadTeamRoster still runs after this and must not wipe it.
+        setMasterRoster(nextRoster)
+        setSetupLineup(ensureSetupLineup(rosterPlayerIds, lineup))
+        setMatchPositions(ensureMatchPositions(nextRoster, positions))
+        setMatchFormations((prev) => ({
+          ...prev,
+          first: formationId,
+          second: formationId,
+        }))
+        setSetupSlotAssignments(hasSlotAssignments(slotAssignments) ? slotAssignments : undefined)
+        setSetupSlotLabelOverrides(
+          Object.keys(slotLabelOverrides).length > 0 ? slotLabelOverrides : undefined,
+        )
+        setSetupPitchKey((key) => key + 1)
+        editingScheduledMatchIdRef.current = match.id
 
         setSelectedTeamId(match.team_id)
         setOpponent(match.opponent)
@@ -1745,6 +1819,8 @@ export function useGameDayApp() {
       gkPlaysFullHalf?: boolean
       existingMatchId?: string
       navigateHome?: boolean
+      slotAssignments?: Record<string, string | null> | null
+      slotLabelOverrides?: Record<string, string> | null
     }) => {
       const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
       const allowsThree = supportsThreePeriodFormat({
@@ -1790,9 +1866,16 @@ export function useGameDayApp() {
           input.firstHalfFormation,
           input.absentPlayers ?? [],
         )
+        const existing = await fetchMatchById(input.existingMatchId)
+        const previousContext =
+          existing?.qualitative_context && typeof existing.qualitative_context === 'object'
+            ? (existing.qualitative_context as Record<string, unknown>)
+            : {}
         await saveQualitativeContext(input.existingMatchId, {
-          preloadFormation: input.firstHalfFormation,
+          ...previousContext,
+          ...scheduledPreloadContext(input),
         })
+        editingScheduledMatchIdRef.current = null
         setScheduledMatches((prev) =>
           prev
             .map((row) =>
@@ -1858,9 +1941,7 @@ export function useGameDayApp() {
           input.absentPlayers ?? [],
         )
 
-        await saveQualitativeContext(match.id, {
-          preloadFormation: input.firstHalfFormation,
-        })
+        await saveQualitativeContext(match.id, scheduledPreloadContext(input))
 
         setScheduledMatches((prev) =>
           [...prev.filter((row) => row.id !== match.id), match].sort(

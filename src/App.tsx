@@ -52,6 +52,7 @@ import {
   resolveFormationIdForFormat,
 } from '@/lib/formations'
 import {
+  countFirstHalfStarters,
   getAttendingIds,
   getFirstHalfStarterIds,
   getMaxFieldPlayers,
@@ -1425,9 +1426,12 @@ function SetupScreen({
                 </div>
               ) : (
                 <>
-                  <p className="rounded-xl border border-neon/30 bg-neon/5 px-3 py-2 text-xs font-semibold text-muted-foreground">
-                    Starting lineup is empty until you drag players from the bench onto the pitch.
-                  </p>
+                  {countFirstHalfStarters(setupLineup) === 0 &&
+                  !hasSlotAssignments(setupSlotAssignments) ? (
+                    <p className="rounded-xl border border-neon/30 bg-neon/5 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                      Starting lineup is empty until you drag players from the bench onto the pitch.
+                    </p>
+                  ) : null}
                   {lineupPresets.length > 0 && (
                     <div>
                       <label
@@ -2671,6 +2675,7 @@ export default function App() {
   // U9/U10 league → 3 periods; tournament / older ages → 2 halves.
   useEffect(() => {
     if (appMode !== 'match_setup') return
+    if (editingScheduledMatchId) return
     const format = resolveMatchFormatDefaults({
       tournamentGame,
       ageGroup: activeTeamAgeGroup,
@@ -2684,6 +2689,7 @@ export default function App() {
     activeTeamAgeGroup,
     activeTeamFormat,
     tournamentGame,
+    editingScheduledMatchId,
     setTotalPeriods,
     setHalfLengthMinutes,
   ])
@@ -2693,11 +2699,20 @@ export default function App() {
     const team = teams.find((t) => t.id === activeTeamId)
     if (!team) return null
 
-    const resolvedLineup = resolveSetupLineup(setupLineup, setupAssignmentsRef.current)
-    const slotAssignments = setupAssignmentsRef.current
-    const labelOverrides = setupLabelOverridesRef.current
+    const liveSlots = setupAssignmentsRef.current
+    const slotAssignments = hasSlotAssignments(liveSlots)
+      ? liveSlots
+      : hasSlotAssignments(setupSlotAssignments)
+        ? setupSlotAssignments
+        : null
+    const liveLabels = setupLabelOverridesRef.current
+    const labelOverrides =
+      liveLabels && Object.keys(liveLabels).length > 0
+        ? liveLabels
+        : setupSlotLabelOverrides
+    const resolvedLineup = resolveSetupLineup(setupLineup, slotAssignments)
     const resolvedMatchPositions =
-      slotAssignments && Object.values(slotAssignments).some(Boolean)
+      hasSlotAssignments(slotAssignments)
         ? {
             ...matchPositions,
             ...matchPositionsFromSlotAssignments(
@@ -2748,11 +2763,15 @@ export default function App() {
           ? rotationMinutes * 60
           : null,
       gkPlaysFullHalf,
+      slotAssignments,
+      slotLabelOverrides,
     }
   }, [
     activeTeamId,
     teams,
     setupLineup,
+    setupSlotAssignments,
+    setupSlotLabelOverrides,
     matchPositions,
     matchFormations.first,
     activeTeamFormat,
@@ -2782,6 +2801,8 @@ export default function App() {
         ...payload,
         existingMatchId: editingScheduledMatchId ?? undefined,
       })
+      setupAssignmentsRef.current = null
+      setupLabelOverridesRef.current = null
       setQaSpeedMultiplier(1)
       setToast(
         editingScheduledMatchId
@@ -2856,6 +2877,8 @@ export default function App() {
   const handleEditScheduledMatch = useCallback(
     async (scheduledMatchId: string) => {
       if (openingScheduledEditId) return
+      setupAssignmentsRef.current = null
+      setupLabelOverridesRef.current = null
       try {
         await editScheduledMatch(scheduledMatchId)
       } catch (err) {
@@ -4281,6 +4304,8 @@ export default function App() {
         scheduledMatches={scheduledMatches}
         scheduledLoading={scheduledLoading}
         onScheduleNewGame={() => {
+          setupAssignmentsRef.current = null
+          setupLabelOverridesRef.current = null
           clearEditingScheduledMatch()
           setAppMode('match_setup')
         }}
@@ -4433,6 +4458,8 @@ export default function App() {
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadLineupPreset}
           onBackToHome={() => {
+            setupAssignmentsRef.current = null
+            setupLabelOverridesRef.current = null
             clearEditingScheduledMatch()
             setAppMode('home')
           }}

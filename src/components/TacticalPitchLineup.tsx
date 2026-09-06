@@ -399,10 +399,9 @@ export function TacticalPitchLineup({
     const emptyAssignments = Object.fromEntries(formation.slots.map((s) => [s.id, null]))
     setSlotAssignments(emptyAssignments)
     setSlotLabelOverrides({})
-    // Keep refs current, but do not push an empty wipe into parent state — that races
-    // React Strict Mode remounts and can clear a lineup the coach already built.
-    if (assignmentsRef) assignmentsRef.current = emptyAssignments
-    if (slotLabelOverridesRef) slotLabelOverridesRef.current = {}
+    // Do not write an empty map into the shared refs. Save reads those refs and an
+    // all-null map used to wipe every starter. Leave prior populated refs alone;
+    // a first mount with null refs falls back to setup.startFirstHalf.
     // Only re-hydrate when parent explicitly bumps assignmentsResetKey (load preset, reset editor).
     // Do not depend on `players`, `starters`, or `formation` — those change on every assign/render
     // and were wiping drag-and-drop / tap assignments immediately after placement.
