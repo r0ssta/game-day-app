@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   CLOCK_ADOPT_DRIFT_SECONDS,
   CLOCK_ECHO_MS,
+  isMatchClockHeartbeatUpdate,
   isStaleKickoffSnapshot,
+  mergeRemotePlayerOverlays,
   shouldAdoptRemoteClock,
   shouldAdoptRemotePreKickoffLineup,
   shouldHoldLocalLiveClock,
 } from './live-match-snapshot'
+import type { MatchPlayer } from '@/types/match'
 
 describe('isStaleKickoffSnapshot', () => {
   it('treats an empty remote pitch as stale after this device kicked off', () => {
@@ -99,6 +102,80 @@ describe('shouldAdoptRemotePreKickoffLineup', () => {
         lineupDraftLocked: false,
       }),
     ).toBe(false)
+  })
+})
+
+describe('isMatchClockHeartbeatUpdate', () => {
+  it('ignores updates that only change the clock when old has score columns', () => {
+    expect(
+      isMatchClockHeartbeatUpdate(
+        { id: 'm', home_score: 1, away_score: 0, clock_seconds: 400 },
+        { id: 'm', home_score: 1, away_score: 0, clock_seconds: 405 },
+      ),
+    ).toBe(true)
+  })
+
+  it('does not ignore a concurrent score change', () => {
+    expect(
+      isMatchClockHeartbeatUpdate(
+        { id: 'm', home_score: 2, away_score: 0, clock_seconds: 400 },
+        { id: 'm', home_score: 1, away_score: 0, clock_seconds: 405 },
+      ),
+    ).toBe(false)
+  })
+
+  it('does not ignore PK-only old rows (default replica identity)', () => {
+    expect(
+      isMatchClockHeartbeatUpdate(
+        { id: 'm', home_score: 1, clock_seconds: 400 },
+        { id: 'm' },
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('mergeRemotePlayerOverlays', () => {
+  const player = (overrides: Partial<MatchPlayer> & { id: string }): MatchPlayer => ({
+    teamId: 't1',
+    number: 7,
+    firstName: 'A',
+    lastName: 'B',
+    position: 'ST',
+    primaryPosition: 'ST',
+    secondaryPosition: 'CM',
+    ageGroup: 'U13',
+    isGuest: false,
+    activeStatus: true,
+    impact: 'neutral',
+    attending: true,
+    isFirstHalfStarter: true,
+    isSecondHalfStarter: false,
+    isOnField: true,
+    matchPosition: 'ST',
+    totalSecondsPlayed: 0,
+    subbedInAt: null,
+    plusMinus: 0,
+    yellowCardCount: 0,
+    isSentOff: false,
+    ...overrides,
+  })
+
+  it('copies cards and plus/minus without moving the local player', () => {
+    const local = [player({ id: 'p1', isOnField: true, matchPosition: 'ST', plusMinus: 0 })]
+    const remote = [
+      player({
+        id: 'p1',
+        isOnField: false,
+        matchPosition: 'CM',
+        yellowCardCount: 1,
+        plusMinus: 1,
+      }),
+    ]
+    const merged = mergeRemotePlayerOverlays(local, remote)
+    expect(merged[0]?.isOnField).toBe(true)
+    expect(merged[0]?.matchPosition).toBe('ST')
+    expect(merged[0]?.yellowCardCount).toBe(1)
+    expect(merged[0]?.plusMinus).toBe(1)
   })
 })
 

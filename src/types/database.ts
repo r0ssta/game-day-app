@@ -520,6 +520,17 @@ export type Database = {
         }
         Returns: Json
       }
+      live_event_is_duplicate: {
+        Args: {
+          p_match_id: string
+          p_event_type: string
+          p_player_id?: string | null
+          p_is_pk?: boolean
+          p_event_notes?: string | null
+          p_window_seconds?: number
+        }
+        Returns: boolean
+      }
       log_stat_tracker_event: {
         Args: {
           p_match_id: string

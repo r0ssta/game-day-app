@@ -89,19 +89,28 @@ async function postMatchAction<T extends Record<string, unknown>>(
 
 export async function apiLogTeamEvent(
   input: LogTeamEventInput,
-): Promise<MatchActionResult<{ eventType: string; pairedShot: boolean }>> {
+): Promise<MatchActionResult<{ eventType: string; pairedShot: boolean; deduped?: boolean }>> {
   return postMatchAction('/api/match/log-team-event', input)
 }
 
 export async function apiLogGoal(
   input: LogGoalInput,
-): Promise<MatchActionResult<{ homeScore: number; awayScore: number; eventType: string }>> {
+): Promise<
+  MatchActionResult<{
+    homeScore: number
+    awayScore: number
+    eventType: string
+    deduped?: boolean
+  }>
+> {
   return postMatchAction('/api/match/log-goal', input)
 }
 
 export async function apiLogCard(
   input: LogCardInput,
-): Promise<MatchActionResult<{ isSecondYellow: boolean; issueRed: boolean }>> {
+): Promise<
+  MatchActionResult<{ isSecondYellow: boolean; issueRed: boolean; deduped?: boolean }>
+> {
   return postMatchAction('/api/match/log-card', input)
 }
 

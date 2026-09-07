@@ -25,6 +25,62 @@ export const CLOCK_ECHO_MS = 8000
 /** Snap to the remote countdown when devices have drifted this far. */
 export const CLOCK_ADOPT_DRIFT_SECONDS = 3
 
+/** Score fields used to tell a clock heartbeat apart from a concurrent coach write. */
+const MATCH_SCORE_COMPARE_KEYS = [
+  'home_score',
+  'away_score',
+  'home_pk_score',
+  'away_pk_score',
+  'pk_winner_is_us',
+  'status',
+] as const
+
+/**
+ * True when a `matches` UPDATE only moved the live clock. Requires
+ * REPLICA IDENTITY FULL so `payload.old` includes score columns.
+ * PK-only old rows cannot be classified and must not be ignored.
+ */
+export function isMatchClockHeartbeatUpdate(
+  newRow: Record<string, unknown> | null | undefined,
+  oldRow: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!newRow || !oldRow) return false
+  if (!MATCH_SCORE_COMPARE_KEYS.some((key) => key in oldRow)) return false
+  return MATCH_SCORE_COMPARE_KEYS.every((key) => Object.is(oldRow[key], newRow[key]))
+}
+
+/**
+ * Copy cards / +/- from a remote snapshot without moving players or
+ * replacing local pitch selection / in-progress swaps.
+ */
+export function mergeRemotePlayerOverlays(
+  local: MatchPlayer[],
+  remote: MatchPlayer[],
+): MatchPlayer[] {
+  if (local.length === 0 || remote.length === 0) return local
+  const remoteById = new Map(remote.map((player) => [player.id, player]))
+  let changed = false
+  const next = local.map((player) => {
+    const remotePlayer = remoteById.get(player.id)
+    if (!remotePlayer) return player
+    if (
+      player.yellowCardCount === remotePlayer.yellowCardCount &&
+      player.isSentOff === remotePlayer.isSentOff &&
+      player.plusMinus === remotePlayer.plusMinus
+    ) {
+      return player
+    }
+    changed = true
+    return {
+      ...player,
+      yellowCardCount: remotePlayer.yellowCardCount,
+      isSentOff: remotePlayer.isSentOff,
+      plusMinus: remotePlayer.plusMinus,
+    }
+  })
+  return changed ? next : local
+}
+
 export type StaffLiveAppMode = Extract<AppMode, 'home' | 'match' | 'halftime' | 'penalty_shootout'>
 
 export type LiveMatchSnapshot = {

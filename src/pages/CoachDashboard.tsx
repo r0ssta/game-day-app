@@ -91,14 +91,14 @@ import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt,
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
-import { useLiveMatchSync } from '@/hooks/useLiveMatchSync'
+import { liveEventDedupeKey, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
 import {
   rebuildPkRoundsFromEvents,
   shouldAutoEnterPenaltyShootoutAfterExtraTime,
   shouldOfferTiedGameOverride,
   type PkRoundState,
 } from '@/lib/penalty-kicks'
-import { extraTimeHalfFromStatus, isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
+import { extraTimeHalfFromStatus, MATCH_STATUS } from '@/lib/match-status'
 import { findActiveOnFieldGoalkeeper } from '@/lib/match-shot-save'
 import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import type { DbMatch } from '@/types/database'
@@ -175,15 +175,15 @@ export function CoachDashboard() {
     masterRoster,
     appMode,
     setAppMode,
-    hydrateLiveMatch,
     resumeLiveMatchScreen,
     persistMatchClock,
     noteLocalMatchMutation,
+    holdLiveRemoteMerge,
+    releaseLiveRemoteMerge,
     lockPreKickoffLineupDraft,
     commitReadyToStartLineup,
     claimLocalClock,
     releaseLocalClock,
-    shouldSkipLiveHydrate,
     matchId,
     players,
     setPlayers,
@@ -370,27 +370,16 @@ export function CoachDashboard() {
         quiet?: boolean
       },
     ) => {
-      noteLocalMatchMutation()
-      return runSync(work, options)
+      holdLiveRemoteMerge()
+      return runSync(work, options).finally(() => {
+        releaseLiveRemoteMerge()
+      })
     },
-    [noteLocalMatchMutation, runSync],
+    [holdLiveRemoteMerge, releaseLiveRemoteMerge, runSync],
   )
   useEffect(() => {
     if (authHealth === 'failed') setToast(AUTH_RECONNECT_TOAST)
   }, [authHealth])
-  useLiveMatchSync({
-    matchId,
-    enabled:
-      !loading &&
-      isLiveMatchStatus(matchStatus) &&
-      Boolean(matchId) &&
-      (appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout'),
-    isBlocked: () => isPending() || shouldSkipLiveHydrate(),
-    onHydrate: () =>
-      hydrateLiveMatch({
-        applyMode: appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout',
-      }),
-  })
   useEffect(() => {
     if (appMode !== 'penalty_shootout' || !matchId) {
       setPkInitialRounds(undefined)
@@ -1934,6 +1923,12 @@ export function CoachDashboard() {
         setCardWizardOpen(false)
         return
       }
+      if (
+        !shouldAcceptLiveEvent(liveEventDedupeKey(['card', matchId, playerId, kind]))
+      ) {
+        setToast('Already recorded')
+        return
+      }
 
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const label = formatPlayerLabel(player, sidelineMap)
@@ -1993,20 +1988,22 @@ export function CoachDashboard() {
 
       void runOptimisticSync(
         async () => {
-          assertMatchActionOk(
-            await apiLogCard({
-              matchId,
-              playerId,
-              kind,
-              timestamp: eventTimestamp,
-              formation: activeFormation,
-              yellowCardCountBefore: player.yellowCardCount,
-              isOnField: wasOnField,
-              totalSecondsPlayed: updated?.totalSecondsPlayed,
-              playerLabel: label,
-              teamSlug: activeTeamSlug,
-            }),
-          )
+          const result = await apiLogCard({
+            matchId,
+            playerId,
+            kind,
+            timestamp: eventTimestamp,
+            formation: activeFormation,
+            yellowCardCountBefore: player.yellowCardCount,
+            isOnField: wasOnField,
+            totalSecondsPlayed: updated?.totalSecondsPlayed,
+            playerLabel: label,
+            teamSlug: activeTeamSlug,
+          })
+          assertMatchActionOk(result)
+          if (result.deduped) {
+            setPlayers(previousPlayers)
+          }
         },
         {
           label: 'handleConfirmCard',
@@ -2039,6 +2036,12 @@ export function CoachDashboard() {
       },
     ) => {
       if (!matchId || !periodClockStarted) return
+      if (
+        options?.persist !== false &&
+        !shouldAcceptLiveEvent(liveEventDedupeKey(['shot', matchId, side]))
+      ) {
+        return
+      }
       const eventTimestamp =
         options?.timestamp ?? elapsedInHalf(seconds, halfLengthMinutes)
       if (side === 'home') {
@@ -2057,16 +2060,19 @@ export function CoachDashboard() {
       }
       void runOptimisticSync(
         async () => {
-          assertMatchActionOk(
-            await apiLogTeamEvent({
-              matchId,
-              side,
-              eventKind: 'shot',
-              timestamp: eventTimestamp,
-              formation: activeFormation,
-              pairAutoShot: false,
-            }),
-          )
+          const result = await apiLogTeamEvent({
+            matchId,
+            side,
+            eventKind: 'shot',
+            timestamp: eventTimestamp,
+            formation: activeFormation,
+            pairAutoShot: false,
+          })
+          assertMatchActionOk(result)
+          if (result.deduped) {
+            if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
+            else setAwayShots((n) => Math.max(0, n - 1))
+          }
         },
         {
           label: 'logTeamShot',
@@ -2134,6 +2140,10 @@ export function CoachDashboard() {
   const commitOpponentGoal = useCallback(
     (isPk: boolean) => {
       if (!matchId) return
+      if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'away']))) {
+        setToast('Already recorded')
+        return
+      }
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const opponentLabel = matchOpponent.trim() || 'Opponent'
@@ -2158,22 +2168,27 @@ export function CoachDashboard() {
 
       void runOptimisticSync(
         async () => {
-          assertMatchActionOk(
-            await apiLogGoal({
-              matchId,
-              ourGoal: false,
-              isPk,
-              timestamp: eventTimestamp,
-              formation: activeFormation,
-              homeScoreBefore: homeBefore,
-              awayScoreBefore: awayBefore,
-              teamName: matchTeamName.trim() || 'Home',
-              opponent: matchOpponent,
-              teamSlug: activeTeamSlug,
-              onFieldPlayerIds,
-              pairAutoShot: true,
-            }),
-          )
+          const result = await apiLogGoal({
+            matchId,
+            ourGoal: false,
+            isPk,
+            timestamp: eventTimestamp,
+            formation: activeFormation,
+            homeScoreBefore: homeBefore,
+            awayScoreBefore: awayBefore,
+            teamName: matchTeamName.trim() || 'Home',
+            opponent: matchOpponent,
+            teamSlug: activeTeamSlug,
+            onFieldPlayerIds,
+            pairAutoShot: true,
+          })
+          assertMatchActionOk(result)
+          setHomeScore(result.homeScore)
+          setAwayScore(result.awayScore)
+          if (result.deduped) {
+            setAwayShots((n) => Math.max(0, n - 1))
+            setPlayers((prev) => applyPlusMinusDelta(prev, 1))
+          }
         },
         {
           label: 'commitOpponentGoal',
@@ -2198,6 +2213,7 @@ export function CoachDashboard() {
       awayScore,
       matchTeamName,
       activeTeamSlug,
+      setHomeScore,
       setAwayScore,
       setAwayShots,
       setPlayers,
@@ -2333,6 +2349,11 @@ export function CoachDashboard() {
       const scorer = players.find((p) => p.id === scorerId)
       if (!scorer) return
       if (assistPlayerId === scorerId) return
+      if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'home']))) {
+        setToast('Already recorded')
+        closeGoalWizard()
+        return
+      }
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const assistPlayer =
@@ -2359,26 +2380,31 @@ export function CoachDashboard() {
 
       void runOptimisticSync(
         async () => {
-          assertMatchActionOk(
-            await apiLogGoal({
-              matchId,
-              ourGoal: true,
-              isPk,
-              scorerId,
-              assistPlayerId: isPk ? null : assistPlayerId,
-              scorerLabel,
-              assistLabel,
-              timestamp: eventTimestamp,
-              formation: activeFormation,
-              homeScoreBefore: homeBefore,
-              awayScoreBefore: awayBefore,
-              teamName: matchTeamName.trim() || 'Home',
-              opponent: matchOpponent,
-              teamSlug: activeTeamSlug,
-              onFieldPlayerIds,
-              pairAutoShot: true,
-            }),
-          )
+          const result = await apiLogGoal({
+            matchId,
+            ourGoal: true,
+            isPk,
+            scorerId,
+            assistPlayerId: isPk ? null : assistPlayerId,
+            scorerLabel,
+            assistLabel,
+            timestamp: eventTimestamp,
+            formation: activeFormation,
+            homeScoreBefore: homeBefore,
+            awayScoreBefore: awayBefore,
+            teamName: matchTeamName.trim() || 'Home',
+            opponent: matchOpponent,
+            teamSlug: activeTeamSlug,
+            onFieldPlayerIds,
+            pairAutoShot: true,
+          })
+          assertMatchActionOk(result)
+          setHomeScore(result.homeScore)
+          setAwayScore(result.awayScore)
+          if (result.deduped) {
+            setHomeShots((n) => Math.max(0, n - 1))
+            setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+          }
         },
         {
           label: 'commitOurGoal',
@@ -2399,6 +2425,7 @@ export function CoachDashboard() {
       halfLengthMinutes,
       activeFormation,
       setHomeScore,
+      setAwayScore,
       setHomeShots,
       setPlayers,
       closeGoalWizard,

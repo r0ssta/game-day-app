@@ -55,6 +55,7 @@
     "supabase-realtime-match-tables-migration.sql",
     "supabase-parent-live-timeline-migration.sql",
     "supabase-match-stats-delete-policy-migration.sql",
-    "supabase-match-knockout-extra-time-migration.sql"
+    "supabase-match-knockout-extra-time-migration.sql",
+    "supabase-live-match-sync-dedupe-migration.sql"
   ]
 }

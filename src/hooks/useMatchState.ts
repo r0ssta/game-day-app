@@ -95,12 +95,14 @@ import {
   fetchLiveMatchSnapshot,
   isActiveStaffMatchScreen,
   isStaleKickoffSnapshot,
+  mergeRemotePlayerOverlays,
   shouldAdoptRemoteClock,
   shouldAdoptRemotePreKickoffLineup,
   shouldHoldLocalLiveClock,
   snapshotHydrateResult,
   type LiveMatchHydrateResult,
 } from '@/lib/live-match-snapshot'
+import { useLiveMatchSync } from '@/hooks/useLiveMatchSync'
 import { apiEndRegulation, apiFinalizePk } from '@/lib/match-api'
 import {
   defaultPeriodLengthMinutes,
@@ -373,8 +375,19 @@ export function useMatchState() {
     syncMatchClock(targetMatchId, remainingSeconds)
   }, [])
 
+  const liveMergeHoldRef = useRef(0)
+
   const noteLocalMatchMutation = useCallback(() => {
     localWriteGenRef.current += 1
+  }, [])
+
+  const holdLiveRemoteMerge = useCallback(() => {
+    liveMergeHoldRef.current += 1
+    noteLocalMatchMutation()
+  }, [noteLocalMatchMutation])
+
+  const releaseLiveRemoteMerge = useCallback(() => {
+    liveMergeHoldRef.current = Math.max(0, liveMergeHoldRef.current - 1)
   }, [])
 
   const lockPreKickoffLineupDraft = useCallback(() => {
@@ -421,10 +434,12 @@ export function useMatchState() {
     async (options?: {
       applyMode?: boolean
       force?: boolean
+      slice?: 'full' | 'scores'
     }): Promise<LiveMatchHydrateResult | null> => {
+      const slice = options?.slice ?? 'full'
       const targetMatchId = matchIdRef.current
       if (!targetMatchId) return null
-      if (!options?.force && shouldSkipLiveHydrate()) return null
+      if (slice !== 'scores' && !options?.force && shouldSkipLiveHydrate()) return null
       if (!options?.force && hydrateInFlightRef.current) return null
       hydrateInFlightRef.current = true
       const writeGen = localWriteGenRef.current
@@ -433,6 +448,35 @@ export function useMatchState() {
         const snapshot = await fetchLiveMatchSnapshot(targetMatchId, rosterForFetch)
         if (!snapshot || matchIdRef.current !== targetMatchId) return null
         if (writeGen !== localWriteGenRef.current) return null
+
+        if (slice === 'scores') {
+          const { match, shotSaveTotals, players: remotePlayers } = snapshot
+          const latest = liveStateRef.current
+          setHomeScore(match.home_score)
+          setAwayScore(match.away_score)
+          setHomeShots(shotSaveTotals.homeShots)
+          setAwayShots(shotSaveTotals.awayShots)
+          setHomeSaves(shotSaveTotals.homeSaves)
+          setAwaySaves(shotSaveTotals.awaySaves)
+          setHomeCorners(shotSaveTotals.homeCorners)
+          setAwayCorners(shotSaveTotals.awayCorners)
+          setHomePkScore(match.home_pk_score ?? 0)
+          setAwayPkScore(match.away_pk_score ?? 0)
+          setPkWinnerIsUs(match.pk_winner_is_us ?? null)
+          const mergedPlayers = mergeRemotePlayerOverlays(latest.players, remotePlayers)
+          if (mergedPlayers !== latest.players) {
+            setPlayers(mergedPlayers)
+          }
+          const localMode = isActiveStaffMatchScreen(latest.appMode)
+            ? latest.appMode
+            : snapshotHydrateResult(snapshot, latest.seconds).mode
+          return {
+            ...snapshotHydrateResult(snapshot, latest.seconds),
+            mode: localMode,
+            periodClockStarted: latest.periodClockStarted,
+            seconds: latest.seconds,
+          }
+        }
 
         // Kickoff / tick may have started while this snapshot was in flight.
         if (shouldSkipLiveHydrate() || liveStateRef.current.appMode === 'halftime') {
@@ -619,6 +663,17 @@ export function useMatchState() {
     },
     [applyMatchPeriodState, claimLocalClock, shouldSkipLiveHydrate, teams],
   )
+
+  useLiveMatchSync({
+    matchId,
+    enabled:
+      !loading &&
+      isLiveMatchStatus(matchStatus) &&
+      Boolean(matchId) &&
+      isActiveStaffMatchScreen(appMode),
+    isBlocked: () => liveMergeHoldRef.current > 0,
+    onHydrate: () => hydrateLiveMatch({ slice: 'scores' }),
+  })
 
   const resumeLiveMatchScreen = useCallback(async () => {
     const latest = liveStateRef.current
@@ -1760,6 +1815,8 @@ export function useMatchState() {
     resumeLiveMatchScreen,
     persistMatchClock,
     noteLocalMatchMutation,
+    holdLiveRemoteMerge,
+    releaseLiveRemoteMerge,
     lockPreKickoffLineupDraft,
     claimLocalClock,
     releaseLocalClock,

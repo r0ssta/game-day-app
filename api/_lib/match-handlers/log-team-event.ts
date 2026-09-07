@@ -3,6 +3,7 @@ import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth.js'
 import { requireMatchAccess } from '../match-access.js'
 import { LogTeamEventInputSchema } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
+import { isDuplicateLiveEvent } from '../live-event-dedupe.js'
 import {
   type MatchEventInsert,
   pairedShotType,
@@ -48,6 +49,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? (input.playerId ?? null)
         : null
     const pairAutoShot = input.eventKind === 'save' && input.pairAutoShot
+
+    if (
+      input.eventKind === 'shot' &&
+      (await isDuplicateLiveEvent(auth.supabase, {
+        matchId: input.matchId,
+        eventType,
+        playerId: null,
+        isPk: false,
+      }))
+    ) {
+      return res.status(200).json({
+        ok: true,
+        deduped: true,
+        eventType,
+        pairedShot: false,
+      })
+    }
 
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
       const rows: MatchEventInsert[] = [

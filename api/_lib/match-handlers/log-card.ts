@@ -5,6 +5,7 @@ import { LogCardInputSchema } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import { buildCardPush } from '../push-copy.js'
 import { queueTeamWebPush } from '../send-web-push.js'
+import { isDuplicateLiveEvent } from '../live-event-dedupe.js'
 import { type MatchEventInsert, runMatchWrites } from '../match-writes.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -41,6 +42,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const isSecondYellow = input.kind === 'yellow' && input.yellowCardCountBefore >= 1
     const issueRed = input.kind === 'red' || isSecondYellow
+    const primaryType = input.kind === 'yellow' || isSecondYellow ? 'yellow_card' : 'red_card'
+
+    if (
+      await isDuplicateLiveEvent(auth.supabase, {
+        matchId: input.matchId,
+        eventType: primaryType,
+        playerId: input.playerId,
+        isPk: false,
+      })
+    ) {
+      return res.status(200).json({
+        ok: true,
+        deduped: true,
+        isSecondYellow,
+        issueRed,
+      })
+    }
 
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
       const events: MatchEventInsert[] = []

@@ -5,6 +5,7 @@ import { LogGoalInputSchema } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import { buildGoalPush } from '../push-copy.js'
 import { queueTeamWebPush } from '../send-web-push.js'
+import { isDuplicateLiveEvent } from '../live-event-dedupe.js'
 import { type MatchEventInsert, runMatchWrites } from '../match-writes.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -39,11 +40,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(access.status).json({ ok: false, error: access.error })
     }
 
-    const nextHome = input.ourGoal ? input.homeScoreBefore + 1 : input.homeScoreBefore
-    const nextAway = input.ourGoal ? input.awayScoreBefore : input.awayScoreBefore + 1
     const eventType = input.ourGoal ? 'goal' : 'opponent_goal'
     const shotType = input.ourGoal ? 'shot_home' : 'shot_away'
     const plusMinusDelta: 1 | -1 = input.ourGoal ? 1 : -1
+
+    if (
+      await isDuplicateLiveEvent(auth.supabase, {
+        matchId: input.matchId,
+        eventType,
+        playerId: input.ourGoal ? (input.scorerId ?? null) : null,
+        isPk: input.isPk,
+      })
+    ) {
+      const { data: latest } = await auth.supabase
+        .from('matches')
+        .select('home_score, away_score')
+        .eq('id', input.matchId)
+        .maybeSingle()
+      return res.status(200).json({
+        ok: true,
+        deduped: true,
+        homeScore: latest?.home_score ?? access.match.home_score,
+        awayScore: latest?.away_score ?? access.match.away_score,
+        eventType,
+      })
+    }
+
+    const nextHome = input.ourGoal ? input.homeScoreBefore + 1 : input.homeScoreBefore
+    const nextAway = input.ourGoal ? input.awayScoreBefore : input.awayScoreBefore + 1
 
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
       const events: MatchEventInsert[] = [

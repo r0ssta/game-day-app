@@ -25,6 +25,7 @@ import { APP_CONTAINER, APP_SHELL, MODAL_OVERLAY, MODAL_PANEL } from '@/lib/layo
 import type { MatchPeriod } from '@/types/match'
 import type { DbMatch } from '@/types/database'
 import { isLiveMatchStatus } from '@/lib/match-status'
+import { liveEventDedupeKey, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
 
 type StatTrackerScreenProps = {
   matchId: string
@@ -286,6 +287,20 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
 
   const completeLog = async (playerId: string | null, anonymous: boolean) => {
     if (!pendingAction || logging || !isLiveMatchStatus(matchStatus)) return
+    if (
+      !shouldAcceptLiveEvent(
+        liveEventDedupeKey([
+          'stat',
+          matchId,
+          pendingAction,
+          anonymous ? 'team' : playerId,
+        ]),
+      )
+    ) {
+      setToast('Already recorded')
+      setPendingAction(null)
+      return
+    }
 
     setLogging(true)
     try {
