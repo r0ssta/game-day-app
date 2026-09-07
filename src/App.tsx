@@ -2192,6 +2192,7 @@ export default function App() {
     setHalftimeStarter,
     halftimeSlotAssignments,
     halftimeSlotLabelOverrides,
+    firstHalfSlotAssignments,
     secondHalfSlotAssignments,
     lineupPresets,
     teamRoster,
@@ -4762,7 +4763,9 @@ export default function App() {
           halfLengthMinutes={halfLengthMinutes}
           maxFieldPlayers={maxFieldPlayers}
           teamFormat={activeTeamFormat}
-          initialSlotAssignments={currentPeriod > 1 ? secondHalfSlotAssignments : undefined}
+          initialSlotAssignments={
+            currentPeriod > 1 ? secondHalfSlotAssignments : firstHalfSlotAssignments
+          }
           onSwap={handleLiveSwap}
           onSubIn={handleLiveSubIn}
           onSubOut={handleLiveSubOut}

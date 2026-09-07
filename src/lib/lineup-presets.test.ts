@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parsePreloadSlotAssignments,
+  resolveLiveFirstHalfSlots,
   resolveSetupLineup,
 } from './lineup-presets'
 import type { SetupLineup } from '@/types/match'
@@ -41,5 +42,39 @@ describe('parsePreloadSlotAssignments', () => {
       cm: 'p2',
       lw: null,
     })
+  })
+})
+
+describe('resolveLiveFirstHalfSlots', () => {
+  it('prefers the persisted playerId → slotId map over label reconstruction', () => {
+    const locked = resolveLiveFirstHalfSlots({
+      persistedRaw: { 'fwd-l': 'p-st', 'fwd-c': 'p-lw', 'fwd-r': 'p-rw' },
+      formationId: '3-2-3',
+      format: '9v9',
+      starters: [
+        { playerId: 'p-st', position: 'ST' },
+        { playerId: 'p-lw', position: 'LW' },
+        { playerId: 'p-rw', position: 'RW' },
+      ],
+    })
+    expect(locked?.['fwd-l']).toBe('p-st')
+    expect(locked?.['fwd-c']).toBe('p-lw')
+    expect(locked?.['fwd-r']).toBe('p-rw')
+  })
+
+  it('falls back to label matching when nothing was persisted', () => {
+    const reconstructed = resolveLiveFirstHalfSlots({
+      persistedRaw: null,
+      formationId: '3-2-3',
+      format: '9v9',
+      starters: [
+        { playerId: 'p-st', position: 'ST' },
+        { playerId: 'p-lw', position: 'LW' },
+        { playerId: 'p-rw', position: 'RW' },
+      ],
+    })
+    expect(reconstructed?.['fwd-l']).toBe('p-lw')
+    expect(reconstructed?.['fwd-c']).toBe('p-st')
+    expect(reconstructed?.['fwd-r']).toBe('p-rw')
   })
 })

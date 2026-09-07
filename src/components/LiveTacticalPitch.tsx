@@ -10,15 +10,16 @@ import {
 import { Users, X } from 'lucide-react'
 import { FormationPitch } from '@/components/FormationPitch'
 import {
-  buildAssignmentsFromStarters,
   getFormationById,
   getFormationsForFormat,
   reconcileSlotAssignments,
   remapFormationSlotAssignments,
   resolveSlotLabel,
+  slotAssignmentsFromMatchPositions,
   type FormationRemapResult,
   type FormationSlot,
 } from '@/lib/formations'
+import { hasSlotAssignments } from '@/lib/lineup'
 import type { TeamFormat } from '@/lib/team-format'
 import {
   buildSidelineNameMap,
@@ -367,9 +368,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     }, [periodKey, formationId])
 
     useEffect(() => {
-      const hydrateKey = `${periodKey}:${formation.id}`
-      if (hydratedKeyRef.current === hydrateKey) return
-      hydratedKeyRef.current = hydrateKey
+      if (players.length === 0) return
 
       const playerSummaries = players.map((p) => ({
         id: p.id,
@@ -379,8 +378,12 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       const onFieldIds = new Set(
         players.filter((p) => p.attending && p.isOnField).map((p) => p.id),
       )
+      const locked = hasSlotAssignments(initialSlotAssignments)
+      const hydrateKey = `${periodKey}:${formation.id}:${locked ? 'locked' : 'auto'}`
 
-      if (initialSlotAssignments && Object.values(initialSlotAssignments).some(Boolean)) {
+      if (locked) {
+        if (hydratedKeyRef.current === hydrateKey) return
+        hydratedKeyRef.current = hydrateKey
         setSlotAssignments(
           reconcileSlotAssignments(
             formation,
@@ -393,9 +396,23 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         return
       }
 
-      const starters = Object.fromEntries(players.map((p) => [p.id, p.attending && p.isOnField]))
+      // Locked maps arriving after first paint replace auto-fill; never unlock.
+      if (hydratedKeyRef.current?.endsWith(':locked')) return
+      if (hydratedKeyRef.current === hydrateKey) return
+      hydratedKeyRef.current = hydrateKey
+
+      const reconstructed = slotAssignmentsFromMatchPositions(
+        formation.id,
+        playerSummaries
+          .filter((p) => onFieldIds.has(p.id))
+          .map((p) => ({
+            playerId: p.id,
+            position: (p.matchPosition ?? p.position ?? '').trim(),
+          })),
+        formation.format,
+      )
       setSlotAssignments(
-        buildAssignmentsFromStarters(formation, playerSummaries, starters),
+        reconcileSlotAssignments(formation, reconstructed, playerSummaries, onFieldIds),
       )
       skipOnFieldSyncRef.current = true
     }, [periodKey, formation, players, initialSlotAssignments])

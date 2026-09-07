@@ -1605,7 +1605,13 @@ export async function mergeMatchTimingContext(
   timing: { addedTimeSeconds?: number; endedOnTime?: boolean | null },
 ) {
   const existing = await fetchMatchById(matchId)
-  const current = parseQualitativeContext(existing?.qualitative_context)
+  const raw =
+    existing?.qualitative_context &&
+    typeof existing.qualitative_context === 'object' &&
+    !Array.isArray(existing.qualitative_context)
+      ? { ...(existing.qualitative_context as Record<string, unknown>) }
+      : {}
+  const current = parseQualitativeContext(raw)
   const next: QualitativeContext = {
     ...current,
     addedTimeSeconds:
@@ -1615,7 +1621,10 @@ export async function mergeMatchTimingContext(
     endedOnTime:
       timing.endedOnTime !== undefined ? timing.endedOnTime : current.endedOnTime,
   }
-  await saveQualitativeContext(matchId, serializeQualitativeContext(next))
+  await saveQualitativeContext(matchId, {
+    ...raw,
+    ...(serializeQualitativeContext(next) ?? {}),
+  })
 }
 
 export async function markMatchPendingReview(matchId: string) {

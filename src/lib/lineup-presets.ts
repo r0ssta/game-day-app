@@ -4,6 +4,7 @@ import {
   isFormationValidForFormat,
   reconcileSlotAssignments,
   resolveSlotLabel,
+  slotAssignmentsFromMatchPositions,
   type Formation,
 } from '@/lib/formations'
 import { ensureSetupLineup, hasSlotAssignments } from '@/lib/lineup'
@@ -194,6 +195,27 @@ export function starterIdsFromSlotAssignments(
   slotAssignments: Record<string, string | null>,
 ): string[] {
   return Object.values(slotAssignments).filter((id): id is string => Boolean(id))
+}
+
+/**
+ * First-half pitch map for live / ready-to-start.
+ * Prefers the coach's saved playerId → slotId map; only reconstructs from
+ * position labels when nothing was persisted. Never invents a role auto-fill.
+ */
+export function resolveLiveFirstHalfSlots(input: {
+  persistedRaw: unknown
+  formationId: string
+  format: TeamFormat
+  starters: Array<{ playerId: string; position: string }>
+}): Record<string, string | null> | null {
+  const persisted = parsePreloadSlotAssignments(input.persistedRaw)
+  if (persisted) return persisted
+  const reconstructed = slotAssignmentsFromMatchPositions(
+    input.formationId,
+    input.starters,
+    input.format,
+  )
+  return hasSlotAssignments(reconstructed) ? reconstructed : null
 }
 
 /** Rebuild a pitch map saved on a scheduled match. Empty / all-null maps are ignored. */

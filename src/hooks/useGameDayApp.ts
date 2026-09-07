@@ -33,14 +33,13 @@ import {
   getDefaultFormationId,
   isFormationValidForFormat,
   resolveFormationIdForFormat,
-  slotAssignmentsFromMatchPositions,
 } from '@/lib/formations'
 import {
   applyPresetToSetup,
   applyPresetToHalftime,
   buildFormationJson,
-  parsePreloadSlotAssignments,
   parseSlotLabelOverrides,
+  resolveLiveFirstHalfSlots,
   validatePresetFormation,
 } from '@/lib/lineup-presets'
 import {
@@ -216,6 +215,9 @@ export function useGameDayApp() {
   >({})
   const [halftimeSlotLabelOverrides, setHalftimeSlotLabelOverrides] = useState<
     Record<string, string>
+  >({})
+  const [firstHalfSlotAssignments, setFirstHalfSlotAssignments] = useState<
+    Record<string, string | null>
   >({})
   const [secondHalfSlotAssignments, setSecondHalfSlotAssignments] = useState<
     Record<string, string | null>
@@ -558,6 +560,35 @@ export function useGameDayApp() {
           )
         }
 
+        if (result.currentPeriod <= 1) {
+          const teamFormat = normalizeTeamFormat(
+            teams.find((team) => team.id === match.team_id)?.format,
+          )
+          const rawContext =
+            match.qualitative_context && typeof match.qualitative_context === 'object'
+              ? (match.qualitative_context as Record<string, unknown>)
+              : null
+          const preloadFormation =
+            typeof rawContext?.preloadFormation === 'string'
+              ? rawContext.preloadFormation.trim()
+              : ''
+          const slotFormation = resolveFormationIdForFormat(
+            formationId || preloadFormation || matchFormationsRef.current.first,
+            teamFormat,
+          )
+          const liveSlots = resolveLiveFirstHalfSlots({
+            persistedRaw: rawContext?.preloadSlotAssignments,
+            formationId: slotFormation,
+            format: teamFormat,
+            starters: remotePlayers
+              .filter((player) => player.isFirstHalfStarter || player.isOnField)
+              .map((player) => ({ playerId: player.id, position: player.matchPosition })),
+          })
+          if (hasSlotAssignments(liveSlots)) {
+            setFirstHalfSlotAssignments(liveSlots)
+          }
+        }
+
         if (result.mode === 'halftime' && !localRunning) {
           setHalftimeSecondHalf((prev) => {
             if (Object.keys(prev).length > 0) return prev
@@ -827,6 +858,28 @@ export function useGameDayApp() {
           setSecondHalfStarterIds(
             stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id),
           )
+          const rawContext =
+            match.qualitative_context && typeof match.qualitative_context === 'object'
+              ? (match.qualitative_context as Record<string, unknown>)
+              : null
+          const teamFormat = normalizeTeamFormat(team.format)
+          const preloadFormation =
+            typeof rawContext?.preloadFormation === 'string'
+              ? rawContext.preloadFormation.trim()
+              : ''
+          const formationId = resolveFormationIdForFormat(preloadFormation, teamFormat)
+          if (preloadFormation) {
+            setMatchFormations({ first: formationId, second: formationId })
+          }
+          const liveSlots = resolveLiveFirstHalfSlots({
+            persistedRaw: rawContext?.preloadSlotAssignments,
+            formationId,
+            format: teamFormat,
+            starters: playersWithCards
+              .filter((player) => player.isFirstHalfStarter || player.isOnField)
+              .map((player) => ({ playerId: player.id, position: player.matchPosition })),
+          })
+          setFirstHalfSlotAssignments(liveSlots ?? {})
         } else if (resolvedTeamId) {
           setSelectedTeamId(resolvedTeamId)
           persistActiveTeamId(resolvedTeamId)
@@ -1120,13 +1173,13 @@ export function useGameDayApp() {
         const starters = matchPlayers
           .filter((player) => player.isFirstHalfStarter || player.isOnField)
           .map((player) => ({ playerId: player.id, position: player.matchPosition }))
-        const reconstructedSlots = slotAssignmentsFromMatchPositions(
-          formationId,
-          starters,
-          teamFormat,
-        )
-        const persistedSlots = parsePreloadSlotAssignments(rawContext?.preloadSlotAssignments)
-        const slotAssignments = persistedSlots ?? reconstructedSlots
+        const slotAssignments =
+          resolveLiveFirstHalfSlots({
+            persistedRaw: rawContext?.preloadSlotAssignments,
+            formationId,
+            format: teamFormat,
+            starters,
+          }) ?? {}
         const slotLabelOverrides = parseSlotLabelOverrides(rawContext?.preloadSlotLabelOverrides)
         const lineup = { attending, startFirstHalf }
         const nextRoster = [...roster, ...extraPlayers]
@@ -1681,6 +1734,8 @@ export function useGameDayApp() {
       firstHalfFormation: string
       subIntervalSeconds?: number | null
       gkPlaysFullHalf?: boolean
+      slotAssignments?: Record<string, string | null> | null
+      slotLabelOverrides?: Record<string, string> | null
     }) => {
       const existing = await fetchActiveMatch(input.teamId)
       if (existing) {
@@ -1733,6 +1788,28 @@ export function useGameDayApp() {
           input.absentPlayers ?? [],
         )
 
+        const teamFormat = normalizeTeamFormat(
+          teams.find((team) => team.id === input.teamId)?.format,
+        )
+        const formationId = resolveFormationIdForFormat(input.firstHalfFormation, teamFormat)
+        const liveSlots = resolveLiveFirstHalfSlots({
+          persistedRaw: input.slotAssignments,
+          formationId,
+          format: teamFormat,
+          starters: input.firstHalfStarterIds.map((id) => ({
+            playerId: id,
+            position: input.matchPositions[id] ?? '',
+          })),
+        })
+        await saveQualitativeContext(
+          match.id,
+          scheduledPreloadContext({
+            firstHalfFormation: input.firstHalfFormation,
+            slotAssignments: liveSlots,
+            slotLabelOverrides: input.slotLabelOverrides,
+          }),
+        )
+
         setMatchId(match.id)
         setSessionMatchTeamId(input.teamId)
         setMatchStatus('live')
@@ -1760,6 +1837,8 @@ export function useGameDayApp() {
         setFirstHalfStarterIds(input.firstHalfStarterIds)
         setSecondHalfStarterIds([])
         setHalftimeSecondHalf({})
+        setFirstHalfSlotAssignments(liveSlots ?? {})
+        setSecondHalfSlotAssignments({})
         setMatchFormations({
           first: resolveFormationIdForFormat(
             input.firstHalfFormation,
@@ -2019,6 +2098,14 @@ export function useGameDayApp() {
         preloadFormation || matchFormations.first,
         normalizeTeamFormat(team.format),
       )
+      const liveSlots = resolveLiveFirstHalfSlots({
+        persistedRaw: rawContext?.preloadSlotAssignments,
+        formationId: formation,
+        format: normalizeTeamFormat(team.format),
+        starters: matchPlayers
+          .filter((p) => p.isOnField || p.isFirstHalfStarter)
+          .map((p) => ({ playerId: p.id, position: p.matchPosition })),
+      })
 
       const halfLen = match.period_length ?? match.half_length
       const clock = initialHalfClock(halfLen)
@@ -2061,6 +2148,8 @@ export function useGameDayApp() {
       setFirstHalfStarterIds(starterIds)
       setSecondHalfStarterIds([])
       setHalftimeSecondHalf({})
+      setFirstHalfSlotAssignments(liveSlots ?? {})
+      setSecondHalfSlotAssignments({})
       setMatchFormations({
         first: formation,
         second: formation,
@@ -2369,6 +2458,7 @@ export function useGameDayApp() {
     setHalftimeSecondHalf({})
     setHalftimeSlotAssignments({})
     setHalftimeSlotLabelOverrides({})
+    setFirstHalfSlotAssignments({})
     setSecondHalfSlotAssignments({})
     setSetupSlotAssignments(undefined)
     setSetupSlotLabelOverrides(undefined)
@@ -2622,6 +2712,7 @@ export function useGameDayApp() {
     setHalftimeStarter,
     halftimeSlotAssignments,
     halftimeSlotLabelOverrides,
+    firstHalfSlotAssignments,
     secondHalfSlotAssignments,
     setSecondHalfSlotAssignments,
     lineupPresets,

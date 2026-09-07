@@ -403,7 +403,24 @@ export function buildAssignmentsFromStarters(
   const starterIds = players.filter((p) => starters[p.id]).map((p) => p.id)
   const used = new Set<string>()
 
+  // Lock exact label / slot-id matches first so a coach's ST stays ST, not LW.
+  for (const id of starterIds) {
+    const player = players.find((p) => p.id === id)
+    const pos = (player?.matchPosition ?? player?.position ?? '').trim().toUpperCase()
+    if (!pos) continue
+    const slot = formation.slots.find(
+      (entry) =>
+        assignments[entry.id] == null &&
+        (entry.label.toUpperCase() === pos || entry.id.toUpperCase() === pos),
+    )
+    if (!slot) continue
+    assignments[slot.id] = id
+    used.add(id)
+  }
+
+  // Role / leftover fill only runs on empty slots — never overwrite a lock.
   for (const slot of formation.slots) {
+    if (assignments[slot.id]) continue
     const preferred = starterIds.find((id) => {
       if (used.has(id)) return false
       const player = players.find((p) => p.id === id)
