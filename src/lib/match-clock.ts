@@ -29,6 +29,20 @@ export function initialHalfClock(halfLengthMinutes: number): number {
   return halfDurationSeconds(halfLengthMinutes)
 }
 
+/**
+ * Period kickoff must start on a full countdown. A leftover 0:00 (or a
+ * snapshot that snapped to 0 before the whistle) would write event
+ * timestamps as "already past a full half" and inflate recap minutes.
+ */
+export function resolvePeriodKickoffRemaining(
+  currentRemaining: number,
+  halfLengthMinutes: number,
+): number {
+  const full = initialHalfClock(halfLengthMinutes)
+  if (currentRemaining <= 0 || currentRemaining > full) return full
+  return currentRemaining
+}
+
 /** Advance the countdown by one real-world tick. Allows negative remaining (added time). */
 export function tickCountdownClock(
   remainingSeconds: number,

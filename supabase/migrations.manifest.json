@@ -56,6 +56,7 @@
     "supabase-parent-live-timeline-migration.sql",
     "supabase-match-stats-delete-policy-migration.sql",
     "supabase-match-knockout-extra-time-migration.sql",
-    "supabase-live-match-sync-dedupe-migration.sql"
+    "supabase-live-match-sync-dedupe-migration.sql",
+    "supabase-fix-u13-maroon-soca-minutes-migration.sql"
   ]
 }

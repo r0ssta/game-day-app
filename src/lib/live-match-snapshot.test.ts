@@ -221,6 +221,18 @@ describe('shouldAdoptRemoteClock', () => {
     ).toBe(false)
   })
 
+  it('does not adopt a remote 0:00 over a ready-to-start countdown', () => {
+    expect(
+      shouldAdoptRemoteClock({
+        ...base,
+        localSeconds: 1500,
+        remoteSeconds: 0,
+        remoteClockStarted: false,
+        localClockStarted: false,
+      }),
+    ).toBe(false)
+  })
+
   it('keeps local countdown when remote has not started the period', () => {
     expect(
       shouldAdoptRemoteClock({

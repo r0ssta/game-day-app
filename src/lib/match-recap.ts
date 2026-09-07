@@ -74,6 +74,28 @@ export function playerPositionReviewKey(playerId: string, position: string): str
 
 type TimelineEvent = DbMatchEvent & { absTimestamp: number }
 
+function periodRebaseSeconds(
+  periodEvents: DbMatchEvent[],
+  halfLengthSeconds: number,
+): number {
+  if (periodEvents.length === 0 || halfLengthSeconds <= 0) return 0
+  const kickoff = periodEvents[0]
+  if (!kickoff) return 0
+  const kickoffAt = Date.parse(kickoff.created_at)
+  if (!Number.isFinite(kickoffAt)) return 0
+
+  const firstLater = periodEvents.find(
+    (event) => event.timestamp >= halfLengthSeconds - 15 && event !== kickoff,
+  )
+  if (!firstLater) return 0
+
+  const laterAt = Date.parse(firstLater.created_at)
+  if (!Number.isFinite(laterAt)) return 0
+  const createdDeltaSec = Math.max(0, (laterAt - kickoffAt) / 1000)
+  if (firstLater.timestamp <= createdDeltaSec + 60) return 0
+  return Math.max(0, firstLater.timestamp - createdDeltaSec)
+}
+
 export function buildAbsoluteMatchTimeline(
   events: DbMatchEvent[],
   halfLengthSeconds: number,
@@ -82,16 +104,38 @@ export function buildAbsoluteMatchTimeline(
     (a, b) => a.created_at.localeCompare(b.created_at) || a.timestamp - b.timestamp,
   )
 
-  let periodOffset = 0
+  const periods: DbMatchEvent[][] = []
+  let bucket: DbMatchEvent[] = []
   let lastTimestamp = 0
 
-  return sorted.map((event) => {
-    if (event.timestamp < lastTimestamp - 30) {
-      periodOffset += halfLengthSeconds
+  for (const event of sorted) {
+    const newPeriod =
+      bucket.length > 0 &&
+      (event.timestamp < lastTimestamp - 30 ||
+        (Boolean(event.event_notes?.startsWith('starting_lineup')) && lastTimestamp > 30))
+    if (newPeriod) {
+      periods.push(bucket)
+      bucket = []
     }
+    bucket.push(event)
     lastTimestamp = event.timestamp
-    return { ...event, absTimestamp: periodOffset + event.timestamp }
-  })
+  }
+  if (bucket.length > 0) periods.push(bucket)
+
+  const timeline: TimelineEvent[] = []
+  let periodOffset = 0
+
+  for (const period of periods) {
+    const rebase = periodRebaseSeconds(period, halfLengthSeconds)
+    for (const event of period) {
+      const periodSeconds = Math.max(0, event.timestamp - rebase)
+      timeline.push({ ...event, absTimestamp: periodOffset + periodSeconds })
+    }
+    const last = period[period.length - 1]
+    periodOffset += Math.max(halfLengthSeconds, (last?.timestamp ?? 0) - rebase)
+  }
+
+  return timeline
 }
 
 function addRecapPosition(positions: string[], rawPosition: string | null | undefined) {

@@ -3,6 +3,7 @@ import {
   formatAddedTime,
   formatMatchClockParts,
   persistableClockSeconds,
+  resolvePeriodKickoffRemaining,
   restoreMatchClockSeconds,
   tickCountdownClock,
 } from './match-clock'
@@ -25,6 +26,13 @@ describe('match-clock', () => {
     expect(tickCountdownClock(1, 1)).toBe(0)
     expect(tickCountdownClock(0, 1)).toBe(-1)
     expect(tickCountdownClock(50, 50)).toBe(0)
+  })
+
+  it('restores a leftover 0:00 clock to a full period at kickoff', () => {
+    expect(resolvePeriodKickoffRemaining(0, 25)).toBe(25 * 60)
+    expect(resolvePeriodKickoffRemaining(-12, 25)).toBe(25 * 60)
+    expect(resolvePeriodKickoffRemaining(2000, 25)).toBe(25 * 60)
+    expect(resolvePeriodKickoffRemaining(12 * 60, 25)).toBe(12 * 60)
   })
 
   it('formats added time as +M:SS and keeps regulation at 00:00', () => {

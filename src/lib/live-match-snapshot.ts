@@ -181,6 +181,17 @@ export function shouldAdoptRemoteClock(input: {
   // Resume / other staff device started the period — take their clock.
   if (input.remoteClockStarted && !input.localClockStarted) return true
 
+  // Ready screen: DB 0:00 is an uninitialized row, not a real countdown.
+  // Adopting it made kickoff write "already past a full half" timestamps.
+  if (
+    !input.localClockStarted &&
+    !input.remoteClockStarted &&
+    input.remoteSeconds <= 0 &&
+    input.localSeconds > 0
+  ) {
+    return false
+  }
+
   // Countdown remaining: a higher remote value is a rewind toward kickoff.
   // Only catch up when remote is ahead.
   return input.remoteSeconds < input.localSeconds - CLOCK_ADOPT_DRIFT_SECONDS

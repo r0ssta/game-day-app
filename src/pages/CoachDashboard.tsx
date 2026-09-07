@@ -74,6 +74,7 @@ import {
   elapsedInHalf,
   formatClock,
   halfDurationSeconds,
+  resolvePeriodKickoffRemaining,
   tickCountdownClock,
   type QaSpeedMultiplier,
 } from '@/lib/match-clock'
@@ -1125,16 +1126,18 @@ export function CoachDashboard() {
   const extraTimeHalf = extraTimeHalfFromStatus(matchStatus)
 
   const handleStartExtraTime = useCallback(() => {
-    const stamped = stampAllOnField(players, seconds)
+    const kickoffSeconds = resolvePeriodKickoffRemaining(seconds, halfLengthMinutes)
+    if (kickoffSeconds !== seconds) setSeconds(kickoffSeconds)
+    const stamped = stampAllOnField(players, kickoffSeconds)
     setPlayers(stamped)
     setPeriodClockStarted(true)
     claimLocalClock()
     noteLocalMatchMutation()
     if (matchId) {
-      persistMatchClock(matchId, seconds)
-      void updateMatchRecordSafe()
+      persistMatchClock(matchId, kickoffSeconds)
+      void updateMatchRecordSafe(kickoffSeconds)
     }
-    const underwayToast = `${extraTimePeriodLabel(extraTimeHalf ?? 1)} underway · ${formatClock(seconds)}`
+    const underwayToast = `${extraTimePeriodLabel(extraTimeHalf ?? 1)} underway · ${formatClock(kickoffSeconds)}`
     if (ENABLE_WAKE_LOCK) {
       void requestWakeLock().then((result) => {
         setToast(result.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
@@ -1143,19 +1146,21 @@ export function CoachDashboard() {
       setToast(underwayToast)
     }
 
-    async function updateMatchRecordSafe() {
+    async function updateMatchRecordSafe(clockSeconds: number) {
       if (!matchId) return
       syncMatchRecord(matchId, {
         period_clock_started: true,
-        clock_seconds: seconds,
+        clock_seconds: clockSeconds,
         status: extraTimeHalf === 2 ? MATCH_STATUS.extraTimeSecondHalf : MATCH_STATUS.extraTimeFirstHalf,
       })
     }
   }, [
     players,
     seconds,
+    halfLengthMinutes,
     matchId,
     extraTimeHalf,
+    setSeconds,
     setPlayers,
     setPeriodClockStarted,
     claimLocalClock,
@@ -1204,7 +1209,9 @@ export function CoachDashboard() {
             activeTeamFormat,
           )
         : players
-    const stamped = freezeFirstHalfStarters(stampAllOnField(kickoffPlayers, seconds))
+    const kickoffSeconds = resolvePeriodKickoffRemaining(seconds, halfLengthMinutes)
+    if (kickoffSeconds !== seconds) setSeconds(kickoffSeconds)
+    const stamped = freezeFirstHalfStarters(stampAllOnField(kickoffPlayers, kickoffSeconds))
     setPlayers(stamped)
     setFirstHalfStarterIds(
       stamped.filter((player) => player.isFirstHalfStarter).map((player) => player.id),
@@ -1218,7 +1225,7 @@ export function CoachDashboard() {
     const starters = stamped.filter((p) => p.attending && p.isOnField)
 
     if (matchId) {
-      persistMatchClock(matchId, seconds)
+      persistMatchClock(matchId, kickoffSeconds)
       void runOptimisticSync(
         async () => {
           assertMatchActionOk(
@@ -1227,7 +1234,7 @@ export function CoachDashboard() {
               kind: 'start',
               period: currentPeriod,
               totalPeriods,
-              clockSeconds: seconds,
+              clockSeconds: kickoffSeconds,
               halfLengthMinutes,
               formation: activeFormation,
               teamName: matchTeamName.trim() || 'Home',
@@ -1253,7 +1260,7 @@ export function CoachDashboard() {
       )
     }
 
-    const underwayToast = `${formatPeriodLong(currentPeriod, totalPeriods)} underway · ${formatClock(seconds)}`
+    const underwayToast = `${formatPeriodLong(currentPeriod, totalPeriods)} underway · ${formatClock(kickoffSeconds)}`
     if (ENABLE_WAKE_LOCK) {
       // Must run in this click handler — browsers require a user gesture for Wake Lock / NoSleep.
       void requestWakeLock().then((result) => {
@@ -1265,6 +1272,7 @@ export function CoachDashboard() {
   }, [
     seconds,
     matchId,
+    setSeconds,
     setPlayers,
     setFirstHalfStarterIds,
     setPeriodClockStarted,
