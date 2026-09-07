@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAssignmentsFromStarters,
   getDefaultFormationId,
   getFormationById,
   reconcileSlotAssignments,
@@ -80,5 +81,48 @@ describe('reconcileSlotAssignments', () => {
       new Set(Object.values(assignments)),
     )
     expect(next).toEqual(assignments)
+  })
+})
+
+describe('buildAssignmentsFromStarters', () => {
+  it('locks exact labels so a striker is not poured into the first forward slot', () => {
+    const formation = getFormationById('3-2-3', '9v9')
+    const players = [
+      { id: 'p-gk', matchPosition: 'GK' },
+      { id: 'p-st', matchPosition: 'ST' },
+      { id: 'p-lw', matchPosition: 'LW' },
+      { id: 'p-rw', matchPosition: 'RW' },
+      { id: 'p-lcb', matchPosition: 'LCB' },
+      { id: 'p-cb', matchPosition: 'CB' },
+      { id: 'p-rcb', matchPosition: 'RCB' },
+      { id: 'p-cdm', matchPosition: 'CDM' },
+      { id: 'p-cam', matchPosition: 'CAM' },
+    ]
+    const starters = Object.fromEntries(players.map((p) => [p.id, true]))
+    const next = buildAssignmentsFromStarters(formation, players, starters)
+
+    expect(next['fwd-c']).toBe('p-st')
+    expect(next['fwd-l']).toBe('p-lw')
+    expect(next['fwd-r']).toBe('p-rw')
+    expect(next['mid-l']).toBe('p-cdm')
+    expect(next['mid-r']).toBe('p-cam')
+  })
+
+  it('does not move a player already locked onto a slot when filling leftovers', () => {
+    const formation = getFormationById('2-3-1', '7v7')
+    const players = [
+      { id: 'p-gk', matchPosition: 'GK' },
+      { id: 'p-lb', matchPosition: 'LB' },
+      { id: 'p-rb', matchPosition: 'RB' },
+      { id: 'p-lm', matchPosition: 'LM' },
+      { id: 'p-cm', matchPosition: 'RM' },
+      { id: 'p-rm', matchPosition: 'CM' },
+      { id: 'p-st', matchPosition: 'ST' },
+    ]
+    const starters = Object.fromEntries(players.map((p) => [p.id, true]))
+    const next = buildAssignmentsFromStarters(formation, players, starters)
+
+    expect(next['mid-c']).toBe('p-rm')
+    expect(next['mid-r']).toBe('p-cm')
   })
 })

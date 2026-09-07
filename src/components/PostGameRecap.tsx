@@ -45,6 +45,7 @@ import {
   hasTeamShotSaveTotals,
 } from '@/lib/match-shot-save'
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
+import { MatchDetailsEditor, type MatchDetailsSaved } from '@/components/MatchDetailsEditor'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import {
   formatOpponentPrefix,
@@ -54,7 +55,8 @@ import {
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
-import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
+import { formatMatchDisplayDateTime, matchDateTimeIso, resolveMatchDateForInput, resolveMatchTimeForInput } from '@/lib/match-schedule'
+import { resolvePeriodLengthMinutes } from '@/lib/match-periods'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import {
   buildParentTimelineRows,
@@ -143,6 +145,7 @@ type PostGameRecapProps = {
   onDeleteMatch?: (matchId: string) => Promise<void>
   canDeleteMatches?: boolean
   onRemoveGoal?: (side: 'home' | 'away') => Promise<void>
+  onMatchDetailsSaved?: (next: MatchDetailsSaved) => void
   onToast: (message: string) => void
   onHome?: () => void
 }
@@ -166,6 +169,7 @@ export function PostGameRecap({
   onDeleteMatch,
   canDeleteMatches = false,
   onRemoveGoal,
+  onMatchDetailsSaved,
   onToast,
   onHome,
 }: PostGameRecapProps) {
@@ -227,7 +231,7 @@ export function PostGameRecap({
 
         const recapStats = aggregatePlayerRecaps(
           events,
-          halfLengthMinutes * 60,
+          resolvePeriodLengthMinutes(loadedMatch, halfLengthMinutes) * 60,
           new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
         )
         const savedReviews = indexSavedReviews(existingReviews)
@@ -270,7 +274,9 @@ export function PostGameRecap({
     return () => {
       cancelled = true
     }
-  }, [matchId, halfLengthMinutes, players])
+    // halfLengthMinutes is applied in reloadRecapEvents / onMatchDetailsSaved so
+    // changing period length after the game does not wipe unsaved recap edits.
+  }, [matchId, players])
 
   const reloadRecapEvents = useCallback(async () => {
     const events = await fetchMatchEvents(matchId)
@@ -755,6 +761,41 @@ export function PostGameRecap({
           </div>
           {onHome ? <BackToHomeButton onClick={() => void handleExit()} /> : null}
         </header>
+
+        <MatchDetailsEditor
+          matchId={matchId}
+          opponent={opponent}
+          periodLengthMinutes={halfLengthMinutes}
+          locationType={locationType}
+          matchDate={resolveMatchDateForInput(matchRecord)}
+          matchTime={resolveMatchTimeForInput(matchRecord)}
+          totalPeriods={matchRecord?.total_periods}
+          onSaved={(next) => {
+            setMatchRecord((current) =>
+              current
+                ? {
+                    ...current,
+                    opponent: next.opponent,
+                    half_length: next.periodLengthMinutes,
+                    period_length: next.periodLengthMinutes,
+                    match_date: next.matchDate,
+                    match_time: next.matchTime,
+                    date: matchDateTimeIso(next.matchDate, next.matchTime),
+                    location: next.locationType,
+                    location_type: next.locationType,
+                  }
+                : current,
+            )
+            const recapStats = aggregatePlayerRecaps(
+              matchEvents,
+              next.periodLengthMinutes * 60,
+              new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
+            )
+            setEventStats(recapStats)
+            onMatchDetailsSaved?.(next)
+          }}
+          onToast={onToast}
+        />
 
         <RecapPerspectiveTabs value={recapView} onChange={setRecapView} />
 

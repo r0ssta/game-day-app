@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronRight, Radio, ScrollText } from 'lucide-react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { ChevronRight, Radio, ScrollText } from 'lucide-react'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { EnableAlertsButton } from '@/components/EnableAlertsButton'
 import { InstallPrompt } from '@/components/InstallPrompt'
@@ -21,7 +21,6 @@ import {
   type ParentLiveEvent,
 } from '@/lib/parent-hub'
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
-import { ParentMatchRecapView } from '@/components/ParentMatchRecapView'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import { LiveGameFeed } from '@/components/ParentTimelineList'
 import {
@@ -29,17 +28,18 @@ import {
   applyParentHubPwaHead,
   rememberParentHubSlug,
 } from '@/lib/parent-hub-pwa'
+import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { APP_CONTAINER } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/supabaseClient'
 
-const ParentFinishedMatchDetail = lazy(() =>
+const ParentFinishedMatchDetail = lazyWithChunkReload(() =>
   import('@/components/ParentFinishedMatchDetail').then((m) => ({
     default: m.ParentFinishedMatchDetail,
   })),
 )
 
-type TabId = 'live' | 'schedule' | 'recaps'
+type TabId = 'live' | 'recaps'
 
 type ParentHubScreenProps = {
   route: ParentHubRoute
@@ -121,80 +121,6 @@ function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
   )
 }
 
-function LatestFinishedMatch({
-  match,
-  hub,
-}: {
-  match: ParentHubMatch
-  hub: ParentHubPayload
-}) {
-  const [events, setEvents] = useState<ParentLiveEvent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const when = formatMatchDisplayDateTime(match)
-  const teamLabel = formatTeamDisplayName(hub.teamName, hub.ageGroup)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setLoadError(null)
-    void fetchParentLiveEvents(match.id, {
-      includeTest: Boolean(match.isTest || hub.staffPreview),
-    })
-      .then((rows) => {
-        if (!cancelled) setEvents(rows)
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Could not load live game feed')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [hub.staffPreview, match.id, match.isTest])
-
-  if (loading) {
-    return (
-      <p className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        Loading live game feed…
-      </p>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <p className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm font-semibold text-danger">
-        {loadError}
-      </p>
-    )
-  }
-
-  return (
-    <ParentMatchRecapView
-      events={events}
-      players={hub.players}
-      matchId={match.id}
-      halfLengthMinutes={match.period_length ?? match.half_length}
-      totalPeriods={match.total_periods}
-      opponent={match.opponent}
-      teamName={teamLabel}
-      homeScore={match.home_score}
-      awayScore={match.away_score}
-      homePkScore={match.home_pk_score}
-      awayPkScore={match.away_pk_score}
-      pkWinnerIsUs={match.pk_winner_is_us}
-      dateLabel={when.dateLabel}
-      timeLabel={when.timeLabel}
-      recap={match.parent_facing_recap ?? ''}
-      heading="Live game feed"
-    />
-  )
-}
-
 function LiveTab({
   hub,
   matches,
@@ -212,13 +138,6 @@ function LiveTab({
       .sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b))
     return upcoming[0] ?? null
   }, [matches])
-  const latestFinished = useMemo(() => {
-    const finished = matches
-      .filter((match) => isParentHubFinishedMatch(match.status))
-      .sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a))
-    return finished[0] ?? null
-  }, [matches])
-
   const [events, setEvents] = useState<ParentLiveEvent[]>([])
   const [liveMatchState, setLiveMatchState] = useState<ParentHubMatch | null>(liveMatch)
 
@@ -346,10 +265,9 @@ function LiveTab({
 
   if (!liveMatch || !liveMatchState) {
     if (nextScheduled) return <ScheduledKickoffCard match={nextScheduled} />
-    if (latestFinished) return <LatestFinishedMatch match={latestFinished} hub={hub} />
     return (
       <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        No live match right now. Check back on game day.
+        No live match right now. Check Recaps for finished games.
       </p>
     )
   }
@@ -387,59 +305,6 @@ function LiveTab({
         emptyLabel="Waiting for the first event…"
       />
     </div>
-  )
-}
-
-function ScheduleTab({ matches }: { matches: ParentHubMatch[] }) {
-  const upcoming = useMemo(
-    () =>
-      matches
-        .filter((match) => !isParentHubFinishedMatch(match.status))
-        .sort((a, b) => getMatchSortTimestamp(b) - getMatchSortTimestamp(a)),
-    [matches],
-  )
-
-  if (upcoming.length === 0) {
-    return (
-      <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        No upcoming fixtures.
-      </p>
-    )
-  }
-
-  return (
-    <ul className="space-y-2">
-      {upcoming.map((match) => {
-        const when = formatMatchDisplayDateTime(match)
-        const isLive = match.status === 'live'
-        return (
-          <li
-            key={match.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3"
-          >
-            <div className="min-w-0">
-              <p className="truncate font-bold text-foreground">
-                vs {match.opponent || 'Opponent'}
-                {match.isTest ? ' · Test' : ''}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {when.dateLabel} · {when.timeLabel}
-                {isLive ? ' · LIVE' : ''}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2 text-right">
-              {isLive ? (
-                <Scoreline match={match} />
-              ) : (
-                <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                  Upcoming
-                </span>
-              )}
-            </div>
-          </li>
-        )
-      })}
-    </ul>
   )
 }
 
@@ -584,7 +449,6 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
 
   const tabs: { id: TabId; label: string; icon: typeof Radio }[] = [
     { id: 'live', label: 'Live', icon: Radio },
-    { id: 'schedule', label: 'Schedule', icon: CalendarDays },
     { id: 'recaps', label: 'Recaps', icon: ScrollText },
   ]
 
@@ -599,7 +463,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
               {teamLabel}
             </h1>
-            <p className="text-sm text-muted-foreground">Live scores · schedule · match stats</p>
+            <p className="text-sm text-muted-foreground">Live scores · match recaps</p>
           </div>
           {staffPreviewRequested ? (
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-100">
@@ -632,8 +496,6 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             </Suspense>
           ) : tab === 'live' ? (
             <LiveTab hub={hub} matches={hub.matches} />
-          ) : tab === 'schedule' ? (
-            <ScheduleTab matches={hub.matches} />
           ) : (
             <RecapsTab matches={hub.matches} onSelectMatch={handleSelectFinishedMatch} />
           )}
@@ -646,7 +508,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
           selectedMatch ? 'hidden' : undefined,
         )}
       >
-        <div className={`${APP_CONTAINER} grid grid-cols-3 gap-1`}>
+        <div className={`${APP_CONTAINER} grid grid-cols-2 gap-1`}>
           {tabs.map(({ id, label, icon: Icon }) => {
             const active = tab === id
             return (

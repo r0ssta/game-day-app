@@ -52,6 +52,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           player_id: input.ourGoal ? (input.scorerId ?? null) : null,
           event_type: eventType,
           timestamp: input.timestamp,
+          event_notes: input.ourGoal ? null : (input.eventNotes ?? null),
           formation: input.formation,
           assist_player_id: input.ourGoal && !input.isPk ? (input.assistPlayerId ?? null) : null,
           is_pk: input.isPk,
@@ -83,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       assistLabel: input.assistLabel,
       isPk: input.isPk,
       ourGoal: input.ourGoal,
+      eventNotes: input.eventNotes,
     })
 
     const hubPath = input.teamSlug

@@ -30,3 +30,19 @@ export function isFinalMatchStatus(status: string | null | undefined): boolean {
 export function isCompletedResultStatus(status: string | null | undefined): boolean {
   return status === MATCH_STATUS.final
 }
+
+/** Home / nav live state must belong to the team currently selected. */
+export function isSessionMatchForSelectedTeam(
+  matchStatus: string | null | undefined,
+  matchId: string | null | undefined,
+  sessionTeamId: string | null | undefined,
+  selectedTeamId: string | null | undefined,
+  status: MatchStatus,
+): boolean {
+  return (
+    matchStatus === status &&
+    Boolean(matchId) &&
+    Boolean(selectedTeamId) &&
+    sessionTeamId === selectedTeamId
+  )
+}

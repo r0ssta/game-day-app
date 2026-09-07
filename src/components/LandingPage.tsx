@@ -294,7 +294,7 @@ export function LandingPage() {
               Parents install in one tap. Coaches never leave the pitch.
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-sm font-medium text-white/65 sm:text-base">
-              Share a hub link. They add it to the home screen. Live scores, schedule, recaps, and
+              Share a hub link. They add it to the home screen. Live scores, recaps, and
               push alerts — without creating an account, and without giving Apple 30%.
             </p>
             <a

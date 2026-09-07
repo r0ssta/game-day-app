@@ -254,6 +254,7 @@ export function CoachDashboard() {
     setHalftimeStarter,
     halftimeSlotAssignments,
     halftimeSlotLabelOverrides,
+    firstHalfSlotAssignments,
     secondHalfSlotAssignments,
     lineupPresets,
     teamRoster,
@@ -306,6 +307,10 @@ export function CoachDashboard() {
     createScheduledMatch,
     removeScheduledMatch,
     loadScheduledMatchIntoSetup,
+    editScheduledMatch,
+    clearEditingScheduledMatch,
+    editingScheduledMatchId,
+    openingScheduledEditId,
     deleteMatch,
   } = useGameDayApp()
 
@@ -731,6 +736,7 @@ export function CoachDashboard() {
   // U9/U10 league → 3 periods; tournament / older ages → 2 halves.
   useEffect(() => {
     if (appMode !== 'match_setup') return
+    if (editingScheduledMatchId) return
     const format = resolveMatchFormatDefaults({
       tournamentGame,
       ageGroup: activeTeamAgeGroup,
@@ -744,6 +750,7 @@ export function CoachDashboard() {
     activeTeamAgeGroup,
     activeTeamFormat,
     tournamentGame,
+    editingScheduledMatchId,
     setTotalPeriods,
     setHalfLengthMinutes,
   ])
@@ -753,11 +760,20 @@ export function CoachDashboard() {
     const team = teams.find((t) => t.id === activeTeamId)
     if (!team) return null
 
-    const resolvedLineup = resolveSetupLineup(setupLineup, setupAssignmentsRef.current)
-    const slotAssignments = setupAssignmentsRef.current
-    const labelOverrides = setupLabelOverridesRef.current
+    const liveSlots = setupAssignmentsRef.current
+    const slotAssignments = hasSlotAssignments(liveSlots)
+      ? liveSlots
+      : hasSlotAssignments(setupSlotAssignments)
+        ? setupSlotAssignments
+        : null
+    const liveLabels = setupLabelOverridesRef.current
+    const labelOverrides =
+      liveLabels && Object.keys(liveLabels).length > 0
+        ? liveLabels
+        : setupSlotLabelOverrides
+    const resolvedLineup = resolveSetupLineup(setupLineup, slotAssignments)
     const resolvedMatchPositions =
-      slotAssignments && Object.values(slotAssignments).some(Boolean)
+      hasSlotAssignments(slotAssignments)
         ? {
             ...matchPositions,
             ...matchPositionsFromSlotAssignments(
@@ -808,11 +824,15 @@ export function CoachDashboard() {
           ? rotationMinutes * 60
           : null,
       gkPlaysFullHalf,
+      slotAssignments,
+      slotLabelOverrides: labelOverrides,
     }
   }, [
     activeTeamId,
     teams,
     setupLineup,
+    setupSlotAssignments,
+    setupSlotLabelOverrides,
     matchPositions,
     matchFormations.first,
     activeTeamFormat,
@@ -838,9 +858,18 @@ export function CoachDashboard() {
 
     setSchedulingMatch(true)
     try {
-      await schedulePreloadedMatch(payload)
+      await schedulePreloadedMatch({
+        ...payload,
+        existingMatchId: editingScheduledMatchId ?? undefined,
+      })
+      setupAssignmentsRef.current = null
+      setupLabelOverridesRef.current = null
       setQaSpeedMultiplier(1)
-      setToast('Match scheduled — use Get Ready for Game on Home when it is time')
+      setToast(
+        editingScheduledMatchId
+          ? 'Scheduled match updated'
+          : 'Match scheduled — use Get Ready for Game on Home when it is time',
+      )
     } catch (err) {
       setToast(formatSupabaseError(err))
     } finally {
@@ -852,6 +881,7 @@ export function CoachDashboard() {
     startingMatch,
     buildSetupMatchPayload,
     schedulePreloadedMatch,
+    editingScheduledMatchId,
   ])
 
   const handleStartMatch = useCallback(async () => {
@@ -861,7 +891,16 @@ export function CoachDashboard() {
 
     setStartingMatch(true)
     try {
-      await beginMatch(payload)
+      if (editingScheduledMatchId) {
+        await schedulePreloadedMatch({
+          ...payload,
+          existingMatchId: editingScheduledMatchId,
+          navigateHome: false,
+        })
+        await startLiveMatch(editingScheduledMatchId)
+      } else {
+        await beginMatch(payload)
+      }
       setQaSpeedMultiplier(1)
       setToast(`Live match ready · ${formatPeriodLong(1, payload.totalPeriods)}`)
     } catch (err) {
@@ -875,7 +914,24 @@ export function CoachDashboard() {
     schedulingMatch,
     buildSetupMatchPayload,
     beginMatch,
+    editingScheduledMatchId,
+    schedulePreloadedMatch,
+    startLiveMatch,
   ])
+
+  const handleEditScheduledMatch = useCallback(
+    async (scheduledMatchId: string) => {
+      if (openingScheduledEditId) return
+      setupAssignmentsRef.current = null
+      setupLabelOverridesRef.current = null
+      try {
+        await editScheduledMatch(scheduledMatchId)
+      } catch (err) {
+        setToast(formatSupabaseError(err))
+      }
+    },
+    [openingScheduledEditId, editScheduledMatch],
+  )
 
   const handleStartLiveScheduledMatch = useCallback(
     async (scheduledMatchId: string) => {
@@ -2303,9 +2359,16 @@ export function CoachDashboard() {
         onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
         scheduledMatches={scheduledMatches}
         scheduledLoading={scheduledLoading}
-        onScheduleNewGame={() => setAppMode('match_setup')}
+        onScheduleNewGame={() => {
+          setupAssignmentsRef.current = null
+          setupLabelOverridesRef.current = null
+          clearEditingScheduledMatch()
+          setAppMode('match_setup')
+        }}
         onStartLiveMatch={(id) => void handleStartLiveScheduledMatch(id)}
         startingLiveMatchId={startingLiveMatchId}
+        onEditScheduledMatch={(id) => void handleEditScheduledMatch(id)}
+        openingScheduledEditId={openingScheduledEditId}
         onTeamManagement={() => setAppMode('team')}
         onReporting={() => {
           setReportingTab('matches')
@@ -2736,7 +2799,9 @@ export function CoachDashboard() {
           halfLengthMinutes={halfLengthMinutes}
           maxFieldPlayers={maxFieldPlayers}
           teamFormat={activeTeamFormat}
-          initialSlotAssignments={currentPeriod > 1 ? secondHalfSlotAssignments : undefined}
+          initialSlotAssignments={
+            currentPeriod > 1 ? secondHalfSlotAssignments : firstHalfSlotAssignments
+          }
           onSwap={handleLiveSwap}
           onSubIn={handleLiveSubIn}
           onSubOut={handleLiveSubOut}

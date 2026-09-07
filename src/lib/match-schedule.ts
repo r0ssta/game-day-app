@@ -77,3 +77,24 @@ export function formatMatchDisplayDateTime(match: MatchScheduleFields): {
 
   return { dateLabel, timeLabel }
 }
+
+/** YYYY-MM-DD for date inputs, preferring match_date over the legacy timestamp. */
+export function resolveMatchDateForInput(match: MatchScheduleFields | null | undefined): string {
+  if (!match) return defaultMatchDate()
+  const fromDate = match.match_date?.trim()
+  if (fromDate) return fromDate
+  const fromLegacy = match.date?.slice(0, 10)
+  return fromLegacy || defaultMatchDate()
+}
+
+/** HH:MM for time inputs, preferring match_time over the legacy timestamp. */
+export function resolveMatchTimeForInput(match: MatchScheduleFields | null | undefined): string {
+  if (match?.match_time) return normalizeMatchTimeForInput(match.match_time)
+  if (match?.date) {
+    const full = new Date(match.date)
+    if (!Number.isNaN(full.getTime())) {
+      return `${String(full.getHours()).padStart(2, '0')}:${String(full.getMinutes()).padStart(2, '0')}`
+    }
+  }
+  return defaultMatchTime()
+}

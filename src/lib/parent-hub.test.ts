@@ -83,6 +83,30 @@ describe('formatParentEventLine', () => {
     ).toBe(`1H 2' Sub ON · Ada · ST${clock}`)
   })
 
+  it('includes an opponent-goal category when present', () => {
+    expect(
+      formatParentEventLine(
+        event({
+          id: 'og',
+          eventType: 'opponent_goal',
+          eventNotes: 'Unforced Error',
+        }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' Rivals Goal · Unforced Error${clock}`)
+  })
+
+  it('keeps legacy PK copy when an opponent goal has no category', () => {
+    expect(
+      formatParentEventLine(
+        event({ id: 'og', eventType: 'opponent_goal', isPk: true }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' Rivals Goal (PK)${clock}`)
+  })
+
   it('capitalizes Assist by on a goal', () => {
     expect(
       formatParentEventLine(

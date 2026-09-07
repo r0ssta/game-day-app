@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { isStaleChunkError } from '@/lib/lazy-import'
 import { captureException } from '@/lib/sentry'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +46,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   private handleRetry = () => {
+    if (this.state.error && isStaleChunkError(this.state.error)) {
+      window.location.reload()
+      return
+    }
     this.setState({ error: null })
   }
 

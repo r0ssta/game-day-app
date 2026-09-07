@@ -4,9 +4,10 @@ import {
   isFormationValidForFormat,
   reconcileSlotAssignments,
   resolveSlotLabel,
+  slotAssignmentsFromMatchPositions,
   type Formation,
 } from '@/lib/formations'
-import { ensureSetupLineup } from '@/lib/lineup'
+import { ensureSetupLineup, hasSlotAssignments } from '@/lib/lineup'
 import { ensureMatchPositions } from '@/lib/positions'
 import type { TeamFormat } from '@/lib/team-format'
 import type { DbLineupPreset } from '@/types/database'
@@ -19,7 +20,7 @@ export type LineupPresetFormationJson = {
   slotLabelOverrides?: Record<string, string>
 }
 
-function parseSlotLabelOverrides(raw: unknown): Record<string, string> {
+export function parseSlotLabelOverrides(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== 'object') return {}
   const result: Record<string, string> = {}
   for (const [slotId, label] of Object.entries(raw as Record<string, unknown>)) {
@@ -196,12 +197,52 @@ export function starterIdsFromSlotAssignments(
   return Object.values(slotAssignments).filter((id): id is string => Boolean(id))
 }
 
+/**
+ * First-half pitch map for live / ready-to-start.
+ * Prefers the coach's saved playerId → slotId map; only reconstructs from
+ * position labels when nothing was persisted. Never invents a role auto-fill.
+ */
+export function resolveLiveFirstHalfSlots(input: {
+  persistedRaw: unknown
+  formationId: string
+  format: TeamFormat
+  starters: Array<{ playerId: string; position: string }>
+}): Record<string, string | null> | null {
+  const persisted = parsePreloadSlotAssignments(input.persistedRaw)
+  if (persisted) return persisted
+  const reconstructed = slotAssignmentsFromMatchPositions(
+    input.formationId,
+    input.starters,
+    input.format,
+  )
+  return hasSlotAssignments(reconstructed) ? reconstructed : null
+}
+
+/** Rebuild a pitch map saved on a scheduled match. Empty / all-null maps are ignored. */
+export function parsePreloadSlotAssignments(
+  raw: unknown,
+): Record<string, string | null> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const result: Record<string, string | null> = {}
+  let hasPlayer = false
+  for (const [slotId, playerId] of Object.entries(raw as Record<string, unknown>)) {
+    if (!slotId.trim()) continue
+    if (typeof playerId === 'string' && playerId.trim()) {
+      result[slotId] = playerId.trim()
+      hasPlayer = true
+    } else {
+      result[slotId] = null
+    }
+  }
+  return hasPlayer ? result : null
+}
+
 /** Prefer live pitch slot assignments over persisted startFirstHalf flags. */
 export function resolveSetupLineup(
   setup: SetupLineup,
   slotAssignments?: Record<string, string | null> | null,
 ): SetupLineup {
-  if (!slotAssignments) return setup
+  if (!hasSlotAssignments(slotAssignments)) return setup
 
   const starterIds = new Set(starterIdsFromSlotAssignments(slotAssignments))
   const playerIds = new Set([

@@ -1,10 +1,11 @@
 import { type ReactNode } from 'react'
-import { BarChart3, ClipboardList, FileText, Play, Users } from 'lucide-react'
+import { BarChart3, ClipboardList, FileText, Pencil, Play, Users } from 'lucide-react'
 import { TeamSelector } from '@/components/AppNavigation'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
+import { formatVenueLabel, resolveMatchLocationType } from '@/lib/match-location'
 import type { DbMatch } from '@/types/database'
 
 type NamedEntity = { id: string; name: string }
@@ -25,6 +26,8 @@ type HomeScreenProps = {
   onScheduleNewGame: () => void
   onStartLiveMatch: (matchId: string) => void
   startingLiveMatchId?: string | null
+  onEditScheduledMatch: (matchId: string) => void
+  openingScheduledEditId?: string | null
   onTeamManagement: () => void
   onReporting: () => void
   onViewRecaps: () => void
@@ -47,6 +50,8 @@ export function HomeScreen({
   onScheduleNewGame,
   onStartLiveMatch,
   startingLiveMatchId,
+  onEditScheduledMatch,
+  openingScheduledEditId,
   onTeamManagement,
   onReporting,
   onViewRecaps,
@@ -152,7 +157,10 @@ export function HomeScreen({
               <ul className="space-y-3">
                 {scheduledMatches.map((match) => {
                   const when = formatMatchDisplayDateTime(match)
-                  const busy = startingLiveMatchId === match.id
+                  const locationType = resolveMatchLocationType(match)
+                  const openingLive = startingLiveMatchId === match.id
+                  const openingEdit = openingScheduledEditId === match.id
+                  const busy = openingLive || openingEdit
                   return (
                     <li
                       key={match.id}
@@ -162,20 +170,28 @@ export function HomeScreen({
                         vs {match.opponent || 'Opponent'}
                       </p>
                       <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
-                        {when.dateLabel} · {when.timeLabel}
-                        {match.location_type === 'home' || match.location_type === 'away'
-                          ? ` · ${match.location_type === 'home' ? 'Home' : 'Away'}`
-                          : ''}
+                        {when.dateLabel} · {when.timeLabel} · {formatVenueLabel(locationType)}
                       </p>
-                      <button
-                        type="button"
-                        disabled={hasActiveMatch || busy}
-                        onClick={() => onStartLiveMatch(match.id)}
-                        className="mt-3 flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-neon px-3 py-2.5 text-sm font-black uppercase tracking-wide text-neon-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Play className="size-4" aria-hidden />
-                        {busy ? 'Opening…' : 'Get Ready for Game'}
-                      </button>
+                      <div className="mt-3 space-y-2">
+                        <button
+                          type="button"
+                          disabled={hasActiveMatch || busy}
+                          onClick={() => onStartLiveMatch(match.id)}
+                          className="flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-neon px-3 py-2.5 text-sm font-black uppercase tracking-wide text-neon-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Play className="size-4" aria-hidden />
+                          {openingLive ? 'Opening…' : 'Get Ready for Game'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => onEditScheduledMatch(match.id)}
+                          className="flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-border bg-card px-3 py-2.5 text-xs font-black uppercase tracking-wide text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Pencil className="size-3.5" aria-hidden />
+                          {openingEdit ? 'Opening…' : 'Edit Scheduled Game'}
+                        </button>
+                      </div>
                       {hasActiveMatch ? (
                         <p className="mt-2 text-center text-[11px] font-semibold text-muted-foreground">
                           Finish or resume the live match before opening another.

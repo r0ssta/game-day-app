@@ -1,4 +1,15 @@
 {
+  "headers": [
+    {
+      "source": "/((?!api/|assets/|branding/).*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/match/:action",

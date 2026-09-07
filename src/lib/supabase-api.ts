@@ -1141,19 +1141,27 @@ export async function fetchScheduledMatchesByTeamId(teamId: string): Promise<DbM
   )
 }
 
-export async function createMatchStats(
-  matchId: string,
+function uniqueByPlayerId<T extends { id: string }>(players: T[]): T[] {
+  const seen = new Set<string>()
+  return players.filter((player) => {
+    if (!player.id || seen.has(player.id)) return false
+    seen.add(player.id)
+    return true
+  })
+}
+
+function buildMatchStatPlayers(
   attendingPlayers: RosterPlayer[],
   firstHalfStarterIds: string[],
   matchPositions: Record<string, string>,
-  _formation: string,
   absentPlayers: RosterPlayer[] = [],
-): Promise<MatchPlayer[]> {
+): MatchPlayer[] {
   const firstSet = new Set(firstHalfStarterIds)
-  const attendingIds = new Set(attendingPlayers.map((player) => player.id))
+  const uniqueAttending = uniqueByPlayerId(attendingPlayers)
+  const attendingIds = new Set(uniqueAttending.map((player) => player.id))
 
-  const matchPlayers = [
-    ...attendingPlayers.map((player) => {
+  return [
+    ...uniqueAttending.map((player) => {
       const isFirstHalfStarter = firstSet.has(player.id)
       return createMatchPlayer(player, {
         attending: true,
@@ -1163,7 +1171,7 @@ export async function createMatchStats(
         matchPosition: matchPositions[player.id] ?? player.position,
       })
     }),
-    ...absentPlayers
+    ...uniqueByPlayerId(absentPlayers)
       .filter((player) => !attendingIds.has(player.id))
       .map((player) =>
         createMatchPlayer(player, {
@@ -1175,6 +1183,22 @@ export async function createMatchStats(
         }),
       ),
   ]
+}
+
+export async function createMatchStats(
+  matchId: string,
+  attendingPlayers: RosterPlayer[],
+  firstHalfStarterIds: string[],
+  matchPositions: Record<string, string>,
+  _formation: string,
+  absentPlayers: RosterPlayer[] = [],
+): Promise<MatchPlayer[]> {
+  const matchPlayers = buildMatchStatPlayers(
+    attendingPlayers,
+    firstHalfStarterIds,
+    matchPositions,
+    absentPlayers,
+  )
 
   const rows = matchPlayers.map((p) => matchPlayerToStatPayload(matchId, p))
   if (rows.length > 0) {
@@ -1183,6 +1207,48 @@ export async function createMatchStats(
   }
 
   // Kickoff lineup events are written when staff taps Start half, not here.
+  return matchPlayers.filter((player) => player.attending)
+}
+
+export async function replaceMatchStats(
+  matchId: string,
+  attendingPlayers: RosterPlayer[],
+  firstHalfStarterIds: string[],
+  matchPositions: Record<string, string>,
+  _formation: string,
+  absentPlayers: RosterPlayer[] = [],
+): Promise<MatchPlayer[]> {
+  const matchPlayers = buildMatchStatPlayers(
+    attendingPlayers,
+    firstHalfStarterIds,
+    matchPositions,
+    absentPlayers,
+  )
+  await upsertMatchStats(matchId, matchPlayers)
+
+  const keepIds = new Set(matchPlayers.map((player) => player.id))
+  const { data: existing, error: listError } = await supabase
+    .from('match_stats')
+    .select('player_id')
+    .eq('match_id', matchId)
+  if (listError) throw listError
+
+  const removeIds = [
+    ...new Set(
+      (existing ?? [])
+        .map((row) => row.player_id)
+        .filter((id): id is string => Boolean(id) && !keepIds.has(id)),
+    ),
+  ]
+  if (removeIds.length > 0) {
+    const { error } = await supabase
+      .from('match_stats')
+      .delete()
+      .eq('match_id', matchId)
+      .in('player_id', removeIds)
+    if (error) throw error
+  }
+
   return matchPlayers.filter((player) => player.attending)
 }
 
@@ -1228,11 +1294,13 @@ export async function fetchMatchBundleById(matchId: string): Promise<ActiveMatch
   return { match, team, coach: coach ?? null, stats }
 }
 
-export async function fetchActiveMatch(): Promise<ActiveMatchBundle | null> {
+/** Latest live match for one team. Directors can see every team — never pick another team's game. */
+export async function fetchActiveMatch(teamId: string): Promise<ActiveMatchBundle | null> {
   const { data: matchRaw, error: matchError } = await supabase
     .from('matches')
     .select('*')
     .eq('status', 'live')
+    .eq('team_id', teamId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -1270,15 +1338,61 @@ export async function updateMatchRecord(
       | 'period'
       | 'period_clock_started'
       | 'status'
+      | 'opponent'
+      | 'date'
+      | 'match_date'
+      | 'match_time'
+      | 'location'
+      | 'location_type'
       | 'half_length'
       | 'period_length'
       | 'total_periods'
       | 'current_period'
+      | 'tournament_game'
+      | 'is_test'
+      | 'goes_to_pks'
+      | 'coach_id'
+      | 'coach_name'
+      | 'sub_interval_seconds'
+      | 'gk_plays_full_half'
     >
   >,
 ) {
-  const { error } = await supabase.from('matches').update(patch).eq('id', matchId)
-  if (error) throw error
+  const optionalKeys = [
+    'match_date',
+    'match_time',
+    'location_type',
+    'period_length',
+    'total_periods',
+    'current_period',
+    'pk_gk_player_id',
+    'pk_winner_is_us',
+    'home_pk_score',
+    'away_pk_score',
+    'tournament_game',
+    'is_test',
+    'goes_to_pks',
+    'coach_name',
+    'sub_interval_seconds',
+    'gk_plays_full_half',
+  ] as const
+
+  let remaining: typeof patch = { ...patch }
+  let lastError: unknown = null
+
+  for (;;) {
+    const { error } = await supabase.from('matches').update(remaining).eq('id', matchId)
+    if (!error) return
+    lastError = error
+    if (!isMissingColumnError(error)) break
+    const message = formatSupabaseError(error).toLowerCase()
+    const toDrop = optionalKeys.filter((key) => key in remaining && message.includes(key))
+    if (toDrop.length === 0) break
+    remaining = { ...remaining }
+    for (const key of toDrop) delete remaining[key]
+  }
+
+  throw new Error(formatSupabaseError(lastError))
 }
 
 export async function upsertMatchStat(matchId: string, player: MatchPlayer) {
@@ -1490,7 +1604,13 @@ export async function mergeMatchTimingContext(
   timing: { addedTimeSeconds?: number; endedOnTime?: boolean | null },
 ) {
   const existing = await fetchMatchById(matchId)
-  const current = parseQualitativeContext(existing?.qualitative_context)
+  const raw =
+    existing?.qualitative_context &&
+    typeof existing.qualitative_context === 'object' &&
+    !Array.isArray(existing.qualitative_context)
+      ? { ...(existing.qualitative_context as Record<string, unknown>) }
+      : {}
+  const current = parseQualitativeContext(raw)
   const next: QualitativeContext = {
     ...current,
     addedTimeSeconds:
@@ -1500,7 +1620,10 @@ export async function mergeMatchTimingContext(
     endedOnTime:
       timing.endedOnTime !== undefined ? timing.endedOnTime : current.endedOnTime,
   }
-  await saveQualitativeContext(matchId, serializeQualitativeContext(next))
+  await saveQualitativeContext(matchId, {
+    ...raw,
+    ...(serializeQualitativeContext(next) ?? {}),
+  })
 }
 
 export async function markMatchPendingReview(matchId: string) {

@@ -42,7 +42,7 @@ export function PwaUpdateToast() {
           disabled={busy}
           onClick={() => {
             setBusy(true)
-            void updatePwaServiceWorker()
+            void updatePwaServiceWorker().finally(() => setBusy(false))
           }}
           className="flex min-h-11 shrink-0 items-center rounded-xl bg-neon px-3 py-2 text-xs font-black uppercase tracking-wide text-neon-foreground active:scale-95 disabled:opacity-60"
         >

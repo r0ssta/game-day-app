@@ -10,15 +10,16 @@ import {
 import { Users, X } from 'lucide-react'
 import { FormationPitch } from '@/components/FormationPitch'
 import {
-  buildAssignmentsFromStarters,
   getFormationById,
   getFormationsForFormat,
   reconcileSlotAssignments,
   remapFormationSlotAssignments,
   resolveSlotLabel,
+  slotAssignmentsFromMatchPositions,
   type FormationRemapResult,
   type FormationSlot,
 } from '@/lib/formations'
+import { hasSlotAssignments } from '@/lib/lineup'
 import type { TeamFormat } from '@/lib/team-format'
 import {
   buildSidelineNameMap,
@@ -137,17 +138,17 @@ function BenchPlayerRow({
     <>
       <div
         className={cn(
-          'flex size-11 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg font-bold tabular-nums',
+          'flex size-8 shrink-0 items-center justify-center rounded-lg border-2 text-[10px] font-semibold tabular-nums',
           onSetImpact ? IMPACT_RING[player.impact] : 'border-border',
-          'bg-secondary text-foreground',
+          'bg-secondary text-muted-foreground',
         )}
       >
         {formatJersey(player.number)}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="truncate text-base font-bold text-foreground">{displayName}</span>
-          <span className="font-mono text-xs font-bold tabular-nums text-blue-400">
+          <span className="font-display text-xl font-black tabular-nums leading-none text-blue-400">
             {formatPlayingTimeClock(liveSeconds)}
           </span>
         </div>
@@ -367,9 +368,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     }, [periodKey, formationId])
 
     useEffect(() => {
-      const hydrateKey = `${periodKey}:${formation.id}`
-      if (hydratedKeyRef.current === hydrateKey) return
-      hydratedKeyRef.current = hydrateKey
+      if (players.length === 0) return
 
       const playerSummaries = players.map((p) => ({
         id: p.id,
@@ -379,8 +378,12 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       const onFieldIds = new Set(
         players.filter((p) => p.attending && p.isOnField).map((p) => p.id),
       )
+      const locked = hasSlotAssignments(initialSlotAssignments)
+      const hydrateKey = `${periodKey}:${formation.id}:${locked ? 'locked' : 'auto'}`
 
-      if (initialSlotAssignments && Object.values(initialSlotAssignments).some(Boolean)) {
+      if (locked) {
+        if (hydratedKeyRef.current === hydrateKey) return
+        hydratedKeyRef.current = hydrateKey
         setSlotAssignments(
           reconcileSlotAssignments(
             formation,
@@ -393,9 +396,23 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         return
       }
 
-      const starters = Object.fromEntries(players.map((p) => [p.id, p.attending && p.isOnField]))
+      // Locked maps arriving after first paint replace auto-fill; never unlock.
+      if (hydratedKeyRef.current?.endsWith(':locked')) return
+      if (hydratedKeyRef.current === hydrateKey) return
+      hydratedKeyRef.current = hydrateKey
+
+      const reconstructed = slotAssignmentsFromMatchPositions(
+        formation.id,
+        playerSummaries
+          .filter((p) => onFieldIds.has(p.id))
+          .map((p) => ({
+            playerId: p.id,
+            position: (p.matchPosition ?? p.position ?? '').trim(),
+          })),
+        formation.format,
+      )
       setSlotAssignments(
-        buildAssignmentsFromStarters(formation, playerSummaries, starters),
+        reconcileSlotAssignments(formation, reconstructed, playerSummaries, onFieldIds),
       )
       skipOnFieldSyncRef.current = true
     }, [periodKey, formation, players, initialSlotAssignments])

@@ -1,4 +1,4 @@
-import { lazy, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AuthScreen } from '@/components/AuthScreen'
 import { LandingPage } from '@/components/LandingPage'
 import { PendingAccessScreen } from '@/components/PendingAccessScreen'
@@ -20,16 +20,17 @@ import {
   applyParentHubManifestLink,
   rememberParentHubSlug,
 } from '@/lib/parent-hub-pwa'
+import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { parseStatTrackerRoute } from '@/lib/stat-tracker'
 import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 
-const CoachDashboard = lazy(() =>
+const CoachDashboard = lazyWithChunkReload(() =>
   import('@/pages/CoachDashboard').then((m) => ({ default: m.CoachDashboard })),
 )
-const ParentHubScreen = lazy(() =>
+const ParentHubScreen = lazyWithChunkReload(() =>
   import('@/components/ParentHubScreen').then((m) => ({ default: m.ParentHubScreen })),
 )
-const StatTrackerScreen = lazy(() =>
+const StatTrackerScreen = lazyWithChunkReload(() =>
   import('@/components/StatTrackerScreen').then((m) => ({ default: m.StatTrackerScreen })),
 )
 
@@ -141,7 +142,9 @@ export default function App() {
         <LandingPage />
       ) : (
         <AuthProvider>
-          <AuthenticatedApp />
+          <ErrorBoundary sectionLabel="Staff app" className="min-h-dvh bg-background">
+            <AuthenticatedApp />
+          </ErrorBoundary>
         </AuthProvider>
       )}
     </SunlightModeProvider>

@@ -10,6 +10,7 @@ import {
   LogPkAttemptInputSchema,
   LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
+  parseOpponentGoalCategory,
   RemoveLastGoalInputSchema,
 } from './match-actions'
 
@@ -62,6 +63,43 @@ describe('match action Zod schemas', () => {
       onFieldPlayerIds: [],
     })
     expect(parsed.success).toBe(true)
+  })
+
+  it('LogGoalInputSchema accepts an opponent-goal category on eventNotes', () => {
+    const parsed = LogGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      ourGoal: false,
+      isPk: false,
+      timestamp: 10,
+      formation: '4-3-3',
+      homeScoreBefore: 0,
+      awayScoreBefore: 0,
+      onFieldPlayerIds: [],
+      eventNotes: 'Caught on the Counter',
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data.eventNotes).toBe('Caught on the Counter')
+  })
+
+  it('parseOpponentGoalCategory accepts known labels only', () => {
+    expect(parseOpponentGoalCategory('Great Play')).toBe('Great Play')
+    expect(parseOpponentGoalCategory('Lucky bounce')).toBeNull()
+    expect(parseOpponentGoalCategory(null)).toBeNull()
+  })
+
+  it('LogGoalInputSchema rejects an unknown opponent-goal category', () => {
+    const parsed = LogGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      ourGoal: false,
+      isPk: false,
+      timestamp: 10,
+      formation: '4-3-3',
+      homeScoreBefore: 0,
+      awayScoreBefore: 0,
+      onFieldPlayerIds: [],
+      eventNotes: 'Lucky bounce',
+    })
+    expect(parsed.success).toBe(false)
   })
 
   it('EndRegulationInputSchema rejects bad clockSeconds', () => {
