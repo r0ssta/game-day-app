@@ -87,6 +87,8 @@ export type DbMatch = {
   /** Staff-only smoke/test match — hidden from Parent Hub and parent push. */
   is_test: boolean
   goes_to_pks: boolean
+  /** Knockout fixture \u2014 a tie must go to extra time or PKs. Null on older rows. */
+  is_tournament_knockout: boolean | null
   home_score: number
   away_score: number
   home_pk_score: number
@@ -97,7 +99,7 @@ export type DbMatch = {
   pk_gk_player_id?: string | null
   clock_seconds: number
   period: '1st' | '2nd' | '3rd'
-  status: 'scheduled' | 'live' | 'pending_review' | 'final'
+  status: 'scheduled' | 'live' | 'extra_time_first_half' | 'extra_time_second_half' | 'penalty_shootout' | 'pending_review' | 'final'
   period_clock_started: boolean
   /** Staff-only post-game notes — not for parent emails. */
   internal_coach_notes: string | null
@@ -119,6 +121,7 @@ export type QualitativeContextJson = {
   oppositionStrength?: string | null
   endedOnTime?: boolean | null
   addedTimeSeconds?: number
+  extraTimeHalfMinutes?: number | null
   /** Formation id saved when a match is preloaded as scheduled. */
   preloadFormation?: string | null
 }

@@ -85,13 +85,20 @@ import {
   ensureStatTrackerToken,
   formatSupabaseError,
   fetchPendingReviewMatchesByTeamId,
+  fetchMatchEvents,
 } from '@/lib/supabase-api'
-import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, formatMatchWriteError } from '@/lib/match-api'
+import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, apiUpdatePkAttempt, formatMatchWriteError } from '@/lib/match-api'
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
 import { assertMatchActionOk } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { useLiveMatchSync } from '@/hooks/useLiveMatchSync'
-import { shouldEnterPenaltyShootout } from '@/lib/penalty-kicks'
+import {
+  rebuildPkRoundsFromEvents,
+  shouldAutoEnterPenaltyShootoutAfterExtraTime,
+  shouldOfferTiedGameOverride,
+  type PkRoundState,
+} from '@/lib/penalty-kicks'
+import { extraTimeHalfFromStatus, isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
 import { findActiveOnFieldGoalkeeper } from '@/lib/match-shot-save'
 import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import type { DbMatch } from '@/types/database'
@@ -107,6 +114,10 @@ import {
   periodLengthOptions,
   resolveMatchFormatDefaults,
   startPeriodButtonLabel,
+  startExtraTimeButtonLabel,
+  endExtraTimeButtonLabel,
+  extraTimePeriodLabel,
+  extraTimePeriodShort,
   supportsThreePeriodFormat,
 } from '@/lib/match-periods'
 import { APP_CONTAINER, APP_SHELL_LOCKED } from '@/lib/layout'
@@ -142,6 +153,9 @@ const DeleteMatchConfirmModal = lazy(() =>
 const EndMatchTimingModal = lazy(() =>
   import('@/components/EndMatchTimingModal').then((m) => ({ default: m.EndMatchTimingModal })),
 )
+const TiedGameModal = lazy(() =>
+  import('@/components/TiedGameModal').then((m) => ({ default: m.TiedGameModal })),
+)
 
 export function CoachDashboard() {
   const {
@@ -165,6 +179,8 @@ export function CoachDashboard() {
     resumeLiveMatchScreen,
     persistMatchClock,
     noteLocalMatchMutation,
+    lockPreKickoffLineupDraft,
+    commitReadyToStartLineup,
     claimLocalClock,
     releaseLocalClock,
     shouldSkipLiveHydrate,
@@ -213,6 +229,7 @@ export function CoachDashboard() {
     matchOpponent,
     matchLocationType,
     matchGoesToPks,
+    matchIsTournamentKnockout,
     homePkScore,
     setHomePkScore,
     awayPkScore,
@@ -240,6 +257,8 @@ export function CoachDashboard() {
     matchIsTest,
     goesToPks,
     setGoesToPks,
+    isTournamentKnockout,
+    setIsTournamentKnockout,
     matchDate,
     setMatchDate,
     matchTime,
@@ -363,7 +382,7 @@ export function CoachDashboard() {
     matchId,
     enabled:
       !loading &&
-      matchStatus === 'live' &&
+      isLiveMatchStatus(matchStatus) &&
       Boolean(matchId) &&
       (appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout'),
     isBlocked: () => isPending() || shouldSkipLiveHydrate(),
@@ -372,6 +391,23 @@ export function CoachDashboard() {
         applyMode: appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout',
       }),
   })
+  useEffect(() => {
+    if (appMode !== 'penalty_shootout' || !matchId) {
+      setPkInitialRounds(undefined)
+      return
+    }
+    let cancelled = false
+    void fetchMatchEvents(matchId)
+      .then((events) => {
+        if (!cancelled) setPkInitialRounds(rebuildPkRoundsFromEvents(events))
+      })
+      .catch(() => {
+        if (!cancelled) setPkInitialRounds(undefined)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [appMode, matchId])
   const failToast = useCallback(
     (fallback: string) => (err: unknown) => {
       setToast(formatMatchWriteError(err, fallback))
@@ -391,7 +427,9 @@ export function CoachDashboard() {
   const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
   const [liveDeleting, setLiveDeleting] = useState(false)
   const [endTimingOpen, setEndTimingOpen] = useState(false)
+  const [tiedGameOpen, setTiedGameOpen] = useState(false)
   const [endingMatch, setEndingMatch] = useState(false)
+  const [pkInitialRounds, setPkInitialRounds] = useState<PkRoundState[] | undefined>(undefined)
   const [editDraft, setEditDraft] = useState<PlayerEditDraft | null>(null)
   const [startingMatch, setStartingMatch] = useState(false)
   const [schedulingMatch, setSchedulingMatch] = useState(false)
@@ -516,6 +554,7 @@ export function CoachDashboard() {
   ) : null
 
   const livePitchRef = useRef<LiveTacticalPitchHandle>(null)
+  const pendingReadyPlayersRef = useRef<MatchPlayer[] | null>(null)
   const setupAssignmentsRef = useRef<Record<string, string | null> | null>(null)
   const setupLabelOverridesRef = useRef<Record<string, string> | null>(null)
   const halftimeAssignmentsRef = useRef<Record<string, string | null> | null>(null)
@@ -644,6 +683,39 @@ export function CoachDashboard() {
   const activeFormation = resolveFormationIdForFormat(
     period === '1st' ? matchFormations.first : matchFormations.second,
     activeTeamFormat,
+  )
+
+  const persistReadyToStartLineup = useCallback(
+    (slotAssignments: Record<string, string | null>) => {
+      if (periodClockStarted || !matchId) return
+      const nextPlayers = pendingReadyPlayersRef.current ?? players
+      lockPreKickoffLineupDraft()
+      void runOptimisticSync(
+        () =>
+          commitReadyToStartLineup({
+            players: nextPlayers,
+            slotAssignments,
+            formationId: activeFormation,
+            slotLabelOverrides: livePitchRef.current?.getSlotLabelOverrides() ?? {},
+          }),
+        {
+          label: 'readyToStartLineup',
+          quiet: true,
+          onRevert: () => {},
+          onErrorToast: failToast('Could not save lineup — try again'),
+        },
+      )
+    },
+    [
+      periodClockStarted,
+      matchId,
+      players,
+      activeFormation,
+      lockPreKickoffLineupDraft,
+      commitReadyToStartLineup,
+      runOptimisticSync,
+      failToast,
+    ],
   )
 
   useEffect(() => {
@@ -807,6 +879,7 @@ export function CoachDashboard() {
       tournamentGame,
       isTest: isTestMatch,
       goesToPks,
+      isTournamentKnockout,
       halfLength: halfLengthMinutes,
       totalPeriods: matchTotalPeriods as 2 | 3,
       matchDate,
@@ -965,26 +1038,59 @@ export function CoachDashboard() {
 
   const handleEndGame = useCallback(() => {
     releaseLocalClock()
+    if (
+      shouldAutoEnterPenaltyShootoutAfterExtraTime({
+        homeScore,
+        awayScore,
+        matchStatus,
+      })
+    ) {
+      setEndingMatch(true)
+      void finishGame(seconds, undefined, { enterPenaltyShootout: true })
+        .then(() => {
+          setToast('Still tied after extra time — starting penalty shootout')
+        })
+        .catch((err) => {
+          setToast(err instanceof Error ? err.message : 'Failed to start penalty shootout')
+        })
+        .finally(() => setEndingMatch(false))
+      return
+    }
+    if (
+      shouldOfferTiedGameOverride({
+        homeScore,
+        awayScore,
+        isTournamentKnockout: matchIsTournamentKnockout,
+        goesToPks: matchGoesToPks,
+        matchStatus,
+      })
+    ) {
+      setTiedGameOpen(true)
+      return
+    }
     setEndTimingOpen(true)
-  }, [releaseLocalClock])
+  }, [
+    releaseLocalClock,
+    homeScore,
+    awayScore,
+    matchStatus,
+    matchIsTournamentKnockout,
+    matchGoesToPks,
+    finishGame,
+    seconds,
+  ])
 
   const handleConfirmEndGameTiming = useCallback(
     async (endedOnTime: boolean) => {
       setEndingMatch(true)
       try {
-        const enterPks = shouldEnterPenaltyShootout({
-          homeScore,
-          awayScore,
-          goesToPks: matchGoesToPks,
-        })
+        const enterPks = false
         await finishGame(seconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
         setEndTimingOpen(false)
         setToast(
-          enterPks
-            ? 'Tied regulation — starting penalty shootout'
-            : endedOnTime
-              ? 'Match complete — ended on time'
-              : 'Match complete — added time recorded',
+          endedOnTime
+            ? 'Match complete — ended on time'
+            : 'Match complete — added time recorded',
         )
       } catch (err) {
         setToast(err instanceof Error ? err.message : 'Failed to end match')
@@ -992,8 +1098,109 @@ export function CoachDashboard() {
         setEndingMatch(false)
       }
     },
-    [seconds, finishGame, homeScore, awayScore, matchGoesToPks],
+    [seconds, finishGame],
   )
+
+  const handleTiedGamePenaltyShootout = useCallback(async () => {
+    setEndingMatch(true)
+    try {
+      await finishGame(seconds, undefined, { enterPenaltyShootout: true })
+      setTiedGameOpen(false)
+      setToast('Tied regulation — starting penalty shootout')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Failed to start penalty shootout')
+    } finally {
+      setEndingMatch(false)
+    }
+  }, [finishGame, seconds])
+
+  const handleTiedGameExtraTime = useCallback(
+    async (halfMinutes: number) => {
+      setEndingMatch(true)
+      try {
+        await finishGame(seconds, undefined, {
+          enterExtraTime: true,
+          extraTimeHalfMinutes: halfMinutes,
+        })
+        setTiedGameOpen(false)
+        setToast(`Extra time · ${halfMinutes} min halves — start when the referee is ready`)
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : 'Failed to start extra time')
+      } finally {
+        setEndingMatch(false)
+      }
+    },
+    [finishGame, seconds],
+  )
+
+  const extraTimeHalf = extraTimeHalfFromStatus(matchStatus)
+
+  const handleStartExtraTime = useCallback(() => {
+    const stamped = stampAllOnField(players, seconds)
+    setPlayers(stamped)
+    setPeriodClockStarted(true)
+    claimLocalClock()
+    noteLocalMatchMutation()
+    if (matchId) {
+      persistMatchClock(matchId, seconds)
+      void updateMatchRecordSafe()
+    }
+    const underwayToast = `${extraTimePeriodLabel(extraTimeHalf ?? 1)} underway · ${formatClock(seconds)}`
+    if (ENABLE_WAKE_LOCK) {
+      void requestWakeLock().then((result) => {
+        setToast(result.blockedByOs ? WAKE_LOCK_BLOCKED_TOAST : underwayToast)
+      })
+    } else {
+      setToast(underwayToast)
+    }
+
+    async function updateMatchRecordSafe() {
+      if (!matchId) return
+      syncMatchRecord(matchId, {
+        period_clock_started: true,
+        clock_seconds: seconds,
+        status: extraTimeHalf === 2 ? MATCH_STATUS.extraTimeSecondHalf : MATCH_STATUS.extraTimeFirstHalf,
+      })
+    }
+  }, [
+    players,
+    seconds,
+    matchId,
+    extraTimeHalf,
+    setPlayers,
+    setPeriodClockStarted,
+    claimLocalClock,
+    noteLocalMatchMutation,
+    persistMatchClock,
+    requestWakeLock,
+  ])
+
+  const handleEndExtraTime = useCallback(() => {
+    releaseLocalClock()
+    if (extraTimeHalf === 1) {
+      setEndingMatch(true)
+      void finishGame(seconds, undefined, {
+        advanceExtraTime: true,
+        extraTimeHalfMinutes: halfLengthMinutes,
+      })
+        .then(() => {
+          setToast('Extra time 2nd — start when the referee is ready')
+        })
+        .catch((err) => {
+          setToast(err instanceof Error ? err.message : 'Failed to start extra time 2nd')
+        })
+        .finally(() => setEndingMatch(false))
+      return
+    }
+    handleEndGame()
+  }, [
+    extraTimeHalf,
+    releaseLocalClock,
+    finishGame,
+    seconds,
+    halfLengthMinutes,
+    handleEndGame,
+  ])
 
   const handleStartFirstHalf = useCallback(() => {
     const assignments = livePitchRef.current?.getSlotAssignments()
@@ -1016,6 +1223,7 @@ export function CoachDashboard() {
     setPeriodClockStarted(true)
     claimLocalClock()
     noteLocalMatchMutation()
+    pendingReadyPlayersRef.current = null
 
     const sidelineMap = buildSidelineNameMap(stamped.filter((p) => p.attending))
     const starters = stamped.filter((p) => p.attending && p.isOnField)
@@ -1378,7 +1586,11 @@ export function CoachDashboard() {
           : ''
       setToast(`Formation · ${nextLabel}${overflowNote}`)
 
-      if (!periodClockStarted) return
+      if (!periodClockStarted) {
+        pendingReadyPlayersRef.current = nextPlayers
+        lockPreKickoffLineupDraft()
+        return
+      }
 
       void runOptimisticSync(
         async () => {
@@ -1421,6 +1633,7 @@ export function CoachDashboard() {
       setActiveFormation,
       setPlayers,
       runOptimisticSync,
+      lockPreKickoffLineupDraft,
     ],
   )
 
@@ -1439,7 +1652,11 @@ export function CoachDashboard() {
       const labels = updates.map((u) => u.position).join(' · ')
       setToast(`Position · ${labels}`)
 
-      if (!periodClockStarted) return
+      if (!periodClockStarted) {
+        pendingReadyPlayersRef.current = nextPlayers
+        lockPreKickoffLineupDraft()
+        return
+      }
 
       const positionUpdates = updates.map((update) => {
         const previous =
@@ -1481,6 +1698,7 @@ export function CoachDashboard() {
       periodClockStarted,
       setPlayers,
       runOptimisticSync,
+      lockPreKickoffLineupDraft,
     ],
   )
 
@@ -1506,7 +1724,11 @@ export function CoachDashboard() {
       const label = formatPlayerLabel(benchPlayer, sidelineMap)
       setToast(`Sub in · ${label}`)
 
-      if (!periodClockStarted) return
+      if (!periodClockStarted) {
+        pendingReadyPlayersRef.current = next
+        lockPreKickoffLineupDraft()
+        return
+      }
 
       void runOptimisticSync(
         async () => {
@@ -1548,6 +1770,7 @@ export function CoachDashboard() {
       activeTeamSlug,
       runOptimisticSync,
       setToast,
+      lockPreKickoffLineupDraft,
     ],
   )
 
@@ -1566,7 +1789,11 @@ export function CoachDashboard() {
       const label = formatPlayerLabel(fieldPlayer, sidelineMap)
       setToast(`Sub out · ${label}`)
 
-      if (!periodClockStarted) return
+      if (!periodClockStarted) {
+        pendingReadyPlayersRef.current = next
+        lockPreKickoffLineupDraft()
+        return
+      }
 
       void runOptimisticSync(
         async () => {
@@ -1606,6 +1833,7 @@ export function CoachDashboard() {
       activeTeamSlug,
       runOptimisticSync,
       setToast,
+      lockPreKickoffLineupDraft,
     ],
   )
 
@@ -1630,7 +1858,11 @@ export function CoachDashboard() {
       const offLabel = formatPlayerLabel(fieldPlayer, sidelineMap)
       setToast(`Sub · ${onLabel} for ${offLabel}`)
 
-      if (!periodClockStarted) return
+      if (!periodClockStarted) {
+        pendingReadyPlayersRef.current = next
+        lockPreKickoffLineupDraft()
+        return
+      }
 
       void runOptimisticSync(
         async () => {
@@ -1674,6 +1906,7 @@ export function CoachDashboard() {
       activeTeamSlug,
       runOptimisticSync,
       setToast,
+      lockPreKickoffLineupDraft,
     ],
   )
 
@@ -2242,18 +2475,18 @@ export function CoachDashboard() {
 
       const saved = await runOptimisticSync(
         async () => {
-          assertMatchActionOk(
-            await apiLogPkAttempt({
-              matchId,
-              round: input.round,
-              team: input.team,
-              result: input.result,
-              playerId: input.playerId,
-              formation: matchFormations.second,
-              homePkScoreBefore: prevHome,
-              awayPkScoreBefore: prevAway,
-            }),
-          )
+          const result = await apiLogPkAttempt({
+            matchId,
+            round: input.round,
+            team: input.team,
+            result: input.result,
+            playerId: input.playerId,
+            formation: matchFormations.second,
+            homePkScoreBefore: prevHome,
+            awayPkScoreBefore: prevAway,
+          })
+          assertMatchActionOk(result)
+          return result
         },
         {
           label: 'handleRecordPkAttempt',
@@ -2267,6 +2500,7 @@ export function CoachDashboard() {
       if (saved === null) {
         throw new Error('Failed to log PK attempt')
       }
+      return { eventId: saved.eventId }
     },
     [
       matchId,
@@ -2277,6 +2511,73 @@ export function CoachDashboard() {
       setHomePkScore,
       setAwayPkScore,
       setToast,
+    ],
+  )
+
+  const handleUpdatePkAttempt = useCallback(
+    async (input: {
+      round: number
+      team: 'us' | 'opponent'
+      action: 'swap' | 'clear'
+      eventId: string | null
+      previousResult: 'make' | 'miss'
+      playerId: string | null
+    }) => {
+      if (!matchId) return
+      const prevHome = homePkScore
+      const prevAway = awayPkScore
+      let nextHome = homePkScore
+      let nextAway = awayPkScore
+      if (input.action === 'clear') {
+        if (input.team === 'us' && input.previousResult === 'make') nextHome = Math.max(0, homePkScore - 1)
+        if (input.team === 'opponent' && input.previousResult === 'make') {
+          nextAway = Math.max(0, awayPkScore - 1)
+        }
+      } else if (input.previousResult === 'make') {
+        if (input.team === 'us') nextHome = Math.max(0, homePkScore - 1)
+        if (input.team === 'opponent') nextAway = Math.max(0, awayPkScore - 1)
+      } else {
+        if (input.team === 'us') nextHome = homePkScore + 1
+        if (input.team === 'opponent') nextAway = awayPkScore + 1
+      }
+      setHomePkScore(nextHome)
+      setAwayPkScore(nextAway)
+
+      const saved = await runOptimisticSync(
+        async () => {
+          const result = await apiUpdatePkAttempt({
+            matchId,
+            action: input.action,
+            eventId: input.eventId ?? undefined,
+            round: input.round,
+            team: input.team,
+            homePkScoreBefore: prevHome,
+            awayPkScoreBefore: prevAway,
+          })
+          assertMatchActionOk(result)
+          setHomePkScore(result.homePkScore)
+          setAwayPkScore(result.awayPkScore)
+        },
+        {
+          label: 'handleUpdatePkAttempt',
+          onRevert: () => {
+            setHomePkScore(prevHome)
+            setAwayPkScore(prevAway)
+          },
+          onErrorToast: failToast('Could not update PK attempt — try again'),
+        },
+      )
+      if (saved === null) {
+        throw new Error('Failed to update PK attempt')
+      }
+    },
+    [
+      matchId,
+      homePkScore,
+      awayPkScore,
+      runOptimisticSync,
+      setHomePkScore,
+      setAwayPkScore,
     ],
   )
 
@@ -2453,12 +2754,17 @@ export function CoachDashboard() {
           tournamentGame={tournamentGame}
           onTournamentGameChange={(value) => {
             setTournamentGame(value)
-            if (!value) setGoesToPks(false)
+            if (!value) {
+              setGoesToPks(false)
+              setIsTournamentKnockout(false)
+            }
           }}
           isTestMatch={isTestMatch}
           onIsTestMatchChange={setIsTestMatch}
           goesToPks={goesToPks}
           onGoesToPksChange={setGoesToPks}
+          isTournamentKnockout={isTournamentKnockout}
+          onIsTournamentKnockoutChange={setIsTournamentKnockout}
           totalPeriods={totalPeriods}
           onTotalPeriodsChange={(value) => {
             if (
@@ -2676,7 +2982,9 @@ export function CoachDashboard() {
         players={players}
         gkPlayerId={pkGkPlayerId}
         onGkPlayerChange={handlePkGkPlayerChange}
+        initialRounds={pkInitialRounds}
         onRecordAttempt={handleRecordPkAttempt}
+        onUpdateAttempt={handleUpdatePkAttempt}
         onFinalize={async ({ homePkScore: homePk, awayPkScore: awayPk, pkWinnerIsUs: weWon }) => {
           try {
             await finalizePenaltyShootout({
@@ -2753,6 +3061,8 @@ export function CoachDashboard() {
         halfLengthMinutes={halfLengthMinutes}
         running={running}
         periodClockStarted={periodClockStarted}
+        periodLabel={extraTimeHalf ? extraTimePeriodLabel(extraTimeHalf) : undefined}
+        periodBadgeLabel={extraTimeHalf ? extraTimePeriodShort(extraTimeHalf) : undefined}
         isTest={matchIsTest}
         syncPending={syncPending}
         wakeLockActive={wakeLockActive}
@@ -2806,15 +3116,30 @@ export function CoachDashboard() {
           onSubIn={handleLiveSubIn}
           onSubOut={handleLiveSubOut}
           onReassignPosition={handleLiveReassignPosition}
+          onSlotAssignmentsChange={persistReadyToStartLineup}
+          lineupDraftIsSourceOfTruth={!periodClockStarted}
         />
       </div>
 
       <StickyMatchActionBar>
-        {!periodClockStarted && currentPeriod === 1 ? (
+        {!periodClockStarted && extraTimeHalf ? (
+          <PeriodStartButton
+            label={startExtraTimeButtonLabel(extraTimeHalf)}
+            onStart={handleStartExtraTime}
+          />
+        ) : !periodClockStarted && currentPeriod === 1 ? (
           <PeriodStartButton
             label={startPeriodButtonLabel(1, totalPeriods)}
             onStart={handleStartFirstHalf}
           />
+        ) : periodClockStarted && extraTimeHalf ? (
+          <button
+            type="button"
+            onClick={handleEndExtraTime}
+            className="w-full min-h-14 touch-manipulation rounded-2xl bg-orange-600 py-5 font-display text-2xl font-black uppercase tracking-wider text-white shadow-xl shadow-orange-600/40 transition-transform active:scale-[0.98] active:brightness-95"
+          >
+            {endExtraTimeButtonLabel(extraTimeHalf)}
+          </button>
         ) : periodClockStarted ? (
           <EndPeriodButton
             currentPeriod={currentPeriod}
@@ -2876,6 +3201,22 @@ export function CoachDashboard() {
               if (!liveDeleting) setLiveDeleteConfirmOpen(false)
             }}
             onConfirm={() => void handleConfirmLiveDeleteMatch()}
+          />
+        </ModalSuspense>
+      ) : null}
+
+      {tiedGameOpen ? (
+        <ModalSuspense>
+          <TiedGameModal
+            open={tiedGameOpen}
+            homeScore={homeScore}
+            awayScore={awayScore}
+            busy={endingMatch}
+            onSelectExtraTime={(minutes) => void handleTiedGameExtraTime(minutes)}
+            onSelectPenaltyShootout={() => void handleTiedGamePenaltyShootout()}
+            onCancel={() => {
+              if (!endingMatch) setTiedGameOpen(false)
+            }}
           />
         </ModalSuspense>
       ) : null}

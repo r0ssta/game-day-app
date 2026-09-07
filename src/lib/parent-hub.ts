@@ -15,6 +15,8 @@ import {
   readRememberedParentHubSlug,
 } from '@/lib/parent-hub-pwa'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { isLiveMatchStatus } from '@/lib/match-status'
+import { parsePkAttemptNotes } from '@/lib/penalty-kicks'
 import { ParentHubPayloadSchema } from '@/schemas'
 import { parseDbRow } from '@/lib/zod-parse'
 import {
@@ -49,7 +51,14 @@ export type ParentHubPlayer = {
 export type ParentHubMatch = {
   id: string
   opponent: string
-  status: 'scheduled' | 'live' | 'pending_review' | 'final'
+  status:
+    | 'scheduled'
+    | 'live'
+    | 'extra_time_first_half'
+    | 'extra_time_second_half'
+    | 'penalty_shootout'
+    | 'pending_review'
+    | 'final'
   match_date: string | null
   match_time: string | null
   date: string
@@ -374,6 +383,41 @@ export async function fetchParentLiveEvents(
 
 export function isParentHubFinishedMatch(status: ParentHubMatch['status']): boolean {
   return status === 'final' || status === 'pending_review'
+}
+
+/**
+ * Keep the Parent Hub live card subscribed through extra time / PKs when a hub
+ * poll is stale (still `live`) or briefly omits the in-progress match.
+ */
+export function mergeParentHubLiveMatch(
+  prev: ParentHubMatch | null,
+  nextFromHub: ParentHubMatch | null,
+  allMatches: ParentHubMatch[],
+): ParentHubMatch | null {
+  if (nextFromHub) {
+    if (
+      prev &&
+      prev.id === nextFromHub.id &&
+      isLiveMatchStatus(prev.status) &&
+      nextFromHub.status === 'live' &&
+      prev.status !== 'live'
+    ) {
+      return {
+        ...nextFromHub,
+        status: prev.status,
+        home_pk_score: prev.home_pk_score,
+        away_pk_score: prev.away_pk_score,
+        pk_winner_is_us: prev.pk_winner_is_us,
+      }
+    }
+    return nextFromHub
+  }
+
+  if (!prev || !isLiveMatchStatus(prev.status)) return null
+  const same = allMatches.find((match) => match.id === prev.id)
+  if (!same) return prev
+  if (isParentHubFinishedMatch(same.status) || same.status === 'scheduled') return null
+  return isLiveMatchStatus(same.status) ? same : prev
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -1079,6 +1123,15 @@ export function formatParentEventLine(
       case 'corner_away':
         line = `${minute} Corner · ${opponentLabel}`
         break
+      case 'pk_attempt': {
+        const notes = parsePkAttemptNotes(event.eventNotes)
+        const resultLabel = notes?.result === 'make' ? 'Made' : notes?.result === 'miss' ? 'Missed' : 'Attempt'
+        const taker =
+          notes?.team === 'opponent' ? opponentLabel : name
+        const roundLabel = notes?.round ? `R${notes.round}` : 'PK'
+        line = `${roundLabel} ${taker} · ${resultLabel}`
+        break
+      }
       default:
         line = `${minute} ${event.eventType}`
     }
@@ -1116,7 +1169,11 @@ export function formatParentTimelineRowCopy(
 export function isParentTimelineHighlight(row: ParentTimelineRow): boolean {
   if (row.kind === 'lineup' || row.kind === 'period_end') return true
   if (row.kind !== 'event') return false
-  return row.event.eventType === 'goal' || row.event.eventType === 'opponent_goal'
+  if (row.event.eventType === 'goal' || row.event.eventType === 'opponent_goal') return true
+  if (row.event.eventType === 'pk_attempt') {
+    return parsePkAttemptNotes(row.event.eventNotes)?.result === 'make'
+  }
+  return false
 }
 
 /** Event types shown on the public Parent Hub live timeline. */
@@ -1134,6 +1191,7 @@ export const PARENT_HUB_LIVE_EVENT_TYPES = [
   'save_away',
   'corner_home',
   'corner_away',
+  'pk_attempt',
 ] as const
 
 export type ParentHubLiveEventType = (typeof PARENT_HUB_LIVE_EVENT_TYPES)[number]

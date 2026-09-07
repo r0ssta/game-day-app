@@ -56,6 +56,8 @@ export type MatchSetupPageProps = {
   onIsTestMatchChange: (value: boolean) => void
   goesToPks: boolean
   onGoesToPksChange: (value: boolean) => void
+  isTournamentKnockout: boolean
+  onIsTournamentKnockoutChange: (value: boolean) => void
   totalPeriods: TotalPeriods
   onTotalPeriodsChange: (value: TotalPeriods) => void
   /** When false, Match Format is locked to 2 halves (non-U9/U10). */
@@ -126,6 +128,8 @@ export function MatchSetupPage({
   onIsTestMatchChange,
   goesToPks,
   onGoesToPksChange,
+  isTournamentKnockout,
+  onIsTournamentKnockoutChange,
   totalPeriods,
   onTotalPeriodsChange,
   allowThreePeriods,
@@ -476,6 +480,7 @@ export function MatchSetupPage({
                 type="button"
                 role="switch"
                 aria-checked={tournamentGame}
+                aria-label="Tournament Game"
                 onClick={() => onTournamentGameChange(!tournamentGame)}
                 className={cn(
                   'relative h-8 w-14 rounded-full transition-colors',
@@ -519,28 +524,57 @@ export function MatchSetupPage({
             </div>
 
             {tournamentGame ? (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-athletic/40 bg-athletic/10 px-4 py-3">
-                <span className="text-sm font-bold text-foreground">
-                  Would this game go to PKs if it ends in a tie?
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={goesToPks}
-                  onClick={() => onGoesToPksChange(!goesToPks)}
-                  className={cn(
-                    'relative h-8 w-14 shrink-0 rounded-full transition-colors',
-                    goesToPks ? 'bg-neon' : 'bg-secondary',
-                  )}
-                >
-                  <span
+              <>
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-neon/40 bg-neon/10 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-foreground">Knockout match</p>
+                    <p className="text-xs text-muted-foreground">
+                      A tie must go to extra time or a penalty shootout
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isTournamentKnockout}
+                    aria-label="Knockout match"
+                    onClick={() => onIsTournamentKnockoutChange(!isTournamentKnockout)}
                     className={cn(
-                      'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
-                      goesToPks ? 'left-7' : 'left-1',
+                      'relative h-8 w-14 shrink-0 rounded-full transition-colors',
+                      isTournamentKnockout ? 'bg-neon' : 'bg-secondary',
                     )}
-                  />
-                </button>
-              </div>
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                        isTournamentKnockout ? 'left-7' : 'left-1',
+                      )}
+                    />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-athletic/40 bg-athletic/10 px-4 py-3">
+                  <span className="text-sm font-bold text-foreground">
+                    Would this game go to PKs if it ends in a tie?
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={goesToPks}
+                    aria-label="Would this game go to PKs if it ends in a tie?"
+                    onClick={() => onGoesToPksChange(!goesToPks)}
+                    className={cn(
+                      'relative h-8 w-14 shrink-0 rounded-full transition-colors',
+                      goesToPks ? 'bg-neon' : 'bg-secondary',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-1 size-6 rounded-full bg-white shadow transition-transform',
+                        goesToPks ? 'left-7' : 'left-1',
+                      )}
+                    />
+                  </button>
+                </div>
+              </>
             ) : null}
 
             {allowThreePeriods ? (

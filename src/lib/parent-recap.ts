@@ -6,8 +6,8 @@ import type { DbMatchEvent } from '@/types/database'
 import type { MatchPlayer } from '@/types/match'
 
 /**
- * Parent-safe player minutes/positions for weekly recap emails.
- * Intentionally omits plus/minus, impact ratings, and developmental review notes.
+ * Parent-safe player positions for weekly recap emails.
+ * Intentionally omits playing time, plus/minus, impact ratings, and developmental notes.
  */
 export type ParentRecapPlayerLine = {
   playerId: string
@@ -37,7 +37,8 @@ export type BuildParentRecapEmailInput = {
 }
 
 /**
- * Aggregate minutes + positions for every player who logged time.
+ * Aggregate positions for every player who logged time.
+ * Minutes stay on the line object for staff tooling; parent email copy omits them.
  * Does not read match_stats.plus_minus or match_reviews (impact / notes).
  */
 export function aggregateParentRecapPlayerLines(
@@ -82,7 +83,7 @@ export function aggregateParentRecapPlayerLines(
       totalMinutes,
       positions,
       positionsLabel,
-      bullet: `${name}: ${totalMinutes} mins (${positionsLabel})`,
+      bullet: `${name}: ${positionsLabel}`,
     })
   }
 
@@ -97,7 +98,7 @@ export function buildParentRecapEmailDraft(
   const playerBlock =
     input.playerLines.length > 0
       ? input.playerLines.map((line) => `• ${line.bullet}`).join('\n')
-      : '• No player minutes recorded for this match.'
+      : '• No player stats recorded for this match.'
   const discipline = (input.disciplineLines ?? []).filter((line) => line.trim().length > 0)
 
   const subject = `${input.teamName} Match Recap vs. ${input.opponent} - ${input.matchDateLabel}`
@@ -105,7 +106,7 @@ export function buildParentRecapEmailDraft(
     'Game Summary',
     gameSummary,
     '',
-    'Player Minutes & Positions',
+    'Players & Positions',
     playerBlock,
   ]
   if (discipline.length > 0) {

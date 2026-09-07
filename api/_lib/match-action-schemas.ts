@@ -96,23 +96,50 @@ export type LogGoalInput = z.infer<typeof LogGoalInputSchema>
  * End regulation / move match to pending_review (or prepare PK shootout).
  * Client still updates local clock/players; server persists DB side-effects.
  */
-export const EndRegulationInputSchema = z.object({
-  matchId: z.string().uuid(),
-  clockSeconds: z.number().int().finite(),
-  halfLengthMinutes: z.number().positive(),
-  formation: z.string().catch(''),
-  endedOnTime: z.boolean().nullable().optional(),
-  enterPenaltyShootout: z.boolean().optional().default(false),
-  /** Players still on the field at whistle — each gets a period_end sub_out. */
-  onFieldPlayerIds: z.array(z.string().uuid()).default([]),
-  /** Full finalized match_stats-shaped rows optional; server can update status alone if empty. */
-  homeScore: z.number().int().nonnegative().optional(),
-  awayScore: z.number().int().nonnegative().optional(),
-  teamName: z.string().optional(),
-  opponent: z.string().optional(),
-  teamSlug: z.string().nullable().optional(),
-  sendFullTimePush: z.boolean().optional().default(true),
-})
+export const EndRegulationInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    clockSeconds: z.number().int().finite(),
+    halfLengthMinutes: z.number().positive(),
+    formation: z.string().catch(''),
+    endedOnTime: z.boolean().nullable().optional(),
+    enterPenaltyShootout: z.boolean().optional().default(false),
+    /** Tournament knockout: start extra-time first half instead of full time. */
+    enterExtraTime: z.boolean().optional().default(false),
+    /** Extra-time first half ended — start extra-time second half. */
+    advanceExtraTime: z.boolean().optional().default(false),
+    extraTimeHalfMinutes: z.number().int().min(1).max(30).optional(),
+    /** Players still on the field at whistle — each gets a period_end sub_out. */
+    onFieldPlayerIds: z.array(z.string().uuid()).default([]),
+    /** Full finalized match_stats-shaped rows optional; server can update status alone if empty. */
+    homeScore: z.number().int().nonnegative().optional(),
+    awayScore: z.number().int().nonnegative().optional(),
+    teamName: z.string().optional(),
+    opponent: z.string().optional(),
+    teamSlug: z.string().nullable().optional(),
+    sendFullTimePush: z.boolean().optional().default(true),
+  })
+  .superRefine((value, ctx) => {
+    const continuations = [
+      value.enterPenaltyShootout,
+      value.enterExtraTime,
+      value.advanceExtraTime,
+    ].filter(Boolean)
+    if (continuations.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Choose only one of extra time, advance extra time, or penalty shootout',
+        path: ['enterPenaltyShootout'],
+      })
+    }
+    if (value.enterExtraTime && value.extraTimeHalfMinutes == null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'extraTimeHalfMinutes is required when entering extra time',
+        path: ['extraTimeHalfMinutes'],
+      })
+    }
+  })
 
 export type EndRegulationInput = z.infer<typeof EndRegulationInputSchema>
 
@@ -318,6 +345,19 @@ export const LogPkAttemptInputSchema = z
   })
 
 export type LogPkAttemptInput = z.infer<typeof LogPkAttemptInputSchema>
+
+/** Swap or clear an already-logged PK attempt (update/delete the existing row). */
+export const UpdatePkAttemptInputSchema = z.object({
+  matchId: z.string().uuid(),
+  action: z.enum(['swap', 'clear']),
+  eventId: z.string().uuid().optional(),
+  round: z.number().int().positive(),
+  team: z.enum(['us', 'opponent']),
+  homePkScoreBefore: z.number().int().nonnegative(),
+  awayPkScoreBefore: z.number().int().nonnegative(),
+})
+
+export type UpdatePkAttemptInput = z.infer<typeof UpdatePkAttemptInputSchema>
 
 /**
  * Finalize a penalty shootout: persist PK scores + winner, move to pending_review,

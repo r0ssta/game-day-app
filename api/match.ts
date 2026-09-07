@@ -11,6 +11,7 @@ import logFormation from './_lib/match-handlers/log-formation.js'
 import logGoal from './_lib/match-handlers/log-goal.js'
 import logPeriod from './_lib/match-handlers/log-period.js'
 import logPkAttempt from './_lib/match-handlers/log-pk-attempt.js'
+import updatePkAttempt from './_lib/match-handlers/update-pk-attempt.js'
 import logSubstitution from './_lib/match-handlers/log-substitution.js'
 import logTeamEvent from './_lib/match-handlers/log-team-event.js'
 import removeLastGoal from './_lib/match-handlers/remove-last-goal.js'
@@ -26,6 +27,7 @@ const MATCH_HANDLERS: Record<string, MatchHandler> = {
   'log-goal': logGoal,
   'log-period': logPeriod,
   'log-pk-attempt': logPkAttempt,
+  'update-pk-attempt': updatePkAttempt,
   'log-substitution': logSubstitution,
   'log-team-event': logTeamEvent,
   'remove-last-goal': removeLastGoal,

@@ -38,6 +38,7 @@ import {
   applyPresetToSetup,
   applyPresetToHalftime,
   buildFormationJson,
+  parsePreloadSlotAssignments,
   parseSlotLabelOverrides,
   resolveLiveFirstHalfSlots,
   validatePresetFormation,
@@ -67,6 +68,7 @@ import {
   fetchMatchById,
   fetchMatchBundleById,
   promoteScheduledMatchToLive,
+  persistPreKickoffLineup,
   saveQualitativeContext,
   fetchActiveSeason,
   fetchAgeGroupPoolPlayers,
@@ -124,7 +126,7 @@ import {
   resolveTeamScope,
   type TeamScope,
 } from '@/lib/team-context'
-import { isSessionMatchForSelectedTeam } from '@/lib/match-status'
+import { isSessionInProgressMatchForSelectedTeam, isSessionMatchForSelectedTeam } from '@/lib/match-status'
 import {
   poolPlayerToGuestRoster,
   resolveTeamAgeGroup,
@@ -137,6 +139,7 @@ import {
   isActiveStaffMatchScreen,
   isStaleKickoffSnapshot,
   shouldAdoptRemoteClock,
+  shouldAdoptRemotePreKickoffLineup,
   shouldHoldLocalLiveClock,
   snapshotHydrateResult,
   type LiveMatchHydrateResult,
@@ -168,6 +171,13 @@ function scheduledPreloadContext(input: {
     preloadSlotLabelOverrides:
       labels && Object.keys(labels).length > 0 ? labels : null,
   }
+}
+
+function asContextRecord(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) }
+  }
+  return {}
 }
 
 export function useGameDayApp() {
@@ -253,6 +263,7 @@ export function useGameDayApp() {
   const [matchTournamentGame, setMatchTournamentGame] = useState(false)
   const [matchIsTest, setMatchIsTest] = useState(false)
   const [matchGoesToPks, setMatchGoesToPks] = useState(false)
+  const [matchIsTournamentKnockout, setMatchIsTournamentKnockout] = useState(false)
   const [homePkScore, setHomePkScore] = useState(0)
   const [awayPkScore, setAwayPkScore] = useState(0)
   const [pkWinnerIsUs, setPkWinnerIsUs] = useState<boolean | null>(null)
@@ -269,6 +280,7 @@ export function useGameDayApp() {
   const [tournamentGame, setTournamentGame] = useState(false)
   const [isTestMatch, setIsTestMatch] = useState(false)
   const [goesToPks, setGoesToPks] = useState(false)
+  const [isTournamentKnockout, setIsTournamentKnockout] = useState(false)
   const [matchDate, setMatchDate] = useState(defaultMatchDate)
   const [matchTime, setMatchTime] = useState(defaultMatchTime)
   const [setupLineup, setSetupLineup] = useState<SetupLineup>({ attending: {}, startFirstHalf: {} })
@@ -284,6 +296,10 @@ export function useGameDayApp() {
   const lastClockWriteAtRef = useRef(0)
   const hydrateInFlightRef = useRef(false)
   const localWriteGenRef = useRef(0)
+  const preKickoffLineupDirtyRef = useRef(false)
+  const preKickoffPersistGenRef = useRef(0)
+  const preKickoffPersistInFlightRef = useRef(false)
+  const qualitativeContextRef = useRef<Record<string, unknown>>({})
   const localClockOwnedRef = useRef(false)
   const localIntermissionRef = useRef(false)
   const liveStateRef = useRef({
@@ -373,6 +389,76 @@ export function useGameDayApp() {
     localWriteGenRef.current += 1
   }, [])
 
+  const lockPreKickoffLineupDraft = useCallback(() => {
+    preKickoffLineupDirtyRef.current = true
+    noteLocalMatchMutation()
+  }, [noteLocalMatchMutation])
+
+  const commitReadyToStartLineup = useCallback(
+    async (input: {
+      players: MatchPlayer[]
+      slotAssignments: Record<string, string | null>
+      formationId: string
+      slotLabelOverrides?: Record<string, string> | null
+    }) => {
+      lockPreKickoffLineupDraft()
+      const isFirstPeriod = periodRef.current === '1st'
+      if (isFirstPeriod) {
+        setFirstHalfSlotAssignments(input.slotAssignments)
+      } else {
+        setSecondHalfSlotAssignments(input.slotAssignments)
+      }
+
+      const targetMatchId = matchIdRef.current
+      if (!targetMatchId) return
+
+      let base = qualitativeContextRef.current
+      if (Object.keys(base).length === 0) {
+        const existing = await fetchMatchById(targetMatchId)
+        base = asContextRecord(existing?.qualitative_context)
+      }
+
+      const nextContext = isFirstPeriod
+        ? {
+            ...base,
+            ...scheduledPreloadContext({
+              firstHalfFormation: input.formationId,
+              slotAssignments: input.slotAssignments,
+              slotLabelOverrides: input.slotLabelOverrides,
+            }),
+          }
+        : base
+      qualitativeContextRef.current = nextContext
+
+      const persistGen = (preKickoffPersistGenRef.current += 1)
+      preKickoffPersistInFlightRef.current = true
+      try {
+        const saved = await persistPreKickoffLineup({
+          matchId: targetMatchId,
+          qualitativeContext: nextContext,
+          players: input.players,
+        })
+        if (persistGen !== preKickoffPersistGenRef.current) return
+        if (matchIdRef.current !== targetMatchId) return
+
+        if (saved.qualitativeContext) {
+          qualitativeContextRef.current = asContextRecord(saved.qualitativeContext)
+          if (isFirstPeriod) {
+            const savedSlots = parsePreloadSlotAssignments(
+              saved.qualitativeContext.preloadSlotAssignments,
+            )
+            if (savedSlots) setFirstHalfSlotAssignments(savedSlots)
+          }
+        }
+      } finally {
+        if (persistGen === preKickoffPersistGenRef.current) {
+          preKickoffPersistInFlightRef.current = false
+        }
+      }
+    },
+    [lockPreKickoffLineupDraft],
+  )
+
   const claimLocalClock = useCallback(() => {
     localClockOwnedRef.current = true
     runningRef.current = true
@@ -404,7 +490,8 @@ export function useGameDayApp() {
         appMode: liveStateRef.current.appMode,
         periodClockStarted: liveStateRef.current.periodClockStarted,
         running: runningRef.current,
-      }),
+      }) ||
+      (preKickoffPersistInFlightRef.current && !liveStateRef.current.periodClockStarted),
     [],
   )
 
@@ -471,8 +558,24 @@ export function useGameDayApp() {
         setPkWinnerIsUs(match.pk_winner_is_us ?? null)
         setPkGkPlayerId(match.pk_gk_player_id ?? null)
         setMatchGoesToPks(Boolean(match.goes_to_pks))
+        setMatchIsTournamentKnockout(Boolean(match.is_tournament_knockout))
         setSubIntervalSeconds(match.sub_interval_seconds ?? null)
         setGkPlaysFullHalf(match.gk_plays_full_half !== false)
+
+        const rawContext =
+          match.qualitative_context && typeof match.qualitative_context === 'object'
+            ? (match.qualitative_context as Record<string, unknown>)
+            : null
+        if (preKickoffLineupDirtyRef.current) {
+          qualitativeContextRef.current = {
+            ...asContextRecord(rawContext),
+            preloadFormation: qualitativeContextRef.current.preloadFormation,
+            preloadSlotAssignments: qualitativeContextRef.current.preloadSlotAssignments,
+            preloadSlotLabelOverrides: qualitativeContextRef.current.preloadSlotLabelOverrides,
+          }
+        } else {
+          qualitativeContextRef.current = asContextRecord(rawContext)
+        }
 
         const staleKickoff = isStaleKickoffSnapshot({
           localClockStarted: latest.periodClockStarted,
@@ -507,16 +610,25 @@ export function useGameDayApp() {
           applyMatchPeriodState(match)
           setPeriodClockStarted(match.period_clock_started)
         }
-        setFirstHalfStarterIds(
-          snapshot.players
-            .filter((player) => player.isFirstHalfStarter)
-            .map((player) => player.id),
-        )
-        setSecondHalfStarterIds(
-          snapshot.players
-            .filter((player) => player.isSecondHalfStarter)
-            .map((player) => player.id),
-        )
+
+        const adoptPreKickoffLineup = shouldAdoptRemotePreKickoffLineup({
+          localRunning,
+          periodClockStarted: latest.periodClockStarted,
+          lineupDraftLocked: preKickoffLineupDirtyRef.current,
+        })
+
+        if (!preKickoffLineupDirtyRef.current) {
+          setFirstHalfStarterIds(
+            snapshot.players
+              .filter((player) => player.isFirstHalfStarter)
+              .map((player) => player.id),
+          )
+          setSecondHalfStarterIds(
+            snapshot.players
+              .filter((player) => player.isSecondHalfStarter)
+              .map((player) => player.id),
+          )
+        }
 
         const adoptClock =
           !localRunning &&
@@ -539,7 +651,7 @@ export function useGameDayApp() {
           setSeconds(clockSeconds)
         }
 
-        if (!localRunning && !latest.periodClockStarted) {
+        if (adoptPreKickoffLineup) {
           let nextPlayers = remotePlayers
           if (result.mode === 'match' && match.period_clock_started) {
             nextPlayers = stampOnFieldAtClock(remotePlayers, displaySeconds)
@@ -560,14 +672,10 @@ export function useGameDayApp() {
           )
         }
 
-        if (result.currentPeriod <= 1) {
+        if (result.currentPeriod <= 1 && !preKickoffLineupDirtyRef.current) {
           const teamFormat = normalizeTeamFormat(
             teams.find((team) => team.id === match.team_id)?.format,
           )
-          const rawContext =
-            match.qualitative_context && typeof match.qualitative_context === 'object'
-              ? (match.qualitative_context as Record<string, unknown>)
-              : null
           const preloadFormation =
             typeof rawContext?.preloadFormation === 'string'
               ? rawContext.preloadFormation.trim()
@@ -816,7 +924,7 @@ export function useGameDayApp() {
           setMasterRoster(roster)
           setMatchId(match.id)
           setSessionMatchTeamId(match.team_id)
-          setMatchStatus('live')
+          setMatchStatus(match.status)
           setAppMode('home')
           setPlayers(playersWithCards)
           setHomeScore(match.home_score)
@@ -845,6 +953,7 @@ export function useGameDayApp() {
           setMatchTournamentGame(match.tournament_game)
           setMatchIsTest(Boolean(match.is_test))
           setMatchGoesToPks(Boolean(match.goes_to_pks))
+          setMatchIsTournamentKnockout(Boolean(match.is_tournament_knockout))
           setHomePkScore(match.home_pk_score ?? 0)
           setAwayPkScore(match.away_pk_score ?? 0)
           setPkWinnerIsUs(match.pk_winner_is_us ?? null)
@@ -862,6 +971,8 @@ export function useGameDayApp() {
             match.qualitative_context && typeof match.qualitative_context === 'object'
               ? (match.qualitative_context as Record<string, unknown>)
               : null
+          qualitativeContextRef.current = asContextRecord(rawContext)
+          preKickoffLineupDirtyRef.current = false
           const teamFormat = normalizeTeamFormat(team.format)
           const preloadFormation =
             typeof rawContext?.preloadFormation === 'string'
@@ -1095,6 +1206,7 @@ export function useGameDayApp() {
       setTournamentGame(Boolean(match.tournament_game))
       setIsTestMatch(Boolean(match.is_test))
       setGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
+      setIsTournamentKnockout(Boolean(match.is_tournament_knockout) && Boolean(match.tournament_game))
       applyMatchPeriodState(match)
       setMatchDate(match.match_date ?? match.date.slice(0, 10))
       setMatchTime(normalizeMatchTimeForInput(match.match_time))
@@ -1217,6 +1329,9 @@ export function useGameDayApp() {
         setTournamentGame(Boolean(match.tournament_game))
         setIsTestMatch(Boolean(match.is_test))
         setGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
+        setIsTournamentKnockout(
+          Boolean(match.is_tournament_knockout) && Boolean(match.tournament_game),
+        )
         applyMatchPeriodState(match)
         setMatchDate(match.match_date ?? match.date.slice(0, 10))
         setMatchTime(normalizeMatchTimeForInput(match.match_time))
@@ -1723,6 +1838,7 @@ export function useGameDayApp() {
       tournamentGame: boolean
       isTest?: boolean
       goesToPks?: boolean
+      isTournamentKnockout?: boolean | null
       halfLength: number
       totalPeriods?: TotalPeriods
       matchDate: string
@@ -1744,6 +1860,9 @@ export function useGameDayApp() {
 
       let createdMatchId: string | null = null
       const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
+      const isTournamentKnockout = input.tournamentGame
+        ? Boolean(input.isTournamentKnockout)
+        : false
       const allowsThree = supportsThreePeriodFormat({
         ageGroup: teams.find((t) => t.id === input.teamId)?.age_group,
         teamFormat: normalizeTeamFormat(teams.find((t) => t.id === input.teamId)?.format),
@@ -1768,6 +1887,7 @@ export function useGameDayApp() {
           tournamentGame: input.tournamentGame,
           isTest: Boolean(input.isTest),
           goesToPks,
+          isTournamentKnockout,
           halfLength: input.halfLength,
           periodLength: input.halfLength,
           totalPeriods: matchTotalPeriods,
@@ -1801,14 +1921,14 @@ export function useGameDayApp() {
             position: input.matchPositions[id] ?? '',
           })),
         })
-        await saveQualitativeContext(
-          match.id,
-          scheduledPreloadContext({
-            firstHalfFormation: input.firstHalfFormation,
-            slotAssignments: liveSlots,
-            slotLabelOverrides: input.slotLabelOverrides,
-          }),
-        )
+        const preloadContext = scheduledPreloadContext({
+          firstHalfFormation: input.firstHalfFormation,
+          slotAssignments: liveSlots,
+          slotLabelOverrides: input.slotLabelOverrides,
+        })
+        await saveQualitativeContext(match.id, preloadContext)
+        qualitativeContextRef.current = preloadContext
+        preKickoffLineupDirtyRef.current = false
 
         setMatchId(match.id)
         setSessionMatchTeamId(input.teamId)
@@ -1856,6 +1976,7 @@ export function useGameDayApp() {
         setMatchTournamentGame(input.tournamentGame)
         setMatchIsTest(Boolean(input.isTest))
         setMatchGoesToPks(goesToPks)
+        setMatchIsTournamentKnockout(isTournamentKnockout)
         setHalfLengthMinutes(input.halfLength)
         setSubIntervalSeconds(input.subIntervalSeconds ?? null)
         setGkPlaysFullHalf(input.gkPlaysFullHalf ?? true)
@@ -1885,6 +2006,7 @@ export function useGameDayApp() {
       tournamentGame: boolean
       isTest?: boolean
       goesToPks?: boolean
+      isTournamentKnockout?: boolean | null
       halfLength: number
       totalPeriods?: TotalPeriods
       matchDate: string
@@ -1902,6 +2024,9 @@ export function useGameDayApp() {
       slotLabelOverrides?: Record<string, string> | null
     }) => {
       const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
+      const isTournamentKnockout = input.tournamentGame
+        ? Boolean(input.isTournamentKnockout)
+        : false
       const allowsThree = supportsThreePeriodFormat({
         ageGroup: teams.find((t) => t.id === input.teamId)?.age_group,
         teamFormat: normalizeTeamFormat(teams.find((t) => t.id === input.teamId)?.format),
@@ -1926,6 +2051,7 @@ export function useGameDayApp() {
           tournament_game: input.tournamentGame,
           is_test: Boolean(input.isTest),
           goes_to_pks: goesToPks,
+          is_tournament_knockout: isTournamentKnockout,
           half_length: input.halfLength,
           period_length: input.halfLength,
           total_periods: matchTotalPeriods,
@@ -1967,6 +2093,7 @@ export function useGameDayApp() {
                     tournament_game: input.tournamentGame,
                     is_test: Boolean(input.isTest),
                     goes_to_pks: goesToPks,
+                    is_tournament_knockout: isTournamentKnockout,
                     half_length: input.halfLength,
                     period_length: input.halfLength,
                     total_periods: matchTotalPeriods,
@@ -2000,6 +2127,7 @@ export function useGameDayApp() {
           tournamentGame: input.tournamentGame,
           isTest: Boolean(input.isTest),
           goesToPks,
+          isTournamentKnockout,
           halfLength: input.halfLength,
           periodLength: input.halfLength,
           totalPeriods: matchTotalPeriods,
@@ -2092,6 +2220,8 @@ export function useGameDayApp() {
         match.qualitative_context && typeof match.qualitative_context === 'object'
           ? (match.qualitative_context as Record<string, unknown>)
           : null
+      qualitativeContextRef.current = asContextRecord(rawContext)
+      preKickoffLineupDirtyRef.current = false
       const preloadFormation =
         typeof rawContext?.preloadFormation === 'string' ? rawContext.preloadFormation.trim() : ''
       const formation = resolveFormationIdForFormat(
@@ -2166,6 +2296,9 @@ export function useGameDayApp() {
       setMatchTournamentGame(Boolean(match.tournament_game))
       setMatchIsTest(Boolean(match.is_test))
       setMatchGoesToPks(Boolean(match.goes_to_pks) && Boolean(match.tournament_game))
+      setMatchIsTournamentKnockout(
+        Boolean(match.is_tournament_knockout) && Boolean(match.tournament_game),
+      )
       setHalfLengthMinutes(halfLen)
       setSubIntervalSeconds(match.sub_interval_seconds ?? null)
       setGkPlaysFullHalf(match.gk_plays_full_half !== false)
@@ -2327,7 +2460,12 @@ export function useGameDayApp() {
     async (
       clockSeconds: number,
       timing?: { endedOnTime: boolean },
-      options?: { enterPenaltyShootout?: boolean },
+      options?: {
+        enterPenaltyShootout?: boolean
+        enterExtraTime?: boolean
+        advanceExtraTime?: boolean
+        extraTimeHalfMinutes?: number
+      },
     ) => {
       localIntermissionRef.current = false
       releaseLocalClock()
@@ -2338,6 +2476,7 @@ export function useGameDayApp() {
       const formation = getActiveFormation()
       const teamSlug =
         teams.find((entry) => entry.id === selectedTeamId)?.slug?.trim() || null
+      const keepLineupOnField = Boolean(options?.enterExtraTime || options?.advanceExtraTime)
 
       if (matchId) {
         const result = await apiEndRegulation({
@@ -2347,30 +2486,61 @@ export function useGameDayApp() {
           formation,
           endedOnTime: timing?.endedOnTime ?? null,
           enterPenaltyShootout: options?.enterPenaltyShootout ?? false,
+          enterExtraTime: options?.enterExtraTime ?? false,
+          advanceExtraTime: options?.advanceExtraTime ?? false,
+          extraTimeHalfMinutes: options?.extraTimeHalfMinutes,
           onFieldPlayerIds,
           homeScore,
           awayScore,
           teamName: matchTeamName.trim() || 'Home',
           opponent: matchOpponent,
           teamSlug,
-          sendFullTimePush: !options?.enterPenaltyShootout,
+          sendFullTimePush: !(
+            options?.enterPenaltyShootout ||
+            options?.enterExtraTime ||
+            options?.advanceExtraTime
+          ),
         })
         if (!result.ok) {
           throw new Error(result.error)
         }
       }
 
-      setPlayers((prev) => {
-        const finalized = finalizeAllOnField(prev, clockSeconds).map((p) =>
-          p.attending && p.isOnField ? { ...p, isOnField: false, subbedInAt: null } : p,
-        )
+      if (!keepLineupOnField) {
+        setPlayers((prev) => {
+          const finalized = finalizeAllOnField(prev, clockSeconds).map((p) =>
+            p.attending && p.isOnField ? { ...p, isOnField: false, subbedInAt: null } : p,
+          )
 
-        if (matchId) {
-          void syncMatchStats(matchId, finalized)
-        }
+          if (matchId) {
+            void syncMatchStats(matchId, finalized)
+          }
 
-        return finalized
-      })
+          return finalized
+        })
+      }
+
+      if (options?.enterExtraTime) {
+        const extraMinutes = options.extraTimeHalfMinutes ?? 5
+        setHalfLengthMinutes(extraMinutes)
+        setSeconds(initialHalfClock(extraMinutes))
+        setPeriodClockStarted(false)
+        setRunning(false)
+        setMatchStatus('extra_time_first_half')
+        setAppMode('match')
+        return
+      }
+
+      if (options?.advanceExtraTime) {
+        const extraMinutes = options.extraTimeHalfMinutes ?? halfLengthMinutes
+        setHalfLengthMinutes(extraMinutes)
+        setSeconds(initialHalfClock(extraMinutes))
+        setPeriodClockStarted(false)
+        setRunning(false)
+        setMatchStatus('extra_time_second_half')
+        setAppMode('match')
+        return
+      }
 
       if (options?.enterPenaltyShootout) {
         setHomePkScore(0)
@@ -2378,7 +2548,7 @@ export function useGameDayApp() {
         setPkWinnerIsUs(null)
         setPkGkPlayerId(null)
         setPeriodClockStarted(false)
-        setMatchStatus('live')
+        setMatchStatus('penalty_shootout')
         setAppMode('penalty_shootout')
         return
       }
@@ -2436,6 +2606,9 @@ export function useGameDayApp() {
 
   const returnToHome = useCallback(() => {
     setAppMode('home')
+    preKickoffLineupDirtyRef.current = false
+    preKickoffPersistGenRef.current += 1
+    qualitativeContextRef.current = {}
     setPlayers([])
     setHomeScore(0)
     setAwayScore(0)
@@ -2472,6 +2645,7 @@ export function useGameDayApp() {
     setMatchTournamentGame(false)
     setMatchIsTest(false)
     setMatchGoesToPks(false)
+    setMatchIsTournamentKnockout(false)
     setHomePkScore(0)
     setAwayPkScore(0)
     setPkWinnerIsUs(null)
@@ -2480,6 +2654,7 @@ export function useGameDayApp() {
     setTournamentGame(false)
     setIsTestMatch(false)
     setGoesToPks(false)
+    setIsTournamentKnockout(false)
     setMatchFormations({
       first: getDefaultFormationId(activeTeamFormat),
       second: getDefaultFormationId(activeTeamFormat),
@@ -2556,6 +2731,7 @@ export function useGameDayApp() {
     setMatchTournamentGame(match.tournament_game)
     setMatchIsTest(Boolean(match.is_test))
     setMatchGoesToPks(Boolean(match.goes_to_pks))
+    setMatchIsTournamentKnockout(Boolean(match.is_tournament_knockout))
     setFirstHalfStarterIds(stats.filter((s) => s.is_first_half_starter).map((s) => s.player_id))
     setSecondHalfStarterIds(stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id))
     setAppMode('recap')
@@ -2671,6 +2847,8 @@ export function useGameDayApp() {
     resumeLiveMatchScreen,
     persistMatchClock,
     noteLocalMatchMutation,
+    lockPreKickoffLineupDraft,
+    commitReadyToStartLineup,
     claimLocalClock,
     releaseLocalClock,
     isLocalClockOwned,
@@ -2740,12 +2918,11 @@ export function useGameDayApp() {
     openMatchRecap,
     openPendingReviewRecap,
     matchStatus,
-    hasLiveMatch: isSessionMatchForSelectedTeam(
+    hasLiveMatch: isSessionInProgressMatchForSelectedTeam(
       matchStatus,
       matchId,
       sessionMatchTeamId,
       selectedTeamId,
-      'live',
     ),
     hasPendingRecap: isSessionMatchForSelectedTeam(
       matchStatus,
@@ -2778,6 +2955,7 @@ export function useGameDayApp() {
     matchTournamentGame,
     matchIsTest,
     matchGoesToPks,
+    matchIsTournamentKnockout,
     homePkScore,
     setHomePkScore,
     awayPkScore,
@@ -2804,6 +2982,8 @@ export function useGameDayApp() {
     setIsTestMatch,
     goesToPks,
     setGoesToPks,
+    isTournamentKnockout,
+    setIsTournamentKnockout,
     matchDate,
     setMatchDate,
     matchTime,

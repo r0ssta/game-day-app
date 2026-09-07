@@ -91,6 +91,7 @@ export function ParentFinishedMatchDetail({
           dateLabel={when.dateLabel}
           timeLabel={when.timeLabel}
           recap={match.parent_facing_recap ?? ''}
+          hidePlayingTime
         />
       ) : null}
     </div>

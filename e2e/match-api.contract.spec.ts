@@ -8,6 +8,7 @@ const MATCH_ROUTES = [
   '/api/match/log-formation',
   '/api/match/log-period',
   '/api/match/log-pk-attempt',
+  '/api/match/update-pk-attempt',
   '/api/match/end-regulation',
   '/api/match/finalize-pk',
   '/api/match/finalize-review',

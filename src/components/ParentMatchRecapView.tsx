@@ -28,10 +28,12 @@ function HalfColumn({
   label,
   half,
   role,
+  hidePlayingTime,
 }: {
   label: string
   half: ParentHalfStat
   role: string
+  hidePlayingTime: boolean
 }) {
   const counting = formatParentCountingStats(half)
   return (
@@ -39,12 +41,16 @@ function HalfColumn({
       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
         {label}
       </p>
-      <p className="mt-1 font-mono text-sm font-bold tabular-nums text-neon">
-        {formatRecapMinutes(half.seconds)}
+      {hidePlayingTime ? null : (
+        <p className="mt-1 font-mono text-sm font-bold tabular-nums text-neon">
+          {formatRecapMinutes(half.seconds)}
+        </p>
+      )}
+      <p className={cn('text-[11px] font-semibold text-foreground', hidePlayingTime ? 'mt-1' : 'mt-0.5')}>
+        {role}
       </p>
-      <p className="mt-0.5 text-[11px] font-semibold text-foreground">{role}</p>
       <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-        {formatParentPositionsLine(half.positions)}
+        {formatParentPositionsLine(half.positions, { includeMinutes: !hidePlayingTime })}
       </p>
       {counting ? (
         <p className="mt-1 text-[11px] font-semibold text-foreground">{counting}</p>
@@ -53,7 +59,13 @@ function HalfColumn({
   )
 }
 
-function PlayerStatCard({ row }: { row: ParentMatchPlayerStat }) {
+function PlayerStatCard({
+  row,
+  hidePlayingTime,
+}: {
+  row: ParentMatchPlayerStat
+  hidePlayingTime: boolean
+}) {
   return (
     <li className="px-3 py-3.5">
       <div className="flex items-center gap-3">
@@ -67,24 +79,43 @@ function PlayerStatCard({ row }: { row: ParentMatchPlayerStat }) {
         </div>
         <div className="min-w-0">
           <p className="truncate text-base font-bold text-foreground">{row.name}</p>
-          <p className="font-mono text-xs font-bold tabular-nums text-muted-foreground">
-            {formatRecapMinutes(row.total.seconds)} total
-          </p>
+          {hidePlayingTime ? null : (
+            <p className="font-mono text-xs font-bold tabular-nums text-muted-foreground">
+              {formatRecapMinutes(row.total.seconds)} total
+            </p>
+          )}
         </div>
       </div>
       <div className="mt-3 grid grid-cols-3 divide-x divide-border border-t border-border pt-1">
-        <HalfColumn label="1st half" half={row.halves[0]} role={formatParentHalfRole(row.halves[0])} />
-        <HalfColumn label="2nd half" half={row.halves[1]} role={formatParentHalfRole(row.halves[1])} />
-        <HalfColumn label="Total" half={row.total} role={formatParentTotalRole(row)} />
+        <HalfColumn
+          label="1st half"
+          half={row.halves[0]}
+          role={formatParentHalfRole(row.halves[0])}
+          hidePlayingTime={hidePlayingTime}
+        />
+        <HalfColumn
+          label="2nd half"
+          half={row.halves[1]}
+          role={formatParentHalfRole(row.halves[1])}
+          hidePlayingTime={hidePlayingTime}
+        />
+        <HalfColumn
+          label="Total"
+          half={row.total}
+          role={formatParentTotalRole(row)}
+          hidePlayingTime={hidePlayingTime}
+        />
       </div>
       {row.extraHalves.some((half) => half.seconds > 0 || half.started) ? (
         <p className="mt-2 text-[11px] text-muted-foreground">
           {row.extraHalves
-            .map((half, index) =>
-              half.seconds > 0 || half.started
-                ? `${index + 3}rd · ${formatRecapMinutes(half.seconds)} · ${formatParentHalfRole(half)}`
-                : null,
-            )
+            .map((half, index) => {
+              if (!(half.seconds > 0 || half.started)) return null
+              const role = formatParentHalfRole(half)
+              return hidePlayingTime
+                ? `${index + 3}rd · ${role}`
+                : `${index + 3}rd · ${formatRecapMinutes(half.seconds)} · ${role}`
+            })
             .filter(Boolean)
             .join(' · ')}
         </p>
@@ -110,6 +141,8 @@ export type ParentMatchRecapViewProps = {
   timeLabel?: string
   recap?: string
   heading?: string
+  /** Hide per-player minutes / pitch time. Parent Hub always passes true. */
+  hidePlayingTime?: boolean
 }
 
 export function ParentMatchRecapView({
@@ -129,6 +162,7 @@ export function ParentMatchRecapView({
   timeLabel,
   recap = '',
   heading = 'Final',
+  hidePlayingTime = false,
 }: ParentMatchRecapViewProps) {
   const playerStats = useMemo(
     () => buildParentMatchPlayerStats(events, matchId, halfLengthMinutes, players),
@@ -183,12 +217,14 @@ export function ParentMatchRecapView({
         </h2>
         {playerStats.length === 0 ? (
           <p className="rounded-xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-            No player minutes recorded for this match.
+            {hidePlayingTime
+              ? 'No player stats recorded for this match.'
+              : 'No player minutes recorded for this match.'}
           </p>
         ) : (
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {playerStats.map((row) => (
-              <PlayerStatCard key={row.playerId} row={row} />
+              <PlayerStatCard key={row.playerId} row={row} hidePlayingTime={hidePlayingTime} />
             ))}
           </ul>
         )}

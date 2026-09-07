@@ -4,6 +4,7 @@ import {
   CLOCK_ECHO_MS,
   isStaleKickoffSnapshot,
   shouldAdoptRemoteClock,
+  shouldAdoptRemotePreKickoffLineup,
   shouldHoldLocalLiveClock,
 } from './live-match-snapshot'
 
@@ -64,6 +65,38 @@ describe('shouldHoldLocalLiveClock', () => {
         appMode: 'home',
         periodClockStarted: false,
         running: false,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('shouldAdoptRemotePreKickoffLineup', () => {
+  it('adopts the scheduled XI before kickoff when the coach has not edited', () => {
+    expect(
+      shouldAdoptRemotePreKickoffLineup({
+        localRunning: false,
+        periodClockStarted: false,
+        lineupDraftLocked: false,
+      }),
+    ).toBe(true)
+  })
+
+  it('keeps the local draft after a ready-to-start slot edit', () => {
+    expect(
+      shouldAdoptRemotePreKickoffLineup({
+        localRunning: false,
+        periodClockStarted: false,
+        lineupDraftLocked: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('does not adopt a pre-kickoff snapshot once the period clock is running', () => {
+    expect(
+      shouldAdoptRemotePreKickoffLineup({
+        localRunning: false,
+        periodClockStarted: true,
+        lineupDraftLocked: false,
       }),
     ).toBe(false)
   })

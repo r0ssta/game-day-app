@@ -9,6 +9,8 @@ export type QualitativeContext = {
   endedOnTime: boolean | null
   /** Seconds past regulation when the period/match was last synced or finished. */
   addedTimeSeconds: number
+  /** Extra-time half length in minutes (tournament knockout). */
+  extraTimeHalfMinutes: number | null
 }
 
 export const EMPTY_QUALITATIVE_CONTEXT: QualitativeContext = {
@@ -16,6 +18,7 @@ export const EMPTY_QUALITATIVE_CONTEXT: QualitativeContext = {
   opponentTier: null,
   endedOnTime: null,
   addedTimeSeconds: 0,
+  extraTimeHalfMinutes: null,
 }
 
 export const EXECUTION_SCORE_OPTIONS: Array<{
@@ -109,6 +112,12 @@ export function parseQualitativeContext(raw: unknown): QualitativeContext {
     opponentTier: parseOpponentTier(record.opponentTier ?? record.oppositionStrength),
     endedOnTime: typeof record.endedOnTime === 'boolean' ? record.endedOnTime : null,
     addedTimeSeconds,
+    extraTimeHalfMinutes:
+      typeof record.extraTimeHalfMinutes === 'number' &&
+      Number.isFinite(record.extraTimeHalfMinutes) &&
+      record.extraTimeHalfMinutes >= 1
+        ? Math.min(30, Math.floor(record.extraTimeHalfMinutes))
+        : null,
   }
 }
 
@@ -118,7 +127,11 @@ export function hasQualitativeContext(context: QualitativeContext): boolean {
 }
 
 export function hasMatchTimingContext(context: QualitativeContext): boolean {
-  return context.endedOnTime !== null || context.addedTimeSeconds > 0
+  return (
+    context.endedOnTime !== null ||
+    context.addedTimeSeconds > 0 ||
+    context.extraTimeHalfMinutes != null
+  )
 }
 
 /** Serialize coaching + timing fields for DB persistence without dropping OT metadata. */
@@ -136,6 +149,9 @@ export function serializeQualitativeContext(
   }
   if (context.endedOnTime !== null) payload.endedOnTime = context.endedOnTime
   if (context.addedTimeSeconds > 0) payload.addedTimeSeconds = context.addedTimeSeconds
+  if (context.extraTimeHalfMinutes != null) {
+    payload.extraTimeHalfMinutes = context.extraTimeHalfMinutes
+  }
   return payload
 }
 

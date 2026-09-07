@@ -10,7 +10,9 @@ import {
   hidePairedParentShots,
   isParentHubStaffPreviewRequest,
   isParentTimelineHighlight,
+  mergeParentHubLiveMatch,
   parentLiveEventsFromMatchEvents,
+  type ParentHubMatch,
   type ParentLiveEvent,
 } from './parent-hub'
 
@@ -107,6 +109,21 @@ describe('formatParentEventLine', () => {
     ).toBe(`1H 2' Rivals Goal (PK)${clock}`)
   })
 
+  it('renders a penalty-kick attempt on the live feed', () => {
+    expect(
+      formatParentEventLine(
+        event({
+          id: 'pk',
+          eventType: 'pk_attempt',
+          timestamp: 5,
+          eventNotes: JSON.stringify({ result: 'make', team: 'us', round: 2 }),
+        }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`R2 Ada · Made${clock}`)
+  })
+
   it('capitalizes Assist by on a goal', () => {
     expect(
       formatParentEventLine(
@@ -119,6 +136,20 @@ describe('formatParentEventLine', () => {
         names,
       ),
     ).toBe(`1H 2' GOAL · Ada · Assist by Bess${clock}`)
+  })
+
+  it('renders a PK attempt on the live feed', () => {
+    expect(
+      formatParentEventLine(
+        event({
+          id: 'pk',
+          eventType: 'pk_attempt',
+          eventNotes: JSON.stringify({ result: 'make', team: 'us', round: 3 }),
+        }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`R3 Ada · Made${clock}`)
   })
 })
 
@@ -388,3 +419,51 @@ describe('parentLiveEventsFromMatchEvents', () => {
     })
   })
 })
+
+function hubMatch(partial: Partial<ParentHubMatch> & Pick<ParentHubMatch, 'id' | 'status'>): ParentHubMatch {
+  return {
+    opponent: 'Rivals',
+    match_date: null,
+    match_time: null,
+    date: '2026-09-07',
+    location_type: 'home',
+    home_score: 1,
+    away_score: 1,
+    home_pk_score: 0,
+    away_pk_score: 0,
+    pk_winner_is_us: null,
+    period: '2nd',
+    current_period: 2,
+    total_periods: 2,
+    period_length: 30,
+    half_length: 30,
+    period_clock_started: false,
+    clock_seconds: 0,
+    parent_facing_recap: null,
+    ...partial,
+  }
+}
+
+describe('mergeParentHubLiveMatch', () => {
+  it('keeps extra time / shootout when the hub poll still says live', () => {
+    const prev = hubMatch({ id: 'm1', status: 'penalty_shootout', home_pk_score: 2, away_pk_score: 1 })
+    const next = hubMatch({ id: 'm1', status: 'live' })
+    expect(mergeParentHubLiveMatch(prev, next, [next])).toMatchObject({
+      status: 'penalty_shootout',
+      home_pk_score: 2,
+      away_pk_score: 1,
+    })
+  })
+
+  it('keeps streaming when an in-progress match is omitted from the hub payload', () => {
+    const prev = hubMatch({ id: 'm1', status: 'extra_time_first_half' })
+    expect(mergeParentHubLiveMatch(prev, null, [])).toEqual(prev)
+  })
+
+  it('drops the live card once the hub has a finished copy of the same match', () => {
+    const prev = hubMatch({ id: 'm1', status: 'penalty_shootout' })
+    const finished = hubMatch({ id: 'm1', status: 'pending_review' })
+    expect(mergeParentHubLiveMatch(prev, null, [finished])).toBeNull()
+  })
+})
+

@@ -62,6 +62,10 @@ type LiveTacticalPitchProps = {
   onReassignPosition: (updates: PositionReassignUpdate[]) => void
   onSetImpact?: (id: string, impact: Impact) => void
   initialSlotAssignments?: Record<string, string | null>
+  /** Fired after a coach move; the new map is the source of truth until kickoff. */
+  onSlotAssignmentsChange?: (slots: Record<string, string | null>) => void
+  /** Ready-to-start: user slot edits beat scheduled hydrates until the clock starts. */
+  lineupDraftIsSourceOfTruth?: boolean
   teamFormat?: TeamFormat
 }
 
@@ -291,6 +295,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       onReassignPosition,
       onSetImpact,
       initialSlotAssignments,
+      onSlotAssignmentsChange,
+      lineupDraftIsSourceOfTruth = false,
       teamFormat,
     },
     ref,
@@ -316,6 +322,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     const [flashedPlayerIds, setFlashedPlayerIds] = useState<Set<string>>(new Set())
     const hydratedKeyRef = useRef<string | null>(null)
     const skipOnFieldSyncRef = useRef(false)
+    const lineupDraftLockedRef = useRef(false)
+    const [lineupDraftLocked, setLineupDraftLocked] = useState(false)
     const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const formation = getFormationById(formationId, teamFormat)
@@ -326,9 +334,21 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       () => players.filter((p) => p.attending && p.isOnField),
       [players],
     )
+    const occupiedSlotPlayerIds = useMemo(() => {
+      const ids = new Set<string>()
+      for (const playerId of Object.values(slotAssignments)) {
+        if (playerId) ids.add(playerId)
+      }
+      return ids
+    }, [slotAssignments])
     const benchPlayers = useMemo(
-      () => players.filter((p) => p.attending && !p.isOnField && !p.isSentOff),
-      [players],
+      () =>
+        players.filter((p) => {
+          if (!p.attending || p.isSentOff) return false
+          if (lineupDraftLocked) return !occupiedSlotPlayerIds.has(p.id)
+          return !p.isOnField
+        }),
+      [players, occupiedSlotPlayerIds, lineupDraftLocked],
     )
     const sentOffPlayers = useMemo(
       () => players.filter((p) => p.attending && p.isSentOff),
@@ -365,10 +385,24 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     useEffect(() => {
       setSheet(null)
       setSelection(null)
-    }, [periodKey, formationId])
+    }, [formationId])
+
+    useEffect(() => {
+      setSheet(null)
+      setSelection(null)
+      lineupDraftLockedRef.current = false
+      setLineupDraftLocked(false)
+    }, [periodKey])
+
+    useEffect(() => {
+      if (lineupDraftIsSourceOfTruth) return
+      lineupDraftLockedRef.current = false
+      setLineupDraftLocked(false)
+    }, [lineupDraftIsSourceOfTruth])
 
     useEffect(() => {
       if (players.length === 0) return
+      if (lineupDraftLockedRef.current) return
 
       const playerSummaries = players.map((p) => ({
         id: p.id,
@@ -418,6 +452,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     }, [periodKey, formation, players, initialSlotAssignments])
 
     useEffect(() => {
+      if (lineupDraftLockedRef.current) return
       if (skipOnFieldSyncRef.current) {
         skipOnFieldSyncRef.current = false
         return
@@ -437,8 +472,10 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       })
     }, [onFieldPlayers, formation, players])
 
-    // Only show on-field occupants on the pitch; empty gaps stay clickable for insert.
+    // Occupied slots stay visible after a ready-to-start edit even if a stale
+    // hydrate briefly flips isOnField. Unlocked play still hides benched IDs.
     const displaySlotAssignments = useMemo(() => {
+      if (lineupDraftLocked) return slotAssignments
       const next: Record<string, string | null> = { ...slotAssignments }
       for (const [slotId, playerId] of Object.entries(next)) {
         if (!playerId) continue
@@ -446,7 +483,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         if (!player?.isOnField) next[slotId] = null
       }
       return next
-    }, [slotAssignments, playerById])
+    }, [slotAssignments, playerById, lineupDraftLocked])
 
     const flashPlayers = useCallback((playerIds: string[]) => {
       if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
@@ -454,14 +491,27 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       flashTimeoutRef.current = setTimeout(() => setFlashedPlayerIds(new Set()), 700)
     }, [])
 
+    const applySlotDraft = useCallback(
+      (next: Record<string, string | null>) => {
+        if (lineupDraftIsSourceOfTruth) {
+          lineupDraftLockedRef.current = true
+          setLineupDraftLocked(true)
+          onSlotAssignmentsChange?.(next)
+        }
+        setSlotAssignments(next)
+      },
+      [lineupDraftIsSourceOfTruth, onSlotAssignmentsChange],
+    )
+
     const getOnFieldPlayerAtSlot = useCallback(
       (slotId: string): string | null => {
         const playerId = slotAssignments[slotId] ?? null
         if (!playerId) return null
+        if (lineupDraftLocked) return playerId
         const player = playerById.get(playerId)
         return player?.isOnField ? playerId : null
       },
-      [slotAssignments, playerById],
+      [slotAssignments, playerById, lineupDraftLocked],
     )
 
     const slotPosition = useCallback(
@@ -497,16 +547,15 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           })
         }
 
-        setSlotAssignments((prev) => ({
-          ...prev,
+        onReassignPosition(updates)
+        applySlotDraft({
+          ...slotAssignments,
           [sourceSlotId]: occupantId && occupantId !== movedPlayerId ? occupantId : null,
           [targetSlot.id]: movedPlayerId,
-        }))
-
-        onReassignPosition(updates)
+        })
         flashPlayers(updates.map((u) => u.playerId))
       },
-      [slotAssignments, slotById, slotLabelOverrides, onReassignPosition, flashPlayers],
+      [slotAssignments, slotById, slotLabelOverrides, onReassignPosition, flashPlayers, applySlotDraft],
     )
 
     const handleSlotTap = useCallback(
@@ -561,19 +610,21 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         if (!sheet) return
         const tacticalPosition = slotPosition(sheet.slotId)
         const benchPlayer = playerById.get(benchPlayerId)
-        if (!benchPlayer || benchPlayer.isOnField) return
+        if (!benchPlayer) return
+        if (!lineupDraftLocked && benchPlayer.isOnField) return
 
         if (sheet.mode === 'substitute') {
           onSwap(benchPlayerId, sheet.fieldPlayerId, tacticalPosition)
-          setSlotAssignments((prev) => ({ ...prev, [sheet.slotId]: benchPlayerId }))
+          applySlotDraft({ ...slotAssignments, [sheet.slotId]: benchPlayerId })
           flashPlayers([benchPlayerId, sheet.fieldPlayerId])
           setSheet(null)
           return
         }
 
-        if (onFieldPlayers.length >= maxFieldPlayers) return
+        const fieldCount = lineupDraftLocked ? occupiedSlotPlayerIds.size : onFieldPlayers.length
+        if (fieldCount >= maxFieldPlayers) return
         onSubIn(benchPlayerId, tacticalPosition)
-        setSlotAssignments((prev) => ({ ...prev, [sheet.slotId]: benchPlayerId }))
+        applySlotDraft({ ...slotAssignments, [sheet.slotId]: benchPlayerId })
         flashPlayers([benchPlayerId])
         setSheet(null)
       },
@@ -584,32 +635,46 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         onSwap,
         onSubIn,
         onFieldPlayers.length,
+        occupiedSlotPlayerIds.size,
         maxFieldPlayers,
         flashPlayers,
+        lineupDraftLocked,
+        slotAssignments,
+        applySlotDraft,
       ],
     )
 
     const handleRemovePlayer = useCallback(() => {
       if (!sheet || sheet.mode !== 'substitute') return
       onSubOut(sheet.fieldPlayerId)
-      setSlotAssignments((prev) => ({ ...prev, [sheet.slotId]: null }))
+      applySlotDraft({ ...slotAssignments, [sheet.slotId]: null })
       flashPlayers([sheet.fieldPlayerId])
       setSheet(null)
-    }, [sheet, onSubOut, flashPlayers])
+    }, [sheet, onSubOut, flashPlayers, slotAssignments, applySlotDraft])
 
     const handleBenchTapWhileSelected = useCallback(
       (benchPlayerId: string) => {
         if (!selection) return
         const tacticalPosition = slotPosition(selection.slotId)
         const benchPlayer = playerById.get(benchPlayerId)
-        if (!benchPlayer || benchPlayer.isOnField) return
+        if (!benchPlayer) return
+        if (!lineupDraftLocked && benchPlayer.isOnField) return
 
         onSwap(benchPlayerId, selection.playerId, tacticalPosition)
-        setSlotAssignments((prev) => ({ ...prev, [selection.slotId]: benchPlayerId }))
+        applySlotDraft({ ...slotAssignments, [selection.slotId]: benchPlayerId })
         flashPlayers([benchPlayerId, selection.playerId])
         setSelection(null)
       },
-      [selection, slotPosition, playerById, onSwap, flashPlayers],
+      [
+        selection,
+        slotPosition,
+        playerById,
+        onSwap,
+        flashPlayers,
+        lineupDraftLocked,
+        slotAssignments,
+        applySlotDraft,
+      ],
     )
 
     const handleFormationChange = (nextId: string) => {
@@ -617,7 +682,9 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
 
       const nextFormation = getFormationById(nextId, teamFormat)
-      const onFieldIds = new Set(onFieldPlayers.map((p) => p.id))
+      const onFieldIds = lineupDraftLocked
+        ? occupiedSlotPlayerIds
+        : new Set(onFieldPlayers.map((p) => p.id))
       const remap = remapFormationSlotAssignments(
         slotAssignments,
         nextFormation,
@@ -635,7 +702,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       skipOnFieldSyncRef.current = true
       setSheet(null)
       setSelection(null)
-      setSlotAssignments(remap.slotAssignments)
+      onFormationSwitch(nextId, remap)
+      applySlotDraft(remap.slotAssignments)
       setSlotLabelOverrides((prev) => {
         const next: Record<string, string> = {}
         for (const slot of nextFormation.slots) {
@@ -643,7 +711,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         }
         return next
       })
-      onFormationSwitch(nextId, remap)
     }
 
     const sheetTitle = useMemo(() => {

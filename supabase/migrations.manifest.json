@@ -54,6 +54,7 @@
     "supabase-fk-indexes-migration.sql",
     "supabase-realtime-match-tables-migration.sql",
     "supabase-parent-live-timeline-migration.sql",
-    "supabase-match-stats-delete-policy-migration.sql"
+    "supabase-match-stats-delete-policy-migration.sql",
+    "supabase-match-knockout-extra-time-migration.sql"
   ]
 }

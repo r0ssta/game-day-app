@@ -117,6 +117,9 @@ describe('buildParentMatchPlayerStats', () => {
     expect(ada.halves[0].started).toBe(true)
     expect(ada.halves[0].seconds).toBe(1800)
     expect(formatParentPositionsLine(ada.halves[0].positions)).toBe('ST 10m, CM 20m')
+    expect(formatParentPositionsLine(ada.halves[0].positions, { includeMinutes: false })).toBe(
+      'ST, CM',
+    )
     expect(ada.halves[0].goals).toBe(1)
     expect(ada.halves[1].started).toBe(true)
     expect(ada.halves[1].seconds).toBe(1800)

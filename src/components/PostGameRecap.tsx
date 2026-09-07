@@ -802,8 +802,9 @@ export function PostGameRecap({
         {recapView === 'hub' ? (
           <div className="space-y-3">
             <p className="rounded-xl border border-neon/30 bg-neon/10 px-3 py-2 text-xs font-semibold text-foreground">
-              This is the Team Hub recap families see — player minutes, box score, and the live
-              game feed. It is available for every match, including when no one has alerts on.
+              This is the Team Hub recap families see — player stats, box score, and the live
+              game feed. Playing time stays on Coach review. It is available for every match,
+              including when no one has alerts on.
             </p>
             <ParentMatchRecapView
               events={hubEvents}
@@ -822,6 +823,7 @@ export function PostGameRecap({
               timeLabel={hubWhen?.timeLabel}
               recap={parentFacingRecap}
               heading="Live game feed"
+              hidePlayingTime
             />
           </div>
         ) : null}

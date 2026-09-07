@@ -96,6 +96,7 @@ import {
   isActiveStaffMatchScreen,
   isStaleKickoffSnapshot,
   shouldAdoptRemoteClock,
+  shouldAdoptRemotePreKickoffLineup,
   shouldHoldLocalLiveClock,
   snapshotHydrateResult,
   type LiveMatchHydrateResult,
@@ -109,6 +110,7 @@ import {
   resolveTotalPeriods,
   supportsThreePeriodFormat,
 } from '@/lib/match-periods'
+import { isLiveMatchStatus } from '@/lib/match-status'
 
 const DEFAULT_TOTAL_PERIODS: TotalPeriods = 2
 const DEFAULT_HALF_LENGTH = defaultPeriodLengthMinutes(DEFAULT_TOTAL_PERIODS)
@@ -299,6 +301,7 @@ export function useMatchState() {
   const lastClockWriteAtRef = useRef(0)
   const hydrateInFlightRef = useRef(false)
   const localWriteGenRef = useRef(0)
+  const preKickoffLineupDirtyRef = useRef(false)
   const localClockOwnedRef = useRef(false)
   const localIntermissionRef = useRef(false)
   const liveStateRef = useRef({
@@ -373,6 +376,11 @@ export function useMatchState() {
   const noteLocalMatchMutation = useCallback(() => {
     localWriteGenRef.current += 1
   }, [])
+
+  const lockPreKickoffLineupDraft = useCallback(() => {
+    preKickoffLineupDirtyRef.current = true
+    noteLocalMatchMutation()
+  }, [noteLocalMatchMutation])
 
   const claimLocalClock = useCallback(() => {
     localClockOwnedRef.current = true
@@ -540,7 +548,13 @@ export function useMatchState() {
           setSeconds(clockSeconds)
         }
 
-        if (!localRunning && !latest.periodClockStarted) {
+        if (
+          shouldAdoptRemotePreKickoffLineup({
+            localRunning,
+            periodClockStarted: latest.periodClockStarted,
+            lineupDraftLocked: preKickoffLineupDirtyRef.current,
+          })
+        ) {
           let nextPlayers = remotePlayers
           if (result.mode === 'match' && match.period_clock_started) {
             nextPlayers = stampOnFieldAtClock(remotePlayers, displaySeconds)
@@ -1504,6 +1518,8 @@ export function useMatchState() {
           formation,
           endedOnTime: timing?.endedOnTime ?? null,
           enterPenaltyShootout: options?.enterPenaltyShootout ?? false,
+          enterExtraTime: false,
+          advanceExtraTime: false,
           onFieldPlayerIds,
           homeScore,
           awayScore,
@@ -1535,7 +1551,7 @@ export function useMatchState() {
         setPkWinnerIsUs(null)
         setPkGkPlayerId(null)
         setPeriodClockStarted(false)
-        setMatchStatus('live')
+        setMatchStatus('penalty_shootout')
         setAppMode('penalty_shootout')
         return
       }
@@ -1593,6 +1609,7 @@ export function useMatchState() {
 
   const returnToHome = useCallback(() => {
     setAppMode('home')
+    preKickoffLineupDirtyRef.current = false
     setPlayers([])
     setHomeScore(0)
     setAwayScore(0)
@@ -1743,6 +1760,7 @@ export function useMatchState() {
     resumeLiveMatchScreen,
     persistMatchClock,
     noteLocalMatchMutation,
+    lockPreKickoffLineupDraft,
     claimLocalClock,
     releaseLocalClock,
     isLocalClockOwned,
@@ -1808,7 +1826,7 @@ export function useMatchState() {
     returnToHome,
     openMatchRecap,
     matchStatus,
-    hasLiveMatch: matchStatus === 'live' && Boolean(matchId),
+    hasLiveMatch: isLiveMatchStatus(matchStatus) && Boolean(matchId),
     hasPendingRecap: matchStatus === 'pending_review' && Boolean(matchId),
     selectedTeamId,
     activeTeamId: selectedTeamId,

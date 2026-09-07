@@ -42,7 +42,15 @@ export const PlayerSchema: z.ZodType<DbPlayer> = z
   })
   .passthrough() as z.ZodType<DbPlayer>
 
-const MatchStatusSchema = z.enum(['scheduled', 'live', 'pending_review', 'final'])
+const MatchStatusSchema = z.enum([
+  'scheduled',
+  'live',
+  'extra_time_first_half',
+  'extra_time_second_half',
+  'penalty_shootout',
+  'pending_review',
+  'final',
+])
 const MatchPeriodSchema = z.enum(['1st', '2nd', '3rd'])
 
 /** Core match row from `public.matches`. */
@@ -66,6 +74,7 @@ export const MatchSchema: z.ZodType<DbMatch> = z
     tournament_game: z.boolean().catch(false),
     is_test: z.boolean().catch(false),
     goes_to_pks: z.boolean().catch(false),
+    is_tournament_knockout: z.boolean().nullable().catch(null),
     home_score: z.number().catch(0),
     away_score: z.number().catch(0),
     home_pk_score: z.number().catch(0),

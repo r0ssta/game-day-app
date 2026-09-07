@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Plus, Shield, X } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
-import { APP_CONTAINER, APP_SHELL_LOCKED } from '@/lib/layout'
+import { APP_CONTAINER, APP_SHELL_LOCKED, MODAL_OVERLAY, MODAL_PANEL } from '@/lib/layout'
 import {
   canFinalizePkShootout,
   createEmptyPkRounds,
@@ -9,6 +9,7 @@ import {
   pkScoresFromRounds,
   type PkResult,
   type PkRoundState,
+  type PkTeam,
 } from '@/lib/penalty-kicks'
 import { formatPlayerFullName } from '@/lib/player-names'
 import { cn } from '@/lib/utils'
@@ -26,10 +27,18 @@ type PenaltyShootoutScreenProps = {
   busy?: boolean
   onRecordAttempt: (input: {
     round: number
-    team: 'us' | 'opponent'
+    team: PkTeam
     result: PkResult
     playerId: string | null
-  }) => Promise<void> | void
+  }) => Promise<{ eventId?: string } | void>
+  onUpdateAttempt: (input: {
+    round: number
+    team: PkTeam
+    action: 'swap' | 'clear'
+    eventId: string | null
+    previousResult: PkResult
+    playerId: string | null
+  }) => Promise<void>
   onFinalize: (input: {
     homePkScore: number
     awayPkScore: number
@@ -43,17 +52,22 @@ function ResultButtons({
   value,
   disabled,
   onSelect,
+  onEdit,
 }: {
   value: PkResult | null
   disabled?: boolean
   onSelect: (result: PkResult) => void
+  onEdit: () => void
 }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       <button
         type="button"
         disabled={disabled}
-        onClick={() => onSelect('make')}
+        onClick={() => {
+          if (value) onEdit()
+          else onSelect('make')
+        }}
         className={cn(
           'flex min-h-12 touch-manipulation items-center justify-center gap-1 rounded-xl border-2 text-sm font-black uppercase tracking-wide active:scale-[0.98] disabled:opacity-40',
           value === 'make'
@@ -67,7 +81,10 @@ function ResultButtons({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => onSelect('miss')}
+        onClick={() => {
+          if (value) onEdit()
+          else onSelect('miss')
+        }}
         className={cn(
           'flex min-h-12 touch-manipulation items-center justify-center gap-1 rounded-xl border-2 text-sm font-black uppercase tracking-wide active:scale-[0.98] disabled:opacity-40',
           value === 'miss'
@@ -97,6 +114,7 @@ export function PenaltyShootoutScreen({
   initialRounds,
   busy = false,
   onRecordAttempt,
+  onUpdateAttempt,
   onFinalize,
   onBackToHome,
 }: PenaltyShootoutScreenProps) {
@@ -104,6 +122,13 @@ export function PenaltyShootoutScreen({
     () => initialRounds ?? createEmptyPkRounds(),
   )
   const [saving, setSaving] = useState(false)
+  const [editTarget, setEditTarget] = useState<{
+    round: number
+    team: PkTeam
+    result: PkResult
+    eventId: string | null
+    playerId: string | null
+  } | null>(null)
 
   const attendingPlayers = useMemo(
     () => players.filter((player) => player.attending),
@@ -118,6 +143,16 @@ export function PenaltyShootoutScreen({
     onGkPlayerChange(suggestedGk.id)
   }, [gkPlayerId, suggestedGk, onGkPlayerChange])
 
+  useEffect(() => {
+    if (!initialRounds) return
+    setRounds((prev) => {
+      const hasLocalResults = prev.some(
+        (round) => round.usResult !== null || round.opponentResult !== null,
+      )
+      return hasLocalResults ? prev : initialRounds
+    })
+  }, [initialRounds])
+
   const selectedGk = useMemo(
     () => attendingPlayers.find((player) => player.id === gkPlayerId) ?? null,
     [attendingPlayers, gkPlayerId],
@@ -130,7 +165,7 @@ export function PenaltyShootoutScreen({
     roundNumber: number,
     patch: Partial<PkRoundState>,
     attempt?: {
-      team: 'us' | 'opponent'
+      team: PkTeam
       result: PkResult
       playerId: string | null
     },
@@ -141,20 +176,70 @@ export function PenaltyShootoutScreen({
     if (!attempt) return
     setSaving(true)
     try {
-      await onRecordAttempt({
+      const saved = await onRecordAttempt({
         round: roundNumber,
         team: attempt.team,
         result: attempt.result,
         playerId: attempt.playerId,
       })
+      if (saved?.eventId) {
+        setRounds((prev) =>
+          prev.map((round) => {
+            if (round.round !== roundNumber) return round
+            if (attempt.team === 'us') return { ...round, usEventId: saved.eventId ?? null }
+            return { ...round, opponentEventId: saved.eventId ?? null }
+          }),
+        )
+      }
     } catch {
       setRounds((prev) =>
         prev.map((round) => {
           if (round.round !== roundNumber) return round
-          if (attempt.team === 'us') return { ...round, usResult: null }
-          return { ...round, opponentResult: null }
+          if (attempt.team === 'us') {
+            return { ...round, usResult: null, usEventId: null }
+          }
+          return { ...round, opponentResult: null, opponentEventId: null }
         }),
       )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const applyEdit = async (action: 'swap' | 'clear') => {
+    if (!editTarget) return
+    const previous = rounds.find((round) => round.round === editTarget.round)
+    setSaving(true)
+    try {
+      await onUpdateAttempt({
+        round: editTarget.round,
+        team: editTarget.team,
+        action,
+        eventId: editTarget.eventId,
+        previousResult: editTarget.result,
+        playerId: editTarget.playerId,
+      })
+      setRounds((prev) =>
+        prev.map((round) => {
+          if (round.round !== editTarget.round) return round
+          if (action === 'clear') {
+            if (editTarget.team === 'us') {
+              return { ...round, usResult: null, usEventId: null }
+            }
+            return { ...round, opponentResult: null, opponentEventId: null }
+          }
+          const nextResult: PkResult = editTarget.result === 'make' ? 'miss' : 'make'
+          if (editTarget.team === 'us') return { ...round, usResult: nextResult }
+          return { ...round, opponentResult: nextResult }
+        }),
+      )
+      setEditTarget(null)
+    } catch {
+      if (previous) {
+        setRounds((prev) =>
+          prev.map((round) => (round.round === previous.round ? previous : round)),
+        )
+      }
     } finally {
       setSaving(false)
     }
@@ -272,7 +357,7 @@ export function PenaltyShootoutScreen({
                   </select>
                   <ResultButtons
                     value={round.usResult}
-                    disabled={busy || saving || !round.usPlayerId || round.usResult !== null}
+                    disabled={busy || saving || !round.usPlayerId}
                     onSelect={(result) => {
                       void updateRound(
                         round.round,
@@ -283,6 +368,16 @@ export function PenaltyShootoutScreen({
                           playerId: round.usPlayerId,
                         },
                       )
+                    }}
+                    onEdit={() => {
+                      if (!round.usResult) return
+                      setEditTarget({
+                        round: round.round,
+                        team: 'us',
+                        result: round.usResult,
+                        eventId: round.usEventId,
+                        playerId: round.usPlayerId,
+                      })
                     }}
                   />
                 </div>
@@ -298,7 +393,7 @@ export function PenaltyShootoutScreen({
                   </div>
                   <ResultButtons
                     value={round.opponentResult}
-                    disabled={busy || saving || round.opponentResult !== null}
+                    disabled={busy || saving}
                     onSelect={(result) => {
                       void updateRound(
                         round.round,
@@ -309,6 +404,16 @@ export function PenaltyShootoutScreen({
                           playerId: null,
                         },
                       )
+                    }}
+                    onEdit={() => {
+                      if (!round.opponentResult) return
+                      setEditTarget({
+                        round: round.round,
+                        team: 'opponent',
+                        result: round.opponentResult,
+                        eventId: round.opponentEventId,
+                        playerId: null,
+                      })
                     }}
                   />
                 </div>
@@ -329,6 +434,8 @@ export function PenaltyShootoutScreen({
                   usPlayerId: null,
                   usResult: null,
                   opponentResult: null,
+                  usEventId: null,
+                  opponentEventId: null,
                 },
               ])
             }
@@ -352,6 +459,61 @@ export function PenaltyShootoutScreen({
           ) : null}
         </div>
       </div>
+      {editTarget ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="update-pk-title"
+          className={MODAL_OVERLAY}
+          onClick={() => {
+            if (!saving) setEditTarget(null)
+          }}
+        >
+          <div
+            className={cn(MODAL_PANEL, 'border-2 border-border')}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 pb-2 pt-4">
+              <h2
+                id="update-pk-title"
+                className="font-display text-2xl font-black uppercase tracking-wide text-foreground"
+              >
+                Update PK Result?
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                Round {editTarget.round} · {editTarget.team === 'us' ? 'Us' : 'Opponent'} ·{' '}
+                {editTarget.result === 'make' ? 'Made' : 'Missed'}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 px-5 py-4">
+              <button
+                type="button"
+                disabled={busy || saving}
+                onClick={() => void applyEdit('swap')}
+                className="min-h-14 touch-manipulation rounded-xl border-2 border-athletic bg-athletic/15 px-4 py-3 text-sm font-bold uppercase tracking-wide text-athletic active:scale-[0.98] disabled:opacity-50"
+              >
+                {editTarget.result === 'make' ? 'Change to Miss' : 'Change to Made'}
+              </button>
+              <button
+                type="button"
+                disabled={busy || saving}
+                onClick={() => void applyEdit('clear')}
+                className="min-h-14 touch-manipulation rounded-xl border-2 border-danger bg-danger/10 px-4 py-3 text-sm font-bold uppercase tracking-wide text-danger active:scale-[0.98] disabled:opacity-50"
+              >
+                Clear / Undo
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setEditTarget(null)}
+                className="min-h-11 touch-manipulation rounded-xl border-2 border-border bg-card px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-muted-foreground active:scale-[0.98] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

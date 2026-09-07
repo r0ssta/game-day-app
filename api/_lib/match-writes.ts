@@ -51,6 +51,7 @@ export function matchEventInsertPayload(row: MatchEventInsert): Record<string, u
 export class MatchWriteSession {
   private insertedEventIds: string[] = []
   private deletedEventRows: Record<string, unknown>[] = []
+  private updatedEventReverts: Array<{ id: string; patch: Record<string, unknown> }> = []
   private matchRevert: Record<string, unknown> | null = null
   private statsReverts: Array<{ playerId: string; patch: Record<string, unknown> }> = []
 
@@ -77,6 +78,28 @@ export class MatchWriteSession {
     const id = ids[0]
     if (!id) throw new Error('Event insert returned no id')
     return id
+  }
+
+  async updateEvent(eventId: string, patch: Record<string, unknown>): Promise<void> {
+    const keys = Object.keys(patch)
+    if (!eventId || keys.length === 0) return
+    const { data, error } = await this.supabase
+      .from('match_events')
+      .select(keys.join(','))
+      .eq('id', eventId)
+      .maybeSingle()
+    if (error) throw error
+    if (data) {
+      this.updatedEventReverts.push({
+        id: eventId,
+        patch: data as Record<string, unknown>,
+      })
+    }
+    const { error: updateError } = await this.supabase
+      .from('match_events')
+      .update(patch)
+      .eq('id', eventId)
+    if (updateError) throw updateError
   }
 
   async deleteEvents(eventIds: string[]): Promise<void> {
@@ -191,6 +214,13 @@ export class MatchWriteSession {
     }
     if (this.deletedEventRows.length > 0) {
       const { error } = await this.supabase.from('match_events').insert(this.deletedEventRows)
+      if (error) errors.push(error)
+    }
+    for (const revert of this.updatedEventReverts) {
+      const { error } = await this.supabase
+        .from('match_events')
+        .update(revert.patch)
+        .eq('id', revert.id)
       if (error) errors.push(error)
     }
     if (this.matchRevert) {

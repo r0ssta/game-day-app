@@ -15,6 +15,8 @@ export type PkRoundState = {
   usPlayerId: string | null
   usResult: PkResult | null
   opponentResult: PkResult | null
+  usEventId: string | null
+  opponentEventId: string | null
 }
 
 export const INITIAL_PK_ROUNDS = 5
@@ -25,6 +27,8 @@ export function createEmptyPkRounds(count = INITIAL_PK_ROUNDS): PkRoundState[] {
     usPlayerId: null,
     usResult: null,
     opponentResult: null,
+    usEventId: null,
+    opponentEventId: null,
   }))
 }
 
@@ -145,12 +149,16 @@ export function rebuildPkRoundsFromEvents(events: DbMatchEvent[]): PkRoundState[
       usPlayerId: null,
       usResult: null,
       opponentResult: null,
+      usEventId: null,
+      opponentEventId: null,
     }
     if (fromColumns.team === 'us') {
       existing.usResult = fromColumns.result
       existing.usPlayerId = event.player_id
+      existing.usEventId = event.id
     } else {
       existing.opponentResult = fromColumns.result
+      existing.opponentEventId = event.id
     }
     byRound.set(round, existing)
   }
@@ -163,6 +171,8 @@ export function rebuildPkRoundsFromEvents(events: DbMatchEvent[]): PkRoundState[
         usPlayerId: null,
         usResult: null,
         opponentResult: null,
+        usEventId: null,
+        opponentEventId: null,
       }
     )
   })
@@ -174,6 +184,36 @@ export function shouldEnterPenaltyShootout(input: {
   goesToPks: boolean
 }): boolean {
   return input.goesToPks && input.homeScore === input.awayScore
+}
+
+/** Tied knockout (or legacy "goes to PKs") after regulation — coach picks ET or PKs. */
+export function shouldOfferTiedGameOverride(input: {
+  homeScore: number
+  awayScore: number
+  isTournamentKnockout: boolean
+  goesToPks: boolean
+  matchStatus: string | null | undefined
+}): boolean {
+  if (input.homeScore !== input.awayScore) return false
+  if (
+    input.matchStatus === 'extra_time_first_half' ||
+    input.matchStatus === 'extra_time_second_half' ||
+    input.matchStatus === 'penalty_shootout'
+  ) {
+    return false
+  }
+  return Boolean(input.isTournamentKnockout || input.goesToPks)
+}
+
+export function shouldAutoEnterPenaltyShootoutAfterExtraTime(input: {
+  homeScore: number
+  awayScore: number
+  matchStatus: string | null | undefined
+}): boolean {
+  return (
+    input.matchStatus === 'extra_time_second_half' &&
+    input.homeScore === input.awayScore
+  )
 }
 
 export function shouldResumePenaltyShootout(match: {
@@ -188,6 +228,9 @@ export function shouldResumePenaltyShootout(match: {
   total_periods?: number | null
   current_period?: number | null
 }): boolean {
+  if (match.pk_winner_is_us != null) return false
+  if (match.status === 'penalty_shootout') return true
+
   const totalPeriods = match.total_periods === 3 ? 3 : 2
   const currentPeriod =
     typeof match.current_period === 'number' && match.current_period > 0
@@ -204,8 +247,7 @@ export function shouldResumePenaltyShootout(match: {
     onLastPeriod &&
     !match.period_clock_started &&
     Boolean(match.goes_to_pks) &&
-    match.home_score === match.away_score &&
-    match.pk_winner_is_us == null
+    match.home_score === match.away_score
   )
 }
 

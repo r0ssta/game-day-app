@@ -112,6 +112,24 @@ describe('match action Zod schemas', () => {
     expect(parsed.success).toBe(false)
   })
 
+  it('EndRegulationInputSchema requires extraTimeHalfMinutes when entering extra time', () => {
+    const missing = EndRegulationInputSchema.safeParse({
+      matchId: VALID_UUID,
+      clockSeconds: 12,
+      halfLengthMinutes: 30,
+      enterExtraTime: true,
+    })
+    expect(missing.success).toBe(false)
+    const ok = EndRegulationInputSchema.safeParse({
+      matchId: VALID_UUID,
+      clockSeconds: 12,
+      halfLengthMinutes: 30,
+      enterExtraTime: true,
+      extraTimeHalfMinutes: 5,
+    })
+    expect(ok.success).toBe(true)
+  })
+
   it('FinalizeReviewInputSchema requires matchId uuid', () => {
     const parsed = FinalizeReviewInputSchema.safeParse({ matchId: 'x' })
     expect(parsed.success).toBe(false)

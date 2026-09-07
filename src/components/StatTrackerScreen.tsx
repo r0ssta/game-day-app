@@ -23,6 +23,8 @@ import {
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, MODAL_OVERLAY, MODAL_PANEL } from '@/lib/layout'
 import type { MatchPeriod } from '@/types/match'
+import type { DbMatch } from '@/types/database'
+import { isLiveMatchStatus } from '@/lib/match-status'
 
 type StatTrackerScreenProps = {
   matchId: string
@@ -174,7 +176,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
   const [awayScore, setAwayScore] = useState(0)
   const [clockSeconds, setClockSeconds] = useState(0)
   const [period, setPeriod] = useState<MatchPeriod>('1st')
-  const [matchStatus, setMatchStatus] = useState<'scheduled' | 'live' | 'pending_review' | 'final'>('live')
+  const [matchStatus, setMatchStatus] = useState<DbMatch['status']>('live')
   const [roster, setRoster] = useState<StatTrackerRosterPlayer[]>([])
   const [pendingAction, setPendingAction] = useState<StatTrackerEventType | null>(null)
   const [logging, setLogging] = useState(false)
@@ -283,7 +285,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
   }, [toast])
 
   const completeLog = async (playerId: string | null, anonymous: boolean) => {
-    if (!pendingAction || logging || matchStatus !== 'live') return
+    if (!pendingAction || logging || !isLiveMatchStatus(matchStatus)) return
 
     setLogging(true)
     try {
@@ -358,7 +360,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
           <p className="mt-2 font-display text-3xl font-black tabular-nums text-foreground">
             {homeScore} – {awayScore}
           </p>
-          {matchStatus !== 'live' ? (
+          {!isLiveMatchStatus(matchStatus) ? (
             <p className="mt-2 text-xs font-semibold text-danger">
               Match ended — stats can no longer be logged.
             </p>
@@ -380,7 +382,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
               <button
                 key={action.eventType}
                 type="button"
-                disabled={logging || matchStatus !== 'live'}
+                disabled={logging || !isLiveMatchStatus(matchStatus)}
                 onClick={() => setPendingAction(action.eventType)}
                 className={cn(
                   'flex min-h-[5.5rem] flex-col items-start justify-between rounded-2xl border px-4 py-4 text-left font-display shadow-lg transition-transform active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50',

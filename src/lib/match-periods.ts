@@ -83,6 +83,22 @@ export function formatPeriodLong(currentPeriod: number, totalPeriods: TotalPerio
   return `Period ${Math.min(Math.max(1, currentPeriod), totalPeriods)}`
 }
 
+export function extraTimePeriodLabel(half: 1 | 2): string {
+  return half === 1 ? 'Extra Time 1st' : 'Extra Time 2nd'
+}
+
+export function extraTimePeriodShort(half: 1 | 2): string {
+  return half === 1 ? 'ET1' : 'ET2'
+}
+
+export function startExtraTimeButtonLabel(half: 1 | 2): string {
+  return `Start ${extraTimePeriodLabel(half)}`
+}
+
+export function endExtraTimeButtonLabel(half: 1 | 2): string {
+  return `End ${extraTimePeriodLabel(half)}`
+}
+
 export function startPeriodButtonLabel(currentPeriod: number, totalPeriods: TotalPeriods): string {
   return `Start ${formatPeriodLong(currentPeriod, totalPeriods)}`
 }

@@ -4,6 +4,7 @@ import {
 } from '@/lib/match-clock'
 import { resolveCurrentPeriod, resolveTotalPeriods } from '@/lib/match-periods'
 import { aggregateTeamShotSaveTotals, type TeamShotSaveTotals } from '@/lib/match-shot-save'
+import { isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
 import { shouldResumePenaltyShootout } from '@/lib/penalty-kicks'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
 import { poolPlayerToGuestRoster } from '@/lib/season-roster'
@@ -82,6 +83,19 @@ export function shouldHoldLocalLiveClock(input: {
   if (input.appMode === 'halftime') return true
   if (input.appMode !== 'match') return false
   return input.periodClockStarted || input.running
+}
+
+/**
+ * Ready-to-start lineup is local after the coach edits it. Polling / Realtime
+ * snapshots still carry the scheduled XI and must not overwrite that draft.
+ */
+export function shouldAdoptRemotePreKickoffLineup(input: {
+  localRunning: boolean
+  periodClockStarted: boolean
+  lineupDraftLocked: boolean
+}): boolean {
+  if (input.localRunning || input.periodClockStarted) return false
+  return !input.lineupDraftLocked
 }
 
 export function shouldAdoptRemoteClock(input: {
@@ -165,9 +179,10 @@ export function resolveStaffLiveAppMode(input: {
   pkWinnerIsUs: boolean | null
   hasEndedAPeriod: boolean
 }): StaffLiveAppMode {
-  if (input.status !== 'live') return 'home'
+  if (!isLiveMatchStatus(input.status)) return 'home'
 
   if (
+    input.status === MATCH_STATUS.penaltyShootout ||
     shouldResumePenaltyShootout({
       status: input.status,
       period: input.period,
@@ -181,6 +196,10 @@ export function resolveStaffLiveAppMode(input: {
     })
   ) {
     return 'penalty_shootout'
+  }
+
+  if (input.status === MATCH_STATUS.extraTimeFirstHalf || input.status === MATCH_STATUS.extraTimeSecondHalf) {
+    return 'match'
   }
 
   if (

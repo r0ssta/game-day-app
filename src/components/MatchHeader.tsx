@@ -31,6 +31,9 @@ export type MatchHeaderProps = {
   halfLengthMinutes: number
   running: boolean
   periodClockStarted: boolean
+  /** Override the 1H/2H badge during extra time. */
+  periodLabel?: string
+  periodBadgeLabel?: string
   /** Staff test match — parents do not see this game. */
   isTest?: boolean
   /** True when Screen Wake Lock is held (keeps display on). */
@@ -69,6 +72,8 @@ export function MatchHeader({
   halfLengthMinutes,
   running,
   periodClockStarted,
+  periodLabel,
+  periodBadgeLabel,
   isTest = false,
   wakeLockActive = false,
   pinned = false,
@@ -98,8 +103,8 @@ export function MatchHeader({
   const showTeamShotSaveLine =
     homeShots + awayShots + homeSaves + awaySaves + homeCorners + awayCorners > 0 ||
     showShotSaveActions
-  const periodBadge = formatPeriodShort(currentPeriod, totalPeriods)
-  const periodReadyLabel = formatPeriodLong(currentPeriod, totalPeriods)
+  const periodBadge = periodBadgeLabel ?? formatPeriodShort(currentPeriod, totalPeriods)
+  const periodReadyLabel = periodLabel ?? formatPeriodLong(currentPeriod, totalPeriods)
 
   return (
     <header

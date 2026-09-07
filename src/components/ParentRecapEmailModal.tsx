@@ -270,7 +270,7 @@ export function ParentRecapEmailModal({
               {draft.body}
             </pre>
             <p className="text-[11px] font-bold text-muted-foreground">
-              Player minutes exclude plus/minus and developmental ratings.
+              Positions exclude plus/minus, playing time, and developmental ratings.
             </p>
           </div>
         </div>

@@ -69,6 +69,7 @@ import {
   TeamSchema,
 } from '@/schemas'
 import { parseDbRow, parseDbRows } from '@/lib/zod-parse'
+import { IN_PROGRESS_MATCH_STATUSES } from '@/lib/match-status'
 
 export type MatchEventInput = {
   matchId: string
@@ -958,6 +959,7 @@ export async function createMatchRecord(input: {
   /** Staff-only test match — parents never see it or get push. */
   isTest?: boolean
   goesToPks?: boolean
+  isTournamentKnockout?: boolean | null
   halfLength: number
   /** Minutes per period; defaults to halfLength. */
   periodLength?: number
@@ -976,6 +978,9 @@ export async function createMatchRecord(input: {
       : input.matchTime.trim() || null
   const status = input.status ?? 'scheduled'
   const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
+  const isTournamentKnockout = input.tournamentGame
+    ? input.isTournamentKnockout ?? null
+    : false
   const periodLength = input.periodLength ?? input.halfLength
   const totalPeriods = input.totalPeriods === 3 ? 3 : 2
   const isTest = Boolean(input.isTest)
@@ -1001,6 +1006,7 @@ export async function createMatchRecord(input: {
     sub_interval_seconds: input.subIntervalSeconds ?? null,
     gk_plays_full_half: input.gkPlaysFullHalf ?? true,
     goes_to_pks: goesToPks,
+    is_tournament_knockout: isTournamentKnockout,
     is_test: isTest,
     home_pk_score: 0,
     away_pk_score: 0,
@@ -1020,6 +1026,7 @@ export async function createMatchRecord(input: {
     'sub_interval_seconds',
     'gk_plays_full_half',
     'goes_to_pks',
+    'is_tournament_knockout',
     'is_test',
     'home_pk_score',
     'away_pk_score',
@@ -1299,7 +1306,7 @@ export async function fetchActiveMatch(teamId: string): Promise<ActiveMatchBundl
   const { data: matchRaw, error: matchError } = await supabase
     .from('matches')
     .select('*')
-    .eq('status', 'live')
+    .in('status', [...IN_PROGRESS_MATCH_STATUSES])
     .eq('team_id', teamId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -1351,6 +1358,7 @@ export async function updateMatchRecord(
       | 'tournament_game'
       | 'is_test'
       | 'goes_to_pks'
+      | 'is_tournament_knockout'
       | 'coach_id'
       | 'coach_name'
       | 'sub_interval_seconds'
@@ -1372,6 +1380,7 @@ export async function updateMatchRecord(
     'tournament_game',
     'is_test',
     'goes_to_pks',
+    'is_tournament_knockout',
     'coach_name',
     'sub_interval_seconds',
     'gk_plays_full_half',
@@ -1576,26 +1585,55 @@ export async function saveParentFacingRecap(matchId: string, parentFacingRecap: 
   throw error
 }
 
+function asQualitativeContextRecord(raw: unknown): Record<string, unknown> | null {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>
+  }
+  return null
+}
+
 export async function saveQualitativeContext(
   matchId: string,
   context: Record<string, unknown> | null,
-) {
-  const { error } = await supabase
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await supabase
     .from('matches')
     .update({ qualitative_context: context })
     .eq('id', matchId)
+    .select('qualitative_context')
+    .single()
 
-  if (!error) return
+  if (!error) {
+    return asQualitativeContextRecord(data?.qualitative_context) ?? context
+  }
 
   if (isMissingColumnError(error)) {
     console.warn(
       '[saveQualitativeContext] qualitative_context unavailable:',
       formatSupabaseError(error),
     )
-    return
+    return null
   }
 
   throw error
+}
+
+/**
+ * Persist the ready-to-start pitch map and on-field flags. Returns the saved
+ * qualitative_context from this UPDATE — callers must not follow with a generic
+ * live snapshot fetch that could still carry the scheduled XI.
+ */
+export async function persistPreKickoffLineup(input: {
+  matchId: string
+  qualitativeContext: Record<string, unknown>
+  players: MatchPlayer[]
+}): Promise<{ qualitativeContext: Record<string, unknown> | null }> {
+  const qualitativeContext = await saveQualitativeContext(
+    input.matchId,
+    input.qualitativeContext,
+  )
+  await upsertMatchStats(input.matchId, input.players)
+  return { qualitativeContext }
 }
 
 /** Merge timing fields into existing qualitative_context without wiping coaching answers. */

@@ -46,8 +46,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? input.awayPkScoreBefore + 1
         : input.awayPkScoreBefore
 
-    await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
-      await tx.insertEvent({
+    const eventId = await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
+      const id = await tx.insertEvent({
         match_id: input.matchId,
         player_id: input.playerId ?? null,
         event_type: 'pk_attempt',
@@ -63,10 +63,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         pk_team: input.team,
       })
       await tx.updateMatch({ home_pk_score: nextHome, away_pk_score: nextAway })
+      return id
     })
 
     return res.status(200).json({
       ok: true,
+      eventId,
       homePkScore: nextHome,
       awayPkScore: nextAway,
     })

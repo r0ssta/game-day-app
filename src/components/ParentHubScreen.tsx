@@ -7,6 +7,7 @@ import { Spinner } from '@/components/Spinner'
 import { formatTeamDisplayName } from '@/lib/age-groups'
 import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-schedule'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
+import { isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
   buildParentTimelineRows,
@@ -15,6 +16,7 @@ import {
   isParentHubFinishedMatch,
   isParentHubStaffPreviewRequest,
   isParentHubTrackedLiveEvent,
+  mergeParentHubLiveMatch,
   type ParentHubMatch,
   type ParentHubPayload,
   type ParentHubRoute,
@@ -129,7 +131,7 @@ function LiveTab({
   matches: ParentHubMatch[]
 }) {
   const liveMatch = useMemo(() => {
-    const live = matches.filter((m) => m.status === 'live')
+    const live = matches.filter((m) => isLiveMatchStatus(m.status))
     return live.find((m) => m.isTest) ?? live[0] ?? null
   }, [matches])
   const nextScheduled = useMemo(() => {
@@ -142,20 +144,24 @@ function LiveTab({
   const [liveMatchState, setLiveMatchState] = useState<ParentHubMatch | null>(liveMatch)
 
   useEffect(() => {
-    setLiveMatchState(liveMatch)
-  }, [liveMatch])
+    setLiveMatchState((prev) => mergeParentHubLiveMatch(prev, liveMatch, matches))
+  }, [liveMatch, matches])
+
+  const streamMatch = liveMatch ?? (liveMatchState && isLiveMatchStatus(liveMatchState.status) ? liveMatchState : null)
 
   useEffect(() => {
-    if (!liveMatch) {
+    if (!streamMatch) {
       setEvents([])
       return
     }
     let cancelled = false
+    const matchId = streamMatch.id
+    const includeTest = Boolean(streamMatch.isTest || hub.staffPreview)
 
     const loadEvents = async () => {
       try {
-        const rows = await fetchParentLiveEvents(liveMatch.id, {
-          includeTest: Boolean(liveMatch.isTest || hub.staffPreview),
+        const rows = await fetchParentLiveEvents(matchId, {
+          includeTest,
         })
         if (!cancelled) {
           setEvents(rows)
@@ -175,22 +181,58 @@ function LiveTab({
       cancelled = true
       window.clearInterval(pollId)
     }
-  }, [liveMatch?.id])
+  }, [streamMatch?.id, streamMatch?.isTest, hub.staffPreview])
 
   useEffect(() => {
-    if (!liveMatch) return
+    if (!streamMatch) return
+    const matchId = streamMatch.id
+
+    const applyMatchRow = (row: Record<string, unknown>) => {
+      setLiveMatchState((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          status: typeof row.status === 'string' ? (row.status as ParentHubMatch['status']) : prev.status,
+          home_score: typeof row.home_score === 'number' ? row.home_score : prev.home_score,
+          away_score: typeof row.away_score === 'number' ? row.away_score : prev.away_score,
+          home_pk_score: typeof row.home_pk_score === 'number' ? row.home_pk_score : prev.home_pk_score,
+          away_pk_score: typeof row.away_pk_score === 'number' ? row.away_pk_score : prev.away_pk_score,
+          pk_winner_is_us:
+            row.pk_winner_is_us === true || row.pk_winner_is_us === false || row.pk_winner_is_us === null
+              ? (row.pk_winner_is_us as boolean | null)
+              : prev.pk_winner_is_us,
+          period: typeof row.period === 'string' ? row.period : prev.period,
+          current_period:
+            typeof row.current_period === 'number' ? row.current_period : prev.current_period,
+          period_clock_started:
+            typeof row.period_clock_started === 'boolean'
+              ? row.period_clock_started
+              : prev.period_clock_started,
+          clock_seconds:
+            typeof row.clock_seconds === 'number' ? row.clock_seconds : prev.clock_seconds,
+        }
+      })
+    }
 
     const channel = supabase
-      .channel(`parent-live-${liveMatch.id}`)
+      .channel(`parent-live-${matchId}`)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'match_events',
-          filter: `match_id=eq.${liveMatch.id}`,
+          filter: `match_id=eq.${matchId}`,
         },
         (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const oldRow = payload.old as { id?: string }
+            if (oldRow.id) {
+              setEvents((prev) => prev.filter((event) => event.id !== oldRow.id))
+            }
+            return
+          }
+
           const row = payload.new as {
             id: string
             match_id: string
@@ -232,19 +274,33 @@ function LiveTab({
             createdAt: row.created_at,
           }
           setEvents((prev) => {
-            if (prev.some((e) => e.id === nextEvent.id)) return prev
-            return [...prev, nextEvent]
+            const without = prev.filter((event) => event.id !== nextEvent.id)
+            return [...without, nextEvent]
           })
-          setLiveMatchState((prev) => {
-            if (!prev) return prev
-            if (row.event_type === 'goal') {
-              return { ...prev, home_score: prev.home_score + 1 }
-            }
-            if (row.event_type === 'opponent_goal') {
-              return { ...prev, away_score: prev.away_score + 1 }
-            }
-            return prev
-          })
+          if (payload.eventType === 'INSERT') {
+            setLiveMatchState((prev) => {
+              if (!prev) return prev
+              if (row.event_type === 'goal') {
+                return { ...prev, home_score: prev.home_score + 1 }
+              }
+              if (row.event_type === 'opponent_goal') {
+                return { ...prev, away_score: prev.away_score + 1 }
+              }
+              return prev
+            })
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'matches',
+          filter: `id=eq.${matchId}`,
+        },
+        (payload) => {
+          applyMatchRow(payload.new as Record<string, unknown>)
         },
       )
       .subscribe()
@@ -252,18 +308,18 @@ function LiveTab({
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [liveMatch?.id, hub.players])
+  }, [streamMatch?.id, hub.players])
 
   const teamBoxScore = useMemo(
     () =>
       buildParentTeamBoxScore(events, {
-        halfLengthMinutes: liveMatch?.period_length ?? liveMatch?.half_length ?? 30,
-        totalPeriods: liveMatch?.total_periods,
+        halfLengthMinutes: streamMatch?.period_length ?? streamMatch?.half_length ?? 30,
+        totalPeriods: streamMatch?.total_periods,
       }),
-    [events, liveMatch?.half_length, liveMatch?.period_length, liveMatch?.total_periods],
+    [events, streamMatch?.half_length, streamMatch?.period_length, streamMatch?.total_periods],
   )
 
-  if (!liveMatch || !liveMatchState) {
+  if (!streamMatch || !liveMatchState || !isLiveMatchStatus(liveMatchState.status)) {
     if (nextScheduled) return <ScheduledKickoffCard match={nextScheduled} />
     return (
       <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
@@ -276,21 +332,64 @@ function LiveTab({
   const timeline = buildParentTimelineRows(events, {
     totalPeriods: liveMatchState.total_periods,
   })
+  const inShootout = liveMatchState.status === MATCH_STATUS.penaltyShootout
+  const inExtraTime =
+    liveMatchState.status === MATCH_STATUS.extraTimeFirstHalf ||
+    liveMatchState.status === MATCH_STATUS.extraTimeSecondHalf
+  const showPkScore =
+    inShootout ||
+    liveMatchState.home_pk_score > 0 ||
+    liveMatchState.away_pk_score > 0 ||
+    liveMatchState.pk_winner_is_us != null
+  const livePhaseLabel = inShootout
+    ? 'Penalty shootout'
+    : liveMatchState.status === MATCH_STATUS.extraTimeFirstHalf
+      ? 'Extra time · 1st'
+      : liveMatchState.status === MATCH_STATUS.extraTimeSecondHalf
+        ? 'Extra time · 2nd'
+        : liveMatchState.period_clock_started
+          ? 'In progress'
+          : 'Warmup / break'
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-neon/40 bg-neon/10 px-4 py-4">
         <p className="text-[10px] font-bold uppercase tracking-widest text-neon">
-          {liveMatchState.isTest ? 'Live · Test match' : 'Live'}
+          {liveMatchState.isTest
+            ? 'Live · Test match'
+            : inShootout
+              ? 'Live · Shootout'
+              : inExtraTime
+                ? 'Live · Extra time'
+                : 'Live'}
         </p>
         <p className="mt-1 font-display text-2xl font-bold uppercase text-foreground">
           vs {liveMatchState.opponent || 'Opponent'}
         </p>
-        <div className="mt-2 flex items-baseline gap-3">
-          <Scoreline match={liveMatchState} />
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {liveMatchState.period_clock_started ? 'In progress' : 'Warmup / break'}
-          </span>
-        </div>
+        {showPkScore ? (
+          <div className="mt-3 rounded-xl border-2 border-athletic/50 bg-athletic/10 px-3 py-3 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-athletic">
+              Shootout
+            </p>
+            <p className="mt-1 font-display text-4xl font-black tabular-nums text-foreground">
+              {liveMatchState.home_pk_score} – {liveMatchState.away_pk_score}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">
+              Regulation {liveMatchState.home_score}–{liveMatchState.away_score}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-2 flex items-baseline gap-3">
+            <Scoreline match={liveMatchState} />
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {livePhaseLabel}
+            </span>
+          </div>
+        )}
+        {showPkScore ? (
+          <p className="mt-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {livePhaseLabel}
+          </p>
+        ) : null}
         <ParentTeamBoxScore
           model={teamBoxScore}
           teamName={teamLabel}

@@ -8,6 +8,7 @@ import type {
   LogGoalInput,
   LogPeriodInput,
   LogPkAttemptInput,
+  UpdatePkAttemptInput,
   LogSubstitutionInput,
   LogTeamEventInput,
   RemoveLastGoalInput,
@@ -124,14 +125,28 @@ export async function apiLogPeriod(
 
 export async function apiLogPkAttempt(
   input: LogPkAttemptInput,
-): Promise<MatchActionResult<{ homePkScore: number; awayPkScore: number }>> {
+): Promise<MatchActionResult<{ eventId: string; homePkScore: number; awayPkScore: number }>> {
   return postMatchAction('/api/match/log-pk-attempt', input)
+}
+
+export async function apiUpdatePkAttempt(
+  input: UpdatePkAttemptInput,
+): Promise<
+  MatchActionResult<{ action: 'swap' | 'clear'; homePkScore: number; awayPkScore: number }>
+> {
+  return postMatchAction('/api/match/update-pk-attempt', input)
 }
 
 export async function apiEndRegulation(
   input: EndRegulationInput,
 ): Promise<
-  MatchActionResult<{ status: string; enterPenaltyShootout: boolean }>
+  MatchActionResult<{
+    status: string
+    enterPenaltyShootout: boolean
+    enterExtraTime?: boolean
+    advanceExtraTime?: boolean
+    extraTimeHalfMinutes?: number | null
+  }>
 > {
   return postMatchAction('/api/match/end-regulation', input)
 }

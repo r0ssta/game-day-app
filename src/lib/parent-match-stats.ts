@@ -108,10 +108,16 @@ export function formatParentTotalRole(row: ParentMatchPlayerStat): string {
   return `Started ${started.join(' · ')}`
 }
 
-export function formatParentPositionsLine(positions: ParentPositionMinutes[]): string {
+export function formatParentPositionsLine(
+  positions: ParentPositionMinutes[],
+  options?: { includeMinutes?: boolean },
+): string {
   if (positions.length === 0) return '—'
+  const includeMinutes = options?.includeMinutes !== false
   return positions
-    .map((row) => `${row.position} ${formatRecapMinutes(row.seconds)}`)
+    .map((row) =>
+      includeMinutes ? `${row.position} ${formatRecapMinutes(row.seconds)}` : row.position,
+    )
     .join(', ')
 }
 
