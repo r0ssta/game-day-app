@@ -99,7 +99,7 @@ import {
 } from '@/lib/supabase-api'
 import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, apiUpdatePkAttempt, formatMatchWriteError } from '@/lib/match-api'
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
-import { assertMatchActionOk } from '@/schemas/match-actions'
+import { assertMatchActionOk, type OpponentGoalCategory } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { liveEventDedupeKey, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
 import {
@@ -156,6 +156,11 @@ const PenaltyShootoutScreen = lazy(() =>
 )
 const GoalWizardModal = lazy(() =>
   import('@/components/GoalWizardModal').then((m) => ({ default: m.GoalWizardModal })),
+)
+const OpponentGoalCategorySheet = lazy(() =>
+  import('@/components/OpponentGoalCategorySheet').then((m) => ({
+    default: m.OpponentGoalCategorySheet,
+  })),
 )
 const CardWizardModal = lazy(() =>
   import('@/components/CardWizardModal').then((m) => ({ default: m.CardWizardModal })),
@@ -455,6 +460,7 @@ export function CoachDashboard() {
   const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>('goal_type')
   const [goalIsPk, setGoalIsPk] = useState(false)
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
+  const [opponentGoalSheetOpen, setOpponentGoalSheetOpen] = useState(false)
   const [cardWizardOpen, setCardWizardOpen] = useState(false)
   const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
   const [liveDeleting, setLiveDeleting] = useState(false)
@@ -718,6 +724,7 @@ export function CoachDashboard() {
       setGoalWizardStep('goal_type')
       setGoalIsPk(false)
       setGoalScorerId(null)
+      setOpponentGoalSheetOpen(false)
       setQaSpeedMultiplier(1)
       if (recapReturnMode === 'recap_history') {
         setAppMode('recap_history')
@@ -2006,12 +2013,16 @@ export function CoachDashboard() {
     setGoalScorerId(null)
   }, [])
 
-  const openGoalWizard = useCallback((team: GoalWizardTeam) => {
+  const openGoalWizard = useCallback((team: GoalWizardTeam = 'us') => {
     setGoalWizardTeam(team)
     setGoalWizardStep('goal_type')
     setGoalIsPk(false)
     setGoalScorerId(null)
     setGoalWizardOpen(true)
+  }, [])
+
+  const closeOpponentGoalSheet = useCallback(() => {
+    setOpponentGoalSheetOpen(false)
   }, [])
 
   const handleConfirmCard = useCallback(
@@ -2237,7 +2248,7 @@ export function CoachDashboard() {
   )
 
   const commitOpponentGoal = useCallback(
-    (isPk: boolean) => {
+    (category?: OpponentGoalCategory | null) => {
       if (!matchId) return
       if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'away']))) {
         setToast('Already recorded')
@@ -2260,8 +2271,8 @@ export function CoachDashboard() {
       })
       setPlayers((prev) => applyPlusMinusDelta(prev, -1))
       setToast(
-        isPk
-          ? `Opponent PK · ${opponentLabel} ${awayBefore + 1}`
+        category
+          ? `Opponent goal · ${category} · ${opponentLabel} ${awayBefore + 1}`
           : `Opponent goal · ${opponentLabel} ${awayBefore + 1}`,
       )
 
@@ -2270,7 +2281,7 @@ export function CoachDashboard() {
           const result = await apiLogGoal({
             matchId,
             ourGoal: false,
-            isPk,
+            isPk: false,
             timestamp: eventTimestamp,
             formation: activeFormation,
             homeScoreBefore: homeBefore,
@@ -2280,6 +2291,7 @@ export function CoachDashboard() {
             teamSlug: activeTeamSlug,
             onFieldPlayerIds,
             pairAutoShot: true,
+            eventNotes: category ?? null,
           })
           assertMatchActionOk(result)
           setHomeScore(result.homeScore)
@@ -2539,17 +2551,17 @@ export function CoachDashboard() {
     ],
   )
 
-  const handleSelectGoalType = useCallback(
-    (isPk: boolean) => {
-      if (goalWizardTeam === 'opponent') {
-        commitOpponentGoal(isPk)
-        closeGoalWizard()
-        return
-      }
-      setGoalIsPk(isPk)
-      setGoalWizardStep('scorer')
+  const handleSelectGoalType = useCallback((isPk: boolean) => {
+    setGoalIsPk(isPk)
+    setGoalWizardStep('scorer')
+  }, [])
+
+  const handleOpponentGoalCategory = useCallback(
+    (category?: OpponentGoalCategory | null) => {
+      setOpponentGoalSheetOpen(false)
+      commitOpponentGoal(category)
     },
-    [goalWizardTeam, commitOpponentGoal, closeGoalWizard],
+    [commitOpponentGoal],
   )
 
   const handleSelectGoalScorer = useCallback(
@@ -3212,7 +3224,7 @@ export function CoachDashboard() {
         onAdjustMatchSettings={() => setAdjustSettingsOpen(true)}
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}
-        onOpponentGoal={() => openGoalWizard('opponent')}
+        onOpponentGoal={() => setOpponentGoalSheetOpen(true)}
         onRemoveGoal={(side) => void removeLastGoal(side)}
         onLogShot={commitTeamShot}
         onLogSave={commitTeamSave}
@@ -3317,6 +3329,17 @@ export function CoachDashboard() {
             onSelectScorer={handleSelectGoalScorer}
             onSelectAssist={handleCompleteGoal}
             onClose={closeGoalWizard}
+          />
+        </ModalSuspense>
+      ) : null}
+
+      {opponentGoalSheetOpen ? (
+        <ModalSuspense>
+          <OpponentGoalCategorySheet
+            open={opponentGoalSheetOpen}
+            onSelect={handleOpponentGoalCategory}
+            onSkip={() => handleOpponentGoalCategory(null)}
+            onClose={closeOpponentGoalSheet}
           />
         </ModalSuspense>
       ) : null}
