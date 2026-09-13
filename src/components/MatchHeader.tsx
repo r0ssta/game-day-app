@@ -14,6 +14,89 @@ import { formatPeriodLong, formatPeriodShort } from '@/lib/match-periods'
 import { APP_CONTAINER } from '@/lib/layout'
 import type { MatchPeriod, TotalPeriods } from '@/types/match'
 
+function clockStatusLabel(input: {
+  waitingToStart: boolean
+  inAddedTime: boolean
+  regulationElapsed: boolean
+  periodReadyLabel: string
+  halfReference: string
+}): string {
+  if (input.waitingToStart) return `Ready · ${input.periodReadyLabel} · ${input.halfReference}`
+  if (input.inAddedTime) return 'Added time'
+  if (input.regulationElapsed) return 'Regulation done'
+  return `${input.halfReference} period`
+}
+
+function MatchClockFace({
+  running,
+  inAddedTime,
+  regulationElapsed,
+  waitingToStart,
+  clockParts,
+  periodBadge,
+  wakeLockActive,
+  syncPending,
+}: {
+  running: boolean
+  inAddedTime: boolean
+  regulationElapsed: boolean
+  waitingToStart: boolean
+  clockParts: ReturnType<typeof formatMatchClockParts>
+  periodBadge: string
+  wakeLockActive: boolean
+  syncPending: boolean
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {running ? <span className="size-1.5 animate-pulse rounded-full bg-neon" /> : null}
+      {inAddedTime ? (
+        <span className="rounded bg-athletic px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
+          +Time
+        </span>
+      ) : regulationElapsed ? (
+        <span className="rounded bg-orange-600 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
+          Reg
+        </span>
+      ) : null}
+      <span
+        className={cn(
+          'font-display text-2xl font-bold tabular-nums tracking-wider sm:text-3xl',
+          inAddedTime ? 'text-athletic' : waitingToStart ? 'text-muted-foreground' : 'text-neon',
+        )}
+      >
+        {clockParts.regulation}
+      </span>
+      {clockParts.addedLabel ? (
+        <span className="font-display text-lg font-black tabular-nums text-athletic">
+          {clockParts.addedLabel}
+        </span>
+      ) : null}
+      <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+        {periodBadge}
+      </span>
+      {wakeLockActive ? (
+        <span
+          className="inline-flex items-center text-muted-foreground"
+          title="Screen stay-awake is on"
+          aria-label="Screen stay-awake is on"
+        >
+          <Lock className="size-3.5" strokeWidth={2.5} aria-hidden />
+        </span>
+      ) : null}
+      {syncPending ? (
+        <span
+          className="inline-flex items-center gap-1 text-muted-foreground"
+          title="Saving match event…"
+          aria-label="Saving match event"
+        >
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          <span className="size-1.5 rounded-full bg-athletic" aria-hidden />
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 export type MatchHeaderProps = {
   teamName: string
   coachName: string
@@ -55,6 +138,8 @@ export type MatchHeaderProps = {
   syncPending?: boolean
   /** Other authenticated staff currently viewing this match. */
   otherStaff?: MatchPresenceMember[]
+  /** Open mid-match settings (half-length override). */
+  onAdjustMatchSettings?: () => void
 }
 
 export function MatchHeader({
@@ -92,6 +177,7 @@ export function MatchHeader({
   onShareStatTracker,
   syncPending = false,
   otherStaff = [],
+  onAdjustMatchSettings,
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
   const awayName = opponent.trim() || 'Opponent'
@@ -163,68 +249,58 @@ export function MatchHeader({
           </div>
 
           <div className="flex shrink-0 flex-col items-center gap-0.5">
-            <div className="flex items-center gap-1.5">
-              {running ? (
-                <span className="size-1.5 animate-pulse rounded-full bg-neon" />
-              ) : null}
-              {inAddedTime ? (
-                <span className="rounded bg-athletic px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
-                  +Time
-                </span>
-              ) : regulationElapsed ? (
-                <span className="rounded bg-orange-600 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
-                  Reg
-                </span>
-              ) : null}
-              <span
-                className={cn(
-                  'font-display text-2xl font-bold tabular-nums tracking-wider sm:text-3xl',
-                  inAddedTime
-                    ? 'text-athletic'
-                    : waitingToStart
-                      ? 'text-muted-foreground'
-                      : 'text-neon',
-                )}
+            {onAdjustMatchSettings ? (
+              <button
+                type="button"
+                onClick={onAdjustMatchSettings}
+                aria-label="Adjust match settings"
+                className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-0.5 touch-manipulation active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon/40"
               >
-                {clockParts.regulation}
-              </span>
-              {clockParts.addedLabel ? (
-                <span className="font-display text-lg font-black tabular-nums text-athletic">
-                  {clockParts.addedLabel}
+                <MatchClockFace
+                  running={running}
+                  inAddedTime={inAddedTime}
+                  regulationElapsed={regulationElapsed}
+                  waitingToStart={waitingToStart}
+                  clockParts={clockParts}
+                  periodBadge={periodBadge}
+                  wakeLockActive={wakeLockActive}
+                  syncPending={syncPending}
+                />
+                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  {clockStatusLabel({
+                    waitingToStart,
+                    inAddedTime,
+                    regulationElapsed,
+                    periodReadyLabel,
+                    halfReference,
+                  })}
+                  <span className="mx-1 text-border">·</span>
+                  Tap to adjust
                 </span>
-              ) : null}
-              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                {periodBadge}
-              </span>
-              {wakeLockActive ? (
-                <span
-                  className="inline-flex items-center text-muted-foreground"
-                  title="Screen stay-awake is on"
-                  aria-label="Screen stay-awake is on"
-                >
-                  <Lock className="size-3.5" strokeWidth={2.5} aria-hidden />
+              </button>
+            ) : (
+              <>
+                <MatchClockFace
+                  running={running}
+                  inAddedTime={inAddedTime}
+                  regulationElapsed={regulationElapsed}
+                  waitingToStart={waitingToStart}
+                  clockParts={clockParts}
+                  periodBadge={periodBadge}
+                  wakeLockActive={wakeLockActive}
+                  syncPending={syncPending}
+                />
+                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  {clockStatusLabel({
+                    waitingToStart,
+                    inAddedTime,
+                    regulationElapsed,
+                    periodReadyLabel,
+                    halfReference,
+                  })}
                 </span>
-              ) : null}
-              {syncPending ? (
-                <span
-                  className="inline-flex items-center gap-1 text-muted-foreground"
-                  title="Saving match event…"
-                  aria-label="Saving match event"
-                >
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                  <span className="size-1.5 rounded-full bg-athletic" aria-hidden />
-                </span>
-              ) : null}
-            </div>
-            <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-              {waitingToStart
-                ? `Ready · ${periodReadyLabel} · ${halfReference}`
-                : inAddedTime
-                  ? 'Added time'
-                  : regulationElapsed
-                    ? 'Regulation done'
-                    : `${halfReference} period`}
-            </span>
+              </>
+            )}
           </div>
 
           <div className="min-w-0 flex-1 text-center">

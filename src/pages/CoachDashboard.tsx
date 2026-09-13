@@ -79,11 +79,13 @@ import {
   stampAllOnField,
 } from '@/lib/play-time'
 import {
+  elapsedFromHalfStart,
   elapsedInHalf,
   formatClock,
   halfDurationSeconds,
+  halfStartTimeFromRemaining,
+  remainingFromHalfStart,
   resolvePeriodKickoffRemaining,
-  tickCountdownClock,
   type QaSpeedMultiplier,
 } from '@/lib/match-clock'
 import type { RosterProfilePosition } from '@/lib/positions'
@@ -168,6 +170,11 @@ const EndMatchTimingModal = lazy(() =>
 const TiedGameModal = lazy(() =>
   import('@/components/TiedGameModal').then((m) => ({ default: m.TiedGameModal })),
 )
+const AdjustMatchSettingsSheet = lazy(() =>
+  import('@/components/AdjustMatchSettingsSheet').then((m) => ({
+    default: m.AdjustMatchSettingsSheet,
+  })),
+)
 
 export function CoachDashboard() {
   const {
@@ -189,6 +196,8 @@ export function CoachDashboard() {
     setAppMode,
     resumeLiveMatchScreen,
     persistMatchClock,
+    updateHalfLengthMinutes,
+    halfStartAtMsRef,
     noteLocalMatchMutation,
     holdLiveRemoteMerge,
     releaseLiveRemoteMerge,
@@ -373,6 +382,8 @@ export function CoachDashboard() {
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
   const [toast, setToast] = useState<string | null>(null)
+  const [adjustSettingsOpen, setAdjustSettingsOpen] = useState(false)
+  const [adjustSettingsBusy, setAdjustSettingsBusy] = useState(false)
   const { syncPending, isPending, run: runSync } = useOptimisticSync()
   const runOptimisticSync = useCallback(
     <T,>(
@@ -416,6 +427,23 @@ export function CoachDashboard() {
       setToast(formatMatchWriteError(err, fallback))
     },
     [],
+  )
+  const handleSaveHalfLength = useCallback(
+    async (nextMinutes: number) => {
+      setAdjustSettingsBusy(true)
+      try {
+        const applied = await updateHalfLengthMinutes(nextMinutes)
+        setAdjustSettingsOpen(false)
+        setToast(
+          `${totalPeriods === 3 ? 'Period length' : 'Half length'} updated to ${applied}m`,
+        )
+      } catch (err) {
+        setToast(formatSupabaseError(err) || 'Could not update half length')
+      } finally {
+        setAdjustSettingsBusy(false)
+      }
+    },
+    [updateHalfLengthMinutes, totalPeriods],
   )
   const [pendingReviewMatches, setPendingReviewMatches] = useState<DbMatch[]>([])
   const [recapReturnMode, setRecapReturnMode] = useState<
@@ -756,18 +784,70 @@ export function CoachDashboard() {
     ],
   )
 
+  const halfLengthRef = useRef(halfLengthMinutes)
+  halfLengthRef.current = halfLengthMinutes
+  const qaSpeedRef = useRef(qaSpeedMultiplier)
+  const syncClockFromHalfStart = useCallback(
+    (nowMs = Date.now()) => {
+      const minutes = halfLengthRef.current
+      let start = halfStartAtMsRef.current
+      if (start == null) {
+        start = halfStartTimeFromRemaining(
+          clockSyncRef.current,
+          minutes,
+          nowMs,
+          { speedMultiplier: qaSpeedRef.current },
+        )
+        halfStartAtMsRef.current = start
+      }
+      const next = remainingFromHalfStart(start, minutes, nowMs, {
+        speedMultiplier: qaSpeedRef.current,
+      })
+      clockSyncRef.current = next
+      setSeconds(next)
+      return next
+    },
+    [halfStartAtMsRef, setSeconds],
+  )
+
   useEffect(() => {
     if (appMode !== 'match' || !matchId) return
     if (!running && !periodClockStarted) return
-    const id = setInterval(() => {
-      setSeconds((s) => {
-        const next = tickCountdownClock(s, qaSpeedMultiplier)
-        clockSyncRef.current = next
-        return next
+
+    const now = Date.now()
+    if (qaSpeedRef.current !== qaSpeedMultiplier && halfStartAtMsRef.current != null) {
+      const elapsed = elapsedFromHalfStart(halfStartAtMsRef.current, now, {
+        speedMultiplier: qaSpeedRef.current,
       })
+      halfStartAtMsRef.current = now - (elapsed * 1000) / qaSpeedMultiplier
+    }
+    qaSpeedRef.current = qaSpeedMultiplier
+    syncClockFromHalfStart(now)
+
+    const id = setInterval(() => {
+      syncClockFromHalfStart()
     }, 1000)
     return () => clearInterval(id)
-  }, [appMode, running, periodClockStarted, matchId, qaSpeedMultiplier, setSeconds])
+  }, [
+    appMode,
+    running,
+    periodClockStarted,
+    matchId,
+    qaSpeedMultiplier,
+    halfStartAtMsRef,
+    syncClockFromHalfStart,
+  ])
+
+  useEffect(() => {
+    if (appMode !== 'match' || !matchId) return
+    if (!running && !periodClockStarted) return
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      syncClockFromHalfStart()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [appMode, matchId, running, periodClockStarted, syncClockFromHalfStart])
 
   useEffect(() => {
     if (appMode !== 'match' || !matchId) return
@@ -3174,6 +3254,7 @@ export function CoachDashboard() {
         isTest={matchIsTest}
         syncPending={syncPending}
         wakeLockActive={wakeLockActive}
+        onAdjustMatchSettings={() => setAdjustSettingsOpen(true)}
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}
         onOpponentGoal={() => openGoalWizard('opponent')}
@@ -3325,6 +3406,24 @@ export function CoachDashboard() {
             onSelectPenaltyShootout={() => void handleTiedGamePenaltyShootout()}
             onCancel={() => {
               if (!endingMatch) setTiedGameOpen(false)
+            }}
+          />
+        </ModalSuspense>
+      ) : null}
+
+      {adjustSettingsOpen ? (
+        <ModalSuspense>
+          <AdjustMatchSettingsSheet
+            open={adjustSettingsOpen}
+            halfLengthMinutes={halfLengthMinutes}
+            remainingSeconds={seconds}
+            periodClockStarted={periodClockStarted}
+            currentPeriod={currentPeriod}
+            totalPeriods={totalPeriods}
+            busy={adjustSettingsBusy}
+            onSave={(next) => void handleSaveHalfLength(next)}
+            onClose={() => {
+              if (!adjustSettingsBusy) setAdjustSettingsOpen(false)
             }}
           />
         </ModalSuspense>

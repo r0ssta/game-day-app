@@ -24,7 +24,9 @@ import {
 import type { LocationType } from '@/lib/match-location'
 import { resolveMatchLocationType } from '@/lib/match-location'
 import {
+  halfStartTimeFromRemaining,
   initialHalfClock,
+  planHalfLengthOverride,
   restoreMatchClockSeconds,
 } from '@/lib/match-clock'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
@@ -69,6 +71,7 @@ import {
   syncMatchClock,
   syncMatchRecord,
   syncMatchStats,
+  updateMatchHalfLength,
 } from '@/lib/supabase-api'
 import type { DbLineupPreset, DbMatch } from '@/types/database'
 import type {
@@ -301,6 +304,8 @@ export function useMatchState() {
   const matchFormationsRef = useRef(matchFormations)
   const matchIdRef = useRef(matchId)
   const lastClockWriteAtRef = useRef(0)
+  const halfStartAtMsRef = useRef<number | null>(null)
+  const halfLengthWriteEchoRef = useRef<{ at: number; minutes: number } | null>(null)
   const hydrateInFlightRef = useRef(false)
   const localWriteGenRef = useRef(0)
   const preKickoffLineupDirtyRef = useRef(false)
@@ -365,7 +370,12 @@ export function useMatchState() {
       setTotalPeriods(nextTotal)
       setCurrentPeriod(nextCurrent)
       setPeriod(periodIndexToCode(nextCurrent))
-      setHalfLengthMinutes(nextLength)
+      const echo = halfLengthWriteEchoRef.current
+      const ignoreRemoteLength =
+        echo != null && Date.now() - echo.at < 4000 && echo.minutes !== nextLength
+      if (!ignoreRemoteLength) {
+        setHalfLengthMinutes(nextLength)
+      }
     },
     [],
   )
@@ -374,6 +384,52 @@ export function useMatchState() {
     lastClockWriteAtRef.current = Date.now()
     syncMatchClock(targetMatchId, remainingSeconds)
   }, [])
+
+  useEffect(() => {
+    if (!periodClockStarted) halfStartAtMsRef.current = null
+  }, [periodClockStarted])
+
+  const updateHalfLengthMinutes = useCallback(
+    async (rawNext: number) => {
+      const previousMinutes = halfLengthMinutes
+      const planned = planHalfLengthOverride({
+        nextMinutes: rawNext,
+        previousMinutes,
+        remainingSeconds: liveStateRef.current.seconds,
+        halfStartTimeMs: halfStartAtMsRef.current,
+        nowMs: Date.now(),
+        periodClockStarted: liveStateRef.current.periodClockStarted,
+      })
+      if (planned.nextMinutes === previousMinutes) return planned.nextMinutes
+
+      const previousRemaining = liveStateRef.current.seconds
+      halfLengthWriteEchoRef.current = { at: Date.now(), minutes: planned.nextMinutes }
+      halfStartAtMsRef.current = planned.halfStartTimeMs
+      setHalfLengthMinutes(planned.nextMinutes)
+      setSeconds(planned.nextRemaining)
+      localWriteGenRef.current += 1
+
+      const targetMatchId = matchIdRef.current
+      if (!targetMatchId) return planned.nextMinutes
+
+      try {
+        await updateMatchHalfLength(targetMatchId, planned.nextMinutes, planned.nextRemaining)
+        persistMatchClock(targetMatchId, planned.nextRemaining)
+        return planned.nextMinutes
+      } catch (err) {
+        halfLengthWriteEchoRef.current = null
+        halfStartAtMsRef.current = halfStartTimeFromRemaining(
+          previousRemaining,
+          previousMinutes,
+          Date.now(),
+        )
+        setHalfLengthMinutes(previousMinutes)
+        setSeconds(previousRemaining)
+        throw err
+      }
+    },
+    [halfLengthMinutes, persistMatchClock],
+  )
 
   const liveMergeHoldRef = useRef(0)
 
@@ -1827,6 +1883,8 @@ export function useMatchState() {
     hydrateLiveMatch,
     resumeLiveMatchScreen,
     persistMatchClock,
+    updateHalfLengthMinutes,
+    halfStartAtMsRef,
     noteLocalMatchMutation,
     holdLiveRemoteMerge,
     releaseLiveRemoteMerge,

@@ -1405,6 +1405,23 @@ export async function updateMatchRecord(
   throw new Error(formatSupabaseError(lastError))
 }
 
+/** Mid-match half-length override — keep period_length in sync with half_length. */
+export async function updateMatchHalfLength(
+  matchId: string,
+  nextMinutes: number,
+  nextRemaining: number,
+) {
+  await updateMatchRecord(matchId, {
+    half_length: nextMinutes,
+    period_length: nextMinutes,
+    clock_seconds: persistableClockSeconds(nextRemaining),
+  })
+  const added = addedTimeSeconds(nextRemaining)
+  if (added > 0) {
+    await mergeMatchTimingContext(matchId, { addedTimeSeconds: added })
+  }
+}
+
 export async function upsertMatchStat(matchId: string, player: MatchPlayer) {
   const payload = matchPlayerToStatPayload(matchId, player)
   const { error } = await supabase.from('match_stats').upsert(payload, {
@@ -2610,6 +2627,6 @@ export async function fetchPlayerImpact(input: {
   if (input.teamId) params.p_team_id = input.teamId
   const { data, error } = await supabase.rpc('calculate_player_impact', params)
   if (error) throw new Error(formatSupabaseError(error))
-  return data ?? []
+  return (data ?? []) as DbPlayerImpact[]
 }
 
