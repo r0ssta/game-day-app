@@ -14,7 +14,7 @@ import {
   intermissionTitle,
   startNextPeriodButtonLabel,
 } from '@/lib/match-periods'
-import { formatPlayingTimeBadge } from '@/lib/play-time'
+import { formatPlayingTimeBadge, getSecondsPlayedAsOf } from '@/lib/play-time'
 import {
   buildSidelineNameMap,
   formatPlayerFullName,
@@ -152,7 +152,9 @@ export function HalftimePage({
             number: player.number,
             isGuest: player.isGuest,
             matchPosition: player.matchPosition,
-            minutesLabel: formatPlayingTimeBadge(player.totalSecondsPlayed),
+            minutesLabel: formatPlayingTimeBadge(
+              getSecondsPlayedAsOf(player, seconds, halfLengthMinutes * 60),
+            ),
             didNotStartFirstHalf: !player.isFirstHalfStarter,
             meta: player.matchPosition,
           }))}

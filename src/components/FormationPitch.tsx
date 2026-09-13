@@ -283,7 +283,12 @@ function PitchSlotVisual({
                     'mt-0.5 font-display text-xl font-black tabular-nums leading-none tracking-tight',
                     player.needsSubCue && 'text-amber-950',
                   )}
-                  title={player.needsSubCue ? 'Long stint — consider a sub' : undefined}
+                  title={
+                    player.needsSubCue
+                      ? `${player.minutesLabel} played — consider a sub`
+                      : `${player.minutesLabel} played`
+                  }
+                  aria-label={`${player.minutesLabel} played`}
                 >
                   {player.minutesLabel}
                 </span>

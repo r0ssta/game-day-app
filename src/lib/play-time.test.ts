@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { MatchPlayer } from '@/types/match'
 import {
   applyKickoffSlotLineup,
+  applySecondHalfLineup,
   applySubstitution,
+  finalizeAllOnField,
   formatPlayingTimeBadge,
   freezeFirstHalfStarters,
   getLiveSecondsPlayed,
+  getSecondsPlayedAsOf,
   stampAllOnField,
 } from './play-time'
 
@@ -93,5 +96,97 @@ describe('play-time', () => {
     expect(formatPlayingTimeBadge(0)).toBe('0m')
     expect(formatPlayingTimeBadge(59)).toBe('0m')
     expect(formatPlayingTimeBadge(180)).toBe('3m')
+  })
+
+  it('includes an open on-field stint up to the whistle, not a later clock', () => {
+    const starter = player({
+      id: FIELD,
+      isOnField: true,
+      isFirstHalfStarter: true,
+      subbedInAt: 1800,
+      totalSecondsPlayed: 0,
+    })
+    const bench = player({
+      id: BENCH,
+      isOnField: false,
+      totalSecondsPlayed: 600,
+      subbedInAt: null,
+    })
+
+    expect(getSecondsPlayedAsOf(starter, 0, 1800)).toBe(1800)
+    expect(getSecondsPlayedAsOf(bench, 0, 1800)).toBe(600)
+    // Intermission clock must stay frozen — a reset 2nd-half countdown would zero the stint.
+    expect(getSecondsPlayedAsOf(starter, 1800, 1800)).toBe(0)
+  })
+
+  it('banks open stints at the whistle even when isOnField has drifted', () => {
+    const drifted = player({
+      id: FIELD,
+      isOnField: false,
+      subbedInAt: 1800,
+      totalSecondsPlayed: 0,
+    })
+    const [banked] = finalizeAllOnField([drifted], 0, { periodStartRemaining: 1800 })
+    expect(banked.totalSecondsPlayed).toBe(1800)
+    expect(banked.subbedInAt).toBeNull()
+  })
+
+  it('banks never-stamped starters from kickoff when they are still on the pitch', () => {
+    const starter = player({
+      id: FIELD,
+      isOnField: true,
+      subbedInAt: null,
+      totalSecondsPlayed: 0,
+    })
+    const [banked] = finalizeAllOnField([starter], 120, {
+      periodStartRemaining: 1800,
+      onFieldIds: [FIELD],
+    })
+    expect(banked.totalSecondsPlayed).toBe(1680)
+    expect(banked.subbedInAt).toBeNull()
+  })
+
+  it('does not double-count after a stint is already banked', () => {
+    const alreadyBanked = player({
+      id: FIELD,
+      isOnField: true,
+      subbedInAt: null,
+      totalSecondsPlayed: 1800,
+    })
+    const [again] = finalizeAllOnField([alreadyBanked], 0, { periodStartRemaining: 1800 })
+    expect(again.totalSecondsPlayed).toBe(1800)
+  })
+
+  it('preserves first-half totals when applying the next-period lineup', () => {
+    const field = player({
+      id: FIELD,
+      attending: true,
+      isOnField: true,
+      subbedInAt: 1800,
+      totalSecondsPlayed: 0,
+    })
+    const bench = player({
+      id: BENCH,
+      attending: true,
+      isOnField: false,
+      subbedInAt: null,
+      totalSecondsPlayed: 720,
+    })
+
+    const linedUp = applySecondHalfLineup([field, bench], new Set([BENCH]), 0)
+    const off = linedUp.find((row) => row.id === FIELD)
+    const on = linedUp.find((row) => row.id === BENCH)
+
+    expect(off?.totalSecondsPlayed).toBe(1800)
+    expect(off?.isOnField).toBe(false)
+    expect(off?.subbedInAt).toBeNull()
+    expect(on?.totalSecondsPlayed).toBe(720)
+    expect(on?.isOnField).toBe(true)
+    expect(on?.subbedInAt).toBeNull()
+
+    const stamped = stampAllOnField(linedUp, 1800)
+    expect(stamped.find((row) => row.id === FIELD)?.totalSecondsPlayed).toBe(1800)
+    expect(stamped.find((row) => row.id === BENCH)?.totalSecondsPlayed).toBe(720)
+    expect(stamped.find((row) => row.id === BENCH)?.subbedInAt).toBe(1800)
   })
 })

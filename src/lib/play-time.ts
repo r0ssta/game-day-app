@@ -36,13 +36,40 @@ function stintSecondsPlayed(subbedInAt: number, remainingSeconds: number): numbe
   return Math.max(0, subbedInAt - remainingSeconds)
 }
 
-/** Close an active on-field stint and add elapsed time to the total. */
-export function finalizeStint(player: MatchPlayer, remainingSeconds: number): MatchPlayer {
-  if (!player.isOnField || player.subbedInAt === null) {
+export type FinalizePlayTimeOptions = {
+  /**
+   * Remaining seconds at period kickoff. Used when an on-field player has no
+   * `subbedInAt` stamp so we still bank time up to the whistle.
+   */
+  periodStartRemaining?: number
+  /** Slot occupants — treat as on-field when `isOnField` has drifted. */
+  onFieldIds?: Iterable<string>
+}
+
+function resolveOpenStintStart(
+  player: MatchPlayer,
+  periodStartRemaining?: number,
+): number | null {
+  if (player.subbedInAt !== null) return player.subbedInAt
+  // Never-stamped starter who has not been subbed: assume they played from kickoff.
+  if (player.isOnField && player.totalSecondsPlayed === 0 && periodStartRemaining != null) {
+    return periodStartRemaining
+  }
+  return null
+}
+
+/** Close an open stint and add elapsed time to the total. */
+export function finalizeStint(
+  player: MatchPlayer,
+  remainingSeconds: number,
+  periodStartRemaining?: number,
+): MatchPlayer {
+  const stintStart = resolveOpenStintStart(player, periodStartRemaining)
+  if (stintStart === null) {
     return { ...player, subbedInAt: null }
   }
 
-  const stint = stintSecondsPlayed(player.subbedInAt, remainingSeconds)
+  const stint = stintSecondsPlayed(stintStart, remainingSeconds)
   return {
     ...player,
     totalSecondsPlayed: player.totalSecondsPlayed + stint,
@@ -50,11 +77,22 @@ export function finalizeStint(player: MatchPlayer, remainingSeconds: number): Ma
   }
 }
 
-/** Halftime / fulltime — bank remaining time for everyone currently on the field. */
-export function finalizeAllOnField(players: MatchPlayer[], remainingSeconds: number): MatchPlayer[] {
-  return players.map((player) =>
-    player.isOnField ? finalizeStint(player, remainingSeconds) : player,
-  )
+/** Halftime / fulltime — bank remaining time for everyone with an open stint. */
+export function finalizeAllOnField(
+  players: MatchPlayer[],
+  remainingSeconds: number,
+  options?: FinalizePlayTimeOptions,
+): MatchPlayer[] {
+  const extraIds = options?.onFieldIds ? new Set(options.onFieldIds) : null
+  return players.map((player) => {
+    const treatAsOnField = player.isOnField || (extraIds?.has(player.id) ?? false)
+    if (!treatAsOnField && player.subbedInAt === null) return player
+    return finalizeStint(
+      treatAsOnField ? { ...player, isOnField: true } : player,
+      remainingSeconds,
+      options?.periodStartRemaining,
+    )
+  })
 }
 
 /**
@@ -87,18 +125,29 @@ export function stampAllOnField(players: MatchPlayer[], remainingSeconds: number
   )
 }
 
-/** Apply 2nd-half starter selections from halftime setup. */
+/**
+ * Apply 2nd-half starter selections from intermission setup.
+ * Does not start a new stint — kickoff must `stampAllOnField` after this.
+ * First-half totals are left untouched; pass `periodEndRemaining` to bank any
+ * leftover open 1st-half stint at the whistle clock (never the next-period clock).
+ */
 export function applySecondHalfLineup(
   players: MatchPlayer[],
   secondHalfStarterIds: Set<string>,
+  periodEndRemaining?: number,
+  periodStartRemaining?: number,
 ): MatchPlayer[] {
   return players.map((player) => {
+    const banked =
+      periodEndRemaining !== undefined
+        ? finalizeStint(player, periodEndRemaining, periodStartRemaining)
+        : player
     if (!player.attending) {
-      return { ...player, isOnField: false, subbedInAt: null }
+      return { ...banked, isOnField: false, subbedInAt: null }
     }
     const starts = secondHalfStarterIds.has(player.id)
     return {
-      ...player,
+      ...banked,
       isSecondHalfStarter: starts,
       isOnField: starts,
       subbedInAt: null,
@@ -186,12 +235,27 @@ export function applySubstitution(
   })
 }
 
-export function getLiveSecondsPlayed(player: MatchPlayer, remainingSeconds: number): number {
-  const currentStint =
-    player.isOnField && player.subbedInAt !== null
-      ? stintSecondsPlayed(player.subbedInAt, remainingSeconds)
-      : 0
-  return player.totalSecondsPlayed + currentStint
+/**
+ * Banked time plus any open stint, measured against a frozen remaining clock.
+ * At intermission, pass the whistle remaining seconds — not a ticking clock —
+ * so field players show 1st-half minutes and time does not run through the break.
+ */
+export function getSecondsPlayedAsOf(
+  player: MatchPlayer,
+  remainingSeconds: number,
+  periodStartRemaining?: number,
+): number {
+  const stintStart = resolveOpenStintStart(player, periodStartRemaining)
+  if (stintStart === null) return player.totalSecondsPlayed
+  return player.totalSecondsPlayed + stintSecondsPlayed(stintStart, remainingSeconds)
+}
+
+export function getLiveSecondsPlayed(
+  player: MatchPlayer,
+  remainingSeconds: number,
+  periodStartRemaining?: number,
+): number {
+  return getSecondsPlayedAsOf(player, remainingSeconds, periodStartRemaining)
 }
 
 /** Seconds in the player's current uninterrupted on-field stint (0 if benched). */

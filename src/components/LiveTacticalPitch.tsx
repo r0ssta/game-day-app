@@ -369,7 +369,9 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           name: getSidelineName(p, sidelineNameMap),
           shortName: getSidelineName(p, sidelineNameMap),
           number: p.number,
-          minutesLabel: formatPlayingTimeClock(getLiveSecondsPlayed(p, clockSeconds)),
+          minutesLabel: formatPlayingTimeClock(
+            getLiveSecondsPlayed(p, clockSeconds, halfLengthSeconds),
+          ),
           showYellowCard: p.yellowCardCount === 1 && !p.isSentOff,
           needsSubCue: needsSubRotationCue(p, clockSeconds, halfLengthSeconds),
         })),

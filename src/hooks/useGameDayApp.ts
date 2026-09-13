@@ -2391,7 +2391,12 @@ export function useGameDayApp() {
       let toggles: Record<string, boolean> = {}
 
       setPlayers((prev) => {
-        const finalized = finalizeAllOnField(prev, clockSeconds)
+        const finalized = finalizeAllOnField(prev, clockSeconds, {
+          periodStartRemaining: initialHalfClock(halfLengthMinutes),
+          onFieldIds: slotAssignments
+            ? Object.values(slotAssignments).filter((id): id is string => Boolean(id))
+            : undefined,
+        })
         const attendingIds = finalized.filter((p) => p.attending).map((p) => p.id)
         const onFieldById = Object.fromEntries(
           finalized.filter((p) => p.attending).map((p) => [p.id, p.isOnField]),
@@ -2423,7 +2428,7 @@ export function useGameDayApp() {
       setAppMode('halftime')
       return nextPlayers
     },
-    [releaseLocalClock],
+    [releaseLocalClock, halfLengthMinutes],
   )
 
   /** @deprecated Prefer enterIntermission — kept for call sites still using the old name. */
@@ -2463,7 +2468,13 @@ export function useGameDayApp() {
       }
 
       const prevPlayers = liveStateRef.current.players
-      let linedUp = applySecondHalfLineup(prevPlayers, starterIds)
+      const whistleRemaining = liveStateRef.current.seconds
+      let linedUp = applySecondHalfLineup(
+        prevPlayers,
+        starterIds,
+        whistleRemaining,
+        initialHalfClock(halfLengthMinutes),
+      )
       if (hasSlotAssignments(slotAssignments)) {
         linedUp = applySlotAssignmentPositions(
           linedUp,
@@ -2568,7 +2579,9 @@ export function useGameDayApp() {
 
       if (!keepLineupOnField) {
         setPlayers((prev) => {
-          const finalized = finalizeAllOnField(prev, clockSeconds).map((p) =>
+          const finalized = finalizeAllOnField(prev, clockSeconds, {
+            periodStartRemaining: initialHalfClock(halfLengthMinutes),
+          }).map((p) =>
             p.attending && p.isOnField ? { ...p, isOnField: false, subbedInAt: null } : p,
           )
 
