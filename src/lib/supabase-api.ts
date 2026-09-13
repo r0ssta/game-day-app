@@ -10,7 +10,7 @@ import {
   rosterProfilePositionToLegacy,
 } from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
-import { createMatchPlayer } from '@/lib/play-time'
+import { allocateSecondsByRole, createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso, formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
@@ -246,6 +246,7 @@ export function dbPlayerToRoster(
 }
 
 export function statToMatchPlayer(roster: RosterPlayer, stat: DbMatchStat): MatchPlayer {
+  const roleSeconds = allocateSecondsByRole(stat.total_seconds_played, stat.match_position)
   return {
     ...roster,
     isGuest: Boolean(stat.is_match_guest) || roster.isGuest,
@@ -256,6 +257,8 @@ export function statToMatchPlayer(roster: RosterPlayer, stat: DbMatchStat): Matc
     isOnField: stat.attending && !stat.is_sent_off && stat.match_status === 'on-field',
     matchPosition: stat.match_position,
     totalSecondsPlayed: stat.total_seconds_played,
+    fieldSecondsPlayed: roleSeconds.fieldSecondsPlayed,
+    gkSecondsPlayed: roleSeconds.gkSecondsPlayed,
     subbedInAt: stat.subbed_in_at,
     plusMinus: stat.plus_minus ?? 0,
     yellowCardCount: 0,

@@ -280,7 +280,10 @@ function PitchSlotVisual({
               {player.minutesLabel ? (
                 <span
                   className={cn(
-                    'mt-0.5 font-display text-xl font-black tabular-nums leading-none tracking-tight',
+                    'mt-0.5 max-w-full text-center font-display font-black tabular-nums leading-none tracking-tight',
+                    player.minutesLabel && player.minutesLabel.length > 4
+                      ? 'text-[11px]'
+                      : 'text-xl',
                     player.needsSubCue && 'text-amber-950',
                   )}
                   title={

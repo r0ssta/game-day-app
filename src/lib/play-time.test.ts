@@ -3,11 +3,14 @@ import type { MatchPlayer } from '@/types/match'
 import {
   applyKickoffSlotLineup,
   applySecondHalfLineup,
+  applySubIn,
+  applySubOut,
   applySubstitution,
   finalizeAllOnField,
   formatPlayingTimeBadge,
   freezeFirstHalfStarters,
   getLiveSecondsPlayed,
+  getRoleSecondsAsOf,
   getSecondsPlayedAsOf,
   stampAllOnField,
 } from './play-time'
@@ -188,5 +191,41 @@ describe('play-time', () => {
     expect(stamped.find((row) => row.id === FIELD)?.totalSecondsPlayed).toBe(1800)
     expect(stamped.find((row) => row.id === BENCH)?.totalSecondsPlayed).toBe(720)
     expect(stamped.find((row) => row.id === BENCH)?.subbedInAt).toBe(1800)
+  })
+
+  it('banks GK and field minutes separately when a keeper moves outfield', () => {
+    const keeper = player({
+      id: FIELD,
+      isOnField: true,
+      matchPosition: 'GK',
+      subbedInAt: 1800,
+      totalSecondsPlayed: 0,
+    })
+    const afterGk = applySubOut([keeper], FIELD, 900)[0]
+    expect(afterGk?.gkSecondsPlayed).toBe(900)
+    expect(afterGk?.fieldSecondsPlayed).toBe(0)
+
+    const backOn = applySubIn([afterGk!], FIELD, 900).map((row) =>
+      row.id === FIELD ? { ...row, matchPosition: 'ST' } : row,
+    )
+    const afterField = applySubOut(backOn, FIELD, 300)[0]
+    expect(afterField?.gkSecondsPlayed).toBe(900)
+    expect(afterField?.fieldSecondsPlayed).toBe(600)
+    expect(afterField?.totalSecondsPlayed).toBe(1500)
+
+    const live = getRoleSecondsAsOf(
+      player({
+        id: FIELD,
+        isOnField: true,
+        matchPosition: 'GK',
+        subbedInAt: 1800,
+        totalSecondsPlayed: 0,
+        fieldSecondsPlayed: 0,
+        gkSecondsPlayed: 0,
+      }),
+      1200,
+      1800,
+    )
+    expect(live).toEqual({ fieldSeconds: 0, gkSeconds: 600, totalSeconds: 600 })
   })
 })

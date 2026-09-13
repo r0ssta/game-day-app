@@ -9,6 +9,7 @@ export type PlayingTimeBarProps = {
   gkSeconds: number
   maxSeconds: number
   className?: string
+  labelClassName?: string
 }
 
 export function PlayingTimeBar({
@@ -16,13 +17,21 @@ export function PlayingTimeBar({
   gkSeconds,
   maxSeconds,
   className,
+  labelClassName,
 }: PlayingTimeBarProps) {
   const { fieldPct, gkPct } = playingTimeBarPercents(fieldSeconds, gkSeconds, maxSeconds)
   const label = formatPlayingTimeBarLabel(fieldSeconds, gkSeconds)
 
   return (
     <div className={cn('min-w-[5.5rem]', className)}>
-      <p className="mb-1 text-[11px] font-bold tabular-nums leading-none text-foreground">{label}</p>
+      <p
+        className={cn(
+          'mb-1 text-[11px] font-bold tabular-nums leading-none text-foreground',
+          labelClassName,
+        )}
+      >
+        {label}
+      </p>
       <div
         className="flex h-1.5 w-full overflow-hidden rounded-full bg-secondary"
         role="img"

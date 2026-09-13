@@ -49,6 +49,10 @@ export type MatchPlayer = RosterPlayer & {
   isOnField: boolean
   matchPosition: string
   totalSecondsPlayed: number
+  /** Banked outfield seconds. Open stints are added by getRoleSecondsAsOf. */
+  fieldSecondsPlayed?: number
+  /** Banked goalkeeper seconds. Open stints are added by getRoleSecondsAsOf. */
+  gkSecondsPlayed?: number
   subbedInAt: number | null
   plusMinus: number
   /** Yellow cards received in this match (0–2). */

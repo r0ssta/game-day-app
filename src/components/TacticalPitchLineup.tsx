@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type MutableRefObject } from 'react'
 import { Pencil, Users } from 'lucide-react'
+import { PlayingTimeBar } from '@/components/PlayingTimeBar'
 import {
   FormationDraggableHandle,
   FormationPitch,
@@ -42,6 +43,9 @@ export type PitchLineupPlayer = {
   meta?: string
   /** 1st-half minutes played — shown next to the player name at halftime. */
   minutesLabel?: string
+  fieldSeconds?: number
+  gkSeconds?: number
+  maxPlayingSeconds?: number
   /** Intermission: highlight players who were not in the 1st-half starting XI. */
   didNotStartFirstHalf?: boolean
   matchPosition?: string
@@ -155,11 +159,6 @@ function PoolPlayerChip({
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1">
             <span className="min-w-0 truncate text-sm font-bold text-foreground">{player.name}</span>
-            {player.minutesLabel ? (
-              <span className="font-display text-lg font-black tabular-nums leading-none text-slate-800">
-                {player.minutesLabel}
-              </span>
-            ) : null}
             {player.isGuest && <GuestBadge />}
             {player.didNotStartFirstHalf ? (
               <span
@@ -177,6 +176,19 @@ function PoolPlayerChip({
                 <RosterPositionHint position={player.secondaryPosition} variant="secondary" />
               )}
           </span>
+          {player.fieldSeconds != null && player.gkSeconds != null ? (
+            <PlayingTimeBar
+              fieldSeconds={player.fieldSeconds}
+              gkSeconds={player.gkSeconds}
+              maxSeconds={player.maxPlayingSeconds ?? 1}
+              className="mt-1 w-full min-w-0"
+              labelClassName="text-sm font-black text-foreground"
+            />
+          ) : player.minutesLabel ? (
+            <span className="mt-0.5 block font-display text-lg font-black tabular-nums leading-none text-foreground">
+              {player.minutesLabel}
+            </span>
+          ) : null}
           {player.badge && !player.didNotStartFirstHalf ? (
             <span className="text-[10px] font-semibold text-muted-foreground">{player.badge}</span>
           ) : null}

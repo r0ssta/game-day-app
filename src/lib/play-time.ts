@@ -1,3 +1,4 @@
+import { isGoalkeeperPosition } from '@/lib/match-shot-save'
 import { normalizeTacticalMatchPosition } from '@/lib/positions'
 import { getFormationById, resolveSlotLabel } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
@@ -24,6 +25,8 @@ export function createMatchPlayer(
     isOnField: input.isOnField,
     matchPosition: normalizeTacticalMatchPosition(input.matchPosition),
     totalSecondsPlayed: 0,
+    fieldSecondsPlayed: 0,
+    gkSecondsPlayed: 0,
     subbedInAt: null,
     plusMinus: 0,
     yellowCardCount: 0,
@@ -58,6 +61,42 @@ function resolveOpenStintStart(
   return null
 }
 
+export function allocateSecondsByRole(
+  seconds: number,
+  position: string | null | undefined,
+): { fieldSecondsPlayed: number; gkSecondsPlayed: number } {
+  const safe = Math.max(0, seconds)
+  if (isGoalkeeperPosition(position)) {
+    return { fieldSecondsPlayed: 0, gkSecondsPlayed: safe }
+  }
+  return { fieldSecondsPlayed: safe, gkSecondsPlayed: 0 }
+}
+
+function bankedRoleSeconds(player: MatchPlayer) {
+  const field = player.fieldSecondsPlayed
+  const gk = player.gkSecondsPlayed
+  if (field != null || gk != null) {
+    return {
+      fieldSecondsPlayed: Math.max(0, field ?? 0),
+      gkSecondsPlayed: Math.max(0, gk ?? 0),
+    }
+  }
+  return allocateSecondsByRole(player.totalSecondsPlayed, player.matchPosition)
+}
+
+function withBankedStint(
+  player: MatchPlayer,
+  stint: number,
+): Pick<MatchPlayer, 'totalSecondsPlayed' | 'fieldSecondsPlayed' | 'gkSecondsPlayed'> {
+  const role = allocateSecondsByRole(stint, player.matchPosition)
+  const banked = bankedRoleSeconds(player)
+  return {
+    totalSecondsPlayed: player.totalSecondsPlayed + stint,
+    fieldSecondsPlayed: banked.fieldSecondsPlayed + role.fieldSecondsPlayed,
+    gkSecondsPlayed: banked.gkSecondsPlayed + role.gkSecondsPlayed,
+  }
+}
+
 /** Close an open stint and add elapsed time to the total. */
 export function finalizeStint(
   player: MatchPlayer,
@@ -72,7 +111,7 @@ export function finalizeStint(
   const stint = stintSecondsPlayed(stintStart, remainingSeconds)
   return {
     ...player,
-    totalSecondsPlayed: player.totalSecondsPlayed + stint,
+    ...withBankedStint(player, stint),
     subbedInAt: null,
   }
 }
@@ -220,7 +259,7 @@ export function applySubstitution(
       return {
         ...player,
         isOnField: false,
-        totalSecondsPlayed: player.totalSecondsPlayed + stint,
+        ...withBankedStint(player, stint),
         subbedInAt: null,
       }
     }
@@ -248,6 +287,24 @@ export function getSecondsPlayedAsOf(
   const stintStart = resolveOpenStintStart(player, periodStartRemaining)
   if (stintStart === null) return player.totalSecondsPlayed
   return player.totalSecondsPlayed + stintSecondsPlayed(stintStart, remainingSeconds)
+}
+
+export function getRoleSecondsAsOf(
+  player: MatchPlayer,
+  remainingSeconds: number,
+  periodStartRemaining?: number,
+): { fieldSeconds: number; gkSeconds: number; totalSeconds: number } {
+  const banked = bankedRoleSeconds(player)
+  const stintStart = resolveOpenStintStart(player, periodStartRemaining)
+  const open = stintStart == null ? 0 : stintSecondsPlayed(stintStart, remainingSeconds)
+  const openRole = allocateSecondsByRole(open, player.matchPosition)
+  const fieldSeconds = banked.fieldSecondsPlayed + openRole.fieldSecondsPlayed
+  const gkSeconds = banked.gkSecondsPlayed + openRole.gkSecondsPlayed
+  return {
+    fieldSeconds,
+    gkSeconds,
+    totalSeconds: fieldSeconds + gkSeconds,
+  }
 }
 
 export function getLiveSecondsPlayed(
@@ -315,7 +372,7 @@ export function applySubOut(
     return {
       ...player,
       isOnField: false,
-      totalSecondsPlayed: player.totalSecondsPlayed + stint,
+      ...withBankedStint(player, stint),
       subbedInAt: null,
     }
   })

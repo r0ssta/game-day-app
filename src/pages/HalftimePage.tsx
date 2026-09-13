@@ -14,7 +14,8 @@ import {
   intermissionTitle,
   startNextPeriodButtonLabel,
 } from '@/lib/match-periods'
-import { formatPlayingTimeBadge, getSecondsPlayedAsOf } from '@/lib/play-time'
+import { getRoleSecondsAsOf } from '@/lib/play-time'
+import { formatPlayingTimeBarLabel, maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
 import {
   buildSidelineNameMap,
   formatPlayerFullName,
@@ -93,6 +94,18 @@ export function HalftimePage({
   const title = intermissionTitle(endedPeriod, totalPeriods)
   const endedLabel = formatPeriodLong(endedPeriod, totalPeriods)
   const startNextLabel = startNextPeriodButtonLabel(nextPeriod, totalPeriods)
+  const periodStartRemaining = halfLengthMinutes * 60
+  const roleSeconds = attendingPlayers.map((player) => ({
+    player,
+    ...getRoleSecondsAsOf(player, seconds, periodStartRemaining),
+  }))
+  const maxSeconds = maxPlayingTimeSeconds(
+    roleSeconds.map((row) => ({
+      fieldSeconds: row.fieldSeconds,
+      gkSeconds: row.gkSeconds,
+      totalSeconds: row.totalSeconds,
+    })),
+  )
 
   return (
     <main className={APP_SHELL}>
@@ -103,6 +116,12 @@ export function HalftimePage({
           onHome={onBackToHome}
           presence={<StaffPresenceCluster members={otherStaff} />}
         />
+
+        <p className="text-xs font-semibold text-muted-foreground">
+          Minutes so far · <span className="text-neon">👟 field</span>
+          {' · '}
+          <span className="text-amber-400">🧤 goalkeeper</span>
+        </p>
 
         {lineupPresets.length > 0 ? (
           <div>
@@ -145,16 +164,17 @@ export function HalftimePage({
           assignmentsRef={halftimeAssignmentsRef}
           slotLabelOverridesRef={halftimeLabelOverridesRef}
           constrainLists={false}
-          players={attendingPlayers.map((player) => ({
+          players={roleSeconds.map(({ player, fieldSeconds, gkSeconds }) => ({
             id: player.id,
             name: formatPlayerFullName(player.firstName, player.lastName),
             shortName: getSidelineName(player, sidelineNameMap),
             number: player.number,
             isGuest: player.isGuest,
             matchPosition: player.matchPosition,
-            minutesLabel: formatPlayingTimeBadge(
-              getSecondsPlayedAsOf(player, seconds, halfLengthMinutes * 60),
-            ),
+            minutesLabel: formatPlayingTimeBarLabel(fieldSeconds, gkSeconds),
+            fieldSeconds,
+            gkSeconds,
+            maxPlayingSeconds: maxSeconds,
             didNotStartFirstHalf: !player.isFirstHalfStarter,
             meta: player.matchPosition,
           }))}
