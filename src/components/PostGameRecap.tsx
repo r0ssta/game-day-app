@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardCopy, Mail, Trash2 } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
+import { PlayingTimeBar } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal } from '@/components/ParentRecapEmailModal'
 import { QualitativeContextFields } from '@/components/QualitativeContextFields'
 import {
   aggregatePlayerRecaps,
   buildRecapRows,
   buildRecapSummaryText,
-  formatRecapMinutes,
   indexSavedReviews,
   OVERALL_REVIEW_POSITION,
   playerOverallReviewKey,
@@ -53,6 +53,7 @@ import {
   formatVenueLabel,
   type LocationType,
 } from '@/lib/match-location'
+import { maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { formatMatchDisplayDateTime, matchDateTimeIso, resolveMatchDateForInput, resolveMatchTimeForInput } from '@/lib/match-schedule'
@@ -303,6 +304,7 @@ export function PostGameRecap({
     () => buildRecapRows(players, eventStats, new Map(Object.entries(reviews))),
     [players, eventStats, reviews],
   )
+  const maxPlayingSeconds = useMemo(() => maxPlayingTimeSeconds(recapRows), [recapRows])
 
   const disciplineSummaries = useMemo(
     () => buildDisciplineCardSummaries(matchEvents, players),
@@ -982,9 +984,12 @@ export function PostGameRecap({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-base font-bold text-foreground">{row.name}</span>
-                        <span className="font-mono text-sm font-bold tabular-nums text-blue-400">
-                          {formatRecapMinutes(row.totalSeconds)}
-                        </span>
+                        <PlayingTimeBar
+                          className="min-w-[7.5rem] max-w-[12rem] flex-1"
+                          fieldSeconds={row.fieldSeconds}
+                          gkSeconds={row.gkSeconds}
+                          maxSeconds={maxPlayingSeconds}
+                        />
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {multiPosition ? `Played: ${positionsLabel}` : `Position: ${positionsLabel}`}

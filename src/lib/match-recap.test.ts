@@ -123,4 +123,37 @@ describe('aggregatePlayerRecaps', () => {
     expect(stats.get('p1')?.totalSeconds).toBe(2)
     expect(stats.get('p2')?.totalSeconds).toBe(1498)
   })
+
+  it('splits field and GK seconds when a player rotates into net', () => {
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-06T16:00:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'position_change',
+          timestamp: 600,
+          event_notes: 'ST→GK',
+          created_at: '2026-09-06T16:10:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 1500,
+          event_notes: 'period_end',
+          created_at: '2026-09-06T16:25:00.000Z',
+          player_id: 'p1',
+        }),
+      ],
+      25 * 60,
+    )
+
+    expect(stats.get('p1')?.fieldSeconds).toBe(600)
+    expect(stats.get('p1')?.gkSeconds).toBe(900)
+    expect(stats.get('p1')?.totalSeconds).toBe(1500)
+  })
 })

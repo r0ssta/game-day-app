@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Mail } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
+import { PlayingTimeBar } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal, playersFromRoster } from '@/components/ParentRecapEmailModal'
-import {
-  formatRecapMinutes,
-  loadHistoricalRecapRows,
-  type PlayerRecapReview,
-} from '@/lib/match-recap'
+import { loadHistoricalRecapRows, type PlayerRecapReview } from '@/lib/match-recap'
+import { maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
 import {
   formatQualitativeContextSummary,
   hasQualitativeContext,
@@ -76,6 +74,7 @@ export function MatchRecapDetailView({
   const opponentLabel = matchState.opponent.trim() || 'Opponent'
   const qualitativeContext = parseQualitativeContext(matchState.qualitative_context)
   const qualitativeLines = formatQualitativeContextSummary(qualitativeContext)
+  const maxPlayingSeconds = maxPlayingTimeSeconds(rows)
 
   useEffect(() => {
     setMatchState(match)
@@ -334,9 +333,12 @@ export function MatchRecapDetailView({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span className="text-base font-bold text-foreground">{row.name}</span>
-                            <span className="font-mono text-sm font-bold tabular-nums text-blue-400">
-                              {formatRecapMinutes(row.totalSeconds)}
-                            </span>
+                            <PlayingTimeBar
+                              className="min-w-[7.5rem] max-w-[12rem] flex-1"
+                              fieldSeconds={row.fieldSeconds}
+                              gkSeconds={row.gkSeconds}
+                              maxSeconds={maxPlayingSeconds}
+                            />
                           </div>
                           <p className="mt-0.5 text-xs text-muted-foreground">{positionsLabel}</p>
                           <p className="text-xs font-semibold text-muted-foreground">

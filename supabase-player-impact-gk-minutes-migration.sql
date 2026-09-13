@@ -1,9 +1,6 @@
--- Cumulative on-pitch Player Impact: goals and shots while a player was active.
--- Reconstructs Time On / Time Off intervals from sub_in / sub_out / position_change
--- timestamps (period-aware) and counts field events strictly inside those windows.
--- GK stints (position slot GK / Keeper / Goalkeeper) are timed separately and
--- excluded from field +/- and net shot differential.
--- Applied incrementally via supabase-player-impact-gk-minutes-migration.sql.
+-- Split field vs goalkeeper minutes in calculate_player_impact.
+-- GK status comes from the position slot on each stint (sub_in / position_change).
+-- Field +/- and net shot differential exclude events during GK stints.
 
 create index if not exists match_events_impact_match_type_idx
   on public.match_events (match_id, event_type, "timestamp");

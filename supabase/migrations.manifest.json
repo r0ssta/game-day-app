@@ -59,6 +59,7 @@
     "supabase-live-match-sync-dedupe-migration.sql",
     "supabase-fix-u13-maroon-soca-minutes-migration.sql",
     "supabase-player-impact-rpc-migration.sql",
-    "supabase-position-micro-shift-migration.sql"
+    "supabase-position-micro-shift-migration.sql",
+    "supabase-player-impact-gk-minutes-migration.sql"
   ]
 }

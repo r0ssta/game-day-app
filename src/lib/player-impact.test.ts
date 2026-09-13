@@ -16,12 +16,16 @@ function row(partial: Partial<DbPlayerImpact> & Pick<DbPlayerImpact, 'player_id'
     team_name: 'U13 Blitz',
     matches_played: 4,
     total_seconds_played: 3600,
+    total_field_seconds: 3600,
+    total_gk_seconds: 0,
     team_goals: 3,
     opponent_goals: 1,
     goal_plus_minus: 2,
     team_shots: 8,
     opponent_shots: 5,
     net_shot_differential: 3,
+    gk_goals_conceded: 0,
+    gk_saves: 0,
     ...partial,
   }
 }

@@ -2223,6 +2223,6 @@ drop policy if exists "teams_delete_director" on public.teams;
 revoke delete on public.teams from authenticated;
 revoke delete on public.players from authenticated;
 
--- Player Impact: see supabase-player-impact-rpc-migration.sql
+-- Player Impact: see supabase-player-impact-gk-minutes-migration.sql
 
 notify pgrst, 'reload schema';

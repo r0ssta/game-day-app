@@ -74,12 +74,16 @@ export type DbPlayerImpact = {
   team_name: string
   matches_played: number
   total_seconds_played: number
+  total_field_seconds: number
+  total_gk_seconds: number
   team_goals: number
   opponent_goals: number
   goal_plus_minus: number
   team_shots: number
   opponent_shots: number
   net_shot_differential: number
+  gk_goals_conceded: number
+  gk_saves: number
 }
 
 export type DbMatch = {

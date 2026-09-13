@@ -1,12 +1,13 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
+import { PlayingTimeBar } from '@/components/PlayingTimeBar'
 import { usePlayerImpact } from '@/hooks/usePlayerImpact'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
+import { maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
 import {
   differentialTone,
   formatImpactDifferential,
-  formatImpactMinutes,
   sortPlayerImpact,
   type PlayerImpactRow,
   type PlayerImpactSortKey,
@@ -85,6 +86,7 @@ function ImpactTable({
   direction: 'asc' | 'desc'
   onSort: (key: PlayerImpactSortKey) => void
 }) {
+  const maxSeconds = maxPlayingTimeSeconds(rows)
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-card">
       <table className="w-full min-w-[40rem] border-collapse text-sm">
@@ -136,6 +138,9 @@ function ImpactTable({
                       <span className="block truncate">{name}</span>
                       <span className="block text-[11px] font-medium text-muted-foreground">
                         {row.team_goals} GF · {row.opponent_goals} GA · {row.team_shots} / {row.opponent_shots} shots
+                        {row.total_gk_seconds > 0
+                          ? ` · 🧤 ${row.gk_goals_conceded} GA · ${row.gk_saves} SV`
+                          : ''}
                       </span>
                     </span>
                   </span>
@@ -146,8 +151,12 @@ function ImpactTable({
                 <td className="px-2 py-2.5 text-right">
                   <DifferentialPill value={row.net_shot_differential} />
                 </td>
-                <td className="px-2 py-2.5 text-right font-mono text-xs font-bold tabular-nums text-foreground">
-                  {formatImpactMinutes(row.total_seconds_played)}
+                <td className="min-w-[7.5rem] px-2 py-2.5">
+                  <PlayingTimeBar
+                    fieldSeconds={row.total_field_seconds}
+                    gkSeconds={row.total_gk_seconds}
+                    maxSeconds={maxSeconds}
+                  />
                 </td>
                 <td className="px-2 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
                   {row.matches_played}
@@ -200,7 +209,7 @@ export function ImpactReport({
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Player Impact"
-          subtitle="On-pitch goal +/- and shot differential while each player was on the field."
+          subtitle="On-pitch goal +/- and shot differential while each player was on the field. Goalkeeper minutes are timed separately and excluded from field +/-."
           onHome={onBackToHome}
           teamSwitcher={teamSwitcher}
         />

@@ -44,9 +44,26 @@ export function sortPlayerImpact(
   })
 }
 
+export function normalizePlayerImpactRow(row: PlayerImpactRow): PlayerImpactRow {
+  const gk = Math.max(0, Math.floor(row.total_gk_seconds ?? 0))
+  const field = Math.max(
+    0,
+    Math.floor(row.total_field_seconds ?? Math.max(0, (row.total_seconds_played ?? 0) - gk)),
+  )
+  return {
+    ...row,
+    total_field_seconds: field,
+    total_gk_seconds: gk,
+    total_seconds_played: row.total_seconds_played ?? field + gk,
+    gk_goals_conceded: row.gk_goals_conceded ?? 0,
+    gk_saves: row.gk_saves ?? 0,
+  }
+}
+
 export async function loadPlayerImpact(input: {
   seasonId?: string | null
   teamId?: string | null
 }): Promise<PlayerImpactRow[]> {
-  return fetchPlayerImpact(input)
+  const rows = await fetchPlayerImpact(input)
+  return rows.map(normalizePlayerImpactRow)
 }

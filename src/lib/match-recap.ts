@@ -1,6 +1,8 @@
 import { cleanRecapPositionNote } from '@/lib/match-event-notes'
+import { isGoalkeeperPosition } from '@/lib/match-shot-save'
 import { normalizeRecapPosition } from '@/lib/positions'
 import { formatOpponentWithVenue } from '@/lib/match-location'
+import { formatPlayingTimeBarLabel } from '@/lib/playing-time-bar'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
   averagePlayerRatings,
@@ -21,6 +23,8 @@ import type { MatchPlayer, RosterPlayer } from '@/types/match'
 export type PlayerRecapStats = {
   playerId: string
   totalSeconds: number
+  fieldSeconds: number
+  gkSeconds: number
   positions: string[]
   goals: number
   assists: number
@@ -40,6 +44,8 @@ export type PlayerRecapReview = {
   name: string
   number: number | null
   totalSeconds: number
+  fieldSeconds: number
+  gkSeconds: number
   positions: string[]
   goals: number
   assists: number
@@ -194,6 +200,8 @@ export function aggregatePlayerRecaps(
     string,
     {
       totalSeconds: number
+      fieldSeconds: number
+      gkSeconds: number
       goals: number
       assists: number
       saves: number
@@ -206,6 +214,8 @@ export function aggregatePlayerRecaps(
     if (!stats.has(playerId)) {
       stats.set(playerId, {
         totalSeconds: 0,
+        fieldSeconds: 0,
+        gkSeconds: 0,
         goals: 0,
         assists: 0,
         saves: 0,
@@ -216,7 +226,21 @@ export function aggregatePlayerRecaps(
     return stats.get(playerId)!
   }
 
-  const openStints = new Map<string, number>()
+  type OpenStint = { start: number; position: string | null }
+  const openStints = new Map<string, OpenStint>()
+
+  const addStintSeconds = (
+    row: { totalSeconds: number; fieldSeconds: number; gkSeconds: number },
+    start: number,
+    end: number,
+    position: string | null | undefined,
+  ) => {
+    const seconds = Math.max(0, end - start)
+    if (seconds <= 0) return
+    row.totalSeconds += seconds
+    if (isGoalkeeperPosition(position)) row.gkSeconds += seconds
+    else row.fieldSeconds += seconds
+  }
 
   for (const event of timeline) {
     if (
@@ -238,12 +262,26 @@ export function aggregatePlayerRecaps(
 
     switch (event.event_type) {
       case 'sub_in':
-        openStints.set(event.player_id, event.absTimestamp)
+        openStints.set(event.player_id, {
+          start: event.absTimestamp,
+          position: cleanRecapPositionNote(event.event_notes),
+        })
         break
+      case 'position_change': {
+        const open = openStints.get(event.player_id)
+        if (open) {
+          addStintSeconds(row, open.start, event.absTimestamp, open.position)
+        }
+        openStints.set(event.player_id, {
+          start: event.absTimestamp,
+          position: cleanRecapPositionNote(event.event_notes),
+        })
+        break
+      }
       case 'sub_out': {
-        const start = openStints.get(event.player_id)
-        if (start !== undefined) {
-          row.totalSeconds += Math.max(0, event.absTimestamp - start)
+        const open = openStints.get(event.player_id)
+        if (open) {
+          addStintSeconds(row, open.start, event.absTimestamp, open.position)
           openStints.delete(event.player_id)
         }
         break
@@ -275,6 +313,8 @@ export function aggregatePlayerRecaps(
   for (const playerId of playerIds) {
     const row = stats.get(playerId) ?? {
       totalSeconds: 0,
+      fieldSeconds: 0,
+      gkSeconds: 0,
       goals: 0,
       assists: 0,
       saves: 0,
@@ -285,6 +325,8 @@ export function aggregatePlayerRecaps(
     result.set(playerId, {
       playerId,
       totalSeconds: row.totalSeconds,
+      fieldSeconds: row.fieldSeconds,
+      gkSeconds: row.gkSeconds,
       positions: computePlayerPositionsFromTimeline(playerId, timeline, fallbackPosition),
       goals: row.goals,
       assists: row.assists,
@@ -367,6 +409,16 @@ export function buildRecapRows(
         name: formatPlayerFullName(player.firstName, player.lastName),
         number: player.number,
         totalSeconds: stats?.totalSeconds ?? player.totalSecondsPlayed,
+        fieldSeconds:
+          stats?.fieldSeconds ??
+          (isGoalkeeperPosition(player.matchPosition)
+            ? 0
+            : (stats?.totalSeconds ?? player.totalSecondsPlayed)),
+        gkSeconds:
+          stats?.gkSeconds ??
+          (isGoalkeeperPosition(player.matchPosition)
+            ? (stats?.totalSeconds ?? player.totalSecondsPlayed)
+            : 0),
         positions,
         goals: stats?.goals ?? 0,
         assists: stats?.assists ?? 0,
@@ -442,7 +494,7 @@ export function buildRecapSummaryText(input: {
 
       return [
         `${row.number !== null ? `#${row.number}` : '—'} ${row.name}`,
-        `  ${formatRecapMinutes(row.totalSeconds)} · ${positions}`,
+        `  ${formatPlayingTimeBarLabel(row.fieldSeconds, row.gkSeconds)} · ${positions}`,
         `  G:${row.goals} A:${row.assists}${saveBit}${cardBits.length ? ` ${cardBits.join(' ')}` : ''}`,
         ...(row.sidelineStatsSummary ? [`  Sideline: ${row.sidelineStatsSummary}`] : []),
         ...ratingLines,
