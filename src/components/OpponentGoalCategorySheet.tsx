@@ -65,7 +65,7 @@ export function OpponentGoalCategorySheet({
         </div>
 
         <div className="flex flex-col gap-3 px-4 pb-4">
-          {OPPONENT_GOAL_CATEGORIES.map((category) => (
+          {[...OPPONENT_GOAL_CATEGORIES].map((category) => (
             <button
               key={category}
               type="button"

@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CheckCircle2 } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { HomeScreen } from '@/components/HomeScreen'
@@ -32,6 +32,8 @@ import { formatTeamDisplayName } from '@/lib/age-groups'
 import { resolveTeamAgeGroup } from '@/lib/season-roster'
 import type { ReportingTab } from '@/components/reporting/ReportingTabBar'
 import type { GoalWizardStep, GoalWizardTeam } from '@/components/GoalWizardModal'
+import { OpponentGoalCategorySheet } from '@/components/OpponentGoalCategorySheet'
+import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
 import {
   COACH_APP_PATH,
@@ -133,48 +135,43 @@ import {
 import { APP_CONTAINER, APP_SHELL_LOCKED } from '@/lib/layout'
 import { nextJerseyNumber } from '@/lib/next-jersey-number'
 
-const ReportingScreen = lazy(() =>
+const ReportingScreen = lazyWithChunkReload(() =>
   import('@/components/ReportingScreen').then((m) => ({ default: m.ReportingScreen })),
 )
-const ImpactReport = lazy(() =>
+const ImpactReport = lazyWithChunkReload(() =>
   import('@/pages/ImpactReport').then((m) => ({ default: m.ImpactReport })),
 )
-const TeamManagementScreen = lazy(() =>
+const TeamManagementScreen = lazyWithChunkReload(() =>
   import('@/components/TeamManagementScreen').then((m) => ({ default: m.TeamManagementScreen })),
 )
-const PostGameRecap = lazy(() =>
+const PostGameRecap = lazyWithChunkReload(() =>
   import('@/components/PostGameRecap').then((m) => ({ default: m.PostGameRecap })),
 )
-const MatchRecapHistoryScreen = lazy(() =>
+const MatchRecapHistoryScreen = lazyWithChunkReload(() =>
   import('@/components/MatchRecapHistoryScreen').then((m) => ({ default: m.MatchRecapHistoryScreen })),
 )
-const ClubAdminScreen = lazy(() =>
+const ClubAdminScreen = lazyWithChunkReload(() =>
   import('@/components/ClubAdminScreen').then((m) => ({ default: m.ClubAdminScreen })),
 )
-const PenaltyShootoutScreen = lazy(() =>
+const PenaltyShootoutScreen = lazyWithChunkReload(() =>
   import('@/components/PenaltyShootoutScreen').then((m) => ({ default: m.PenaltyShootoutScreen })),
 )
-const GoalWizardModal = lazy(() =>
+const GoalWizardModal = lazyWithChunkReload(() =>
   import('@/components/GoalWizardModal').then((m) => ({ default: m.GoalWizardModal })),
 )
-const OpponentGoalCategorySheet = lazy(() =>
-  import('@/components/OpponentGoalCategorySheet').then((m) => ({
-    default: m.OpponentGoalCategorySheet,
-  })),
-)
-const CardWizardModal = lazy(() =>
+const CardWizardModal = lazyWithChunkReload(() =>
   import('@/components/CardWizardModal').then((m) => ({ default: m.CardWizardModal })),
 )
-const DeleteMatchConfirmModal = lazy(() =>
+const DeleteMatchConfirmModal = lazyWithChunkReload(() =>
   import('@/components/DeleteMatchConfirmModal').then((m) => ({ default: m.DeleteMatchConfirmModal })),
 )
-const EndMatchTimingModal = lazy(() =>
+const EndMatchTimingModal = lazyWithChunkReload(() =>
   import('@/components/EndMatchTimingModal').then((m) => ({ default: m.EndMatchTimingModal })),
 )
-const TiedGameModal = lazy(() =>
+const TiedGameModal = lazyWithChunkReload(() =>
   import('@/components/TiedGameModal').then((m) => ({ default: m.TiedGameModal })),
 )
-const AdjustMatchSettingsSheet = lazy(() =>
+const AdjustMatchSettingsSheet = lazyWithChunkReload(() =>
   import('@/components/AdjustMatchSettingsSheet').then((m) => ({
     default: m.AdjustMatchSettingsSheet,
   })),
@@ -3334,14 +3331,12 @@ export function CoachDashboard() {
       ) : null}
 
       {opponentGoalSheetOpen ? (
-        <ModalSuspense>
-          <OpponentGoalCategorySheet
-            open={opponentGoalSheetOpen}
-            onSelect={handleOpponentGoalCategory}
-            onSkip={() => handleOpponentGoalCategory(null)}
-            onClose={closeOpponentGoalSheet}
-          />
-        </ModalSuspense>
+        <OpponentGoalCategorySheet
+          open={opponentGoalSheetOpen}
+          onSelect={handleOpponentGoalCategory}
+          onSkip={() => handleOpponentGoalCategory(null)}
+          onClose={closeOpponentGoalSheet}
+        />
       ) : null}
 
       {cardWizardOpen ? (
