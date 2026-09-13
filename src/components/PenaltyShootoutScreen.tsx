@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Plus, Shield, X } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
+import { StaffPresenceCluster } from '@/components/StaffPresenceCluster'
+import type { MatchPresenceMember } from '@/lib/match-presence'
 import { APP_CONTAINER, APP_SHELL_LOCKED, MODAL_OVERLAY, MODAL_PANEL } from '@/lib/layout'
 import {
   canFinalizePkShootout,
@@ -46,6 +48,7 @@ type PenaltyShootoutScreenProps = {
     rounds: PkRoundState[]
   }) => Promise<void> | void
   onBackToHome: () => void
+  otherStaff?: MatchPresenceMember[]
 }
 
 function ResultButtons({
@@ -117,6 +120,7 @@ export function PenaltyShootoutScreen({
   onUpdateAttempt,
   onFinalize,
   onBackToHome,
+  otherStaff = [],
 }: PenaltyShootoutScreenProps) {
   const [rounds, setRounds] = useState<PkRoundState[]>(
     () => initialRounds ?? createEmptyPkRounds(),
@@ -268,6 +272,7 @@ export function PenaltyShootoutScreen({
             title="Penalty Shootout"
             subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · Regulation ${regulationHomeScore}–${regulationAwayScore}`}
             onHome={onBackToHome}
+            presence={<StaffPresenceCluster members={otherStaff} />}
           />
           <div className="rounded-2xl border-2 border-neon/40 bg-neon/10 px-4 py-4 text-center">
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">

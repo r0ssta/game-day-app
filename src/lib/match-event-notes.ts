@@ -47,6 +47,9 @@ export function isPeriodEndSubEvent(
 
 const POSITION_SWITCH_SEPARATOR = '→'
 
+/** Wall-clock / match-clock window that collapses a pass-through positional stint. */
+export const POSITION_MICRO_SHIFT_SECONDS = 20
+
 /** Persist a positional move as `LCM→ST` so the hub can show previous and new. */
 export function positionSwitchNote(
   previousPosition: string | null | undefined,
@@ -78,6 +81,37 @@ export function parsePositionSwitchNote(
 /** Mid-game sub / position-change notes store the tactical slot (ST, LCB, …). */
 export function parseTacticalPositionNote(notes: string | null | undefined): string | null {
   return parsePositionSwitchNote(notes)?.to ?? null
+}
+
+/**
+ * Collapse a micro-shift into the previous stint note: `LCM→ST` then `ST→CM`
+ * becomes `LCM→CM` so the pass-through slot is not stored as playing time.
+ */
+export function mergePositionSwitchNote(
+  previousNotes: string | null | undefined,
+  nextPosition: string | null | undefined,
+): string {
+  const parsed = parsePositionSwitchNote(previousNotes)
+  return positionSwitchNote(parsed?.from, nextPosition ?? parsed?.to ?? '')
+}
+
+/** True when the new assignment should UPDATE the previous row instead of INSERT. */
+export function isPositionMicroShift(input: {
+  previousTimestamp: number
+  incomingTimestamp: number
+  previousCreatedAtMs?: number
+  nowMs?: number
+  windowSeconds?: number
+}): boolean {
+  const windowSeconds = Math.max(input.windowSeconds ?? POSITION_MICRO_SHIFT_SECONDS, 1)
+  if (
+    input.incomingTimestamp >= input.previousTimestamp &&
+    input.incomingTimestamp - input.previousTimestamp < windowSeconds
+  ) {
+    return true
+  }
+  if (input.previousCreatedAtMs == null || input.nowMs == null) return false
+  return input.nowMs - input.previousCreatedAtMs < windowSeconds * 1000
 }
 
 /** Pitch slot for recap minutes — strips `starting_lineup|` and `LCM→ST`. */

@@ -2360,3 +2360,6 @@ alter table public.match_events
       and (pk_team = 'opponent' or player_id is not null)
     )
   );
+
+-- Player Impact: see supabase-player-impact-rpc-migration.sql
+-- Position micro-shift merge: see supabase-position-micro-shift-migration.sql

@@ -33,8 +33,16 @@ import { resolveTeamAgeGroup } from '@/lib/season-roster'
 import type { ReportingTab } from '@/components/reporting/ReportingTabBar'
 import type { GoalWizardStep, GoalWizardTeam } from '@/components/GoalWizardModal'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
+import {
+  COACH_APP_PATH,
+  IMPACT_REPORT_PATH,
+  isImpactReportPath,
+  navigateApp,
+} from '@/lib/app-routes'
+import { useMatchPresence } from '@/hooks/useMatchPresence'
 import { useWakeLock, WAKE_LOCK_BLOCKED_TOAST } from '@/hooks/useWakeLock'
 import { useAuth } from '@/contexts/AuthContext'
+import { isActiveStaffMatchScreen } from '@/lib/live-match-snapshot'
 import { formatAppRoleLabel } from '@/lib/staff-roles'
 import type { FormationRemapResult } from '@/lib/formations'
 import {
@@ -126,6 +134,9 @@ import { nextJerseyNumber } from '@/lib/next-jersey-number'
 
 const ReportingScreen = lazy(() =>
   import('@/components/ReportingScreen').then((m) => ({ default: m.ReportingScreen })),
+)
+const ImpactReport = lazy(() =>
+  import('@/pages/ImpactReport').then((m) => ({ default: m.ImpactReport })),
 )
 const TeamManagementScreen = lazy(() =>
   import('@/components/TeamManagementScreen').then((m) => ({ default: m.TeamManagementScreen })),
@@ -334,6 +345,8 @@ export function CoachDashboard() {
     deleteMatch,
   } = useGameDayApp()
 
+  const otherStaff = useMatchPresence(isActiveStaffMatchScreen(appMode) ? matchId : null)
+
   // Screen stay-awake is armed only from Start 1st/2nd Half click handlers (user gesture).
   const { isActive: wakeLockActive, requestWakeLock } = useWakeLock({
     activeSession:
@@ -467,18 +480,34 @@ export function CoachDashboard() {
     />
   )
 
+  const leaveImpactPath = useCallback(() => {
+    if (isImpactReportPath(window.location.pathname)) {
+      window.history.replaceState(null, '', COACH_APP_PATH)
+    }
+  }, [])
+
+  const openImpactReport = useCallback(() => {
+    setAppMode('impact')
+    if (!isImpactReportPath(window.location.pathname)) {
+      navigateApp(IMPACT_REPORT_PATH)
+    }
+  }, [setAppMode])
+
   const handleNavNavigate = useCallback(
     (section: AppNavSection) => {
       switch (section) {
         case 'home':
+          leaveImpactPath()
           setAppMode('home')
           break
         case 'active_match':
           if (!activeTeamId) {
             setToast('Select a team on Home first')
+            leaveImpactPath()
             setAppMode('home')
             break
           }
+          leaveImpactPath()
           if (hasLiveMatch) {
             void resumeLiveMatchScreen()
           } else if (hasPendingRecap && matchId) {
@@ -491,34 +520,51 @@ export function CoachDashboard() {
         case 'season':
           if (!activeTeamId) {
             setToast('Select a team on Home first')
+            leaveImpactPath()
             setAppMode('home')
             break
           }
+          leaveImpactPath()
           setReportingTab('season')
           setAppMode('reporting')
+          break
+        case 'impact':
+          if (!activeTeamId) {
+            setToast('Select a team on Home first')
+            leaveImpactPath()
+            setAppMode('home')
+            break
+          }
+          openImpactReport()
           break
         case 'recaps':
           if (!activeTeamId) {
             setToast('Select a team on Home first')
+            leaveImpactPath()
             setAppMode('home')
             break
           }
+          leaveImpactPath()
           setAppMode('recap_history')
           break
         case 'roster':
           if (!activeTeamId) {
             setToast('Select a team on Home first')
+            leaveImpactPath()
             setAppMode('home')
             break
           }
+          leaveImpactPath()
           setAppMode('team')
           break
         case 'club_admin':
           if (!canAccessClubAdmin) {
             setToast('Club Admin is available to Directors only')
+            leaveImpactPath()
             setAppMode('home')
             break
           }
+          leaveImpactPath()
           setAppMode('club_admin')
           break
       }
@@ -528,7 +574,9 @@ export function CoachDashboard() {
       canAccessClubAdmin,
       hasLiveMatch,
       hasPendingRecap,
+      leaveImpactPath,
       matchId,
+      openImpactReport,
       resumeLiveMatchScreen,
       setAppMode,
     ],
@@ -785,15 +833,23 @@ export function CoachDashboard() {
   }, [appMode, canAccessClubAdmin, setAppMode])
 
   useEffect(() => {
+    if (activeTeamId && isImpactReportPath(window.location.pathname)) {
+      setAppMode('impact')
+    }
+  }, [activeTeamId, setAppMode])
+
+  useEffect(() => {
     const needsTeam =
       appMode === 'match_setup' ||
       appMode === 'team' ||
       appMode === 'reporting' ||
-      appMode === 'recap_history'
+      appMode === 'recap_history' ||
+      appMode === 'impact'
     if (needsTeam && !activeTeamId) {
+      leaveImpactPath()
       setAppMode('home')
     }
-  }, [appMode, activeTeamId, setAppMode])
+  }, [appMode, activeTeamId, leaveImpactPath, setAppMode])
 
   // U9/U10 league → 3 periods; tournament / older ages → 2 halves.
   useEffect(() => {
@@ -2958,8 +3014,23 @@ export function CoachDashboard() {
         onOpenPendingReview={(id) => void handleOpenPendingReview(id)}
         onOpenMatchRecap={(id) => void handleOpenMatchRecap(id, 'reporting')}
         onViewRecaps={() => setAppMode('recap_history')}
+        onOpenImpact={openImpactReport}
         onRefreshRoster={loadFullTeamRoster}
         onBackToHome={() => setAppMode('home')}
+      />
+    )
+  }
+
+  if (appMode === 'impact') {
+    return (
+      <ImpactReport
+        activeTeamId={activeTeamId}
+        activeSeasonId={activeSeason?.id ?? null}
+        teamSwitcher={screenTeamSwitcher}
+        onBackToHome={() => {
+          leaveImpactPath()
+          setAppMode('home')
+        }}
       />
     )
   }
@@ -3002,6 +3073,7 @@ export function CoachDashboard() {
           canBeginSecondHalf={canBeginSecondHalf}
           onBackToHome={() => setAppMode('home')}
           activeTeamFormat={activeTeamFormat}
+          otherStaff={otherStaff}
         />
       </>
     )
@@ -3037,6 +3109,7 @@ export function CoachDashboard() {
           }
         }}
         onBackToHome={() => setAppMode('home')}
+        otherStaff={otherStaff}
       />
     )
   }
@@ -3114,6 +3187,7 @@ export function CoachDashboard() {
             ? () => void handleShareStatTracker()
             : undefined
         }
+        otherStaff={otherStaff}
       />
 
       <div className={`${APP_CONTAINER} min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-contain pt-4 pb-40 md:space-y-6 md:pt-5 md:pb-44`}>

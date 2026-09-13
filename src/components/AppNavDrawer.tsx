@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import {
+  Activity,
   BarChart3,
   History,
   Home,
@@ -17,7 +18,14 @@ import { CLUB_CREST_AVIF_SRC, CLUB_CREST_SRC, CLUB_CREST_WEBP_SRC, CLUB_SHORT_NA
 import { APP_CONTAINER, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 
-export type AppNavSection = 'home' | 'active_match' | 'season' | 'recaps' | 'roster' | 'club_admin'
+export type AppNavSection =
+  | 'home'
+  | 'active_match'
+  | 'season'
+  | 'impact'
+  | 'recaps'
+  | 'roster'
+  | 'club_admin'
 
 export type AppNavItem = {
   id: AppNavSection
@@ -78,6 +86,14 @@ export function buildAppNavItems(input: {
       active: input.activeSection === 'season',
     },
     {
+      id: 'impact',
+      label: 'Player Impact',
+      description: 'On-pitch goal +/- and shot differential',
+      icon: Activity,
+      disabled: teamDisabled,
+      active: input.activeSection === 'impact',
+    },
+    {
       id: 'recaps',
       label: 'Match History & Game Recaps',
       description: 'Browse and edit finished match recaps',
@@ -112,6 +128,7 @@ export function resolveActiveNavSection(appMode: string, reportingTab?: string):
   if (appMode === 'home') return 'home'
   if (appMode === 'match' || appMode === 'match_setup' || appMode === 'halftime' || appMode === 'penalty_shootout') return 'active_match'
   if (appMode === 'reporting' && reportingTab === 'season') return 'season'
+  if (appMode === 'impact') return 'impact'
   if (appMode === 'recap_history' || appMode === 'recap') return 'recaps'
   if (appMode === 'team') return 'roster'
   if (appMode === 'club_admin') return 'club_admin'

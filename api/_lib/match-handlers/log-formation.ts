@@ -53,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const update of input.positionUpdates) {
         const from = (update.previousPosition ?? '').trim()
         const to = update.position.trim()
-        await tx.insertEvent({
+        await tx.upsertPositionChange({
           match_id: input.matchId,
           player_id: update.playerId,
           event_type: 'position_change',

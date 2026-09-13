@@ -34,6 +34,7 @@ import type {
   DbMatchReview,
   DbMatchStat,
   DbPlayer,
+  DbPlayerImpact,
   DbSeason,
   DbSeasonRoster,
   DbTeam,
@@ -2595,5 +2596,20 @@ export async function cancelStaffInvite(inviteId: string): Promise<void> {
     p_invite_id: inviteId,
   })
   if (error) throw error
+}
+
+export async function fetchPlayerImpact(input: {
+  seasonId?: string | null
+  teamId?: string | null
+}): Promise<DbPlayerImpact[]> {
+  if (!input.seasonId && !input.teamId) {
+    throw new Error('season_id or team_id is required')
+  }
+  const params: { p_season_id?: string; p_team_id?: string } = {}
+  if (input.seasonId) params.p_season_id = input.seasonId
+  if (input.teamId) params.p_team_id = input.teamId
+  const { data, error } = await supabase.rpc('calculate_player_impact', params)
+  if (error) throw new Error(formatSupabaseError(error))
+  return data ?? []
 }
 

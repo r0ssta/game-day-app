@@ -1,5 +1,7 @@
 import { useMemo, useState, type MutableRefObject } from 'react'
 import { ScreenHeader } from '@/components/AppNavigation'
+import { StaffPresenceCluster } from '@/components/StaffPresenceCluster'
+import type { MatchPresenceMember } from '@/lib/match-presence'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { getMaxFieldPlayers, hasSlotAssignments } from '@/lib/lineup'
@@ -47,6 +49,7 @@ export type HalftimePageProps = {
   canBeginSecondHalf: boolean
   onBackToHome: () => void
   activeTeamFormat: TeamFormat
+  otherStaff?: MatchPresenceMember[]
 }
 
 export function HalftimePage({
@@ -74,6 +77,7 @@ export function HalftimePage({
   canBeginSecondHalf,
   onBackToHome,
   activeTeamFormat,
+  otherStaff = [],
 }: HalftimePageProps) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
@@ -97,6 +101,7 @@ export function HalftimePage({
           title={title}
           subtitle={`${teamName.trim() || 'Home'} vs ${opponent.trim() || 'Opponent'} · ${endedLabel} ended at ${firstHalfEndedLabel} / ${formatClock(halfLengthMinutes * 60)}`}
           onHome={onBackToHome}
+          presence={<StaffPresenceCluster members={otherStaff} />}
         />
 
         {lineupPresets.length > 0 ? (

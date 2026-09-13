@@ -23,12 +23,15 @@ export function ScreenHeader({
   subtitle,
   onHome,
   teamSwitcher,
+  presence,
 }: {
   title: string
   subtitle?: string
   onHome: () => void
   /** Optional active-team control shown under the title (Roster, Analytics, etc.). */
   teamSwitcher?: ReactNode
+  /** Other staff currently viewing this live match. */
+  presence?: ReactNode
 }) {
   return (
     <header className="space-y-3">
@@ -39,7 +42,10 @@ export function ScreenHeader({
           </h1>
           {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
         </div>
-        <BackToHomeButton onClick={onHome} />
+        <div className="flex shrink-0 items-start gap-2">
+          {presence}
+          <BackToHomeButton onClick={onHome} />
+        </div>
       </div>
       {teamSwitcher ? (
         <div className="rounded-xl border-2 border-border bg-card p-3 shadow-sm">{teamSwitcher}</div>

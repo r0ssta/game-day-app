@@ -30,6 +30,7 @@ type ReportingScreenProps = {
   onOpenPendingReview: (matchId: string) => void
   onOpenMatchRecap: (matchId: string) => void
   onViewRecaps: () => void
+  onOpenImpact?: () => void
   onRefreshRoster: () => Promise<void>
   onBackToHome: () => void
 }
@@ -44,6 +45,7 @@ export function ReportingScreen({
   onOpenPendingReview,
   onOpenMatchRecap,
   onViewRecaps,
+  onOpenImpact,
   onRefreshRoster,
   onBackToHome,
 }: ReportingScreenProps) {
@@ -177,6 +179,7 @@ export function ReportingScreen({
                 roster={teamRoster}
                 data={reportData}
                 onViewRecaps={onViewRecaps}
+                onOpenImpact={onOpenImpact}
               />
             ) : null}
           </>

@@ -2,6 +2,8 @@
 export const COACH_APP_PATH = '/'
 /** Public marketing splash — not the coach root. */
 export const LANDING_PATH = '/waitlist'
+/** Staff-only Player Impact report. Hidden from Parent Hub (`/hub/:slug`). */
+export const IMPACT_REPORT_PATH = '/impact'
 
 function normalizePathname(pathname: string): string {
   const trimmed = pathname.trim()
@@ -12,6 +14,11 @@ function normalizePathname(pathname: string): string {
 /** True for the test waitlist page only. */
 export function isLandingPath(pathname: string): boolean {
   return normalizePathname(pathname) === LANDING_PATH
+}
+
+/** True for the coach-only Player Impact report. */
+export function isImpactReportPath(pathname: string): boolean {
+  return normalizePathname(pathname) === IMPACT_REPORT_PATH
 }
 
 /** SPA navigation that the root route listener already watches via `popstate`. */

@@ -64,6 +64,24 @@ export type DbSeasonRoster = {
   created_at: string
 }
 
+/** Row returned by `calculate_player_impact` (on-pitch goal +/- and shot differential). */
+export type DbPlayerImpact = {
+  player_id: string
+  first_name: string
+  last_name: string
+  jersey: number | null
+  team_id: string
+  team_name: string
+  matches_played: number
+  total_seconds_played: number
+  team_goals: number
+  opponent_goals: number
+  goal_plus_minus: number
+  team_shots: number
+  opponent_shots: number
+  net_shot_differential: number
+}
+
 export type DbMatch = {
   id: string
   team_id: string
@@ -568,6 +586,26 @@ export type Database = {
       claim_bootstrap_director: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      calculate_player_impact: {
+        Args: { p_season_id?: string | null; p_team_id?: string | null }
+        Returns: DbPlayerImpact[]
+      }
+      log_player_position_change: {
+        Args: {
+          p_match_id: string
+          p_player_id: string
+          p_timestamp: number
+          p_event_notes?: string | null
+          p_formation?: string | null
+          p_window_seconds?: number
+        }
+        Returns: Array<{
+          event_id: string
+          merged: boolean
+          previous_event_notes: string | null
+          previous_formation: string | null
+        }>
       }
     }
     Enums: {

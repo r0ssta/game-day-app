@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { BarChart3, ClipboardList } from 'lucide-react'
+import { Activity, BarChart3, ClipboardList } from 'lucide-react'
 import { LineupCombinationsDashboard } from '@/components/reporting/LineupCombinationsDashboard'
 import { PlusMinusDashboard } from '@/components/reporting/PlusMinusDashboard'
 import { PlayerDevelopmentDashboard } from '@/components/reporting/PlayerDevelopmentDashboard'
@@ -17,6 +17,7 @@ type SeasonDetailsTabProps = {
   roster: RosterPlayer[]
   data: SeasonReportData
   onViewRecaps?: () => void
+  onOpenImpact?: () => void
 }
 
 function StatCard({
@@ -53,6 +54,7 @@ export function SeasonDetailsTab({
   roster,
   data,
   onViewRecaps,
+  onOpenImpact,
 }: SeasonDetailsTabProps) {
   const { seasonRecord } = data
   const analytics = useMemo(() => buildSeasonAnalytics(data, roster), [data, roster])
@@ -68,6 +70,26 @@ export function SeasonDetailsTab({
           Analytics for {activeTeamName || 'your team'} from completed matches and post-game reviews.
         </p>
       </div>
+
+      {onOpenImpact ? (
+        <button
+          type="button"
+          onClick={onOpenImpact}
+          className="flex w-full items-center gap-3 rounded-xl border-2 border-athletic bg-athletic/10 px-4 py-4 text-left active:scale-[0.98]"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-athletic/20">
+            <Activity className="size-5 text-athletic" strokeWidth={2.5} />
+          </span>
+          <span>
+            <span className="block font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              Player Impact Report
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              On-pitch goal +/- and net shot differential from substitution windows.
+            </span>
+          </span>
+        </button>
+      ) : null}
 
       {onViewRecaps ? (
         <button

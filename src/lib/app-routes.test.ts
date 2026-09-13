@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLandingPath } from './app-routes'
+import { isImpactReportPath, isLandingPath } from './app-routes'
 
 describe('isLandingPath', () => {
   it('only matches /waitlist', () => {
@@ -13,6 +13,17 @@ describe('isLandingPath', () => {
     expect(isLandingPath('/coach')).toBe(false)
     expect(isLandingPath('/admin')).toBe(false)
     expect(isLandingPath('/hub/blitz')).toBe(false)
+    expect(isLandingPath('/impact')).toBe(false)
     expect(isLandingPath('/index.html')).toBe(false)
+  })
+})
+
+describe('isImpactReportPath', () => {
+  it('only matches the staff impact route', () => {
+    expect(isImpactReportPath('/impact')).toBe(true)
+    expect(isImpactReportPath('/impact/')).toBe(true)
+    expect(isImpactReportPath('/')).toBe(false)
+    expect(isImpactReportPath('/hub/blitz')).toBe(false)
+    expect(isImpactReportPath('/waitlist')).toBe(false)
   })
 })

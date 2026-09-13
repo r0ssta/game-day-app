@@ -1,4 +1,6 @@
 export { useGameDayApp } from '@/hooks/useGameDayApp'
+export { useMatchPresence } from '@/hooks/useMatchPresence'
 export { useMatchState } from '@/hooks/useMatchState'
+export { usePlayerImpact } from '@/hooks/usePlayerImpact'
 export { useRoster } from '@/hooks/useRoster'
 export { useStaffAuth } from '@/hooks/useStaffAuth'

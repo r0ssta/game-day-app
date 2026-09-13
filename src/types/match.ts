@@ -1,12 +1,13 @@
 export type Impact = 'neutral' | 'positive' | 'negative'
 
-/** Top-level app views: home → team | match_setup | reporting | recap_history → match | halftime | penalty_shootout → recap → home */
+/** Top-level app views: home → team | match_setup | reporting | recap_history | impact → match | halftime | penalty_shootout → recap → home */
 export type AppMode =
   | 'home'
   | 'team'
   | 'match_setup'
   | 'reporting'
   | 'recap_history'
+  | 'impact'
   | 'club_admin'
   | 'match'
   | 'halftime'

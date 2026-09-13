@@ -2,6 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { invalidateMatchAccessCache } from './match-access.js'
 import { reportApiError } from './sentry.js'
 
+export type PositionChangeWriteResult = {
+  id: string
+  merged: boolean
+}
+
 export type MatchEventInsert = {
   match_id: string
   player_id: string | null
@@ -78,6 +83,37 @@ export class MatchWriteSession {
     const id = ids[0]
     if (!id) throw new Error('Event insert returned no id')
     return id
+  }
+
+  /**
+   * Log a positional stint. Within 20s of the player's last position_change
+   * the RPC updates that row instead of inserting a pass-through stint.
+   */
+  async upsertPositionChange(row: MatchEventInsert): Promise<PositionChangeWriteResult> {
+    if (!row.player_id) throw new Error('Position change requires a player')
+    const { data, error } = await this.supabase.rpc('log_player_position_change', {
+      p_match_id: row.match_id,
+      p_player_id: row.player_id,
+      p_timestamp: row.timestamp,
+      p_event_notes: row.event_notes ?? null,
+      p_formation: row.formation ?? null,
+    })
+    if (error) throw error
+    const result = Array.isArray(data) ? data[0] : data
+    const eventId = result?.event_id as string | undefined
+    if (!eventId) throw new Error('Position change returned no id')
+    if (result.merged) {
+      this.updatedEventReverts.push({
+        id: eventId,
+        patch: {
+          event_notes: result.previous_event_notes ?? null,
+          formation: result.previous_formation ?? null,
+        },
+      })
+    } else {
+      this.insertedEventIds.push(eventId)
+    }
+    return { id: eventId, merged: Boolean(result.merged) }
   }
 
   async updateEvent(eventId: string, patch: Record<string, unknown>): Promise<void> {

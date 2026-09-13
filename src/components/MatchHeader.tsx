@@ -1,5 +1,7 @@
 import { Goal, Loader2, Lock, Share2, Shield, SquareAsterisk } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
+import { StaffPresenceCluster } from '@/components/StaffPresenceCluster'
+import type { MatchPresenceMember } from '@/lib/match-presence'
 import { cn } from '@/lib/utils'
 import {
   formatClock,
@@ -51,6 +53,8 @@ export type MatchHeaderProps = {
   onShareStatTracker?: () => void
   /** True while a live-event mutation is still syncing to the match API. */
   syncPending?: boolean
+  /** Other authenticated staff currently viewing this match. */
+  otherStaff?: MatchPresenceMember[]
 }
 
 export function MatchHeader({
@@ -87,6 +91,7 @@ export function MatchHeader({
   onLogCard,
   onShareStatTracker,
   syncPending = false,
+  otherStaff = [],
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
   const awayName = opponent.trim() || 'Opponent'
@@ -132,7 +137,10 @@ export function MatchHeader({
               </p>
             ) : null}
           </div>
-          <BackToHomeButton onClick={onHome} />
+          <div className="flex shrink-0 items-start gap-2">
+            <StaffPresenceCluster members={otherStaff} />
+            <BackToHomeButton onClick={onHome} />
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-3">
