@@ -271,6 +271,8 @@ export const LogPeriodInputSchema = z
     period: z.number().int().positive(),
     totalPeriods: z.union([z.literal(2), z.literal(3)]),
     clockSeconds: z.number().int().finite(),
+    /** Client whistle / resume timestamp so the server does not drift the clock. */
+    periodStartTime: z.string().datetime({ offset: true }).optional(),
     halfLengthMinutes: z.number().positive(),
     formation: z.string().catch(''),
     teamName: z.string().min(1),

@@ -109,6 +109,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await tx.updateMatch({
             status: 'extra_time_first_half',
             period_clock_started: false,
+            period_start_time: null,
+            accumulated_seconds_before_pause: 0,
             clock_seconds: extraTimeSeconds,
             period_length: extraTimeHalfMinutes,
             qualitative_context: {
@@ -139,6 +141,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await tx.updateMatch({
             status: 'extra_time_second_half',
             period_clock_started: false,
+            period_start_time: null,
+            accumulated_seconds_before_pause: 0,
             clock_seconds: extraTimeSeconds,
             period_length: extraTimeHalfMinutes,
             qualitative_context: {
@@ -168,6 +172,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             pk_winner_is_us: null,
             pk_gk_player_id: null,
             period_clock_started: false,
+            period_start_time: null,
+            accumulated_seconds_before_pause: 0,
             clock_seconds: persistableClockSeconds(input.clockSeconds),
             period_length: regulationHalfLength,
             qualitative_context: nextContext,
@@ -185,6 +191,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await tx.updateMatch({
           status: 'pending_review',
           period_clock_started: false,
+          period_start_time: null,
+          accumulated_seconds_before_pause: 0,
           clock_seconds: persistableClockSeconds(input.clockSeconds),
           period_length: regulationHalfLength,
           qualitative_context: nextContext,

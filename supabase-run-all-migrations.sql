@@ -2363,3 +2363,4 @@ alter table public.match_events
 
 -- Player Impact: see supabase-player-impact-rpc-migration.sql
 -- Position micro-shift merge: see supabase-position-micro-shift-migration.sql
+-- Absolute period clock: see supabase-match-period-start-time-migration.sql

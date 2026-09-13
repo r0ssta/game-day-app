@@ -96,6 +96,137 @@ export function halfStartTimeFromRemaining(
   return nowMs - (elapsed * 1000) / speed
 }
 
+export type PeriodClockAnchor = {
+  periodStartTime: string | null
+  accumulatedSecondsBeforePause: number
+}
+
+export function emptyPeriodClockAnchor(): PeriodClockAnchor {
+  return { periodStartTime: null, accumulatedSecondsBeforePause: 0 }
+}
+
+export function kickoffPeriodClockAnchor(nowMs = Date.now()): PeriodClockAnchor {
+  return {
+    periodStartTime: new Date(nowMs).toISOString(),
+    accumulatedSecondsBeforePause: 0,
+  }
+}
+
+export function parsePeriodStartTimeMs(
+  value: string | number | Date | null | undefined,
+): number | null {
+  if (value == null || value === '') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const ms = new Date(value).getTime()
+  return Number.isFinite(ms) ? ms : null
+}
+
+/**
+ * Absolute elapsed seconds: banked pause time plus `now - period_start_time`
+ * while the clock is running. Does not increment a local counter.
+ */
+export function elapsedFromPeriodAnchor(input: {
+  periodStartTime: string | number | Date | null
+  accumulatedSecondsBeforePause?: number
+  nowMs: number
+  running?: boolean
+  speedMultiplier?: number
+}): number {
+  const accumulated = Math.max(0, Math.floor(input.accumulatedSecondsBeforePause ?? 0))
+  if (input.running === false) return accumulated
+  const startMs = parsePeriodStartTimeMs(input.periodStartTime)
+  if (startMs == null) return accumulated
+  const speed = input.speedMultiplier ?? 1
+  return accumulated + Math.floor(((input.nowMs - startMs) / 1000) * speed)
+}
+
+export function remainingFromPeriodAnchor(input: {
+  periodStartTime: string | number | Date | null
+  accumulatedSecondsBeforePause?: number
+  halfLengthMinutes: number
+  nowMs: number
+  running?: boolean
+  speedMultiplier?: number
+}): number {
+  return remainingFromElapsed(elapsedFromPeriodAnchor(input), input.halfLengthMinutes)
+}
+
+export function pausePeriodClock(input: {
+  periodStartTime: string | number | Date | null
+  accumulatedSecondsBeforePause?: number
+  nowMs: number
+  speedMultiplier?: number
+}): PeriodClockAnchor {
+  return {
+    periodStartTime: input.periodStartTime
+      ? new Date(parsePeriodStartTimeMs(input.periodStartTime) ?? input.nowMs).toISOString()
+      : null,
+    accumulatedSecondsBeforePause: elapsedFromPeriodAnchor({
+      ...input,
+      running: true,
+    }),
+  }
+}
+
+export function resumePeriodClock(
+  accumulatedSecondsBeforePause: number,
+  nowMs = Date.now(),
+): PeriodClockAnchor {
+  return {
+    periodStartTime: new Date(nowMs).toISOString(),
+    accumulatedSecondsBeforePause: Math.max(0, Math.floor(accumulatedSecondsBeforePause)),
+  }
+}
+
+export function resolveLiveMatchClock(input: {
+  periodStartTime?: string | null
+  accumulatedSecondsBeforePause?: number | null
+  clockSeconds: number
+  addedTimeSeconds?: number
+  periodClockStarted: boolean
+  halfLengthMinutes: number
+  nowMs: number
+  running?: boolean
+}): {
+  remaining: number
+  periodStartTime: string | null
+  accumulatedSecondsBeforePause: number
+} {
+  const restored = restoreMatchClockSeconds(input.clockSeconds, input.addedTimeSeconds)
+  const accumulated = Math.max(0, Math.floor(input.accumulatedSecondsBeforePause ?? 0))
+  const periodStartTime = input.periodStartTime ?? null
+
+  if (!input.periodClockStarted) {
+    return {
+      remaining: restored,
+      periodStartTime: null,
+      accumulatedSecondsBeforePause: 0,
+    }
+  }
+
+  if (parsePeriodStartTimeMs(periodStartTime) != null) {
+    return {
+      remaining: remainingFromPeriodAnchor({
+        periodStartTime,
+        accumulatedSecondsBeforePause: accumulated,
+        halfLengthMinutes: input.halfLengthMinutes,
+        nowMs: input.nowMs,
+        running: input.running ?? true,
+      }),
+      periodStartTime,
+      accumulatedSecondsBeforePause: accumulated,
+    }
+  }
+
+  return {
+    remaining: restored,
+    periodStartTime: new Date(
+      halfStartTimeFromRemaining(restored, input.halfLengthMinutes, input.nowMs),
+    ).toISOString(),
+    accumulatedSecondsBeforePause: 0,
+  }
+}
+
 export function planHalfLengthOverride(input: {
   nextMinutes: number
   previousMinutes: number

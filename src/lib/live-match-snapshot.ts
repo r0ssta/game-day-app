@@ -1,7 +1,5 @@
 import { applyCardsFromEvents } from '@/lib/match-cards'
-import {
-  restoreMatchClockSeconds,
-} from '@/lib/match-clock'
+import { resolveLiveMatchClock } from '@/lib/match-clock'
 import { resolveCurrentPeriod, resolveTotalPeriods } from '@/lib/match-periods'
 import { aggregateTeamShotSaveTotals, type TeamShotSaveTotals } from '@/lib/match-shot-save'
 import { isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
@@ -317,10 +315,15 @@ export async function fetchLiveMatchSnapshot(
     roster: nextRoster,
     players,
     shotSaveTotals: aggregateTeamShotSaveTotals(events),
-    clockSeconds: restoreMatchClockSeconds(
-      match.clock_seconds,
-      parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
-    ),
+    clockSeconds: resolveLiveMatchClock({
+      periodStartTime: match.period_start_time,
+      accumulatedSecondsBeforePause: match.accumulated_seconds_before_pause,
+      clockSeconds: match.clock_seconds,
+      addedTimeSeconds: parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
+      periodClockStarted: match.period_clock_started,
+      halfLengthMinutes: match.period_length ?? match.half_length,
+      nowMs: Date.now(),
+    }).remaining,
     formationId: latestFormationFromEvents(events),
     endedOnFieldIds,
     hasEndedAPeriod: endedOnFieldIds.length > 0,

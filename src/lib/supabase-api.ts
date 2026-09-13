@@ -1343,6 +1343,8 @@ export async function updateMatchRecord(
       | 'pk_winner_is_us'
       | 'pk_gk_player_id'
       | 'clock_seconds'
+      | 'period_start_time'
+      | 'accumulated_seconds_before_pause'
       | 'period'
       | 'period_clock_started'
       | 'status'
@@ -1385,6 +1387,8 @@ export async function updateMatchRecord(
     'coach_name',
     'sub_interval_seconds',
     'gk_plays_full_half',
+    'period_start_time',
+    'accumulated_seconds_before_pause',
   ] as const
 
   let remaining: typeof patch = { ...patch }

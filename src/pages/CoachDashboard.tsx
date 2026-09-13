@@ -79,15 +79,14 @@ import {
   stampAllOnField,
 } from '@/lib/play-time'
 import {
-  elapsedFromHalfStart,
   elapsedInHalf,
   formatClock,
   halfDurationSeconds,
-  halfStartTimeFromRemaining,
-  remainingFromHalfStart,
+  persistableClockSeconds,
   resolvePeriodKickoffRemaining,
   type QaSpeedMultiplier,
 } from '@/lib/match-clock'
+import { useMatchClock } from '@/hooks/useMatchClock'
 import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
@@ -197,7 +196,9 @@ export function CoachDashboard() {
     resumeLiveMatchScreen,
     persistMatchClock,
     updateHalfLengthMinutes,
-    halfStartAtMsRef,
+    periodStartTime,
+    accumulatedSecondsBeforePause,
+    beginPeriodClock,
     noteLocalMatchMutation,
     holdLiveRemoteMerge,
     releaseLiveRemoteMerge,
@@ -784,70 +785,16 @@ export function CoachDashboard() {
     ],
   )
 
-  const halfLengthRef = useRef(halfLengthMinutes)
-  halfLengthRef.current = halfLengthMinutes
-  const qaSpeedRef = useRef(qaSpeedMultiplier)
-  const syncClockFromHalfStart = useCallback(
-    (nowMs = Date.now()) => {
-      const minutes = halfLengthRef.current
-      let start = halfStartAtMsRef.current
-      if (start == null) {
-        start = halfStartTimeFromRemaining(
-          clockSyncRef.current,
-          minutes,
-          nowMs,
-          { speedMultiplier: qaSpeedRef.current },
-        )
-        halfStartAtMsRef.current = start
-      }
-      const next = remainingFromHalfStart(start, minutes, nowMs, {
-        speedMultiplier: qaSpeedRef.current,
-      })
-      clockSyncRef.current = next
-      setSeconds(next)
-      return next
-    },
-    [halfStartAtMsRef, setSeconds],
-  )
-
-  useEffect(() => {
-    if (appMode !== 'match' || !matchId) return
-    if (!running && !periodClockStarted) return
-
-    const now = Date.now()
-    if (qaSpeedRef.current !== qaSpeedMultiplier && halfStartAtMsRef.current != null) {
-      const elapsed = elapsedFromHalfStart(halfStartAtMsRef.current, now, {
-        speedMultiplier: qaSpeedRef.current,
-      })
-      halfStartAtMsRef.current = now - (elapsed * 1000) / qaSpeedMultiplier
-    }
-    qaSpeedRef.current = qaSpeedMultiplier
-    syncClockFromHalfStart(now)
-
-    const id = setInterval(() => {
-      syncClockFromHalfStart()
-    }, 1000)
-    return () => clearInterval(id)
-  }, [
-    appMode,
+  useMatchClock({
+    enabled: appMode === 'match' && Boolean(matchId),
+    periodStartTime,
+    accumulatedSecondsBeforePause,
+    halfLengthMinutes,
     running,
     periodClockStarted,
-    matchId,
-    qaSpeedMultiplier,
-    halfStartAtMsRef,
-    syncClockFromHalfStart,
-  ])
-
-  useEffect(() => {
-    if (appMode !== 'match' || !matchId) return
-    if (!running && !periodClockStarted) return
-    const onVisible = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-      syncClockFromHalfStart()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [appMode, matchId, running, periodClockStarted, syncClockFromHalfStart])
+    speedMultiplier: qaSpeedMultiplier,
+    setSeconds,
+  })
 
   useEffect(() => {
     if (appMode !== 'match' || !matchId) return
@@ -1269,9 +1216,10 @@ export function CoachDashboard() {
     setPeriodClockStarted(true)
     claimLocalClock()
     noteLocalMatchMutation()
+    const clockAnchor = beginPeriodClock()
     if (matchId) {
       persistMatchClock(matchId, kickoffSeconds)
-      void updateMatchRecordSafe(kickoffSeconds)
+      void updateMatchRecordSafe(kickoffSeconds, clockAnchor.periodStartTime)
     }
     const underwayToast = `${extraTimePeriodLabel(extraTimeHalf ?? 1)} underway · ${formatClock(kickoffSeconds)}`
     if (ENABLE_WAKE_LOCK) {
@@ -1282,11 +1230,13 @@ export function CoachDashboard() {
       setToast(underwayToast)
     }
 
-    async function updateMatchRecordSafe(clockSeconds: number) {
+    async function updateMatchRecordSafe(clockSeconds: number, startTime: string | null) {
       if (!matchId) return
       syncMatchRecord(matchId, {
         period_clock_started: true,
-        clock_seconds: clockSeconds,
+        period_start_time: startTime,
+        accumulated_seconds_before_pause: 0,
+        clock_seconds: persistableClockSeconds(clockSeconds),
         status: extraTimeHalf === 2 ? MATCH_STATUS.extraTimeSecondHalf : MATCH_STATUS.extraTimeFirstHalf,
       })
     }
@@ -1303,6 +1253,7 @@ export function CoachDashboard() {
     noteLocalMatchMutation,
     persistMatchClock,
     requestWakeLock,
+    beginPeriodClock,
   ])
 
   const handleEndExtraTime = useCallback(() => {
@@ -1355,6 +1306,7 @@ export function CoachDashboard() {
     setPeriodClockStarted(true)
     claimLocalClock()
     noteLocalMatchMutation()
+    const clockAnchor = beginPeriodClock()
     pendingReadyPlayersRef.current = null
 
     const sidelineMap = buildSidelineNameMap(stamped.filter((p) => p.attending))
@@ -1371,6 +1323,7 @@ export function CoachDashboard() {
               period: currentPeriod,
               totalPeriods,
               clockSeconds: kickoffSeconds,
+              periodStartTime: clockAnchor.periodStartTime ?? undefined,
               halfLengthMinutes,
               formation: activeFormation,
               teamName: matchTeamName.trim() || 'Home',
@@ -1427,6 +1380,7 @@ export function CoachDashboard() {
     persistMatchClock,
     noteLocalMatchMutation,
     runOptimisticSync,
+    beginPeriodClock,
   ])
 
   const handleEnterHalftime = useCallback(async () => {
@@ -1534,6 +1488,7 @@ export function CoachDashboard() {
               period: next.period,
               totalPeriods,
               clockSeconds: next.clockSeconds,
+              periodStartTime: next.periodStartTime ?? undefined,
               halfLengthMinutes,
               formation: next.formation,
               periodCode: next.periodCode,

@@ -120,6 +120,10 @@ export type DbMatch = {
   /** Our goalkeeper for the penalty shootout. */
   pk_gk_player_id?: string | null
   clock_seconds: number
+  /** ISO whistle / last-resume time for the active period. Null when the clock is stopped. */
+  period_start_time?: string | null
+  /** Elapsed seconds banked before the last pause. */
+  accumulated_seconds_before_pause?: number
   period: '1st' | '2nd' | '3rd'
   status: 'scheduled' | 'live' | 'extra_time_first_half' | 'extra_time_second_half' | 'penalty_shootout' | 'pending_review' | 'final'
   period_clock_started: boolean

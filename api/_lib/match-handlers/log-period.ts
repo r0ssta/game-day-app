@@ -123,6 +123,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         await tx.updateMatch({
           period_clock_started: false,
+          period_start_time: null,
+          accumulated_seconds_before_pause: 0,
           clock_seconds: persistableClockSeconds(input.clockSeconds),
           current_period: input.period,
           total_periods: input.totalPeriods,
@@ -238,6 +240,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const matchPatch: Record<string, unknown> = {
         period_clock_started: true,
+        period_start_time: input.periodStartTime ?? new Date().toISOString(),
+        accumulated_seconds_before_pause: 0,
         clock_seconds: persistableClockSeconds(input.clockSeconds),
         current_period: input.period,
         total_periods: input.totalPeriods,

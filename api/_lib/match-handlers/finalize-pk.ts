@@ -45,6 +45,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         away_pk_score: input.awayPkScore,
         pk_winner_is_us: input.pkWinnerIsUs,
         period_clock_started: false,
+        period_start_time: null,
+        accumulated_seconds_before_pause: 0,
         status: 'pending_review',
       })
     })

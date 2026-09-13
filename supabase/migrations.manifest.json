@@ -60,6 +60,7 @@
     "supabase-fix-u13-maroon-soca-minutes-migration.sql",
     "supabase-player-impact-rpc-migration.sql",
     "supabase-position-micro-shift-migration.sql",
-    "supabase-player-impact-gk-minutes-migration.sql"
+    "supabase-player-impact-gk-minutes-migration.sql",
+    "supabase-match-period-start-time-migration.sql"
   ]
 }

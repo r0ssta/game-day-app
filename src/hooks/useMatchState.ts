@@ -24,10 +24,12 @@ import {
 import type { LocationType } from '@/lib/match-location'
 import { resolveMatchLocationType } from '@/lib/match-location'
 import {
-  halfStartTimeFromRemaining,
+  emptyPeriodClockAnchor,
   initialHalfClock,
+  kickoffPeriodClockAnchor,
+  parsePeriodStartTimeMs,
   planHalfLengthOverride,
-  restoreMatchClockSeconds,
+  resolveLiveMatchClock,
 } from '@/lib/match-clock'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
 import type { SubFrequency } from '@/lib/sub-rotation'
@@ -304,7 +306,8 @@ export function useMatchState() {
   const matchFormationsRef = useRef(matchFormations)
   const matchIdRef = useRef(matchId)
   const lastClockWriteAtRef = useRef(0)
-  const halfStartAtMsRef = useRef<number | null>(null)
+  const [periodStartTime, setPeriodStartTime] = useState<string | null>(null)
+  const [accumulatedSecondsBeforePause, setAccumulatedSecondsBeforePause] = useState(0)
   const halfLengthWriteEchoRef = useRef<{ at: number; minutes: number } | null>(null)
   const hydrateInFlightRef = useRef(false)
   const localWriteGenRef = useRef(0)
@@ -385,9 +388,58 @@ export function useMatchState() {
     syncMatchClock(targetMatchId, remainingSeconds)
   }, [])
 
-  useEffect(() => {
-    if (!periodClockStarted) halfStartAtMsRef.current = null
-  }, [periodClockStarted])
+  const beginPeriodClock = useCallback((nowMs = Date.now()) => {
+    const anchor = kickoffPeriodClockAnchor(nowMs)
+    setPeriodStartTime(anchor.periodStartTime)
+    setAccumulatedSecondsBeforePause(0)
+    const targetMatchId = matchIdRef.current
+    if (targetMatchId && anchor.periodStartTime) {
+      syncMatchRecord(targetMatchId, {
+        period_start_time: anchor.periodStartTime,
+        accumulated_seconds_before_pause: 0,
+      })
+    }
+    return anchor
+  }, [])
+
+  const clearPeriodClock = useCallback(() => {
+    const anchor = emptyPeriodClockAnchor()
+    setPeriodStartTime(anchor.periodStartTime)
+    setAccumulatedSecondsBeforePause(0)
+    return anchor
+  }, [])
+
+  const applyClockFromMatch = useCallback(
+    (
+      match: Pick<
+        DbMatch,
+        | 'period_start_time'
+        | 'accumulated_seconds_before_pause'
+        | 'clock_seconds'
+        | 'period_clock_started'
+        | 'period_length'
+        | 'half_length'
+        | 'qualitative_context'
+      >,
+      runningClock = Boolean(match.period_clock_started),
+    ) => {
+      const resolved = resolveLiveMatchClock({
+        periodStartTime: match.period_start_time,
+        accumulatedSecondsBeforePause: match.accumulated_seconds_before_pause,
+        clockSeconds: match.clock_seconds,
+        addedTimeSeconds: parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
+        periodClockStarted: match.period_clock_started,
+        halfLengthMinutes: resolvePeriodLengthMinutes(match, DEFAULT_HALF_LENGTH),
+        nowMs: Date.now(),
+        running: runningClock,
+      })
+      setPeriodStartTime(resolved.periodStartTime)
+      setAccumulatedSecondsBeforePause(resolved.accumulatedSecondsBeforePause)
+      setSeconds(resolved.remaining)
+      return resolved
+    },
+    [],
+  )
 
   const updateHalfLengthMinutes = useCallback(
     async (rawNext: number) => {
@@ -396,7 +448,7 @@ export function useMatchState() {
         nextMinutes: rawNext,
         previousMinutes,
         remainingSeconds: liveStateRef.current.seconds,
-        halfStartTimeMs: halfStartAtMsRef.current,
+        halfStartTimeMs: parsePeriodStartTimeMs(periodStartTime),
         nowMs: Date.now(),
         periodClockStarted: liveStateRef.current.periodClockStarted,
       })
@@ -404,7 +456,6 @@ export function useMatchState() {
 
       const previousRemaining = liveStateRef.current.seconds
       halfLengthWriteEchoRef.current = { at: Date.now(), minutes: planned.nextMinutes }
-      halfStartAtMsRef.current = planned.halfStartTimeMs
       setHalfLengthMinutes(planned.nextMinutes)
       setSeconds(planned.nextRemaining)
       localWriteGenRef.current += 1
@@ -418,17 +469,12 @@ export function useMatchState() {
         return planned.nextMinutes
       } catch (err) {
         halfLengthWriteEchoRef.current = null
-        halfStartAtMsRef.current = halfStartTimeFromRemaining(
-          previousRemaining,
-          previousMinutes,
-          Date.now(),
-        )
         setHalfLengthMinutes(previousMinutes)
         setSeconds(previousRemaining)
         throw err
       }
     },
-    [halfLengthMinutes, persistMatchClock],
+    [halfLengthMinutes, periodStartTime, persistMatchClock],
   )
 
   const liveMergeHoldRef = useRef(0)
@@ -645,7 +691,9 @@ export function useMatchState() {
             ? clockSeconds
             : latest.seconds
         if (adoptClock) {
-          setSeconds(clockSeconds)
+          applyClockFromMatch(match)
+        } else if (match.period_clock_started && match.period_start_time) {
+          applyClockFromMatch(match, localRunning)
         }
 
         if (
@@ -717,7 +765,7 @@ export function useMatchState() {
         hydrateInFlightRef.current = false
       }
     },
-    [applyMatchPeriodState, claimLocalClock, shouldSkipLiveHydrate, teams],
+    [applyClockFromMatch, applyMatchPeriodState, claimLocalClock, shouldSkipLiveHydrate, teams],
   )
 
   useLiveMatchSync({
@@ -858,12 +906,13 @@ export function useMatchState() {
           setAwaySaves(shotSaveTotals.awaySaves)
           setHomeCorners(shotSaveTotals.homeCorners)
           setAwayCorners(shotSaveTotals.awayCorners)
-          setSeconds(
-            restoreMatchClockSeconds(
-              match.clock_seconds,
-              parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
-            ),
-          )
+          const resolvedClock = applyClockFromMatch(match)
+          if (match.period_clock_started && !match.period_start_time && resolvedClock.periodStartTime) {
+            syncMatchRecord(match.id, {
+              period_start_time: resolvedClock.periodStartTime,
+              accumulated_seconds_before_pause: 0,
+            })
+          }
           applyMatchPeriodState(match)
           setPeriodClockStarted(match.period_clock_started)
           setSubIntervalSeconds(match.sub_interval_seconds ?? null)
@@ -1207,6 +1256,7 @@ export function useMatchState() {
         setPkWinnerIsUs(null)
         setPkGkPlayerId(null)
         setSeconds(initialHalfClock(input.halfLength))
+        clearPeriodClock()
         setPeriod('1st')
         setCurrentPeriod(1)
         setTotalPeriods(matchTotalPeriods)
@@ -1429,6 +1479,7 @@ export function useMatchState() {
       setPkWinnerIsUs(match.pk_winner_is_us)
       setPkGkPlayerId(match.pk_gk_player_id ?? null)
       setSeconds(clock)
+      clearPeriodClock()
       setPeriod('1st')
       setCurrentPeriod(1)
       setTotalPeriods(matchTotalPeriods)
@@ -1513,6 +1564,7 @@ export function useMatchState() {
       }
       setHalftimeSecondHalf(toggles)
       setHalftimePitchKey(0)
+      clearPeriodClock()
       // Carry the formation that just ended into the next-period lineup editor.
       setMatchFormations((prev) => {
         const current =
@@ -1591,6 +1643,7 @@ export function useMatchState() {
       setCurrentPeriod(nextPeriodIndex)
       setPeriod(nextPeriodCode)
       setSeconds(newClock)
+      const clockAnchor = beginPeriodClock()
       claimLocalClock()
       setPeriodClockStarted(true)
       setAppMode('match')
@@ -1601,6 +1654,7 @@ export function useMatchState() {
         periodCode: nextPeriodCode,
         clockSeconds: newClock,
         formation,
+        periodStartTime: clockAnchor.periodStartTime,
       }
     },
     [
@@ -1613,6 +1667,7 @@ export function useMatchState() {
       setSeconds,
       claimLocalClock,
       setPeriodClockStarted,
+      beginPeriodClock,
     ],
   )
 
@@ -1744,6 +1799,7 @@ export function useMatchState() {
     setHomeCorners(0)
     setAwayCorners(0)
     setSeconds(0)
+    clearPeriodClock()
     setPeriod('1st')
     setCurrentPeriod(1)
     setTotalPeriods(DEFAULT_TOTAL_PERIODS)
@@ -1834,12 +1890,13 @@ export function useMatchState() {
     setAwayPkScore(match.away_pk_score ?? 0)
     setPkWinnerIsUs(match.pk_winner_is_us ?? null)
     setPkGkPlayerId(match.pk_gk_player_id ?? null)
-    setSeconds(
-      restoreMatchClockSeconds(
-        match.clock_seconds,
-        parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
-      ),
-    )
+    const resolvedClock = applyClockFromMatch(match)
+    if (match.period_clock_started && !match.period_start_time && resolvedClock.periodStartTime) {
+      syncMatchRecord(match.id, {
+        period_start_time: resolvedClock.periodStartTime,
+        accumulated_seconds_before_pause: 0,
+      })
+    }
     applyMatchPeriodState(match)
     setPeriodClockStarted(match.period_clock_started)
     setSubIntervalSeconds(match.sub_interval_seconds ?? null)
@@ -1884,7 +1941,10 @@ export function useMatchState() {
     resumeLiveMatchScreen,
     persistMatchClock,
     updateHalfLengthMinutes,
-    halfStartAtMsRef,
+    periodStartTime,
+    accumulatedSecondsBeforePause,
+    beginPeriodClock,
+    clearPeriodClock,
     noteLocalMatchMutation,
     holdLiveRemoteMerge,
     releaseLiveRemoteMerge,

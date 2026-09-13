@@ -82,6 +82,8 @@ export const MatchSchema: z.ZodType<DbMatch> = z
     pk_winner_is_us: z.boolean().nullable().catch(null),
     pk_gk_player_id: z.string().nullable().optional().catch(null),
     clock_seconds: z.number().catch(0),
+    period_start_time: z.string().nullable().optional().catch(null),
+    accumulated_seconds_before_pause: z.number().optional().catch(0),
     period: MatchPeriodSchema.catch('1st'),
     status: MatchStatusSchema.catch('scheduled'),
     period_clock_started: z.boolean().catch(false),

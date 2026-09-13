@@ -11,7 +11,7 @@ import {
 } from '@/lib/stat-tracker'
 import {
   formatMatchClockParts,
-  restoreMatchClockSeconds,
+  resolveLiveMatchClock,
 } from '@/lib/match-clock'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
 import {
@@ -34,6 +34,18 @@ type StatTrackerScreenProps = {
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
+}
+
+function remainingFromTrackerMatch(match: DbMatch, nowMs = Date.now()) {
+  return resolveLiveMatchClock({
+    periodStartTime: match.period_start_time,
+    accumulatedSecondsBeforePause: match.accumulated_seconds_before_pause,
+    clockSeconds: match.clock_seconds,
+    addedTimeSeconds: parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
+    periodClockStarted: match.period_clock_started,
+    halfLengthMinutes: match.period_length ?? match.half_length,
+    nowMs,
+  }).remaining
 }
 
 function formatTrackerClock(remainingSeconds: number) {
@@ -209,12 +221,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
     setOpponent(context.match.opponent)
     setHomeScore(context.match.home_score)
     setAwayScore(context.match.away_score)
-    setClockSeconds(
-      restoreMatchClockSeconds(
-        context.match.clock_seconds,
-        parseQualitativeContext(context.match.qualitative_context).addedTimeSeconds,
-      ),
-    )
+    setClockSeconds(remainingFromTrackerMatch(context.match))
     setPeriod(context.match.period)
     setMatchStatus(context.match.status)
     setRoster(context.roster)
@@ -258,12 +265,7 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
           if (!match) return
           setHomeScore(match.home_score)
           setAwayScore(match.away_score)
-          setClockSeconds(
-            restoreMatchClockSeconds(
-              match.clock_seconds,
-              parseQualitativeContext(match.qualitative_context).addedTimeSeconds,
-            ),
-          )
+          setClockSeconds(remainingFromTrackerMatch(match))
           setPeriod(match.period)
           setMatchStatus(match.status)
         })

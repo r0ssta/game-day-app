@@ -5,8 +5,14 @@ import {
   elapsedInHalf,
   formatAddedTime,
   formatMatchClockParts,
+  elapsedFromPeriodAnchor,
   halfStartTimeFromRemaining,
+  parsePeriodStartTimeMs,
+  pausePeriodClock,
   persistableClockSeconds,
+  remainingFromPeriodAnchor,
+  resolveLiveMatchClock,
+  resumePeriodClock,
   planHalfLengthOverride,
   remainingAfterHalfLengthChange,
   remainingFromHalfStart,
@@ -96,6 +102,104 @@ describe('match-clock', () => {
     expect(planned.nextMinutes).toBe(35)
     expect(planned.nextRemaining).toBe(27 * 60)
     expect(planned.halfStartTimeMs).toBe(halfStart)
+  })
+
+  it('derives elapsed from period_start_time plus banked pause seconds', () => {
+    const start = new Date('2026-09-13T15:00:00.000Z').getTime()
+    const now = start + 10 * 60 * 1000
+    const iso = new Date(start).toISOString()
+
+    expect(
+      elapsedFromPeriodAnchor({
+        periodStartTime: iso,
+        accumulatedSecondsBeforePause: 0,
+        nowMs: now,
+        running: true,
+      }),
+    ).toBe(600)
+    expect(
+      remainingFromPeriodAnchor({
+        periodStartTime: iso,
+        accumulatedSecondsBeforePause: 0,
+        halfLengthMinutes: 25,
+        nowMs: now,
+        running: true,
+      }),
+    ).toBe(15 * 60)
+
+    const paused = pausePeriodClock({
+      periodStartTime: iso,
+      accumulatedSecondsBeforePause: 0,
+      nowMs: now,
+    })
+    expect(paused.accumulatedSecondsBeforePause).toBe(600)
+    expect(
+      elapsedFromPeriodAnchor({
+        ...paused,
+        nowMs: now + 60_000,
+        running: false,
+      }),
+    ).toBe(600)
+
+    const resumed = resumePeriodClock(paused.accumulatedSecondsBeforePause, now + 60_000)
+    expect(
+      elapsedFromPeriodAnchor({
+        ...resumed,
+        nowMs: now + 60_000 + 30_000,
+        running: true,
+      }),
+    ).toBe(630)
+  })
+
+  it('reconstructs period_start_time from a leftover countdown on legacy live rows', () => {
+    const now = Date.parse('2026-09-13T16:00:00.000Z')
+    const resolved = resolveLiveMatchClock({
+      periodStartTime: null,
+      accumulatedSecondsBeforePause: 0,
+      clockSeconds: 10 * 60,
+      periodClockStarted: true,
+      halfLengthMinutes: 25,
+      nowMs: now,
+    })
+    expect(resolved.remaining).toBe(10 * 60)
+    expect(parsePeriodStartTimeMs(resolved.periodStartTime)).toBe(now - 15 * 60 * 1000)
+  })
+
+  it('snaps remaining after a frozen interval the way a backgrounded PWA must', () => {
+    const start = new Date('2026-09-13T15:00:00.000Z')
+    const beforeBackground = start.getTime() + 8 * 60 * 1000
+    const afterWake = beforeBackground + 5 * 60 * 1000
+    const remainingAtBackground = remainingFromPeriodAnchor({
+      periodStartTime: start.toISOString(),
+      accumulatedSecondsBeforePause: 0,
+      halfLengthMinutes: 25,
+      nowMs: beforeBackground,
+      running: true,
+    })
+    const remainingOnWake = remainingFromPeriodAnchor({
+      periodStartTime: start.toISOString(),
+      accumulatedSecondsBeforePause: 0,
+      halfLengthMinutes: 25,
+      nowMs: afterWake,
+      running: true,
+    })
+
+    expect(remainingAtBackground).toBe(17 * 60)
+    expect(remainingOnWake).toBe(12 * 60)
+  })
+
+  it('prefers period_start_time over a stale countdown when resolving a live match', () => {
+    const start = new Date('2026-09-13T15:00:00.000Z')
+    const now = start.getTime() + 12 * 60 * 1000
+    const resolved = resolveLiveMatchClock({
+      periodStartTime: start.toISOString(),
+      accumulatedSecondsBeforePause: 0,
+      clockSeconds: 20 * 60,
+      periodClockStarted: true,
+      halfLengthMinutes: 25,
+      nowMs: now,
+    })
+    expect(resolved.remaining).toBe(13 * 60)
   })
 
   it('resets the face clock when the period has not started', () => {

@@ -69,6 +69,9 @@ create table if not exists public.matches (
   home_score integer not null default 0 check (home_score >= 0),
   away_score integer not null default 0 check (away_score >= 0),
   clock_seconds integer not null default 0 check (clock_seconds >= 0),
+  period_start_time timestamptz,
+  accumulated_seconds_before_pause integer not null default 0
+    check (accumulated_seconds_before_pause >= 0),
   period text not null default '1st' check (period in ('1st', '2nd', '3rd')),
   status text not null default 'scheduled' check (status in (
     'scheduled',
