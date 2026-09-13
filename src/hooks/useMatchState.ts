@@ -66,8 +66,6 @@ import {
   fetchSeasons,
   fetchTeams,
   rebuildMatchPlayers,
-  fetchMatchEvents,
-  backfillMissingGoalShots,
   resolveCoachIdForName,
   resolveMatchCoachName,
   syncMatchClock,
@@ -89,13 +87,22 @@ import type {
 import {
   persistActiveTeamId,
   readPersistedActiveTeamId,
+  resolveCoachSessionTeamId,
 } from '@/lib/team-context'
+import {
+  COACH_APP_PATH,
+  coachMatchPath,
+  coachTeamPath,
+  isImpactReportPath,
+  navigateApp,
+  parseCoachRoute,
+  replaceApp,
+} from '@/lib/app-routes'
+import { useParams } from '@/hooks/useCoachParams'
 import {
   poolPlayerToGuestRoster,
   seasonRosterToPlayers,
 } from '@/lib/season-roster'
-import { applyCardsFromEvents } from '@/lib/match-cards'
-import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import {
   fetchLiveMatchSnapshot,
   isActiveStaffMatchScreen,
@@ -123,6 +130,12 @@ const DEFAULT_TOTAL_PERIODS: TotalPeriods = 2
 const DEFAULT_HALF_LENGTH = defaultPeriodLengthMinutes(DEFAULT_TOTAL_PERIODS)
 
 export function useMatchState() {
+  const { teamId: routeTeamId, matchId: routeMatchId } = useParams()
+  const routeTeamIdRef = useRef(routeTeamId)
+  const routeMatchIdRef = useRef(routeMatchId)
+  routeTeamIdRef.current = routeTeamId
+  routeMatchIdRef.current = routeMatchId
+
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [appMode, setAppMode] = useState<AppMode>('home')
@@ -550,6 +563,10 @@ export function useMatchState() {
         const snapshot = await fetchLiveMatchSnapshot(targetMatchId, rosterForFetch)
         if (!snapshot || matchIdRef.current !== targetMatchId) return null
         if (writeGen !== localWriteGenRef.current) return null
+        if (routeMatchIdRef.current && snapshot.match.id !== routeMatchIdRef.current) return null
+        if (routeTeamIdRef.current && snapshot.match.team_id !== routeTeamIdRef.current) {
+          return null
+        }
 
         if (slice === 'scores') {
           const { match, shotSaveTotals, players: remotePlayers } = snapshot
@@ -825,131 +842,22 @@ export function useMatchState() {
         setActiveSeasonState(activeSeasonData)
         setClubStaffCoachNames(clubStaffNames)
 
-        let resolvedTeamId: string | null = null
-        if (teamsData.length > 0) {
-          const activeTeams = teamsData.filter((team) => team.active_status !== false)
-          const selectable = activeTeams.length > 0 ? activeTeams : teamsData
-          const persistedTeamId = readPersistedActiveTeamId()
-          const persistedTeam = persistedTeamId
-            ? selectable.find((team) => team.id === persistedTeamId)
-            : null
-          resolvedTeamId = persistedTeam?.id ?? selectable[0]?.id ?? null
-        }
+        const route = parseCoachRoute(window.location.pathname)
+        const resolvedTeamId = resolveCoachSessionTeamId({
+          routeTeamId: route.teamId,
+          teams: teamsData,
+          persistedTeamId: readPersistedActiveTeamId(),
+        })
 
-        const active = resolvedTeamId ? await fetchActiveMatch(resolvedTeamId) : null
-        if (cancelled) return
-
-        const seasonIdForRoster =
-          active?.match.season_id ?? activeSeasonData?.id ?? null
-
-        if (active) {
-          const { match, team, coach, stats } = active
-          const entries = seasonIdForRoster
-            ? await fetchSeasonRosterPlayers(seasonIdForRoster, match.team_id, {
-                includeInactive: true,
-              })
-            : []
-          if (cancelled) return
-
-          const roster = seasonRosterToPlayers(entries, match.team_id)
-          const rosterIds = new Set(roster.map((p) => p.id))
-          const missingIds = stats
-            .map((s) => s.player_id)
-            .filter((id) => id && !rosterIds.has(id))
-          if (missingIds.length > 0) {
-            const guests = await fetchPlayersByIds(missingIds)
-            for (const guest of guests) {
-              roster.push(
-                poolPlayerToGuestRoster(guest, match.team_id),
-              )
-            }
-          }
-          const matchPlayers = rebuildMatchPlayers(roster, stats).filter(
-            (player) => player.attending,
-          )
-          let playersWithCards = matchPlayers
-          let shotSaveTotals = {
-            homeShots: 0,
-            awayShots: 0,
-            homeSaves: 0,
-            awaySaves: 0,
-            homeCorners: 0,
-            awayCorners: 0,
-          }
-          try {
-            const events = await fetchMatchEvents(match.id)
-            if (!cancelled) {
-              playersWithCards = applyCardsFromEvents(matchPlayers, events)
-              shotSaveTotals = aggregateTeamShotSaveTotals(events)
-            }
-            const backfill = await backfillMissingGoalShots(match.id)
-            if (!cancelled && backfill.inserted > 0) {
-              shotSaveTotals = backfill.totals
-            }
-          } catch (cardErr) {
-            console.warn('[bootstrap] could not restore card state', cardErr)
-          }
-          if (cancelled) return
-
-          setSelectedTeamId(match.team_id)
-          resolvedTeamId = match.team_id
-          setMasterRoster(roster)
-          setMatchId(match.id)
-          setMatchStatus('live')
-          setAppMode('home')
-          setPlayers(playersWithCards)
-          setHomeScore(match.home_score)
-          setAwayScore(match.away_score)
-          setHomeShots(shotSaveTotals.homeShots)
-          setAwayShots(shotSaveTotals.awayShots)
-          setHomeSaves(shotSaveTotals.homeSaves)
-          setAwaySaves(shotSaveTotals.awaySaves)
-          setHomeCorners(shotSaveTotals.homeCorners)
-          setAwayCorners(shotSaveTotals.awayCorners)
-          const resolvedClock = applyClockFromMatch(match)
-          if (match.period_clock_started && !match.period_start_time && resolvedClock.periodStartTime) {
-            syncMatchRecord(match.id, {
-              period_start_time: resolvedClock.periodStartTime,
-              accumulated_seconds_before_pause: 0,
-            })
-          }
-          applyMatchPeriodState(match)
-          setPeriodClockStarted(match.period_clock_started)
-          setSubIntervalSeconds(match.sub_interval_seconds ?? null)
-          setGkPlaysFullHalf(match.gk_plays_full_half !== false)
-          setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
-          setMatchCoachName(resolveMatchCoachName(match, coach))
-          setSetupCoachName(resolveMatchCoachName(match, coach))
-          setMatchOpponent(match.opponent)
-          setMatchLocationType(resolveMatchLocationType(match))
-          setMatchTournamentGame(match.tournament_game)
-          setMatchIsTest(Boolean(match.is_test))
-          setMatchGoesToPks(Boolean(match.goes_to_pks))
-          setHomePkScore(match.home_pk_score ?? 0)
-          setAwayPkScore(match.away_pk_score ?? 0)
-          setPkWinnerIsUs(match.pk_winner_is_us ?? null)
-          setPkGkPlayerId(match.pk_gk_player_id ?? null)
-          setLocationType(resolveMatchLocationType(match))
-          setMatchDate(match.match_date ?? defaultMatchDate())
-          setMatchTime(normalizeMatchTimeForInput(match.match_time))
-          setFirstHalfStarterIds(
-            stats.filter((s) => s.is_first_half_starter).map((s) => s.player_id),
-          )
-          setSecondHalfStarterIds(
-            stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id),
-          )
-        } else if (teamsData.length > 0) {
-          const activeTeams = teamsData.filter((team) => team.active_status !== false)
-          const selectable = activeTeams.length > 0 ? activeTeams : teamsData
-          const persistedTeamId = readPersistedActiveTeamId()
-          const persistedTeam = persistedTeamId
-            ? selectable.find((team) => team.id === persistedTeamId)
-            : null
-          resolvedTeamId = persistedTeam?.id ?? selectable[0]?.id ?? null
+        if (resolvedTeamId) {
           setSelectedTeamId(resolvedTeamId)
-          if (resolvedTeamId) persistActiveTeamId(resolvedTeamId)
+          persistActiveTeamId(resolvedTeamId)
+          if (!route.teamId && !isImpactReportPath(window.location.pathname)) {
+            replaceApp(coachTeamPath(resolvedTeamId))
+          }
         }
 
+        const seasonIdForRoster = activeSeasonData?.id ?? null
         if (resolvedTeamId) {
           if (seasonIdForRoster) {
             const entries = await fetchSeasonRosterPlayers(seasonIdForRoster, resolvedTeamId)
@@ -1242,6 +1150,7 @@ export function useMatchState() {
         setMatchId(match.id)
         setMatchStatus('live')
         setAppMode('match')
+        navigateApp(coachMatchPath(input.teamId, match.id))
         setPlayers(matchPlayers)
         setHomeScore(0)
         setAwayScore(0)
@@ -1461,10 +1370,12 @@ export function useMatchState() {
       const matchTotalPeriods: TotalPeriods = match.total_periods === 3 ? 3 : 2
 
       setSelectedTeamId(match.team_id)
+      persistActiveTeamId(match.team_id)
       setMasterRoster(roster)
       setMatchId(match.id)
       setMatchStatus('live')
       setAppMode('match')
+      navigateApp(coachMatchPath(match.team_id, match.id))
       setPlayers(matchPlayers)
       setHomeScore(match.home_score)
       setAwayScore(match.away_score)
@@ -1841,7 +1752,10 @@ export function useMatchState() {
     setMatchTime(defaultMatchTime())
     setMatchId(null)
     setMatchStatus(null)
-  }, [activeTeamFormat])
+    const teamId = routeTeamIdRef.current ?? selectedTeamId
+    if (teamId) navigateApp(coachTeamPath(teamId))
+    else navigateApp(COACH_APP_PATH)
+  }, [activeTeamFormat, selectedTeamId])
 
   /** Permanently delete a match (+ cascaded child rows) and clear local state if active. */
   const deleteMatch = useCallback(
@@ -1880,9 +1794,11 @@ export function useMatchState() {
     const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) => player.attending)
 
     setSelectedTeamId(match.team_id)
+    persistActiveTeamId(match.team_id)
     setMasterRoster(roster)
     setMatchId(match.id)
     setMatchStatus(match.status)
+    navigateApp(coachMatchPath(match.team_id, match.id))
     setPlayers(matchPlayers)
     setHomeScore(match.home_score)
     setAwayScore(match.away_score)

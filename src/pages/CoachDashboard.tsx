@@ -37,9 +37,12 @@ import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
 import {
   COACH_APP_PATH,
-  IMPACT_REPORT_PATH,
+  coachImpactPath,
+  coachTeamPath,
   isImpactReportPath,
   navigateApp,
+  parseCoachRoute,
+  replaceApp,
 } from '@/lib/app-routes'
 import { useMatchPresence } from '@/hooks/useMatchPresence'
 import { useWakeLock, WAKE_LOCK_BLOCKED_TOAST } from '@/hooks/useWakeLock'
@@ -513,22 +516,27 @@ export function CoachDashboard() {
   )
 
   const leaveImpactPath = useCallback(() => {
-    if (isImpactReportPath(window.location.pathname)) {
-      window.history.replaceState(null, '', COACH_APP_PATH)
-    }
-  }, [])
+    if (!isImpactReportPath(window.location.pathname)) return
+    if (activeTeamId) replaceApp(coachTeamPath(activeTeamId))
+    else replaceApp(COACH_APP_PATH)
+  }, [activeTeamId])
 
   const openImpactReport = useCallback(() => {
     setAppMode('impact')
-    if (!isImpactReportPath(window.location.pathname)) {
-      navigateApp(IMPACT_REPORT_PATH)
+    const next = coachImpactPath(activeTeamId)
+    if (window.location.pathname !== next) {
+      navigateApp(next)
     }
-  }, [setAppMode])
+  }, [activeTeamId, setAppMode])
 
   const handleNavNavigate = useCallback(
     (section: AppNavSection) => {
       switch (section) {
         case 'home':
+          if (parseCoachRoute(window.location.pathname).matchId) {
+            returnToHome()
+            break
+          }
           leaveImpactPath()
           setAppMode('home')
           break
@@ -610,6 +618,7 @@ export function CoachDashboard() {
       matchId,
       openImpactReport,
       resumeLiveMatchScreen,
+      returnToHome,
       setAppMode,
     ],
   )

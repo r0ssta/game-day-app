@@ -42,6 +42,8 @@ import {
   updateTeamProfile as updateTeamProfileApi,
   upsertPlayer,
 } from '@/lib/supabase-api'
+import { COACH_APP_PATH, coachTeamPath, navigateApp } from '@/lib/app-routes'
+import { useParams } from '@/hooks/useCoachParams'
 import {
   persistActiveTeamId,
   resolveTeamScope,
@@ -65,6 +67,11 @@ export function useRoster({
   onApplyRoster,
   onTeamShapeChange,
 }: UseRosterOptions) {
+  const { teamId: routeTeamId } = useParams()
+  const routeTeamIdRef = useRef(routeTeamId)
+  routeTeamIdRef.current = routeTeamId
+  const rosterLoadGenRef = useRef(0)
+
   const [rosterLoading, setRosterLoading] = useState(false)
   const [teams, setTeams] = useState<DbTeam[]>([])
   const [seasons, setSeasons] = useState<DbSeason[]>([])
@@ -74,7 +81,7 @@ export function useRoster({
   const [lineupPresets, setLineupPresets] = useState<DbLineupPreset[]>([])
   const [scheduledMatches, setScheduledMatches] = useState<DbMatch[]>([])
   const [scheduledLoading, setScheduledLoading] = useState(false)
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(routeTeamId)
 
   // Keep parent callbacks off hook identities — match setup's load effect
   // depends on loadTeamRoster and must not re-run on every parent render.
@@ -90,14 +97,18 @@ export function useRoster({
 
   const loadTeamRoster = useCallback(
     async (teamId: string, seasonId?: string | null) => {
+      const gen = ++rosterLoadGenRef.current
       setRosterLoading(true)
       try {
         const resolvedSeasonId = seasonId ?? activeSeason?.id
         if (!resolvedSeasonId) {
-          applyRoster([])
+          if (gen === rosterLoadGenRef.current) applyRoster([])
           return
         }
+        // Fetch identity: ['team', teamId, 'roster', seasonId]
         const entries = await fetchSeasonRosterPlayers(resolvedSeasonId, teamId)
+        if (gen !== rosterLoadGenRef.current) return
+        if (routeTeamIdRef.current && routeTeamIdRef.current !== teamId) return
         applyRoster(seasonRosterToPlayers(entries, teamId))
       } catch (err) {
         const message =
@@ -106,7 +117,7 @@ export function useRoster({
             : 'Failed to load roster'
         throw new Error(message)
       } finally {
-        setRosterLoading(false)
+        if (gen === rosterLoadGenRef.current) setRosterLoading(false)
       }
     },
     [applyRoster, activeSeason?.id],
@@ -145,8 +156,10 @@ export function useRoster({
       return
 
     let cancelled = false
+    setLineupPresets([])
     void (async () => {
       try {
+        // Fetch identity: ['team', selectedTeamId, 'lineup-presets']
         const presets = await fetchLineupPresetsByTeamId(selectedTeamId)
         if (!cancelled) setLineupPresets(presets)
       } catch (err) {
@@ -191,7 +204,9 @@ export function useRoster({
     }
     setScheduledLoading(true)
     try {
+      // Fetch identity: ['team', selectedTeamId, 'scheduled-matches']
       const matches = await fetchScheduledMatchesByTeamId(selectedTeamId)
+      if (routeTeamIdRef.current && routeTeamIdRef.current !== selectedTeamId) return
       setScheduledMatches(matches)
     } finally {
       setScheduledLoading(false)
@@ -243,8 +258,20 @@ export function useRoster({
 
   const persistSelectedTeamId = useCallback((teamId: string | null) => {
     setSelectedTeamId(teamId)
-    if (teamId) persistActiveTeamId(teamId)
+    persistActiveTeamId(teamId)
+    if (teamId) navigateApp(coachTeamPath(teamId))
+    else navigateApp(COACH_APP_PATH)
   }, [])
+
+  useEffect(() => {
+    if (routeTeamId && routeTeamId !== selectedTeamId) {
+      setSelectedTeamId(routeTeamId)
+      setMasterRoster([])
+      setTeamRoster([])
+      setLineupPresets([])
+      setScheduledMatches([])
+    }
+  }, [routeTeamId, selectedTeamId])
 
   const createTeamRecord = useCallback(async (input: { name?: string; ageGroup: AgeGroup }) => {
     const rawName =

@@ -7,7 +7,7 @@ import { PwaUpdateToast } from '@/components/PwaUpdateToast'
 import { ScreenSuspense } from '@/components/Spinner'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
-import { isLandingPath } from '@/lib/app-routes'
+import { isLandingPath, parseCoachRoute } from '@/lib/app-routes'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import {
   installParentHubLaunchConsumer,
@@ -54,7 +54,7 @@ function bootstrapParentHubRoute() {
   return route
 }
 
-function AuthenticatedApp() {
+function AuthenticatedApp({ sessionTeamId }: { sessionTeamId: string | null }) {
   const { loading, accessLoading, isAuthenticated, isActiveStaff } = useAuth()
 
   useEffect(() => {
@@ -80,7 +80,7 @@ function AuthenticatedApp() {
 
   return (
     <ScreenSuspense>
-      <CoachDashboard />
+      <CoachDashboard key={sessionTeamId ?? 'no-team'} />
     </ScreenSuspense>
   )
 }
@@ -88,11 +88,13 @@ function AuthenticatedApp() {
 /**
  * Application root: global providers, public/staff route switch, and Suspense.
  * Path routing stays pathname-based (no React Router) so existing URLs are unchanged.
+ * Staff team/match context is `/coach/teams/:teamId/matches/:matchId`.
  */
 export default function App() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
   const [parentHubRoute, setParentHubRoute] = useState(() => bootstrapParentHubRoute())
   const [landingRoute, setLandingRoute] = useState(() => isLandingPath(window.location.pathname))
+  const [coachRoute, setCoachRoute] = useState(() => parseCoachRoute(window.location.pathname))
 
   useEffect(() => {
     if (parentHubRoute) {
@@ -108,6 +110,7 @@ export default function App() {
       setTrackerRoute(parseStatTrackerRoute())
       setParentHubRoute(nextHub)
       setLandingRoute(isLandingPath(window.location.pathname))
+      setCoachRoute(parseCoachRoute(window.location.pathname))
     }
     syncRoute()
     window.addEventListener('hashchange', syncRoute)
@@ -142,8 +145,12 @@ export default function App() {
         <LandingPage />
       ) : (
         <AuthProvider>
-          <ErrorBoundary sectionLabel="Staff app" className="min-h-dvh bg-background">
-            <AuthenticatedApp />
+          <ErrorBoundary
+            sectionLabel="Staff app"
+            resetKey={coachRoute.teamId ?? 'no-team'}
+            className="min-h-dvh bg-background"
+          >
+            <AuthenticatedApp sessionTeamId={coachRoute.teamId} />
           </ErrorBoundary>
         </AuthProvider>
       )}

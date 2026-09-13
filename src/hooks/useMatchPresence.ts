@@ -69,6 +69,7 @@ export function useMatchPresence(matchId: string | null): MatchPresenceMember[] 
       cancelled = true
       setOthers([])
       void channel.unsubscribe()
+      void supabase.removeChannel(channel)
     }
   }, [matchId, userId, email])
 

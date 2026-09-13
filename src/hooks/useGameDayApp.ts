@@ -90,8 +90,6 @@ import {
   insertLineupPreset,
   insertTeam,
   rebuildMatchPlayers,
-  fetchMatchEvents,
-  backfillMissingGoalShots,
   resolveCoachIdForName,
   resolveMatchCoachName,
   syncMatchClock,
@@ -128,9 +126,20 @@ import type {
 import {
   persistActiveTeamId,
   readPersistedActiveTeamId,
+  resolveCoachSessionTeamId,
   resolveTeamScope,
   type TeamScope,
 } from '@/lib/team-context'
+import {
+  COACH_APP_PATH,
+  coachMatchPath,
+  coachTeamPath,
+  isImpactReportPath,
+  navigateApp,
+  parseCoachRoute,
+  replaceApp,
+} from '@/lib/app-routes'
+import { useParams } from '@/hooks/useCoachParams'
 import {
   isLiveMatchStatus,
   isSessionInProgressMatchForSelectedTeam,
@@ -141,8 +150,6 @@ import {
   resolveTeamAgeGroup,
   seasonRosterToPlayers,
 } from '@/lib/season-roster'
-import { applyCardsFromEvents } from '@/lib/match-cards'
-import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import {
   fetchLiveMatchSnapshot,
   isActiveStaffMatchScreen,
@@ -192,6 +199,12 @@ function asContextRecord(raw: unknown): Record<string, unknown> {
 }
 
 export function useGameDayApp() {
+  const { teamId: routeTeamId, matchId: routeMatchId } = useParams()
+  const routeTeamIdRef = useRef(routeTeamId)
+  const routeMatchIdRef = useRef(routeMatchId)
+  routeTeamIdRef.current = routeTeamId
+  routeMatchIdRef.current = routeMatchId
+
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [rosterLoading, setRosterLoading] = useState(false)
@@ -258,9 +271,16 @@ export function useGameDayApp() {
   const [setupPitchKey, setSetupPitchKey] = useState(0)
   const [halftimePitchKey, setHalftimePitchKey] = useState(0)
 
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(routeTeamId)
   const [sessionMatchTeamId, setSessionMatchTeamId] = useState<string | null>(null)
+  const [teamLiveMatch, setTeamLiveMatch] = useState<{
+    teamId: string
+    matchId: string
+    status: DbMatch['status']
+  } | null>(null)
   const sessionMatchSyncGenRef = useRef(0)
+  const rosterLoadGenRef = useRef(0)
+  const routedMatchGenRef = useRef(0)
   const [setupCoachName, setSetupCoachName] = useState('')
   const [teamCoachingStaff, setTeamCoachingStaff] = useState<TeamCoachingStaff>({
     headCoaches: [],
@@ -633,6 +653,10 @@ export function useGameDayApp() {
         const snapshot = await fetchLiveMatchSnapshot(targetMatchId, rosterForFetch)
         if (!snapshot || matchIdRef.current !== targetMatchId) return null
         if (writeGen !== localWriteGenRef.current) return null
+        if (routeMatchIdRef.current && snapshot.match.id !== routeMatchIdRef.current) return null
+        if (routeTeamIdRef.current && snapshot.match.team_id !== routeTeamIdRef.current) {
+          return null
+        }
 
         if (slice === 'scores') {
           const { match, shotSaveTotals, players: remotePlayers } = snapshot
@@ -907,6 +931,12 @@ export function useGameDayApp() {
   })
 
   const resumeLiveMatchScreen = useCallback(async () => {
+    const liveId = teamLiveMatch?.matchId ?? matchId
+    const teamId = routeTeamId ?? selectedTeamId
+    if (teamId && liveId && routeMatchId !== liveId) {
+      navigateApp(coachMatchPath(teamId, liveId))
+      return
+    }
     const latest = liveStateRef.current
     if (localIntermissionRef.current || latest.appMode === 'halftime') {
       setAppMode('halftime')
@@ -925,7 +955,15 @@ export function useGameDayApp() {
     const after = liveStateRef.current
     if (after.periodClockStarted) claimLocalClock()
     setAppMode(isActiveStaffMatchScreen(after.appMode) ? after.appMode : 'match')
-  }, [hydrateLiveMatch, claimLocalClock])
+  }, [
+    hydrateLiveMatch,
+    claimLocalClock,
+    matchId,
+    routeMatchId,
+    routeTeamId,
+    selectedTeamId,
+    teamLiveMatch?.matchId,
+  ])
 
   const applyRoster = useCallback((roster: RosterPlayer[]) => {
     const pending = pendingScheduledSetupRef.current
@@ -971,14 +1009,18 @@ export function useGameDayApp() {
 
   const loadTeamRoster = useCallback(
     async (teamId: string, seasonId?: string | null) => {
+      const gen = ++rosterLoadGenRef.current
       setRosterLoading(true)
       try {
         const resolvedSeasonId = seasonId ?? activeSeason?.id
         if (!resolvedSeasonId) {
-          applyRoster([])
+          if (gen === rosterLoadGenRef.current) applyRoster([])
           return
         }
+        // Fetch identity: ['team', teamId, 'roster', seasonId]
         const entries = await fetchSeasonRosterPlayers(resolvedSeasonId, teamId)
+        if (gen !== rosterLoadGenRef.current) return
+        if (routeTeamIdRef.current && routeTeamIdRef.current !== teamId) return
         applyRoster(seasonRosterToPlayers(entries, teamId))
       } catch (err) {
         const message =
@@ -987,7 +1029,7 @@ export function useGameDayApp() {
             : 'Failed to load roster'
         throw new Error(message)
       } finally {
-        setRosterLoading(false)
+        if (gen === rosterLoadGenRef.current) setRosterLoading(false)
       }
     },
     [applyRoster, activeSeason?.id],
@@ -1017,150 +1059,25 @@ export function useGameDayApp() {
         setActiveSeasonState(activeSeasonData)
         setClubStaffCoachNames(clubStaffNames)
 
-        let resolvedTeamId: string | null = null
-        if (teamsData.length > 0) {
-          const activeTeams = teamsData.filter((team) => team.active_status !== false)
-          const selectable = activeTeams.length > 0 ? activeTeams : teamsData
-          const persistedTeamId = readPersistedActiveTeamId()
-          const persistedTeam = persistedTeamId
-            ? selectable.find((team) => team.id === persistedTeamId)
-            : null
-          resolvedTeamId = persistedTeam?.id ?? selectable[0]?.id ?? null
-        }
+        const route = parseCoachRoute(window.location.pathname)
+        const resolvedTeamId = resolveCoachSessionTeamId({
+          routeTeamId: route.teamId,
+          teams: teamsData,
+          persistedTeamId: readPersistedActiveTeamId(),
+        })
 
-        const active = resolvedTeamId ? await fetchActiveMatch(resolvedTeamId) : null
-        if (cancelled) return
-
-        const seasonIdForRoster =
-          active?.match.season_id ?? activeSeasonData?.id ?? null
-
-        if (active) {
-          const { match, team, coach, stats } = active
-          const entries = seasonIdForRoster
-            ? await fetchSeasonRosterPlayers(seasonIdForRoster, match.team_id, {
-                includeInactive: true,
-              })
-            : []
-          if (cancelled) return
-
-          const roster = seasonRosterToPlayers(entries, match.team_id)
-          const rosterIds = new Set(roster.map((p) => p.id))
-          const missingIds = stats
-            .map((s) => s.player_id)
-            .filter((id) => id && !rosterIds.has(id))
-          if (missingIds.length > 0) {
-            const guests = await fetchPlayersByIds(missingIds)
-            for (const guest of guests) {
-              roster.push(
-                poolPlayerToGuestRoster(guest, match.team_id),
-              )
-            }
-          }
-          const matchPlayers = rebuildMatchPlayers(roster, stats).filter(
-            (player) => player.attending,
-          )
-          let playersWithCards = matchPlayers
-          let shotSaveTotals = {
-            homeShots: 0,
-            awayShots: 0,
-            homeSaves: 0,
-            awaySaves: 0,
-            homeCorners: 0,
-            awayCorners: 0,
-          }
-          try {
-            const events = await fetchMatchEvents(match.id)
-            if (!cancelled) {
-              playersWithCards = applyCardsFromEvents(matchPlayers, events)
-              shotSaveTotals = aggregateTeamShotSaveTotals(events)
-            }
-            const backfill = await backfillMissingGoalShots(match.id)
-            if (!cancelled && backfill.inserted > 0) {
-              shotSaveTotals = backfill.totals
-            }
-          } catch (cardErr) {
-            console.warn('[bootstrap] could not restore card state', cardErr)
-          }
-          if (cancelled) return
-
-          setSelectedTeamId(match.team_id)
-          resolvedTeamId = match.team_id
-          setMasterRoster(roster)
-          setMatchId(match.id)
-          setSessionMatchTeamId(match.team_id)
-          setMatchStatus(match.status)
-          setAppMode('home')
-          setPlayers(playersWithCards)
-          setHomeScore(match.home_score)
-          setAwayScore(match.away_score)
-          setHomeShots(shotSaveTotals.homeShots)
-          setAwayShots(shotSaveTotals.awayShots)
-          setHomeSaves(shotSaveTotals.homeSaves)
-          setAwaySaves(shotSaveTotals.awaySaves)
-          setHomeCorners(shotSaveTotals.homeCorners)
-          setAwayCorners(shotSaveTotals.awayCorners)
-          const resolvedClock = applyClockFromMatch(match)
-          if (match.period_clock_started && !match.period_start_time && resolvedClock.periodStartTime) {
-            syncMatchRecord(match.id, {
-              period_start_time: resolvedClock.periodStartTime,
-              accumulated_seconds_before_pause: 0,
-            })
-          }
-          applyMatchPeriodState(match)
-          setPeriodClockStarted(match.period_clock_started)
-          setSubIntervalSeconds(match.sub_interval_seconds ?? null)
-          setGkPlaysFullHalf(match.gk_plays_full_half !== false)
-          setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
-          setMatchCoachName(resolveMatchCoachName(match, coach))
-          setSetupCoachName(resolveMatchCoachName(match, coach))
-          setMatchOpponent(match.opponent)
-          setMatchLocationType(resolveMatchLocationType(match))
-          setMatchTournamentGame(match.tournament_game)
-          setMatchIsTest(Boolean(match.is_test))
-          setMatchGoesToPks(Boolean(match.goes_to_pks))
-          setMatchIsTournamentKnockout(Boolean(match.is_tournament_knockout))
-          setHomePkScore(match.home_pk_score ?? 0)
-          setAwayPkScore(match.away_pk_score ?? 0)
-          setPkWinnerIsUs(match.pk_winner_is_us ?? null)
-          setPkGkPlayerId(match.pk_gk_player_id ?? null)
-          setLocationType(resolveMatchLocationType(match))
-          setMatchDate(match.match_date ?? defaultMatchDate())
-          setMatchTime(normalizeMatchTimeForInput(match.match_time))
-          setFirstHalfStarterIds(
-            stats.filter((s) => s.is_first_half_starter).map((s) => s.player_id),
-          )
-          setSecondHalfStarterIds(
-            stats.filter((s) => s.is_second_half_starter).map((s) => s.player_id),
-          )
-          const rawContext =
-            match.qualitative_context && typeof match.qualitative_context === 'object'
-              ? (match.qualitative_context as Record<string, unknown>)
-              : null
-          qualitativeContextRef.current = asContextRecord(rawContext)
-          preKickoffLineupDirtyRef.current = false
-          const teamFormat = normalizeTeamFormat(team.format)
-          const preloadFormation =
-            typeof rawContext?.preloadFormation === 'string'
-              ? rawContext.preloadFormation.trim()
-              : ''
-          const formationId = resolveFormationIdForFormat(preloadFormation, teamFormat)
-          if (preloadFormation) {
-            setMatchFormations({ first: formationId, second: formationId })
-          }
-          const liveSlots = resolveLiveFirstHalfSlots({
-            persistedRaw: rawContext?.preloadSlotAssignments,
-            formationId,
-            format: teamFormat,
-            starters: playersWithCards
-              .filter((player) => player.isFirstHalfStarter || player.isOnField)
-              .map((player) => ({ playerId: player.id, position: player.matchPosition })),
-          })
-          setFirstHalfSlotAssignments(liveSlots ?? {})
-        } else if (resolvedTeamId) {
+        if (resolvedTeamId) {
           setSelectedTeamId(resolvedTeamId)
           persistActiveTeamId(resolvedTeamId)
+          if (
+            !route.teamId &&
+            !isImpactReportPath(window.location.pathname)
+          ) {
+            replaceApp(coachTeamPath(resolvedTeamId))
+          }
         }
 
+        const seasonIdForRoster = activeSeasonData?.id ?? null
         if (resolvedTeamId) {
           if (seasonIdForRoster) {
             const entries = await fetchSeasonRosterPlayers(seasonIdForRoster, resolvedTeamId)
@@ -1265,11 +1182,16 @@ export function useGameDayApp() {
   }, [masterRoster])
 
   useEffect(() => {
-    if (!selectedTeamId || (appMode !== 'match_setup' && appMode !== 'team' && appMode !== 'reporting' && appMode !== 'recap_history' && appMode !== 'halftime' && appMode !== 'match')) return
+    if (!selectedTeamId || (appMode !== 'match_setup' && appMode !== 'team' && appMode !== 'reporting' && appMode !== 'recap_history' && appMode !== 'halftime' && appMode !== 'match')) {
+      setLineupPresets([])
+      return
+    }
 
     let cancelled = false
+    setLineupPresets([])
     void (async () => {
       try {
+        // Fetch identity: ['team', selectedTeamId, 'lineup-presets']
         const presets = await fetchLineupPresetsByTeamId(selectedTeamId)
         if (!cancelled) setLineupPresets(presets)
       } catch (err) {
@@ -1314,7 +1236,9 @@ export function useGameDayApp() {
     }
     setScheduledLoading(true)
     try {
+      // Fetch identity: ['team', selectedTeamId, 'scheduled-matches']
       const matches = await fetchScheduledMatchesByTeamId(selectedTeamId)
+      if (routeTeamIdRef.current && routeTeamIdRef.current !== selectedTeamId) return
       setScheduledMatches(matches)
     } finally {
       setScheduledLoading(false)
@@ -1599,54 +1523,29 @@ export function useGameDayApp() {
     [refreshLineupPresets],
   )
 
-  const syncSessionMatchForTeam = useCallback(
-    async (teamId: string) => {
-      const gen = ++sessionMatchSyncGenRef.current
-      const active = await fetchActiveMatch(teamId)
-      if (gen !== sessionMatchSyncGenRef.current) return
+  const syncTeamLiveMatch = useCallback(async (teamId: string) => {
+    const gen = ++sessionMatchSyncGenRef.current
+    // Fetch identity: ['team', teamId, 'active-match']
+    const active = await fetchActiveMatch(teamId)
+    if (gen !== sessionMatchSyncGenRef.current) return
+    if (routeTeamIdRef.current && routeTeamIdRef.current !== teamId) return
 
-      if (!active) {
-        setMatchId(null)
-        setSessionMatchTeamId(null)
-        setMatchStatus(null)
-        setMatchTeamName('')
-        setMatchOpponent('')
-        setPlayers([])
-        releaseLocalClock()
-        setPeriodClockStarted(false)
-        setRunning(false)
-        return
-      }
+    if (!active || active.match.team_id !== teamId) {
+      setTeamLiveMatch(null)
+      return
+    }
 
-      const { match, team } = active
-      setMatchId(match.id)
-      setSessionMatchTeamId(match.team_id)
-      setMatchStatus(match.status)
-      setMatchTeamName(formatTeamDisplayName(team.name, team.age_group))
-      setMatchOpponent(match.opponent)
-    },
-    [releaseLocalClock],
-  )
+    setTeamLiveMatch({
+      teamId: active.match.team_id,
+      matchId: active.match.id,
+      status: active.match.status,
+    })
+  }, [])
 
-  const setActiveTeamId = useCallback(
-    (teamId: string) => {
-      setSelectedTeamId(teamId)
-      persistActiveTeamId(teamId)
-      setMasterRoster([])
-      setSetupLineup({ attending: {}, startFirstHalf: {} })
-      setMatchPositions({})
-      setSetupSlotAssignments(undefined)
-      setSetupSlotLabelOverrides(undefined)
-      setSetupPitchKey((k) => k + 1)
-      const team = teams.find((t) => t.id === teamId)
-      const format = normalizeTeamFormat(team?.format)
-      const defaultFormation = getDefaultFormationId(format)
-      setMatchFormations({ first: defaultFormation, second: defaultFormation })
-      void loadTeamRoster(teamId)
-      void syncSessionMatchForTeam(teamId)
-    },
-    [loadTeamRoster, syncSessionMatchForTeam, teams],
-  )
+  const setActiveTeamId = useCallback((teamId: string) => {
+    persistActiveTeamId(teamId)
+    navigateApp(coachTeamPath(teamId))
+  }, [])
 
   const selectTeam = setActiveTeamId
 
@@ -1736,10 +1635,12 @@ export function useGameDayApp() {
           .sort((a, b) => a.name.localeCompare(b.name)),
       )
       if (!active && selectedTeamId === teamId) {
+        persistActiveTeamId(null)
         setSelectedTeamId(null)
         setMasterRoster([])
         setLineupPresets([])
         setScheduledMatches([])
+        navigateApp(COACH_APP_PATH)
       }
       return updated
     },
@@ -2098,7 +1999,13 @@ export function useGameDayApp() {
         setMatchId(match.id)
         setSessionMatchTeamId(input.teamId)
         setMatchStatus('live')
+        setTeamLiveMatch({
+          teamId: input.teamId,
+          matchId: match.id,
+          status: 'live',
+        })
         setAppMode('match')
+        navigateApp(coachMatchPath(input.teamId, match.id))
         setPlayers(matchPlayers)
         setHomeScore(0)
         setAwayScore(0)
@@ -2416,11 +2323,18 @@ export function useGameDayApp() {
       const matchTotalPeriods: TotalPeriods = match.total_periods === 3 ? 3 : 2
 
       setSelectedTeamId(match.team_id)
+      persistActiveTeamId(match.team_id)
       setMasterRoster(roster)
       setMatchId(match.id)
       setSessionMatchTeamId(match.team_id)
       setMatchStatus('live')
+      setTeamLiveMatch({
+        teamId: match.team_id,
+        matchId: match.id,
+        status: 'live',
+      })
       setAppMode('match')
+      navigateApp(coachMatchPath(match.team_id, match.id))
       setPlayers(matchPlayers)
       setHomeScore(match.home_score)
       setAwayScore(match.away_score)
@@ -2790,8 +2704,9 @@ export function useGameDayApp() {
     [matchId, teams, selectedTeamId, homeScore, awayScore, matchTeamName, matchOpponent],
   )
 
-  const returnToHome = useCallback(() => {
-    setAppMode('home')
+  const resetMatchSession = useCallback(() => {
+    localWriteGenRef.current += 1
+    routedMatchGenRef.current += 1
     preKickoffLineupDirtyRef.current = false
     preKickoffPersistGenRef.current += 1
     qualitativeContextRef.current = {}
@@ -2851,7 +2766,19 @@ export function useGameDayApp() {
     setMatchId(null)
     setSessionMatchTeamId(null)
     setMatchStatus(null)
-  }, [activeTeamFormat])
+  }, [activeTeamFormat, clearPeriodClock, releaseLocalClock])
+
+  const returnToHome = useCallback(() => {
+    const teamId = routeTeamIdRef.current ?? selectedTeamId
+    resetMatchSession()
+    setAppMode('home')
+    if (teamId) {
+      persistActiveTeamId(teamId)
+      navigateApp(coachTeamPath(teamId))
+    } else {
+      navigateApp(COACH_APP_PATH)
+    }
+  }, [resetMatchSession, selectedTeamId])
 
   /** Permanently delete a match (+ cascaded child rows) and clear local state if active. */
   const deleteMatch = useCallback(
@@ -2890,10 +2817,12 @@ export function useGameDayApp() {
     const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) => player.attending)
 
     setSelectedTeamId(match.team_id)
+    persistActiveTeamId(match.team_id)
     setMasterRoster(roster)
     setMatchId(match.id)
     setSessionMatchTeamId(match.team_id)
     setMatchStatus(match.status)
+    navigateApp(coachMatchPath(match.team_id, match.id))
     setPlayers(matchPlayers)
     setHomeScore(match.home_score)
     setAwayScore(match.away_score)
@@ -2927,6 +2856,98 @@ export function useGameDayApp() {
 
   /** @deprecated Use openMatchRecap */
   const openPendingReviewRecap = openMatchRecap
+
+  useEffect(() => {
+    if (routeTeamId && routeTeamId !== selectedTeamId) {
+      setSelectedTeamId(routeTeamId)
+    }
+  }, [routeTeamId, selectedTeamId])
+
+  useEffect(() => {
+    if (loading || !selectedTeamId) return
+    void syncTeamLiveMatch(selectedTeamId)
+  }, [loading, selectedTeamId, syncTeamLiveMatch])
+
+  useEffect(() => {
+    if (
+      teamLiveMatch &&
+      matchId === teamLiveMatch.matchId &&
+      !isLiveMatchStatus(matchStatus)
+    ) {
+      setTeamLiveMatch(null)
+    }
+  }, [matchId, matchStatus, teamLiveMatch])
+
+  const prevRouteMatchIdRef = useRef(routeMatchId)
+  useEffect(() => {
+    const previousMatchId = prevRouteMatchIdRef.current
+    prevRouteMatchIdRef.current = routeMatchId
+
+    if (loading) return
+
+    if (!routeMatchId) {
+      if (previousMatchId) {
+        resetMatchSession()
+        if (!isImpactReportPath(window.location.pathname)) {
+          setAppMode('home')
+        }
+      }
+      return
+    }
+
+    if (matchId === routeMatchId) return
+
+    const gen = ++routedMatchGenRef.current
+    void (async () => {
+      // Fetch identity: ['match', routeMatchId, 'bundle']
+      const bundle = await fetchMatchBundleById(routeMatchId)
+      if (gen !== routedMatchGenRef.current) return
+      if (!bundle) {
+        if (routeTeamId) navigateApp(coachTeamPath(routeTeamId))
+        return
+      }
+      if (routeTeamId && bundle.match.team_id !== routeTeamId) {
+        replaceApp(coachTeamPath(routeTeamId))
+        return
+      }
+
+      persistActiveTeamId(bundle.match.team_id)
+      if (isLiveMatchStatus(bundle.match.status)) {
+        matchIdRef.current = bundle.match.id
+        setMatchId(bundle.match.id)
+        setSessionMatchTeamId(bundle.match.team_id)
+        setMatchStatus(bundle.match.status)
+        setTeamLiveMatch({
+          teamId: bundle.match.team_id,
+          matchId: bundle.match.id,
+          status: bundle.match.status,
+        })
+        const result = await hydrateLiveMatch({ applyMode: true, force: true })
+        if (gen !== routedMatchGenRef.current) return
+        if (result?.mode === 'match' && result.periodClockStarted) {
+          claimLocalClock()
+          return
+        }
+        const after = liveStateRef.current
+        if (after.periodClockStarted) claimLocalClock()
+        setAppMode(isActiveStaffMatchScreen(after.appMode) ? after.appMode : 'match')
+        return
+      }
+
+      if (bundle.match.status === 'pending_review' || bundle.match.status === 'final') {
+        await openMatchRecap(bundle.match.id)
+      }
+    })()
+  }, [
+    claimLocalClock,
+    hydrateLiveMatch,
+    loading,
+    matchId,
+    openMatchRecap,
+    resetMatchSession,
+    routeMatchId,
+    routeTeamId,
+  ])
 
   const endMatch = useCallback(async () => {
     if (matchId) {
@@ -3113,12 +3134,19 @@ export function useGameDayApp() {
     openMatchRecap,
     openPendingReviewRecap,
     matchStatus,
-    hasLiveMatch: isSessionInProgressMatchForSelectedTeam(
-      matchStatus,
-      matchId,
-      sessionMatchTeamId,
-      selectedTeamId,
-    ),
+    hasLiveMatch:
+      isSessionInProgressMatchForSelectedTeam(
+        teamLiveMatch?.status,
+        teamLiveMatch?.matchId,
+        teamLiveMatch?.teamId,
+        selectedTeamId,
+      ) ||
+      isSessionInProgressMatchForSelectedTeam(
+        matchStatus,
+        matchId,
+        sessionMatchTeamId,
+        selectedTeamId,
+      ),
     hasPendingRecap: isSessionMatchForSelectedTeam(
       matchStatus,
       matchId,

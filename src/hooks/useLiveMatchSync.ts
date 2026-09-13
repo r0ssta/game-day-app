@@ -36,6 +36,7 @@ export function useLiveMatchSync(input: {
 
     const hydrate = () => {
       if (cancelled || isBlockedRef.current()) return
+      // Channel / fetch identity: ['match', matchId, 'events']
       void onHydrateRef.current()
     }
 
