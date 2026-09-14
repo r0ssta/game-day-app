@@ -1,3 +1,4 @@
+export { useChangelog } from '@/hooks/useChangelog'
 export { useCoachParams, useParams } from '@/hooks/useCoachParams'
 export { useGameDayApp } from '@/hooks/useGameDayApp'
 export { useMatchClock } from '@/hooks/useMatchClock'

@@ -1,9 +1,10 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   Activity,
   BarChart3,
   History,
   Home,
+  Megaphone,
   Menu,
   Play,
   Shield,
@@ -14,6 +15,8 @@ import {
 import { SunlightModeToggle } from '@/components/SunlightModeToggle'
 import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
+import { WhatsNewSheet } from '@/components/WhatsNewSheet'
+import { useChangelog } from '@/hooks/useChangelog'
 import { CLUB_CREST_AVIF_SRC, CLUB_CREST_SRC, CLUB_CREST_WEBP_SRC, CLUB_SHORT_NAME } from '@/lib/branding'
 import { APP_CONTAINER, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import { cn } from '@/lib/utils'
@@ -194,6 +197,14 @@ export function AppNavDrawer({
   userEmail,
   onSignOut,
 }: AppNavDrawerProps) {
+  const { hasUnreadUpdates, markAsRead, releases } = useChangelog()
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false)
+
+  const openWhatsNew = () => {
+    setWhatsNewOpen(true)
+    markAsRead()
+  }
+
   useEffect(() => {
     if (!open) return
 
@@ -238,6 +249,24 @@ export function AppNavDrawer({
             disabled={teamSwitchDisabled}
             disabledReason={teamSwitchDisabled ? 'Team locked during live match' : undefined}
           />
+
+          <button
+            type="button"
+            aria-label={hasUnreadUpdates ? "What's new, new updates available" : "What's new"}
+            onClick={openWhatsNew}
+            className={cn(
+              TOUCH_ICON_BUTTON,
+              'relative shrink-0 border-2 border-border bg-card text-foreground shadow-sm',
+            )}
+          >
+            <Megaphone className="size-5" strokeWidth={2.5} />
+            {hasUnreadUpdates ? (
+              <span
+                className="absolute right-1.5 top-1.5 size-2 rounded-full bg-danger ring-2 ring-background"
+                aria-hidden
+              />
+            ) : null}
+          </button>
 
           <picture>
             <source type="image/avif" srcSet={CLUB_CREST_AVIF_SRC} />
@@ -347,6 +376,12 @@ export function AppNavDrawer({
           ) : null}
         </div>
       </aside>
+
+      <WhatsNewSheet
+        open={whatsNewOpen}
+        releases={releases}
+        onClose={() => setWhatsNewOpen(false)}
+      />
     </>
   )
 }
