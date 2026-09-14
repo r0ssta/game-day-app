@@ -149,6 +149,28 @@ describe('play-time', () => {
     expect(banked.subbedInAt).toBeNull()
   })
 
+  it('shows later-period minutes for an unstamped on-field player who already has banked time', () => {
+    const periodLength = 18 * 60
+    const playedFirstPeriod = player({
+      id: FIELD,
+      isOnField: true,
+      subbedInAt: null,
+      totalSecondsPlayed: periodLength,
+      fieldSecondsPlayed: periodLength,
+      gkSecondsPlayed: 0,
+    })
+
+    expect(getSecondsPlayedAsOf(playedFirstPeriod, 540, periodLength)).toBe(periodLength + 540)
+    expect(getRoleSecondsAsOf(playedFirstPeriod, 540, periodLength).totalSeconds).toBe(
+      periodLength + 540,
+    )
+
+    const [banked] = finalizeAllOnField([playedFirstPeriod], 540, {
+      periodStartRemaining: periodLength,
+    })
+    expect(banked.totalSecondsPlayed).toBe(periodLength)
+  })
+
   it('does not double-count after a stint is already banked', () => {
     const alreadyBanked = player({
       id: FIELD,

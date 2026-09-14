@@ -5,6 +5,10 @@ import {
   isStartingLineupEvent,
 } from '@/lib/match-event-notes'
 import { formatRecapMinutes } from '@/lib/match-recap'
+import {
+  formatFeedPeriodPrefix,
+  formatPlayerStatPeriodLabel,
+} from '@/lib/match-periods'
 import { isGoalkeeperPosition } from '@/lib/match-shot-save'
 import {
   assignParentEventPeriodIndexes,
@@ -89,21 +93,57 @@ export function formatParentHalfRole(half: ParentHalfStat): string {
   return '—'
 }
 
-export function formatParentTotalRole(row: ParentMatchPlayerStat): string {
+export function regulationPeriodCount(totalPeriods?: number | null): 2 | 3 {
+  return totalPeriods === 3 ? 3 : 2
+}
+
+/** Regulation period buckets. Period 3 is stored in extraHalves[0], not extra time. */
+export function parentRegulationPeriodStats(
+  row: ParentMatchPlayerStat,
+  totalPeriods?: number | null,
+): ParentHalfStat[] {
+  if (regulationPeriodCount(totalPeriods) === 3) {
+    return [row.halves[0], row.halves[1], row.extraHalves[0] ?? emptyHalf()]
+  }
+  return [row.halves[0], row.halves[1]]
+}
+
+/** Periods after regulation (tournament extra time). */
+export function parentExtraPeriodStats(
+  row: ParentMatchPlayerStat,
+  totalPeriods?: number | null,
+): ParentHalfStat[] {
+  const planned = regulationPeriodCount(totalPeriods)
+  return planned === 3 ? row.extraHalves.slice(1) : row.extraHalves
+}
+
+export function parentStatPeriodColumns(
+  row: ParentMatchPlayerStat,
+  totalPeriods?: number | null,
+): Array<{ label: string; half: ParentHalfStat }> {
+  return parentRegulationPeriodStats(row, totalPeriods).map((half, index) => ({
+    label: formatPlayerStatPeriodLabel(index + 1, totalPeriods),
+    half,
+  }))
+}
+
+export function formatParentTotalRole(
+  row: ParentMatchPlayerStat,
+  totalPeriods?: number | null,
+): string {
+  const planned = regulationPeriodCount(totalPeriods)
+  const regulation = parentRegulationPeriodStats(row, planned)
+  const extra = parentExtraPeriodStats(row, planned)
   const started: string[] = []
-  if (row.halves[0].started) started.push('1H')
-  if (row.halves[1].started) started.push('2H')
-  row.extraHalves.forEach((half, index) => {
-    if (half.started) started.push(`${index + 3}H`)
+  regulation.forEach((half, index) => {
+    if (half.started) started.push(formatFeedPeriodPrefix(index + 1, planned))
+  })
+  extra.forEach((half, index) => {
+    if (half.started) started.push(formatFeedPeriodPrefix(planned + index + 1, planned))
   })
   if (started.length === 0) return row.total.seconds > 0 ? 'Came on' : '—'
-  if (
-    started.length === 2 &&
-    row.halves[0].started &&
-    row.halves[1].started &&
-    row.extraHalves.every((half) => !half.started)
-  ) {
-    return 'Started both'
+  if (started.length === planned && regulation.every((half) => half.started) && extra.every((half) => !half.started)) {
+    return planned === 3 ? 'Started all' : 'Started both'
   }
   return `Started ${started.join(' · ')}`
 }

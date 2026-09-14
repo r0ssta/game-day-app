@@ -13,9 +13,12 @@ import {
   formatParentHalfRole,
   formatParentPositionsLine,
   formatParentTotalRole,
+  parentExtraPeriodStats,
+  parentStatPeriodColumns,
   type ParentHalfStat,
   type ParentMatchPlayerStat,
 } from '@/lib/parent-match-stats'
+import { formatPlayerStatPeriodLabel } from '@/lib/match-periods'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import { LiveGameFeed } from '@/components/ParentTimelineList'
 import { cn } from '@/lib/utils'
@@ -62,10 +65,16 @@ function HalfColumn({
 function PlayerStatCard({
   row,
   hidePlayingTime,
+  totalPeriods,
 }: {
   row: ParentMatchPlayerStat
   hidePlayingTime: boolean
+  totalPeriods?: number | null
 }) {
+  const periodColumns = parentStatPeriodColumns(row, totalPeriods)
+  const extraPeriods = parentExtraPeriodStats(row, totalPeriods)
+  const showTotalColumn = periodColumns.length < 3
+
   return (
     <li className="px-3 py-3.5">
       <div className="flex items-center gap-3">
@@ -79,42 +88,56 @@ function PlayerStatCard({
         </div>
         <div className="min-w-0">
           <p className="truncate text-base font-bold text-foreground">{row.name}</p>
-          {hidePlayingTime ? null : (
+          {hidePlayingTime ? (
+            showTotalColumn ? null : (
+              <p className="text-[11px] font-semibold text-muted-foreground">
+                {formatParentTotalRole(row, totalPeriods)}
+              </p>
+            )
+          ) : (
             <p className="font-mono text-xs font-bold tabular-nums text-muted-foreground">
               {formatRecapMinutes(row.total.seconds)} total
+              {showTotalColumn ? null : (
+                <span className="ml-1.5 font-sans font-semibold">
+                  · {formatParentTotalRole(row, totalPeriods)}
+                </span>
+              )}
             </p>
           )}
         </div>
       </div>
       <div className="mt-3 grid grid-cols-3 divide-x divide-border border-t border-border pt-1">
-        <HalfColumn
-          label="1st half"
-          half={row.halves[0]}
-          role={formatParentHalfRole(row.halves[0])}
-          hidePlayingTime={hidePlayingTime}
-        />
-        <HalfColumn
-          label="2nd half"
-          half={row.halves[1]}
-          role={formatParentHalfRole(row.halves[1])}
-          hidePlayingTime={hidePlayingTime}
-        />
-        <HalfColumn
-          label="Total"
-          half={row.total}
-          role={formatParentTotalRole(row)}
-          hidePlayingTime={hidePlayingTime}
-        />
+        {periodColumns.map((column) => (
+          <HalfColumn
+            key={column.label}
+            label={column.label}
+            half={column.half}
+            role={formatParentHalfRole(column.half)}
+            hidePlayingTime={hidePlayingTime}
+          />
+        ))}
+        {showTotalColumn ? (
+          <HalfColumn
+            label="Total"
+            half={row.total}
+            role={formatParentTotalRole(row, totalPeriods)}
+            hidePlayingTime={hidePlayingTime}
+          />
+        ) : null}
       </div>
-      {row.extraHalves.some((half) => half.seconds > 0 || half.started) ? (
+      {extraPeriods.some((half) => half.seconds > 0 || half.started) ? (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          {row.extraHalves
+          {extraPeriods
             .map((half, index) => {
               if (!(half.seconds > 0 || half.started)) return null
               const role = formatParentHalfRole(half)
+              const label = formatPlayerStatPeriodLabel(
+                periodColumns.length + index + 1,
+                totalPeriods,
+              )
               return hidePlayingTime
-                ? `${index + 3}rd · ${role}`
-                : `${index + 3}rd · ${formatRecapMinutes(half.seconds)} · ${role}`
+                ? `${label} · ${role}`
+                : `${label} · ${formatRecapMinutes(half.seconds)} · ${role}`
             })
             .filter(Boolean)
             .join(' · ')}
@@ -224,7 +247,12 @@ export function ParentMatchRecapView({
         ) : (
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {playerStats.map((row) => (
-              <PlayerStatCard key={row.playerId} row={row} hidePlayingTime={hidePlayingTime} />
+              <PlayerStatCard
+                key={row.playerId}
+                row={row}
+                hidePlayingTime={hidePlayingTime}
+                totalPeriods={totalPeriods}
+              />
             ))}
           </ul>
         )}
@@ -243,7 +271,12 @@ export function ParentMatchRecapView({
         </section>
       ) : null}
 
-      <LiveGameFeed rows={timeline} opponent={opponent} teamName={teamName} />
+      <LiveGameFeed
+        rows={timeline}
+        opponent={opponent}
+        teamName={teamName}
+        totalPeriods={totalPeriods}
+      />
     </div>
   )
 }

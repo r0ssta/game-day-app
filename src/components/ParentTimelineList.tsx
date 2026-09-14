@@ -9,11 +9,13 @@ export function LiveGameFeed({
   rows,
   opponent,
   teamName,
+  totalPeriods,
   emptyLabel = 'No live events recorded for this match.',
 }: {
   rows: ParentTimelineRow[]
   opponent: string
   teamName: string
+  totalPeriods?: number | null
   emptyLabel?: string
 }) {
   return (
@@ -26,7 +28,12 @@ export function LiveGameFeed({
           {emptyLabel}
         </p>
       ) : (
-        <ParentTimelineList rows={rows} opponent={opponent} teamName={teamName} />
+        <ParentTimelineList
+          rows={rows}
+          opponent={opponent}
+          teamName={teamName}
+          totalPeriods={totalPeriods}
+        />
       )}
     </section>
   )
@@ -36,15 +43,17 @@ export function ParentTimelineList({
   rows,
   opponent,
   teamName,
+  totalPeriods,
 }: {
   rows: ParentTimelineRow[]
   opponent: string
   teamName: string
+  totalPeriods?: number | null
 }) {
   return (
     <ul className="space-y-2">
       {rows.map((row) => {
-        const copy = formatParentTimelineRowCopy(row, opponent, { teamName })
+        const copy = formatParentTimelineRowCopy(row, opponent, { teamName, totalPeriods })
         const highlight = isParentTimelineHighlight(row)
         return (
           <li

@@ -6,6 +6,8 @@ import {
   formatParentHalfRole,
   formatParentPositionsLine,
   formatParentTotalRole,
+  parentExtraPeriodStats,
+  parentRegulationPeriodStats,
 } from './parent-match-stats'
 import type { ParentHubPlayer, ParentLiveEvent } from './parent-hub'
 
@@ -216,5 +218,64 @@ describe('buildParentMatchPlayerStats', () => {
     expect(bess.halves[1].seconds).toBe(2197)
     expect(bess.total.seconds).toBe(4324)
     expect(formatParentTotalRole(bess)).toBe('Started both')
+  })
+
+  it('treats a 3-period U9/U10 game as three regulation periods, not extra time', () => {
+    const period = 18 * 60
+    const rows = buildParentMatchPlayerStats(
+      [
+        event({
+          id: 'p1-ada',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('ST'),
+          createdAt: '2026-09-12T15:01:32.000Z',
+        }),
+        event({
+          id: 'p1-end',
+          eventType: 'sub_out',
+          timestamp: period,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-12T15:19:32.000Z',
+        }),
+        event({
+          id: 'p2-ada',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('CM'),
+          createdAt: '2026-09-12T15:22:46.000Z',
+        }),
+        event({
+          id: 'p2-end',
+          eventType: 'sub_out',
+          timestamp: period,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-12T15:40:46.000Z',
+        }),
+        event({
+          id: 'p3-ada',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('ST'),
+          createdAt: '2026-09-12T15:45:21.000Z',
+        }),
+        event({
+          id: 'p3-end',
+          eventType: 'sub_out',
+          timestamp: period,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-12T16:03:21.000Z',
+        }),
+      ],
+      'm1',
+      18,
+      players,
+    )
+
+    const ada = rows.find((row) => row.playerId === ADA)!
+    const regulation = parentRegulationPeriodStats(ada, 3)
+    expect(regulation).toHaveLength(3)
+    expect(regulation.map((half) => half.seconds)).toEqual([period, period, period])
+    expect(regulation.every((half) => half.started)).toBe(true)
+    expect(ada.total.seconds).toBe(period * 3)
+    expect(parentExtraPeriodStats(ada, 3)).toEqual([])
+    expect(formatParentTotalRole(ada, 3)).toBe('Started all')
   })
 })

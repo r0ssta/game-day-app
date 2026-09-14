@@ -377,6 +377,11 @@ describe('formatParentPeriodEndedLabel', () => {
     expect(formatParentPeriodEndedLabel(1, 2)).toBe('1st half ended')
     expect(formatParentPeriodEndedLabel(2, 2)).toBe('2nd half ended')
   })
+
+  it('uses period copy for U9/U10 three-period matches', () => {
+    expect(formatParentPeriodEndedLabel(1, 3)).toBe('1st period ended')
+    expect(formatParentPeriodEndedLabel(3, 3)).toBe('3rd period ended')
+  })
 })
 
 describe('parentLiveEventsFromMatchEvents', () => {

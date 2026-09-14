@@ -188,6 +188,59 @@ describe('aggregatePlayerRecaps', () => {
     expect(stats.get('p1')?.gkSeconds).toBe(1500)
     expect(stats.get('p1')?.fieldSeconds).toBe(0)
   })
+
+  it('sums all three U9/U10 periods instead of stopping after two halves', () => {
+    const period = 18 * 60
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-12T15:01:32.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: period,
+          event_notes: 'period_end',
+          created_at: '2026-09-12T15:19:32.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|CM',
+          created_at: '2026-09-12T15:22:46.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: period,
+          event_notes: 'period_end',
+          created_at: '2026-09-12T15:40:46.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-12T15:45:21.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: period,
+          event_notes: 'period_end',
+          created_at: '2026-09-12T16:03:21.000Z',
+          player_id: 'p1',
+        }),
+      ],
+      period,
+    )
+
+    expect(stats.get('p1')?.totalSeconds).toBe(period * 3)
+  })
 })
 
 function recapPlayer(

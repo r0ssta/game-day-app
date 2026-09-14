@@ -35,7 +35,11 @@ export function buildMatchSummaryText(data: MatchSummaryData): string {
       .filter((p) => p.attending)
       .sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
       .map((p) => {
-        const totalSeconds = getLiveSecondsPlayed(p, data.clockSeconds)
+        const totalSeconds = getLiveSecondsPlayed(
+          p,
+          data.clockSeconds,
+          data.halfLengthMinutes * 60,
+        )
         return `${p.number !== null ? `#${p.number}` : '—'} ${formatPlayerFullName(p.firstName, p.lastName)} (${p.matchPosition}) · ${Math.floor(totalSeconds / 60)}m · impact: ${p.impact}`
       }),
   ]

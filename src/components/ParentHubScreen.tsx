@@ -401,6 +401,7 @@ function LiveTab({
         rows={timeline}
         opponent={liveMatchState.opponent}
         teamName={teamLabel}
+        totalPeriods={liveMatchState.total_periods}
         emptyLabel="Waiting for the first event…"
       />
     </div>

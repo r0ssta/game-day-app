@@ -55,9 +55,21 @@ function resolveOpenStintStart(
 ): number | null {
   if (player.subbedInAt !== null) return player.subbedInAt
   // Never-stamped starter who has not been subbed: assume they played from kickoff.
+  // Only when nothing is banked — later periods already have P1+ totals, and
+  // finalizing from kickoff again would double-count (React Strict Mode, intermission).
   if (player.isOnField && player.totalSecondsPlayed === 0 && periodStartRemaining != null) {
     return periodStartRemaining
   }
+  return null
+}
+
+/** Live / intermission display: still count this period if the stamp was lost. */
+function resolveDisplayStintStart(
+  player: MatchPlayer,
+  periodStartRemaining?: number,
+): number | null {
+  if (player.subbedInAt !== null) return player.subbedInAt
+  if (player.isOnField && periodStartRemaining != null) return periodStartRemaining
   return null
 }
 
@@ -284,7 +296,7 @@ export function getSecondsPlayedAsOf(
   remainingSeconds: number,
   periodStartRemaining?: number,
 ): number {
-  const stintStart = resolveOpenStintStart(player, periodStartRemaining)
+  const stintStart = resolveDisplayStintStart(player, periodStartRemaining)
   if (stintStart === null) return player.totalSecondsPlayed
   return player.totalSecondsPlayed + stintSecondsPlayed(stintStart, remainingSeconds)
 }
@@ -295,7 +307,7 @@ export function getRoleSecondsAsOf(
   periodStartRemaining?: number,
 ): { fieldSeconds: number; gkSeconds: number; totalSeconds: number } {
   const banked = bankedRoleSeconds(player)
-  const stintStart = resolveOpenStintStart(player, periodStartRemaining)
+  const stintStart = resolveDisplayStintStart(player, periodStartRemaining)
   const open = stintStart == null ? 0 : stintSecondsPlayed(stintStart, remainingSeconds)
   const openRole = allocateSecondsByRole(open, player.matchPosition)
   const fieldSeconds = banked.fieldSecondsPlayed + openRole.fieldSecondsPlayed

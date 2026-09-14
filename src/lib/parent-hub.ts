@@ -15,6 +15,7 @@ import {
   readRememberedParentHubSlug,
 } from '@/lib/parent-hub-pwa'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { formatFeedPeriodPrefix } from '@/lib/match-periods'
 import { isLiveMatchStatus } from '@/lib/match-status'
 import { parsePkAttemptNotes } from '@/lib/penalty-kicks'
 import { ParentHubPayloadSchema } from '@/schemas'
@@ -1032,7 +1033,7 @@ export function buildParentTimelineRows(
       (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     )
     const newest = chrono[chrono.length - 1]!
-    const label = `${periodIndex}H lineup`
+    const label = `${formatFeedPeriodPrefix(periodIndex, options?.totalPeriods)} lineup`
     rows.push({
       kind: 'lineup',
       id: `lineup-${periodIndex}-${chrono[0]!.id}`,
@@ -1054,10 +1055,10 @@ export function buildParentTimelineRows(
 export function formatParentEventLine(
   event: ParentLiveEvent,
   opponent: string,
-  options?: { periodIndex?: number; teamName?: string },
+  options?: { periodIndex?: number; teamName?: string; totalPeriods?: number | null },
 ): string {
   const periodIndex = options?.periodIndex ?? 1
-  const periodPrefix = `${periodIndex}H `
+  const periodPrefix = `${formatFeedPeriodPrefix(periodIndex, options?.totalPeriods)} `
   const minute = `${periodPrefix}${Math.max(0, Math.floor(event.timestamp / 60))}'`
   const name = event.playerName?.trim() || 'Player'
   const opponentLabel = opponent.trim() || 'Opponent'
@@ -1067,7 +1068,7 @@ export function formatParentEventLine(
   let line: string
   if (isStartingLineupEvent(event.eventType, event.eventNotes, event.timestamp)) {
     const lineupPosition = parseStartingLineupPosition(event.eventNotes)
-    const lineupLabel = `${periodIndex}H lineup`
+    const lineupLabel = `${formatFeedPeriodPrefix(periodIndex, options?.totalPeriods)} lineup`
     line = lineupPosition
       ? `${lineupLabel} · ${name} · ${lineupPosition}`
       : `${lineupLabel} · ${name}`
@@ -1143,9 +1144,9 @@ export function formatParentEventLine(
 export function formatParentTimelineRowCopy(
   row: ParentTimelineRow,
   opponent: string,
-  options?: { teamName?: string },
+  options?: { teamName?: string; totalPeriods?: number | null },
 ): { title: string; detail?: string } {
-  const periodPrefix = `${row.periodIndex}H `
+  const periodPrefix = `${formatFeedPeriodPrefix(row.periodIndex, options?.totalPeriods)} `
   if (row.kind === 'lineup') {
     return {
       title: withParentHubWallClock(row.label, row.sortAt),
@@ -1162,6 +1163,7 @@ export function formatParentTimelineRowCopy(
     title: formatParentEventLine(row.event, opponent, {
       periodIndex: row.periodIndex,
       teamName: options?.teamName,
+      totalPeriods: options?.totalPeriods,
     }),
   }
 }

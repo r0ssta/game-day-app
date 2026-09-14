@@ -925,7 +925,12 @@ export function PostGameRecap({
           </section>
         ) : null}
 
-        <LiveGameFeed rows={coachFeed} opponent={opponent} teamName={teamName} />
+        <LiveGameFeed
+          rows={coachFeed}
+          opponent={opponent}
+          teamName={teamName}
+          totalPeriods={matchRecord?.total_periods}
+        />
 
         {disciplineSummaries.length > 0 ? (
           <section className="rounded-xl border border-amber-400/40 bg-amber-400/5 p-4">

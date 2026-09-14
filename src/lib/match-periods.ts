@@ -76,6 +76,34 @@ export function formatPeriodShort(currentPeriod: number, totalPeriods: TotalPeri
   return `P${Math.min(Math.max(1, currentPeriod), totalPeriods)}`
 }
 
+/** Feed / recap prefix: 1H/2H, P1/P2/P3, then ET1/ET2 past regulation. */
+export function formatFeedPeriodPrefix(
+  periodIndex: number,
+  totalPeriods?: number | null,
+): string {
+  const planned: TotalPeriods = totalPeriods === 3 ? 3 : 2
+  if (periodIndex >= 1 && periodIndex <= planned) {
+    return formatPeriodShort(periodIndex, planned)
+  }
+  const extraHalf = periodIndex - planned
+  if (extraHalf === 1 || extraHalf === 2) return extraTimePeriodShort(extraHalf)
+  return `${Math.max(1, periodIndex)}`
+}
+
+/** Player-stat column labels: "1st half"/"2nd half", or "1st"/"2nd"/"3rd". */
+export function formatPlayerStatPeriodLabel(
+  periodIndex: number,
+  totalPeriods?: number | null,
+): string {
+  const planned: TotalPeriods = totalPeriods === 3 ? 3 : 2
+  if (planned === 3 && periodIndex >= 1 && periodIndex <= 3) {
+    return periodIndex === 1 ? '1st' : periodIndex === 2 ? '2nd' : '3rd'
+  }
+  if (periodIndex === 1) return '1st half'
+  if (periodIndex === 2) return '2nd half'
+  return formatFeedPeriodPrefix(periodIndex, planned)
+}
+
 export function formatPeriodLong(currentPeriod: number, totalPeriods: TotalPeriods): string {
   if (totalPeriods === 2) {
     return currentPeriod <= 1 ? '1st Half' : '2nd Half'
