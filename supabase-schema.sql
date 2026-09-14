@@ -88,6 +88,11 @@ create table if not exists public.matches (
   sub_interval_seconds integer check (sub_interval_seconds is null or sub_interval_seconds > 0),
   gk_plays_full_half boolean not null default true,
   stat_tracker_token text,
+  qualitative_context jsonb,
+  opponent_strength text check (
+    opponent_strength is null
+    or opponent_strength in ('lesser', 'equal', 'better')
+  ),
   created_at timestamptz not null default now()
 );
 
@@ -2227,5 +2232,25 @@ revoke delete on public.teams from authenticated;
 revoke delete on public.players from authenticated;
 
 -- Player Impact: see supabase-player-impact-gk-minutes-migration.sql
+-- Weighted Performance Index: see supabase-player-impact-wpi-migration.sql
+
+alter table public.matches
+  add column if not exists opponent_strength text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'matches_opponent_strength_check'
+      and conrelid = 'public.matches'::regclass
+  ) then
+    alter table public.matches
+      add constraint matches_opponent_strength_check
+      check (
+        opponent_strength is null
+        or opponent_strength in ('lesser', 'equal', 'better')
+      );
+  end if;
+end $$;
 
 notify pgrst, 'reload schema';

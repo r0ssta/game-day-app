@@ -1,13 +1,15 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, CircleHelp } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { PlayingTimeBar } from '@/components/PlayingTimeBar'
 import { usePlayerImpact } from '@/hooks/usePlayerImpact'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
+import { WPI_TOOLTIP } from '@/lib/opponent-strength'
 import { maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
 import {
   differentialTone,
   formatImpactDifferential,
+  formatImpactWpi,
   sortPlayerImpact,
   type PlayerImpactRow,
   type PlayerImpactSortKey,
@@ -31,6 +33,52 @@ function DifferentialPill({ value }: { value: number }) {
       )}
     >
       {formatImpactDifferential(value)}
+    </span>
+  )
+}
+
+function WpiPill({ value }: { value: number }) {
+  const tone = differentialTone(value)
+  return (
+    <span
+      className={cn(
+        'inline-flex min-w-12 items-center justify-center rounded-full px-2 py-0.5 font-mono text-xs font-black tabular-nums',
+        tone === 'positive' && 'bg-neon/15 text-neon',
+        tone === 'negative' && 'bg-danger/15 text-danger',
+        tone === 'neutral' && 'bg-secondary text-muted-foreground',
+      )}
+    >
+      {formatImpactWpi(value)}
+    </span>
+  )
+}
+
+function WpiHeaderHelp() {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        aria-label="What is Weighted Impact (WPI)?"
+        aria-expanded={open}
+        title={WPI_TOOLTIP}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen((current) => !current)
+        }}
+        onBlur={() => setOpen(false)}
+        className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+      >
+        <CircleHelp className="size-3.5" aria-hidden />
+      </button>
+      {open ? (
+        <span
+          role="tooltip"
+          className="absolute top-full right-0 z-20 mt-1 w-64 rounded-lg border border-border bg-card px-3 py-2 text-left text-[11px] font-medium normal-case tracking-normal text-muted-foreground shadow-lg"
+        >
+          {WPI_TOOLTIP}
+        </span>
+      ) : null}
     </span>
   )
 }
@@ -89,7 +137,7 @@ function ImpactTable({
   const maxSeconds = maxPlayingTimeSeconds(rows)
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-card">
-      <table className="w-full min-w-[40rem] border-collapse text-sm">
+      <table className="w-full min-w-[48rem] border-collapse text-sm">
         <thead>
           <tr className="border-b border-border bg-secondary/40 text-left">
             <th scope="col" className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -109,6 +157,40 @@ function ImpactTable({
               direction={direction}
               onSort={onSort}
             />
+            <th
+              scope="col"
+              aria-sort={
+                sortKey === 'weighted_performance_index'
+                  ? direction === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'
+              }
+              className="px-2 py-2 text-right font-bold"
+            >
+              <span className="inline-flex min-h-9 touch-manipulation items-center justify-end gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => onSort('weighted_performance_index')}
+                  className={cn(
+                    'inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide',
+                    sortKey === 'weighted_performance_index'
+                      ? 'text-foreground'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  Weighted Impact (WPI)
+                  {sortKey !== 'weighted_performance_index' ? (
+                    <ArrowUpDown className="size-3.5" aria-hidden />
+                  ) : direction === 'asc' ? (
+                    <ArrowUp className="size-3.5" aria-hidden />
+                  ) : (
+                    <ArrowDown className="size-3.5" aria-hidden />
+                  )}
+                </button>
+                <WpiHeaderHelp />
+              </span>
+            </th>
             <SortHeader
               label="Minutes"
               sortKey="total_seconds_played"
@@ -150,6 +232,9 @@ function ImpactTable({
                 </td>
                 <td className="px-2 py-2.5 text-right">
                   <DifferentialPill value={row.net_shot_differential} />
+                </td>
+                <td className="px-2 py-2.5 text-right">
+                  <WpiPill value={row.weighted_performance_index} />
                 </td>
                 <td className="min-w-[7.5rem] px-2 py-2.5">
                   <PlayingTimeBar
@@ -209,7 +294,7 @@ export function ImpactReport({
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Player Impact"
-          subtitle="On-pitch goal +/- and shot differential while each player was on the field. Goalkeeper minutes are timed separately and excluded from field +/-."
+          subtitle="On-pitch goal +/- and shot differential while each player was on the field. WPI weights net shots by opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
           onHome={onBackToHome}
           teamSwitcher={teamSwitcher}
         />

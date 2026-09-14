@@ -84,6 +84,8 @@ export type DbPlayerImpact = {
   net_shot_differential: number
   gk_goals_conceded: number
   gk_saves: number
+  /** Season sum of opponent- and rating-weighted net shot differential. */
+  weighted_performance_index: number
 }
 
 export type DbMatch = {
@@ -137,12 +139,15 @@ export type DbMatch = {
   gk_plays_full_half: boolean
   stat_tracker_token?: string | null
   qualitative_context?: QualitativeContextJson | null
+  /** Pre/post-game opponent quality used by Weighted Impact (WPI). */
+  opponent_strength?: 'lesser' | 'equal' | 'better' | null
   created_at: string
 }
 
 export type QualitativeContextJson = {
   executionScore?: number | null
   opponentTier?: string | null
+  opponentStrength?: 'lesser' | 'equal' | 'better' | null
   /** Legacy qualitative-context key — read `opponentTier` instead. */
   oppositionStrength?: string | null
   endedOnTime?: boolean | null

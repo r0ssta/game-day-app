@@ -93,6 +93,11 @@ export const MatchSchema: z.ZodType<DbMatch> = z
     gk_plays_full_half: z.boolean().catch(false),
     stat_tracker_token: z.string().nullable().optional().catch(null),
     qualitative_context: z.unknown().nullable().optional().catch(null),
+    opponent_strength: z
+      .enum(['lesser', 'equal', 'better'])
+      .nullable()
+      .optional()
+      .catch(null),
     created_at: isoTimestamp.catch(''),
   })
   .passthrough() as z.ZodType<DbMatch>

@@ -1,3 +1,7 @@
+import {
+  parseOpponentStrength,
+  type OpponentStrength,
+} from '@/lib/opponent-strength'
 import { isAutomationStaffEmail } from '@/lib/automation-staff'
 import {
   resolvePlayerNameFields,
@@ -973,6 +977,7 @@ export async function createMatchRecord(input: {
   status?: DbMatch['status']
   subIntervalSeconds?: number | null
   gkPlaysFullHalf?: boolean
+  opponentStrength?: OpponentStrength | null
 }): Promise<DbMatch> {
   const coachName = input.coachName.trim() || null
   const matchDate = input.matchDate.trim() || null
@@ -1056,6 +1061,13 @@ export async function createMatchRecord(input: {
   payloadAttempts.sort(
     (a, b) => countOptionalFields(b, optionalKeys) - countOptionalFields(a, optionalKeys),
   )
+
+  if (payloadAttempts[0]) {
+    payloadAttempts[0] = {
+      ...payloadAttempts[0],
+      opponent_strength: input.opponentStrength ?? null,
+    }
+  }
 
   let lastError: unknown = null
   for (const payload of payloadAttempts) {
@@ -1369,6 +1381,7 @@ export async function updateMatchRecord(
       | 'coach_name'
       | 'sub_interval_seconds'
       | 'gk_plays_full_half'
+      | 'opponent_strength'
     >
   >,
 ) {
@@ -1392,6 +1405,7 @@ export async function updateMatchRecord(
     'gk_plays_full_half',
     'period_start_time',
     'accumulated_seconds_before_pause',
+    'opponent_strength',
   ] as const
 
   let remaining: typeof patch = { ...patch }
@@ -2035,6 +2049,14 @@ export async function saveMatchReport(
     input.internalCoachNotes,
     input.qualitativeContext,
   )
+  if (input.qualitativeContext !== undefined) {
+    const opponentStrength = parseOpponentStrength(
+      input.qualitativeContext?.opponentStrength ??
+        input.qualitativeContext?.opponentTier ??
+        input.qualitativeContext?.oppositionStrength,
+    )
+    await updateMatchRecord(matchId, { opponent_strength: opponentStrength })
+  }
   if (input.parentFacingRecap !== undefined) {
     await saveParentFacingRecap(matchId, input.parentFacingRecap)
   }

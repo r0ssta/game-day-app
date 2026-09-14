@@ -26,6 +26,10 @@ import {
   type QualitativeContext,
 } from '@/lib/qualitative-context'
 import {
+  opponentStrengthToTier,
+  parseOpponentStrength,
+} from '@/lib/opponent-strength'
+import {
   aggregateMicroStats,
   formatMicroStatsSummary,
   hasMicroStats,
@@ -220,6 +224,13 @@ export function PostGameRecap({
         setMatchEvents(events)
         if (loadedMatch?.qualitative_context) {
           setQualitativeContext(parseQualitativeContext(loadedMatch.qualitative_context))
+        }
+        const strengthFromColumn = parseOpponentStrength(loadedMatch?.opponent_strength)
+        if (strengthFromColumn) {
+          setQualitativeContext((prev) => ({
+            ...prev,
+            opponentTier: opponentStrengthToTier(strengthFromColumn),
+          }))
         }
 
         let existingReviews: Awaited<ReturnType<typeof fetchMatchReviews>> = []
@@ -455,6 +466,9 @@ export function PostGameRecap({
             internal_coach_notes: coachSummary.trim() || null,
             parent_facing_recap: parentFacingRecap.trim() || null,
             qualitative_context: qualitativePayload,
+            opponent_strength: parseOpponentStrength(
+              qualitativePayload?.opponentStrength ?? qualitativePayload?.opponentTier,
+            ),
           }
         : prev,
     )

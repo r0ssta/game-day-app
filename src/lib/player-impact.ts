@@ -7,6 +7,7 @@ export type PlayerImpactRow = DbPlayerImpact
 export type PlayerImpactSortKey =
   | 'goal_plus_minus'
   | 'net_shot_differential'
+  | 'weighted_performance_index'
   | 'total_seconds_played'
 
 export type DifferentialTone = 'positive' | 'negative' | 'neutral'
@@ -27,6 +28,15 @@ export function formatImpactMinutes(totalSeconds: number): string {
 
 export function formatImpactDifferential(value: number): string {
   return formatPlusMinus(value)
+}
+
+export function formatImpactWpi(value: number): string {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return '0'
+  const rounded = Math.round(numeric * 10) / 10
+  if (Object.is(rounded, -0) || rounded === 0) return '0'
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+  return rounded > 0 ? `+${text}` : text
 }
 
 export function sortPlayerImpact(
@@ -57,6 +67,7 @@ export function normalizePlayerImpactRow(row: PlayerImpactRow): PlayerImpactRow 
     total_seconds_played: row.total_seconds_played ?? field + gk,
     gk_goals_conceded: row.gk_goals_conceded ?? 0,
     gk_saves: row.gk_saves ?? 0,
+    weighted_performance_index: Number(row.weighted_performance_index ?? 0) || 0,
   }
 }
 

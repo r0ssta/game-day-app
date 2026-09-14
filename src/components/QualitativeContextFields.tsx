@@ -1,14 +1,17 @@
 import type { ReactNode } from 'react'
+import { OpponentStrengthToggle } from '@/components/OpponentStrengthToggle'
 import {
   EMPTY_QUALITATIVE_CONTEXT,
   EXECUTION_SCORE_OPTIONS,
-  OPPONENT_TIER_OPTIONS,
   formatQualitativeContextSummary,
   hasQualitativeContext,
   type ExecutionScore,
-  type OpponentTier,
   type QualitativeContext,
 } from '@/lib/qualitative-context'
+import {
+  opponentStrengthToTier,
+  parseOpponentStrength,
+} from '@/lib/opponent-strength'
 import { cn } from '@/lib/utils'
 
 type QualitativeContextFieldsProps = {
@@ -20,15 +23,6 @@ type QualitativeContextFieldsProps = {
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{children}</p>
-  )
-}
-
-function tierChipClass(selected: boolean) {
-  return cn(
-    'flex min-h-[4.5rem] touch-manipulation flex-col items-start justify-center gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left transition-transform active:scale-[0.98]',
-    selected
-      ? 'border-neon bg-neon/15 text-foreground ring-1 ring-neon/40'
-      : 'border-border bg-card text-foreground',
   )
 }
 
@@ -155,41 +149,15 @@ export function QualitativeContextFields({
       </div>
 
       <div className="space-y-2">
-        <SectionLabel>Opponent Tier &amp; Match Shape</SectionLabel>
-        <p className="text-xs text-muted-foreground">
-          Relative opponent level — tap again to clear.
-        </p>
-        <div
-          className="grid gap-2"
-          role="group"
-          aria-label="Opponent tier and match shape"
-        >
-          {OPPONENT_TIER_OPTIONS.map((option) => {
-            const selected = context.opponentTier === option.id
-            return (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={selected}
-                aria-label={`${option.tierLabel}: ${option.title}, ${option.subtitle}`}
-                onClick={() =>
-                  patch({
-                    opponentTier: selected ? null : (option.id as OpponentTier),
-                  })
-                }
-                className={tierChipClass(selected)}
-              >
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  {option.tierLabel}
-                </span>
-                <span className="text-sm font-bold leading-tight text-foreground">
-                  {option.title}
-                </span>
-                <span className="text-xs font-medium text-muted-foreground">{option.subtitle}</span>
-              </button>
-            )
-          })}
-        </div>
+        <OpponentStrengthToggle
+          value={parseOpponentStrength(context.opponentTier)}
+          allowClear
+          onChange={(strength) =>
+            patch({
+              opponentTier: strength ? opponentStrengthToTier(strength) : null,
+            })
+          }
+        />
       </div>
     </section>
   )

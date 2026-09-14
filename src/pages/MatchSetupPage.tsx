@@ -4,6 +4,7 @@ import { ScreenHeader } from '@/components/AppNavigation'
 import { AddPlayerToRoster } from '@/components/AddPlayerToRoster'
 import { HomeAwayToggle } from '@/components/HomeAwayToggle'
 import { MatchCoachSelect } from '@/components/MatchCoachSelect'
+import { OpponentStrengthToggle } from '@/components/OpponentStrengthToggle'
 import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { ENABLE_SUB_ASSISTANT } from '@/lib/feature-flags'
@@ -17,6 +18,7 @@ import {
 } from '@/lib/player-names'
 import { cn } from '@/lib/utils'
 import type { FormationRole } from '@/lib/formations'
+import type { OpponentStrength } from '@/lib/opponent-strength'
 import type { LocationType } from '@/lib/match-location'
 import type { SubFrequency } from '@/lib/sub-rotation'
 import type { TeamFormat } from '@/lib/team-format'
@@ -44,6 +46,8 @@ export type MatchSetupPageProps = {
   }) => Promise<void>
   opponent: string
   onOpponentChange: (value: string) => void
+  opponentStrength: OpponentStrength | null
+  onOpponentStrengthChange: (value: OpponentStrength | null) => void
   matchDate: string
   onMatchDateChange: (value: string) => void
   matchTime: string
@@ -116,6 +120,8 @@ export function MatchSetupPage({
   onAddPlayer,
   opponent,
   onOpponentChange,
+  opponentStrength,
+  onOpponentStrengthChange,
   matchDate,
   onMatchDateChange,
   matchTime,
@@ -271,6 +277,11 @@ export function MatchSetupPage({
                 className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
               />
             </div>
+
+            <OpponentStrengthToggle
+              value={opponentStrength}
+              onChange={onOpponentStrengthChange}
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div>

@@ -275,6 +275,8 @@ export function CoachDashboard() {
     subIntervalSeconds,
     opponent,
     setOpponent,
+    opponentStrength,
+    setOpponentStrength,
     locationType,
     setLocationType,
     tournamentGame,
@@ -985,6 +987,7 @@ export function CoachDashboard() {
       gkPlaysFullHalf,
       slotAssignments,
       slotLabelOverrides: labelOverrides,
+      opponentStrength,
     }
   }, [
     activeTeamId,
@@ -1002,6 +1005,7 @@ export function CoachDashboard() {
     totalPeriods,
     setupCoachName,
     opponent,
+    opponentStrength,
     locationType,
     goesToPks,
     halfLengthMinutes,
@@ -2889,6 +2893,8 @@ export function CoachDashboard() {
           onAddPlayer={handleAddPlayer}
           opponent={opponent}
           onOpponentChange={setOpponent}
+          opponentStrength={opponentStrength}
+          onOpponentStrengthChange={setOpponentStrength}
           matchDate={matchDate}
           onMatchDateChange={setMatchDate}
           matchTime={matchTime}

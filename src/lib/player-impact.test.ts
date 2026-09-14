@@ -4,6 +4,7 @@ import {
   differentialTone,
   formatImpactDifferential,
   formatImpactMinutes,
+  formatImpactWpi,
   sortPlayerImpact,
 } from './player-impact'
 
@@ -26,6 +27,7 @@ function row(partial: Partial<DbPlayerImpact> & Pick<DbPlayerImpact, 'player_id'
     net_shot_differential: 3,
     gk_goals_conceded: 0,
     gk_saves: 0,
+    weighted_performance_index: 3,
     ...partial,
   }
 }
@@ -60,6 +62,23 @@ describe('player-impact helpers', () => {
       'c',
       'b',
     ])
+  })
+
+  it('formats WPI with a leading plus and one decimal when needed', () => {
+    expect(formatImpactWpi(15)).toBe('+15')
+    expect(formatImpactWpi(4.5)).toBe('+4.5')
+    expect(formatImpactWpi(0)).toBe('0')
+    expect(formatImpactWpi(-2.5)).toBe('-2.5')
+  })
+
+  it('sorts by WPI when requested', () => {
+    const rows = [
+      row({ player_id: 'b', weighted_performance_index: 4 }),
+      row({ player_id: 'a', first_name: 'Ada', last_name: 'Alpha', weighted_performance_index: 12 }),
+    ]
+    expect(
+      sortPlayerImpact(rows, 'weighted_performance_index').map((item) => item.player_id),
+    ).toEqual(['a', 'b'])
   })
 
   it('sorts minutes ascending when requested', () => {

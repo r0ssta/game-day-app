@@ -1,3 +1,8 @@
+import {
+  opponentStrengthToTier,
+  parseOpponentStrength,
+} from '@/lib/opponent-strength'
+
 export type ExecutionScore = 1 | 2 | 3 | 4 | 5
 
 export type OpponentTier = 'tier1' | 'tier2' | 'tier3'
@@ -61,21 +66,21 @@ export const OPPONENT_TIER_OPTIONS: Array<{
 }> = [
   {
     id: 'tier1',
-    tierLabel: 'Tier 1',
-    title: 'We Were Favored',
-    subtitle: 'Lower opponent',
+    tierLabel: 'Lesser',
+    title: 'Lesser',
+    subtitle: 'We were favored',
   },
   {
     id: 'tier2',
-    tierLabel: 'Tier 2',
-    title: 'Even Matchup',
-    subtitle: 'Peer team',
+    tierLabel: 'Equal',
+    title: 'Equal',
+    subtitle: 'Even matchup',
   },
   {
     id: 'tier3',
-    tierLabel: 'Tier 3',
-    title: 'Elite Opponent',
-    subtitle: 'Superior team',
+    tierLabel: 'Better',
+    title: 'Better',
+    subtitle: 'Stronger opponent',
   },
 ]
 
@@ -92,7 +97,8 @@ function parseOpponentTier(raw: unknown): OpponentTier | null {
   if (raw === 'easy') return 'tier1'
   if (raw === 'competitive') return 'tier2'
   if (raw === 'superior') return 'tier3'
-  return null
+  const fromStrength = parseOpponentStrength(raw)
+  return fromStrength ? opponentStrengthToTier(fromStrength) : null
 }
 
 export function parseQualitativeContext(raw: unknown): QualitativeContext {
@@ -109,7 +115,9 @@ export function parseQualitativeContext(raw: unknown): QualitativeContext {
 
   return {
     executionScore: isExecutionScore(record.executionScore) ? record.executionScore : null,
-    opponentTier: parseOpponentTier(record.opponentTier ?? record.oppositionStrength),
+    opponentTier: parseOpponentTier(
+      record.opponentTier ?? record.oppositionStrength ?? record.opponentStrength,
+    ),
     endedOnTime: typeof record.endedOnTime === 'boolean' ? record.endedOnTime : null,
     addedTimeSeconds,
     extraTimeHalfMinutes:
@@ -146,6 +154,10 @@ export function serializeQualitativeContext(
   if (hasCoaching) {
     payload.executionScore = context.executionScore
     payload.opponentTier = context.opponentTier
+    if (context.opponentTier) {
+      const strength = parseOpponentStrength(context.opponentTier)
+      if (strength) payload.opponentStrength = strength
+    }
   }
   if (context.endedOnTime !== null) payload.endedOnTime = context.endedOnTime
   if (context.addedTimeSeconds > 0) payload.addedTimeSeconds = context.addedTimeSeconds
@@ -164,7 +176,7 @@ export function formatExecutionScoreSummary(score: ExecutionScore): string {
 function formatOpponentTierSummary(id: OpponentTier): string {
   const option = OPPONENT_TIER_OPTIONS.find((entry) => entry.id === id)
   if (!option) return id
-  return `${option.tierLabel}: ${option.title} / ${option.subtitle}`
+  return `${option.title} — ${option.subtitle}`
 }
 
 export function formatQualitativeContextSummary(context: QualitativeContext): string[] {
@@ -186,7 +198,9 @@ export function formatQualitativeContextSummary(context: QualitativeContext): st
     lines.push(`Team Execution Score: ${formatExecutionScoreSummary(context.executionScore)}`)
   }
   if (context.opponentTier) {
-    lines.push(`Opponent Tier & Match Shape: ${formatOpponentTierSummary(context.opponentTier)}`)
+    lines.push(
+      `Opponent Strength: ${formatOpponentTierSummary(context.opponentTier)}`,
+    )
   }
 
   return lines
