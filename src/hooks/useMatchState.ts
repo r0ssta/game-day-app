@@ -93,7 +93,6 @@ import {
   COACH_APP_PATH,
   coachMatchPath,
   coachTeamPath,
-  isImpactReportPath,
   navigateApp,
   parseCoachRoute,
   replaceApp,
