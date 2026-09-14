@@ -20,7 +20,7 @@ export const OPPONENT_STRENGTH_MULTIPLIER = {
 export const WPI_BASELINE_COACH_RATING = 3
 
 export const WPI_TOOLTIP =
-  'Weighted Impact (WPI) sums each match’s on-pitch net shot differential, weighted by opponent strength (Better ×1.5, Equal ×1.0, Lesser ×0.5) and the coach’s 1–5 player rating (÷3 so a 3 is baseline). Unset strength counts as Equal; missing rating counts as 3. Minutes are not a separate multiplier — more time on the field usually means more shot events.'
+  'Weighted Impact (WPI) sums each match’s on-pitch goal, shot, and corner differential, weighted by opponent strength (Better ×1.5, Equal ×1.0, Lesser ×0.5) and the coach’s 1–5 player rating (÷3 so a 3 is baseline). Ours count +, theirs count −. Unset strength counts as Equal; missing rating counts as 3. Minutes are not a separate multiplier — more time on the field usually means more events.'
 
 export function isOpponentStrength(value: unknown): value is OpponentStrength {
   return value === 'lesser' || value === 'equal' || value === 'better'
@@ -54,13 +54,15 @@ export function computeWeightedNetShots(
   netShotDifferential: number,
   opponentStrength: OpponentStrength | null | undefined,
   coachRating: number | null | undefined = null,
+  netCornerDifferential: number = 0,
+  netGoalDifferential: number = 0,
 ): number {
   const rating =
     coachRating == null || !Number.isFinite(coachRating)
       ? WPI_BASELINE_COACH_RATING
       : coachRating
   return (
-    netShotDifferential *
+    (netGoalDifferential + netShotDifferential + netCornerDifferential) *
     opponentStrengthMultiplier(opponentStrength) *
     (rating / WPI_BASELINE_COACH_RATING)
   )

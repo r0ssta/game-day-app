@@ -91,7 +91,7 @@ export function buildAppNavItems(input: {
     {
       id: 'impact',
       label: 'Player Impact',
-      description: 'On-pitch goal +/- and shot differential',
+      description: 'On-pitch goal +/- plus shot and corner differential',
       icon: Activity,
       disabled: teamDisabled,
       active: input.activeSection === 'impact',

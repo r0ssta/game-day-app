@@ -33,6 +33,8 @@ describe('opponent-strength', () => {
     expect(computeWeightedNetShots(10, 'lesser', 3)).toBe(5)
     expect(computeWeightedNetShots(10, 'equal', 5)).toBeCloseTo(16.666, 2)
     expect(computeWeightedNetShots(10, null, null)).toBe(10)
+    expect(computeWeightedNetShots(10, 'equal', 3, 4)).toBe(14)
+    expect(computeWeightedNetShots(10, 'equal', 3, 4, 2)).toBe(16)
   })
 
   it('prefers the match column over qualitative context', () => {

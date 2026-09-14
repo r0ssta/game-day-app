@@ -85,7 +85,7 @@ export function SeasonDetailsTab({
               Player Impact Report
             </span>
             <span className="mt-0.5 block text-xs text-muted-foreground">
-              On-pitch goal +/- and net shot differential from substitution windows.
+              On-pitch goal +/- plus net shot and corner differential from substitution windows.
             </span>
           </span>
         </button>

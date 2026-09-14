@@ -25,6 +25,9 @@ function row(partial: Partial<DbPlayerImpact> & Pick<DbPlayerImpact, 'player_id'
     team_shots: 8,
     opponent_shots: 5,
     net_shot_differential: 3,
+    team_corners: 2,
+    opponent_corners: 1,
+    net_corner_differential: 1,
     gk_goals_conceded: 0,
     gk_saves: 0,
     weighted_performance_index: 3,
@@ -78,6 +81,16 @@ describe('player-impact helpers', () => {
     ]
     expect(
       sortPlayerImpact(rows, 'weighted_performance_index').map((item) => item.player_id),
+    ).toEqual(['a', 'b'])
+  })
+
+  it('sorts by net corners when requested', () => {
+    const rows = [
+      row({ player_id: 'b', net_corner_differential: 1 }),
+      row({ player_id: 'a', first_name: 'Ada', last_name: 'Alpha', net_corner_differential: 5 }),
+    ]
+    expect(
+      sortPlayerImpact(rows, 'net_corner_differential').map((item) => item.player_id),
     ).toEqual(['a', 'b'])
   })
 

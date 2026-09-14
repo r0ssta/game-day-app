@@ -64,7 +64,7 @@ export type DbSeasonRoster = {
   created_at: string
 }
 
-/** Row returned by `calculate_player_impact` (on-pitch goal +/- and shot differential). */
+/** Row returned by `calculate_player_impact` (on-pitch goal +/- and shot/corner differential). */
 export type DbPlayerImpact = {
   player_id: string
   first_name: string
@@ -82,9 +82,12 @@ export type DbPlayerImpact = {
   team_shots: number
   opponent_shots: number
   net_shot_differential: number
+  team_corners: number
+  opponent_corners: number
+  net_corner_differential: number
   gk_goals_conceded: number
   gk_saves: number
-  /** Season sum of opponent- and rating-weighted net shot differential. */
+  /** Season sum of opponent- and rating-weighted net goal + shot + corner differential. */
   weighted_performance_index: number
 }
 

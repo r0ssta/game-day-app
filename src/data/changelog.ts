@@ -15,7 +15,7 @@ export const CHANGELOG: ChangelogRelease[] = [
     date: 'September 14, 2026',
     title: 'Smoother game days',
     features: [
-      'Weighted Impact (WPI) ranks players by net shots, opponent strength, and coach rating',
+      'Weighted Impact (WPI) ranks players by net goals, shots, corners, opponent strength, and coach rating',
       'Lineup sync fixed when two coaches work the same live match',
       'Tournament extra time and penalty kicks added',
       'Background clock fixes so the timer stays accurate if you leave the app',

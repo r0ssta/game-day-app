@@ -63,6 +63,8 @@
     "supabase-player-impact-gk-minutes-migration.sql",
     "supabase-match-period-start-time-migration.sql",
     "supabase-player-impact-period-boundary-migration.sql",
-    "supabase-player-impact-wpi-migration.sql"
+    "supabase-player-impact-wpi-migration.sql",
+    "supabase-player-impact-corners-migration.sql",
+    "supabase-player-impact-wpi-goals-migration.sql"
   ]
 }

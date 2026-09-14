@@ -137,7 +137,7 @@ function ImpactTable({
   const maxSeconds = maxPlayingTimeSeconds(rows)
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-card">
-      <table className="w-full min-w-[48rem] border-collapse text-sm">
+      <table className="w-full min-w-[52rem] border-collapse text-sm">
         <thead>
           <tr className="border-b border-border bg-secondary/40 text-left">
             <th scope="col" className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -153,6 +153,13 @@ function ImpactTable({
             <SortHeader
               label="Net Shots"
               sortKey="net_shot_differential"
+              activeKey={sortKey}
+              direction={direction}
+              onSort={onSort}
+            />
+            <SortHeader
+              label="Net Corners"
+              sortKey="net_corner_differential"
               activeKey={sortKey}
               direction={direction}
               onSort={onSort}
@@ -219,7 +226,7 @@ function ImpactTable({
                     <span className="min-w-0">
                       <span className="block truncate">{name}</span>
                       <span className="block text-[11px] font-medium text-muted-foreground">
-                        {row.team_goals} GF · {row.opponent_goals} GA · {row.team_shots} / {row.opponent_shots} shots
+                        {row.team_goals} GF · {row.opponent_goals} GA · {row.team_shots} / {row.opponent_shots} shots · {row.team_corners} / {row.opponent_corners} corners
                         {row.total_gk_seconds > 0
                           ? ` · 🧤 ${row.gk_goals_conceded} GA · ${row.gk_saves} SV`
                           : ''}
@@ -232,6 +239,9 @@ function ImpactTable({
                 </td>
                 <td className="px-2 py-2.5 text-right">
                   <DifferentialPill value={row.net_shot_differential} />
+                </td>
+                <td className="px-2 py-2.5 text-right">
+                  <DifferentialPill value={row.net_corner_differential} />
                 </td>
                 <td className="px-2 py-2.5 text-right">
                   <WpiPill value={row.weighted_performance_index} />
@@ -294,7 +304,7 @@ export function ImpactReport({
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Player Impact"
-          subtitle="On-pitch goal +/- and shot differential while each player was on the field. WPI weights net shots by opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
+          subtitle="On-pitch goal +/- plus shot and corner differential while each player was on the field. WPI weights net goals, shots, and corners by opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
           onHome={onBackToHome}
           teamSwitcher={teamSwitcher}
         />

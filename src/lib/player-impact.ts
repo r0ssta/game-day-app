@@ -7,6 +7,7 @@ export type PlayerImpactRow = DbPlayerImpact
 export type PlayerImpactSortKey =
   | 'goal_plus_minus'
   | 'net_shot_differential'
+  | 'net_corner_differential'
   | 'weighted_performance_index'
   | 'total_seconds_played'
 
@@ -67,6 +68,11 @@ export function normalizePlayerImpactRow(row: PlayerImpactRow): PlayerImpactRow 
     total_seconds_played: row.total_seconds_played ?? field + gk,
     gk_goals_conceded: row.gk_goals_conceded ?? 0,
     gk_saves: row.gk_saves ?? 0,
+    team_corners: row.team_corners ?? 0,
+    opponent_corners: row.opponent_corners ?? 0,
+    net_corner_differential:
+      row.net_corner_differential ??
+      (row.team_corners ?? 0) - (row.opponent_corners ?? 0),
     weighted_performance_index: Number(row.weighted_performance_index ?? 0) || 0,
   }
 }
