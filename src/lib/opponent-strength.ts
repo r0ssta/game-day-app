@@ -20,7 +20,13 @@ export const OPPONENT_STRENGTH_MULTIPLIER = {
 export const WPI_BASELINE_COACH_RATING = 3
 
 export const WPI_TOOLTIP =
-  'Weighted Impact (WPI) sums each match’s on-pitch goal, shot, and corner differential, weighted by opponent strength (Better ×1.5, Equal ×1.0, Lesser ×0.5) and the coach’s 1–5 player rating (÷3 so a 3 is baseline). Ours count +, theirs count −. Unset strength counts as Equal; missing rating counts as 3. Minutes are not a separate multiplier — more time on the field usually means more events.'
+  'Weighted Impact (WPI) is Offense + Defense. Each match weights on-pitch goals, shots, and corners by opponent strength (Better ×1.5, Equal ×1.0, Lesser ×0.5) and the coach’s 1–5 player rating (÷3 so a 3 is baseline). Unset strength counts as Equal; missing rating counts as 3. Minutes are not a separate multiplier.'
+
+export const WPI_OFFENSE_TOOLTIP =
+  'Offense is our goals, shots, and corners while the player was on the field, with the same opponent and rating weights as WPI. Higher is better. Offense + Defense = WPI.'
+
+export const WPI_DEFENSE_TOOLTIP =
+  'Defense is their goals, shots, and corners while the player was on the field, shown as a minus, with the same opponent and rating weights as WPI. Closer to zero is better. Offense + Defense = WPI.'
 
 export function isOpponentStrength(value: unknown): value is OpponentStrength {
   return value === 'lesser' || value === 'equal' || value === 'better'
@@ -57,15 +63,45 @@ export function computeWeightedNetShots(
   netCornerDifferential: number = 0,
   netGoalDifferential: number = 0,
 ): number {
+  return computeWeightedSides({
+    teamGoals: netGoalDifferential,
+    opponentGoals: 0,
+    teamShots: netShotDifferential,
+    opponentShots: 0,
+    teamCorners: netCornerDifferential,
+    opponentCorners: 0,
+    opponentStrength,
+    coachRating,
+  }).combined
+}
+
+export function computeWeightedSides(input: {
+  teamGoals?: number
+  opponentGoals?: number
+  teamShots?: number
+  opponentShots?: number
+  teamCorners?: number
+  opponentCorners?: number
+  opponentStrength?: OpponentStrength | null
+  coachRating?: number | null
+}): { offense: number; defense: number; combined: number } {
   const rating =
-    coachRating == null || !Number.isFinite(coachRating)
+    input.coachRating == null || !Number.isFinite(input.coachRating)
       ? WPI_BASELINE_COACH_RATING
-      : coachRating
-  return (
-    (netGoalDifferential + netShotDifferential + netCornerDifferential) *
-    opponentStrengthMultiplier(opponentStrength) *
-    (rating / WPI_BASELINE_COACH_RATING)
-  )
+      : input.coachRating
+  const weight =
+    opponentStrengthMultiplier(input.opponentStrength) * (rating / WPI_BASELINE_COACH_RATING)
+  const offense =
+    (input.teamGoals ?? 0) + (input.teamShots ?? 0) + (input.teamCorners ?? 0)
+  const against =
+    (input.opponentGoals ?? 0) + (input.opponentShots ?? 0) + (input.opponentCorners ?? 0)
+  const offenseWeighted = offense * weight
+  const defenseWeighted = -against * weight
+  return {
+    offense: offenseWeighted,
+    defense: defenseWeighted,
+    combined: offenseWeighted + defenseWeighted,
+  }
 }
 
 export function opponentStrengthFromMatch(input: {

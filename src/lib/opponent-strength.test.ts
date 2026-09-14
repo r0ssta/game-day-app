@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeWeightedNetShots,
+  computeWeightedSides,
   opponentStrengthFromMatch,
   opponentStrengthMultiplier,
   opponentStrengthToTier,
@@ -35,6 +36,23 @@ describe('opponent-strength', () => {
     expect(computeWeightedNetShots(10, null, null)).toBe(10)
     expect(computeWeightedNetShots(10, 'equal', 3, 4)).toBe(14)
     expect(computeWeightedNetShots(10, 'equal', 3, 4, 2)).toBe(16)
+  })
+
+  it('splits WPI into offense and defense that sum to the combined index', () => {
+    const sides = computeWeightedSides({
+      teamGoals: 2,
+      opponentGoals: 1,
+      teamShots: 8,
+      opponentShots: 5,
+      teamCorners: 4,
+      opponentCorners: 2,
+      opponentStrength: 'equal',
+      coachRating: 3,
+    })
+    expect(sides.offense).toBe(14)
+    expect(sides.defense).toBe(-8)
+    expect(sides.combined).toBe(6)
+    expect(sides.combined).toBe(computeWeightedNetShots(3, 'equal', 3, 2, 1))
   })
 
   it('prefers the match column over qualitative context', () => {

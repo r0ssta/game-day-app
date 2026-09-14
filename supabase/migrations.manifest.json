@@ -65,6 +65,7 @@
     "supabase-player-impact-period-boundary-migration.sql",
     "supabase-player-impact-wpi-migration.sql",
     "supabase-player-impact-corners-migration.sql",
-    "supabase-player-impact-wpi-goals-migration.sql"
+    "supabase-player-impact-wpi-goals-migration.sql",
+    "supabase-player-impact-wpi-off-def-migration.sql"
   ]
 }

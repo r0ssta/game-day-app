@@ -87,6 +87,10 @@ export type DbPlayerImpact = {
   net_corner_differential: number
   gk_goals_conceded: number
   gk_saves: number
+  /** Weighted our goals + shots + corners. Offense + Defense = WPI. */
+  offensive_performance_index: number
+  /** Weighted their events as a minus. Offense + Defense = WPI. */
+  defensive_performance_index: number
   /** Season sum of opponent- and rating-weighted net goal + shot + corner differential. */
   weighted_performance_index: number
 }

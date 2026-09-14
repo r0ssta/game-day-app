@@ -8,6 +8,8 @@ export type PlayerImpactSortKey =
   | 'goal_plus_minus'
   | 'net_shot_differential'
   | 'net_corner_differential'
+  | 'offensive_performance_index'
+  | 'defensive_performance_index'
   | 'weighted_performance_index'
   | 'total_seconds_played'
 
@@ -73,6 +75,8 @@ export function normalizePlayerImpactRow(row: PlayerImpactRow): PlayerImpactRow 
     net_corner_differential:
       row.net_corner_differential ??
       (row.team_corners ?? 0) - (row.opponent_corners ?? 0),
+    offensive_performance_index: Number(row.offensive_performance_index ?? 0) || 0,
+    defensive_performance_index: Number(row.defensive_performance_index ?? 0) || 0,
     weighted_performance_index: Number(row.weighted_performance_index ?? 0) || 0,
   }
 }

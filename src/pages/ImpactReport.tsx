@@ -4,7 +4,7 @@ import { ScreenHeader } from '@/components/AppNavigation'
 import { PlayingTimeBar } from '@/components/PlayingTimeBar'
 import { usePlayerImpact } from '@/hooks/usePlayerImpact'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
-import { WPI_TOOLTIP } from '@/lib/opponent-strength'
+import { WPI_DEFENSE_TOOLTIP, WPI_OFFENSE_TOOLTIP, WPI_TOOLTIP } from '@/lib/opponent-strength'
 import { maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
 import {
   differentialTone,
@@ -90,6 +90,7 @@ function SortHeader({
   direction,
   onSort,
   align = 'right',
+  title,
 }: {
   label: string
   sortKey: PlayerImpactSortKey
@@ -97,6 +98,7 @@ function SortHeader({
   direction: 'asc' | 'desc'
   onSort: (key: PlayerImpactSortKey) => void
   align?: 'left' | 'right'
+  title?: string
 }) {
   const active = activeKey === sortKey
   const Icon = !active ? ArrowUpDown : direction === 'asc' ? ArrowUp : ArrowDown
@@ -109,6 +111,7 @@ function SortHeader({
     >
       <button
         type="button"
+        title={title}
         onClick={() => onSort(sortKey)}
         className={cn(
           'inline-flex min-h-9 touch-manipulation items-center gap-1 text-[10px] font-bold uppercase tracking-wide',
@@ -137,7 +140,7 @@ function ImpactTable({
   const maxSeconds = maxPlayingTimeSeconds(rows)
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-card">
-      <table className="w-full min-w-[52rem] border-collapse text-sm">
+      <table className="w-full min-w-[60rem] border-collapse text-sm">
         <thead>
           <tr className="border-b border-border bg-secondary/40 text-left">
             <th scope="col" className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -163,6 +166,22 @@ function ImpactTable({
               activeKey={sortKey}
               direction={direction}
               onSort={onSort}
+            />
+            <SortHeader
+              label="Offense"
+              sortKey="offensive_performance_index"
+              activeKey={sortKey}
+              direction={direction}
+              onSort={onSort}
+              title={WPI_OFFENSE_TOOLTIP}
+            />
+            <SortHeader
+              label="Defense"
+              sortKey="defensive_performance_index"
+              activeKey={sortKey}
+              direction={direction}
+              onSort={onSort}
+              title={WPI_DEFENSE_TOOLTIP}
             />
             <th
               scope="col"
@@ -244,6 +263,12 @@ function ImpactTable({
                   <DifferentialPill value={row.net_corner_differential} />
                 </td>
                 <td className="px-2 py-2.5 text-right">
+                  <WpiPill value={row.offensive_performance_index} />
+                </td>
+                <td className="px-2 py-2.5 text-right">
+                  <WpiPill value={row.defensive_performance_index} />
+                </td>
+                <td className="px-2 py-2.5 text-right">
                   <WpiPill value={row.weighted_performance_index} />
                 </td>
                 <td className="min-w-[7.5rem] px-2 py-2.5">
@@ -304,7 +329,7 @@ export function ImpactReport({
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Player Impact"
-          subtitle="On-pitch goal +/- plus shot and corner differential while each player was on the field. WPI weights net goals, shots, and corners by opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
+          subtitle="On-pitch goal, shot, and corner differential while each player was on the field. Offense is our events, Defense is theirs as a minus, and WPI is Offense + Defense after opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
           onHome={onBackToHome}
           teamSwitcher={teamSwitcher}
         />
