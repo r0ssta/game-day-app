@@ -2,6 +2,8 @@
 export const COACH_APP_PATH = '/'
 /** Public marketing splash — not the coach root. */
 export const LANDING_PATH = '/waitlist'
+/** Public full changelog. Linked from What’s New. */
+export const CHANGELOG_PATH = '/changelog'
 /** Staff-only Player Impact report. Hidden from Parent Hub (`/hub/:slug`). */
 export const IMPACT_REPORT_PATH = '/impact'
 
@@ -75,10 +77,26 @@ export function isLandingPath(pathname: string): boolean {
   return normalizePathname(pathname) === LANDING_PATH
 }
 
+/** True for the public full changelog page. */
+export function isChangelogPath(pathname: string): boolean {
+  return normalizePathname(pathname) === CHANGELOG_PATH
+}
+
 /** True for the coach-only Player Impact report. */
 export function isImpactReportPath(pathname: string): boolean {
   const path = normalizePathname(pathname)
   return path === IMPACT_REPORT_PATH || COACH_TEAM_IMPACT_RE.test(path)
+}
+
+/**
+ * True when a missing team id in the URL should be filled with the last-used team.
+ * Public pages (changelog, waitlist) and the impact report must not be rewritten.
+ */
+export function shouldCanonicalizeActiveTeamPath(pathname: string): boolean {
+  if (isImpactReportPath(pathname) || isChangelogPath(pathname) || isLandingPath(pathname)) {
+    return false
+  }
+  return parseCoachRoute(pathname).teamId == null
 }
 
 function applyHistoryPath(path: string, mode: 'push' | 'replace'): void {

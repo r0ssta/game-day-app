@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardCopy, Mail, Trash2 } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
-import { PlayingTimeBar } from '@/components/PlayingTimeBar'
+import { PlayingTimeBar, PlayingTimeLegend } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal } from '@/components/ParentRecapEmailModal'
 import { QualitativeContextFields } from '@/components/QualitativeContextFields'
 import {
@@ -954,6 +954,7 @@ export function PostGameRecap({
                 ? ' Position breakdowns are optional and only saved when you interact with a role rating.'
                 : ''}
             </p>
+            <PlayingTimeLegend className="mt-2" />
           </div>
 
           <ul className="divide-y divide-border">
@@ -982,16 +983,15 @@ export function PostGameRecap({
                       {formatJersey(row.number)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="text-base font-bold text-foreground">{row.name}</span>
-                        <PlayingTimeBar
-                          className="min-w-[7.5rem] max-w-[12rem] flex-1"
-                          fieldSeconds={row.fieldSeconds}
-                          gkSeconds={row.gkSeconds}
-                          maxSeconds={maxPlayingSeconds}
-                        />
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
+                      <span className="text-base font-bold text-foreground">{row.name}</span>
+                      <PlayingTimeBar
+                        className="mt-1.5 w-full max-w-xs"
+                        variant="verbose"
+                        fieldSeconds={row.fieldSeconds}
+                        gkSeconds={row.gkSeconds}
+                        maxSeconds={maxPlayingSeconds}
+                      />
+                      <p className="mt-1.5 text-xs text-muted-foreground">
                         {multiPosition ? `Played: ${positionsLabel}` : `Position: ${positionsLabel}`}
                       </p>
                       <p className="text-xs font-semibold text-muted-foreground">

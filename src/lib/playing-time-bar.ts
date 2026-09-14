@@ -1,7 +1,18 @@
-export function formatPlayingTimeBarLabel(fieldSeconds: number, gkSeconds: number): string {
+export type PlayingTimeLabelVariant = 'compact' | 'verbose'
+
+export function formatPlayingTimeBarLabel(
+  fieldSeconds: number,
+  gkSeconds: number,
+  variant: PlayingTimeLabelVariant = 'compact',
+): string {
   const fieldMin = Math.floor(Math.max(0, fieldSeconds) / 60)
   const gkMin = Math.floor(Math.max(0, gkSeconds) / 60)
   if (fieldMin <= 0 && gkMin <= 0) return '0m'
+  if (variant === 'verbose') {
+    if (gkMin <= 0) return `${fieldMin}m field`
+    if (fieldMin <= 0) return `${gkMin}m GK`
+    return `${fieldMin}m field · ${gkMin}m GK`
+  }
   if (gkMin <= 0) return `${fieldMin}m 👟`
   if (fieldMin <= 0) return `${gkMin}m 🧤`
   return `${fieldMin}m 👟 | ${gkMin}m 🧤`

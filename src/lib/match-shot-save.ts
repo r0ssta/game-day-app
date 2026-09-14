@@ -126,6 +126,7 @@ export function isGoalkeeperPosition(position: string | null | undefined): boole
   return (
     normalized === 'GK' ||
     normalized === 'KEEPER' ||
+    normalized === 'GOALIE' ||
     normalized === 'GOALKEEPER' ||
     normalized.includes('GK')
   )

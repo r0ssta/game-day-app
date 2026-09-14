@@ -3,6 +3,7 @@ import { ChevronRight, Users } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import { formatPlusMinus } from '@/lib/plus-minus'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { formatPlayerRating } from '@/lib/player-rating'
 import {
   emptyPlayerSeasonStats,
   type PlayerSeasonStats,
@@ -15,7 +16,20 @@ function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
 }
 
-type SortMode = 'jersey' | 'plusMinus'
+function ratingToneClass(rating: number | null): string {
+  if (rating == null) return 'text-muted-foreground'
+  if (rating >= 4) return 'text-neon'
+  if (rating < 3) return 'text-danger'
+  return 'text-foreground'
+}
+
+function plusMinusToneClass(value: number): string {
+  if (value > 0) return 'bg-neon/15 text-neon'
+  if (value < 0) return 'bg-danger/15 text-danger'
+  return 'bg-secondary text-muted-foreground'
+}
+
+type SortMode = 'jersey' | 'rating' | 'plusMinus'
 
 type PlayerBreakdownsTabProps = {
   roster: RosterPlayer[]
@@ -33,6 +47,9 @@ function PlayerRow({
   onSelect: () => void
 }) {
   const name = formatPlayerFullName(player.firstName, player.lastName)
+  const rating = stats.averageOverallRating
+  const ratingLabel =
+    rating != null ? `${formatPlayerRating(rating, 1)} out of 5` : 'No coach rating yet'
 
   return (
     <button
@@ -50,24 +67,36 @@ function PlayerRow({
           G · {stats.assists} A · {stats.yellowCards} YC · {stats.redCards} RC
         </span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
-          Avg rating{' '}
-          {stats.averageOverallRating != null
-            ? `${stats.averageOverallRating.toFixed(1)}/5`
-            : '—'}{' '}
-          · {stats.ratingSampleSize} rated
+          {stats.ratingSampleSize > 0
+            ? `${stats.ratingSampleSize} rated match${stats.ratingSampleSize === 1 ? '' : 'es'}`
+            : 'Not yet rated'}
         </span>
       </span>
       <span
-        className={cn(
-          'shrink-0 rounded-lg px-2 py-1 text-center font-mono text-sm font-black tabular-nums',
-          stats.plusMinus > 0
-            ? 'bg-neon/15 text-neon'
-            : stats.plusMinus < 0
-              ? 'bg-danger/15 text-danger'
-              : 'bg-secondary text-muted-foreground',
-        )}
+        className="shrink-0 text-right"
+        aria-label={`${ratingLabel}, plus/minus ${formatPlusMinus(stats.plusMinus)}`}
       >
-        {formatPlusMinus(stats.plusMinus)}
+        <span
+          className={cn(
+            'block font-display text-2xl font-black leading-none tabular-nums',
+            ratingToneClass(rating),
+          )}
+        >
+          {formatPlayerRating(rating, 1)}
+          {rating != null ? (
+            <span className="ml-0.5 text-xs font-bold tracking-wide text-muted-foreground">
+              /5
+            </span>
+          ) : null}
+        </span>
+        <span
+          className={cn(
+            'mt-1 inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-black tabular-nums',
+            plusMinusToneClass(stats.plusMinus),
+          )}
+        >
+          {formatPlusMinus(stats.plusMinus)}
+        </span>
       </span>
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
     </button>
@@ -86,6 +115,24 @@ export function PlayerBreakdownsTab({ roster, data, onSelectPlayer }: PlayerBrea
         return (
           bStats.plusMinus - aStats.plusMinus ||
           bStats.goals - aStats.goals ||
+          (a.number ?? 999) - (b.number ?? 999)
+        )
+      })
+    }
+    if (sortMode === 'rating') {
+      return players.sort((a, b) => {
+        const aStats = data.playerStats.get(a.id) ?? emptyPlayerSeasonStats(a.id)
+        const bStats = data.playerStats.get(b.id) ?? emptyPlayerSeasonStats(b.id)
+        const aRating = aStats.averageOverallRating
+        const bRating = bStats.averageOverallRating
+        if (aRating == null && bRating == null) {
+          return (a.number ?? 999) - (b.number ?? 999)
+        }
+        if (aRating == null) return 1
+        if (bRating == null) return -1
+        return (
+          bRating - aRating ||
+          bStats.ratingSampleSize - aStats.ratingSampleSize ||
           (a.number ?? 999) - (b.number ?? 999)
         )
       })
@@ -109,7 +156,8 @@ export function PlayerBreakdownsTab({ roster, data, onSelectPlayer }: PlayerBrea
           Season Player Profiles
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Tap a player for full stats. Sort by plus/minus to find your impact lineup.
+          Tap a player for full stats. Coach rating is the season average; +/- is on-pitch goal
+          differential.
         </p>
       </div>
 
@@ -117,6 +165,7 @@ export function PlayerBreakdownsTab({ roster, data, onSelectPlayer }: PlayerBrea
         {(
           [
             ['jersey', 'Jersey #'],
+            ['rating', 'Avg rating'],
             ['plusMinus', '+/− Impact'],
           ] as const
         ).map(([mode, label]) => (
@@ -136,10 +185,10 @@ export function PlayerBreakdownsTab({ roster, data, onSelectPlayer }: PlayerBrea
         ))}
       </div>
 
-      <div className="hidden rounded-lg border border-border bg-secondary/30 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sm:grid sm:grid-cols-[2.5rem_1fr_4rem_1rem] sm:gap-3">
+      <div className="hidden rounded-lg border border-border bg-secondary/30 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sm:grid sm:grid-cols-[2.5rem_1fr_4.5rem_1rem] sm:gap-3">
         <span>#</span>
         <span>Player</span>
-        <span className="text-right">+/−</span>
+        <span className="text-right">Avg</span>
         <span />
       </div>
 

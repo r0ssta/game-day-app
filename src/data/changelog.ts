@@ -23,7 +23,59 @@ export const CHANGELOG: ChangelogRelease[] = [
       'Opponent goals can be tagged (unforced error, counter, set piece, great play)',
     ],
   },
+  {
+    version: '2026.09.07',
+    date: 'September 7, 2026',
+    title: 'Recaps you can trust',
+    features: [
+      'Recap minutes no longer inflate from leftover 0:00 kickoffs',
+      'Scheduled lineups save, reopen, and replace without errors',
+      'Resume and Get Ready follow the team you selected',
+    ],
+  },
+  {
+    version: '2026.09.04',
+    date: 'September 4, 2026',
+    title: 'Clearer sideline',
+    features: [
+      'Pitch and bench badges lead with name and minutes played',
+      'Tag opponent goals in one tap',
+      'Edit match details after the whistle, and fix scheduled games',
+    ],
+  },
+  {
+    version: '2026.09.02',
+    date: 'September 2, 2026',
+    title: 'Parent Hub recaps',
+    features: [
+      'Half-by-half recap and the actual game length',
+      'Live game feed on every match, not only while it is in progress',
+      'Kickoff XI written from the pitch',
+      'Finished matches stay on Recaps',
+    ],
+  },
+  {
+    version: '2026.09.01',
+    date: 'September 1, 2026',
+    title: 'Faster live match',
+    features: [
+      'Goals and substitutions feel as instant as shots',
+      'Match clock stays put when staff devices sync',
+      'Parent Hub cached for slow fields',
+      '7v7 pitches stay on seven slots',
+    ],
+  },
 ]
+
+/** How many newest groupings the What’s New sheet shows before “See all”. */
+export const CHANGELOG_PREVIEW_COUNT = 3
+
+export function previewChangelog(
+  releases: ChangelogRelease[] = CHANGELOG,
+  limit = CHANGELOG_PREVIEW_COUNT,
+): ChangelogRelease[] {
+  return releases.slice(0, Math.max(0, limit))
+}
 
 export function latestChangelogVersion(
   releases: ChangelogRelease[] = CHANGELOG,

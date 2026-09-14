@@ -97,6 +97,7 @@ import {
   navigateApp,
   parseCoachRoute,
   replaceApp,
+  shouldCanonicalizeActiveTeamPath,
 } from '@/lib/app-routes'
 import { useParams } from '@/hooks/useCoachParams'
 import {
@@ -852,7 +853,7 @@ export function useMatchState() {
         if (resolvedTeamId) {
           setSelectedTeamId(resolvedTeamId)
           persistActiveTeamId(resolvedTeamId)
-          if (!route.teamId && !isImpactReportPath(window.location.pathname)) {
+          if (shouldCanonicalizeActiveTeamPath(window.location.pathname)) {
             replaceApp(coachTeamPath(resolvedTeamId))
           }
         }

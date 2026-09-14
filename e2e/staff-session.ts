@@ -57,10 +57,7 @@ export function skipUnlessStaffE2e(
   test.skip(true, reason)
 }
 
-export async function staffAccessToken(): Promise<string> {
-  const preset = process.env.E2E_STAFF_ACCESS_TOKEN?.trim()
-  if (preset) return preset
-
+export async function staffPasswordSession() {
   const { url, key } = supabaseEnv()
   if (!url || !key) throw new Error('Supabase env not configured')
   const email = process.env.E2E_STAFF_EMAIL?.trim()
@@ -74,7 +71,33 @@ export async function staffAccessToken(): Promise<string> {
   if (error || !data.session?.access_token) {
     throw new Error(error?.message || 'Staff password sign-in failed')
   }
-  return data.session.access_token
+  return data.session
+}
+
+export async function staffAccessToken(): Promise<string> {
+  const preset = process.env.E2E_STAFF_ACCESS_TOKEN?.trim()
+  if (preset) return preset
+  const session = await staffPasswordSession()
+  return session.access_token
+}
+
+export function supabaseAuthStorageKey(): string {
+  const { url } = supabaseEnv()
+  if (!url) throw new Error('Supabase env not configured')
+  const ref = new URL(url).hostname.split('.')[0]
+  return `sb-${ref}-auth-token`
+}
+
+export async function staffBrowserAuthPayload(): Promise<{ storageKey: string; sessionJson: string }> {
+  const preset = process.env.E2E_STAFF_ACCESS_TOKEN?.trim()
+  if (preset) {
+    throw new Error('Browser session inject needs E2E_STAFF_EMAIL + E2E_STAFF_PASSWORD (full session)')
+  }
+  const session = await staffPasswordSession()
+  return {
+    storageKey: supabaseAuthStorageKey(),
+    sessionJson: JSON.stringify(session),
+  }
 }
 
 export function staffSupabase(accessToken: string): SupabaseClient {

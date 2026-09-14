@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createClient } from '@supabase/supabase-js'
 import type { Plugin, ViteDevServer } from 'vite'
 import { loadEnv } from 'vite'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
@@ -75,6 +76,72 @@ function injectServerEnv(mode: string) {
   }
 }
 
+function isLoopbackAddress(addr: string | undefined): boolean {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'
+}
+
+function supabaseAuthStorageKey(supabaseUrl: string): string {
+  const ref = new URL(supabaseUrl).hostname.split('.')[0]
+  return `sb-${ref}-auth-token`
+}
+
+/**
+ * Local-only staff session for browser/agent verification.
+ * Never shipped as a Vercel route — Vite middleware, localhost POST, e2e creds.
+ */
+async function handleDevStaffSession(
+  req: IncomingMessage,
+  res: ServerResponse,
+  pathname: string,
+  mode: string,
+): Promise<boolean> {
+  if (pathname !== '/api/dev/staff-session') return false
+  if (mode === 'production') return false
+
+  const json = (status: number, body: unknown) => {
+    res.statusCode = status
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    res.end(JSON.stringify(body))
+  }
+
+  if (req.method !== 'POST') {
+    json(405, { error: 'POST only' })
+    return true
+  }
+  if (!isLoopbackAddress(req.socket.remoteAddress)) {
+    json(403, { error: 'localhost only' })
+    return true
+  }
+
+  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+  const key =
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY
+  const email = process.env.E2E_STAFF_EMAIL?.trim()
+  const password = process.env.E2E_STAFF_PASSWORD
+  if (!url || !key || !email || !password) {
+    json(503, { error: 'E2E staff credentials not configured' })
+    return true
+  }
+
+  const supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error || !data.session) {
+    json(401, { error: error?.message || 'Staff password sign-in failed' })
+    return true
+  }
+
+  json(200, {
+    storageKey: supabaseAuthStorageKey(url),
+    session: data.session,
+  })
+  return true
+}
+
 /**
  * Local stand-in for Vercel match, hub, and push routes so
  * `vite` / `vite preview` can exercise them without `vercel dev`.
@@ -86,6 +153,7 @@ export function matchApiPlugin(mode = 'development'): Plugin {
   const handle = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = req.url ? new URL(req.url, 'http://localhost') : null
     const pathname = url?.pathname ?? ''
+    if (await handleDevStaffSession(req, res, pathname, mode)) return
     const moduleId = routeModule(pathname)
     if (!moduleId || !loadModule) {
       next()

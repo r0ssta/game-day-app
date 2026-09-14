@@ -4,6 +4,7 @@ import {
   LAST_SEEN_VERSION_KEY,
   hasUnreadChangelog,
   latestChangelogVersion,
+  previewChangelog,
   readLastSeenVersion,
   writeLastSeenVersion,
   type ChangelogRelease,
@@ -38,6 +39,15 @@ describe('changelog', () => {
     expect(latest?.title).toBeTruthy()
     expect(latest?.features.length).toBeGreaterThan(0)
     expect(latestChangelogVersion()).toBe(latest?.version)
+  })
+
+  it('previews the newest groupings and leaves older ones for the full list', () => {
+    expect(CHANGELOG.length).toBeGreaterThan(3)
+    const preview = previewChangelog()
+    expect(preview).toHaveLength(3)
+    expect(preview[0]?.version).toBe(CHANGELOG[0]?.version)
+    expect(preview[2]?.version).toBe(CHANGELOG[2]?.version)
+    expect(previewChangelog(CHANGELOG, 1)).toEqual([CHANGELOG[0]])
   })
 
   it('treats a missing last-seen version as unread', () => {

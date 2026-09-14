@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHANGELOG_PATH,
   coachImpactPath,
   coachMatchPath,
   coachTeamPath,
+  isChangelogPath,
   isImpactReportPath,
   isLandingPath,
   parseCoachRoute,
+  shouldCanonicalizeActiveTeamPath,
 } from './app-routes'
 
 describe('isLandingPath', () => {
@@ -21,7 +24,33 @@ describe('isLandingPath', () => {
     expect(isLandingPath('/admin')).toBe(false)
     expect(isLandingPath('/hub/blitz')).toBe(false)
     expect(isLandingPath('/impact')).toBe(false)
+    expect(isLandingPath('/changelog')).toBe(false)
     expect(isLandingPath('/index.html')).toBe(false)
+  })
+})
+
+describe('isChangelogPath', () => {
+  it('only matches /changelog', () => {
+    expect(isChangelogPath('/changelog')).toBe(true)
+    expect(isChangelogPath('/changelog/')).toBe(true)
+    expect(isChangelogPath(CHANGELOG_PATH)).toBe(true)
+    expect(isChangelogPath('/')).toBe(false)
+    expect(isChangelogPath('/waitlist')).toBe(false)
+    expect(isChangelogPath('/coach')).toBe(false)
+  })
+})
+
+describe('shouldCanonicalizeActiveTeamPath', () => {
+  it('fills a bare staff root with the last-used team', () => {
+    expect(shouldCanonicalizeActiveTeamPath('/')).toBe(true)
+    expect(shouldCanonicalizeActiveTeamPath('/coach')).toBe(true)
+  })
+
+  it('leaves team sessions, impact, and public pages alone', () => {
+    expect(shouldCanonicalizeActiveTeamPath('/coach/teams/team-a')).toBe(false)
+    expect(shouldCanonicalizeActiveTeamPath('/impact')).toBe(false)
+    expect(shouldCanonicalizeActiveTeamPath('/changelog')).toBe(false)
+    expect(shouldCanonicalizeActiveTeamPath('/waitlist')).toBe(false)
   })
 })
 

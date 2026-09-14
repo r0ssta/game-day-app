@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { aggregatePlayerRecaps, buildAbsoluteMatchTimeline } from './match-recap'
+import {
+  aggregatePlayerRecaps,
+  buildAbsoluteMatchTimeline,
+  buildRecapRows,
+  resolveRecapRoleSeconds,
+} from './match-recap'
 import type { DbMatchEvent } from '@/types/database'
+import type { MatchPlayer } from '@/types/match'
 
 function event(
   overrides: Partial<DbMatchEvent> &
@@ -155,5 +161,150 @@ describe('aggregatePlayerRecaps', () => {
     expect(stats.get('p1')?.fieldSeconds).toBe(600)
     expect(stats.get('p1')?.gkSeconds).toBe(900)
     expect(stats.get('p1')?.totalSeconds).toBe(1500)
+  })
+
+  it('counts untagged starting stints as GK when the player finished in net', () => {
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup',
+          created_at: '2026-09-06T16:00:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 1500,
+          event_notes: 'period_end',
+          created_at: '2026-09-06T16:25:00.000Z',
+          player_id: 'p1',
+        }),
+      ],
+      25 * 60,
+      new Map([['p1', { matchPosition: 'GK' }]]),
+    )
+
+    expect(stats.get('p1')?.gkSeconds).toBe(1500)
+    expect(stats.get('p1')?.fieldSeconds).toBe(0)
+  })
+})
+
+function recapPlayer(
+  partial: Partial<MatchPlayer> & Pick<MatchPlayer, 'id'>,
+): MatchPlayer {
+  return {
+    teamId: 't',
+    number: 1,
+    firstName: 'Ada',
+    lastName: 'Net',
+    position: 'GK',
+    primaryPosition: 'Goalkeeper',
+    secondaryPosition: 'Goalkeeper',
+    ageGroup: 'U11',
+    isGuest: false,
+    activeStatus: true,
+    impact: 'neutral',
+    attending: true,
+    isFirstHalfStarter: true,
+    isSecondHalfStarter: true,
+    isOnField: false,
+    matchPosition: 'GK',
+    totalSecondsPlayed: 0,
+    subbedInAt: null,
+    plusMinus: 0,
+    yellowCardCount: 0,
+    isSentOff: false,
+    ...partial,
+  }
+}
+
+describe('resolveRecapRoleSeconds', () => {
+  it('keeps event GK time when the timeline already split roles', () => {
+    expect(
+      resolveRecapRoleSeconds(
+        {
+          playerId: 'p1',
+          totalSeconds: 1500,
+          fieldSeconds: 600,
+          gkSeconds: 900,
+          positions: ['ST', 'GK'],
+          goals: 0,
+          assists: 0,
+          saves: 0,
+          yellowCards: 0,
+          redCards: 0,
+        },
+        recapPlayer({
+          id: 'p1',
+          matchPosition: 'ST',
+          totalSecondsPlayed: 1500,
+          fieldSecondsPlayed: 1500,
+          gkSecondsPlayed: 0,
+        }),
+      ),
+    ).toEqual({ totalSeconds: 1500, fieldSeconds: 600, gkSeconds: 900 })
+  })
+
+  it('uses live banked minutes when events missed the GK split', () => {
+    expect(
+      resolveRecapRoleSeconds(
+        {
+          playerId: 'p1',
+          totalSeconds: 1500,
+          fieldSeconds: 1500,
+          gkSeconds: 0,
+          positions: ['ST', 'GK'],
+          goals: 0,
+          assists: 0,
+          saves: 0,
+          yellowCards: 0,
+          redCards: 0,
+        },
+        recapPlayer({
+          id: 'p1',
+          matchPosition: 'GK',
+          totalSecondsPlayed: 1500,
+          fieldSecondsPlayed: 600,
+          gkSecondsPlayed: 900,
+        }),
+      ),
+    ).toEqual({ totalSeconds: 1500, fieldSeconds: 600, gkSeconds: 900 })
+  })
+})
+
+describe('buildRecapRows', () => {
+  it('shows GK minutes on the recap row from live banked time', () => {
+    const rows = buildRecapRows(
+      [
+        recapPlayer({
+          id: 'p1',
+          totalSecondsPlayed: 1500,
+          fieldSecondsPlayed: 600,
+          gkSecondsPlayed: 900,
+        }),
+      ],
+      new Map([
+        [
+          'p1',
+          {
+            playerId: 'p1',
+            totalSeconds: 1500,
+            fieldSeconds: 1500,
+            gkSeconds: 0,
+            positions: ['GK'],
+            goals: 0,
+            assists: 0,
+            saves: 2,
+            yellowCards: 0,
+            redCards: 0,
+          },
+        ],
+      ]),
+      new Map(),
+    )
+
+    expect(rows[0]?.gkSeconds).toBe(900)
+    expect(rows[0]?.fieldSeconds).toBe(600)
   })
 })

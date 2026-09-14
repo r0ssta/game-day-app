@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Mail } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
-import { PlayingTimeBar } from '@/components/PlayingTimeBar'
+import { PlayingTimeBar, PlayingTimeLegend } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal, playersFromRoster } from '@/components/ParentRecapEmailModal'
 import { loadHistoricalRecapRows, type PlayerRecapReview } from '@/lib/match-recap'
 import { maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
@@ -302,11 +302,14 @@ export function MatchRecapDetailView({
 
         {!loading && !loadError && (
           <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <div className="hidden border-b border-border bg-secondary/40 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sm:grid sm:grid-cols-[2.5rem_1fr_3.5rem_4rem] sm:gap-x-2">
-              <span>#</span>
-              <span>Player</span>
-              <span className="text-center">Rating</span>
-              <span className="text-right">Min</span>
+            <div className="border-b border-border bg-secondary/40 px-3 py-2">
+              <PlayingTimeLegend />
+              <div className="mt-2 hidden text-[10px] font-bold uppercase tracking-widest text-muted-foreground sm:grid sm:grid-cols-[2.5rem_1fr_3.5rem_4rem] sm:gap-x-2">
+                <span>#</span>
+                <span>Player</span>
+                <span className="text-center">Rating</span>
+                <span className="text-right">Min</span>
+              </div>
             </div>
 
             {rows.length === 0 ? (
@@ -331,16 +334,15 @@ export function MatchRecapDetailView({
                           {formatJersey(row.number)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <span className="text-base font-bold text-foreground">{row.name}</span>
-                            <PlayingTimeBar
-                              className="min-w-[7.5rem] max-w-[12rem] flex-1"
-                              fieldSeconds={row.fieldSeconds}
-                              gkSeconds={row.gkSeconds}
-                              maxSeconds={maxPlayingSeconds}
-                            />
-                          </div>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{positionsLabel}</p>
+                          <span className="text-base font-bold text-foreground">{row.name}</span>
+                          <PlayingTimeBar
+                            className="mt-1.5 w-full max-w-xs"
+                            variant="verbose"
+                            fieldSeconds={row.fieldSeconds}
+                            gkSeconds={row.gkSeconds}
+                            maxSeconds={maxPlayingSeconds}
+                          />
+                          <p className="mt-1.5 text-xs text-muted-foreground">{positionsLabel}</p>
                           <p className="text-xs font-semibold text-muted-foreground">
                             Goals {row.goals} · Assists {row.assists}
                             {row.saves > 0 ? ` · Saves ${row.saves}` : ''}

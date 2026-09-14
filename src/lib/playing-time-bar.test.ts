@@ -11,6 +11,9 @@ describe('playing-time-bar helpers', () => {
     expect(formatPlayingTimeBarLabel(35 * 60, 0)).toBe('35m 👟')
     expect(formatPlayingTimeBarLabel(0, 15 * 60)).toBe('15m 🧤')
     expect(formatPlayingTimeBarLabel(35 * 60, 15 * 60)).toBe('35m 👟 | 15m 🧤')
+    expect(formatPlayingTimeBarLabel(35 * 60, 15 * 60, 'verbose')).toBe('35m field · 15m GK')
+    expect(formatPlayingTimeBarLabel(0, 15 * 60, 'verbose')).toBe('15m GK')
+    expect(formatPlayingTimeBarLabel(35 * 60, 0, 'verbose')).toBe('35m field')
   })
 
   it('scales segments against the longest player', () => {

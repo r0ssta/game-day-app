@@ -92,13 +92,49 @@ export function PlayerSeasonProfileView({
           >
             <ArrowLeft className="size-5" />
           </button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-foreground">
               {header.name}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               #{formatJersey(header.jersey)} · Roster {header.rosterPrimary} /{' '}
               {header.rosterSecondary}
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p
+              className={cn(
+                'font-display text-3xl font-black leading-none tabular-nums',
+                stats.averageOverallRating == null
+                  ? 'text-muted-foreground'
+                  : stats.averageOverallRating >= 4
+                    ? 'text-neon'
+                    : stats.averageOverallRating < 3
+                      ? 'text-danger'
+                      : 'text-foreground',
+              )}
+            >
+              {formatPlayerRating(stats.averageOverallRating, 1)}
+              {stats.averageOverallRating != null ? (
+                <span className="ml-0.5 text-xs font-bold tracking-wide text-muted-foreground">
+                  /5
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Coach avg
+            </p>
+            <p
+              className={cn(
+                'mt-1 inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-black tabular-nums',
+                stats.plusMinus > 0
+                  ? 'bg-neon/15 text-neon'
+                  : stats.plusMinus < 0
+                    ? 'bg-danger/15 text-danger'
+                    : 'bg-secondary text-muted-foreground',
+              )}
+            >
+              {formatPlusMinus(stats.plusMinus)}
             </p>
           </div>
         </header>

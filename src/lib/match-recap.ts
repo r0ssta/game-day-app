@@ -1,5 +1,6 @@
 import { cleanRecapPositionNote } from '@/lib/match-event-notes'
 import { isGoalkeeperPosition } from '@/lib/match-shot-save'
+import { allocateSecondsByRole } from '@/lib/play-time'
 import { normalizeRecapPosition } from '@/lib/positions'
 import { formatOpponentWithVenue } from '@/lib/match-location'
 import { formatPlayingTimeBarLabel } from '@/lib/playing-time-bar'
@@ -229,6 +230,16 @@ export function aggregatePlayerRecaps(
   type OpenStint = { start: number; position: string | null }
   const openStints = new Map<string, OpenStint>()
 
+  const resolveStintPosition = (
+    notes: string | null | undefined,
+    playerId: string,
+    previousPosition?: string | null,
+  ) =>
+    cleanRecapPositionNote(notes) ??
+    previousPosition ??
+    playersById?.get(playerId)?.matchPosition ??
+    null
+
   const addStintSeconds = (
     row: { totalSeconds: number; fieldSeconds: number; gkSeconds: number },
     start: number,
@@ -264,7 +275,7 @@ export function aggregatePlayerRecaps(
       case 'sub_in':
         openStints.set(event.player_id, {
           start: event.absTimestamp,
-          position: cleanRecapPositionNote(event.event_notes),
+          position: resolveStintPosition(event.event_notes, event.player_id),
         })
         break
       case 'position_change': {
@@ -274,7 +285,7 @@ export function aggregatePlayerRecaps(
         }
         openStints.set(event.player_id, {
           start: event.absTimestamp,
-          position: cleanRecapPositionNote(event.event_notes),
+          position: resolveStintPosition(event.event_notes, event.player_id, open?.position),
         })
         break
       }
@@ -357,6 +368,55 @@ export function formatRecapMinutes(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+/** Prefer the event timeline, then live field/GK banks, then final-position allocation. */
+export function resolveRecapRoleSeconds(
+  stats: PlayerRecapStats | undefined,
+  player: Pick<
+    MatchPlayer,
+    'matchPosition' | 'totalSecondsPlayed' | 'fieldSecondsPlayed' | 'gkSecondsPlayed'
+  >,
+): { totalSeconds: number; fieldSeconds: number; gkSeconds: number } {
+  const eventTotal = stats?.totalSeconds ?? 0
+  const eventField = stats?.fieldSeconds ?? 0
+  const eventGk = stats?.gkSeconds ?? 0
+  const bankedField = Math.max(0, player.fieldSecondsPlayed ?? 0)
+  const bankedGk = Math.max(0, player.gkSecondsPlayed ?? 0)
+  const bankedTotal = bankedField + bankedGk
+  const hasLiveSplit = bankedField > 0 && bankedGk > 0
+
+  if (eventGk > 0) {
+    return {
+      totalSeconds: eventTotal || eventField + eventGk,
+      fieldSeconds: eventField,
+      gkSeconds: eventGk,
+    }
+  }
+
+  // Live match still has a mixed split that untagged events collapsed into field time.
+  if (hasLiveSplit) {
+    return {
+      totalSeconds: bankedTotal || player.totalSecondsPlayed,
+      fieldSeconds: bankedField,
+      gkSeconds: bankedGk,
+    }
+  }
+
+  if (eventTotal > 0) {
+    return { totalSeconds: eventTotal, fieldSeconds: eventField, gkSeconds: eventGk }
+  }
+
+  if (bankedTotal > 0) {
+    return { totalSeconds: bankedTotal, fieldSeconds: bankedField, gkSeconds: bankedGk }
+  }
+
+  const allocated = allocateSecondsByRole(player.totalSecondsPlayed, player.matchPosition)
+  return {
+    totalSeconds: player.totalSecondsPlayed,
+    fieldSeconds: allocated.fieldSecondsPlayed,
+    gkSeconds: allocated.gkSecondsPlayed,
+  }
+}
+
 function formatRatingLabel(rating: PlayerRating | null): string {
   if (rating == null) return 'Unrated'
   return formatPlayerRating(rating, 0)
@@ -403,22 +463,15 @@ export function buildRecapRows(
       const positions = resolvePlayerPositions(stats, player)
       const overallSaved = savedReviews.get(playerOverallReviewKey(playerId))
       const positionReviews = buildPositionReviews(playerId, positions, savedReviews, null)
+      const roleSeconds = resolveRecapRoleSeconds(stats, player)
 
       return {
         playerId,
         name: formatPlayerFullName(player.firstName, player.lastName),
         number: player.number,
-        totalSeconds: stats?.totalSeconds ?? player.totalSecondsPlayed,
-        fieldSeconds:
-          stats?.fieldSeconds ??
-          (isGoalkeeperPosition(player.matchPosition)
-            ? 0
-            : (stats?.totalSeconds ?? player.totalSecondsPlayed)),
-        gkSeconds:
-          stats?.gkSeconds ??
-          (isGoalkeeperPosition(player.matchPosition)
-            ? (stats?.totalSeconds ?? player.totalSecondsPlayed)
-            : 0),
+        totalSeconds: roleSeconds.totalSeconds,
+        fieldSeconds: roleSeconds.fieldSeconds,
+        gkSeconds: roleSeconds.gkSeconds,
         positions,
         goals: stats?.goals ?? 0,
         assists: stats?.assists ?? 0,
@@ -494,7 +547,7 @@ export function buildRecapSummaryText(input: {
 
       return [
         `${row.number !== null ? `#${row.number}` : '—'} ${row.name}`,
-        `  ${formatPlayingTimeBarLabel(row.fieldSeconds, row.gkSeconds)} · ${positions}`,
+        `  ${formatPlayingTimeBarLabel(row.fieldSeconds, row.gkSeconds, 'verbose')} · ${positions}`,
         `  G:${row.goals} A:${row.assists}${saveBit}${cardBits.length ? ` ${cardBits.join(' ')}` : ''}`,
         ...(row.sidelineStatsSummary ? [`  Sideline: ${row.sidelineStatsSummary}`] : []),
         ...ratingLines,

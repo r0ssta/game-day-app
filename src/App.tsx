@@ -7,7 +7,7 @@ import { PwaUpdateToast } from '@/components/PwaUpdateToast'
 import { ScreenSuspense } from '@/components/Spinner'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
-import { isLandingPath, parseCoachRoute } from '@/lib/app-routes'
+import { isChangelogPath, isLandingPath, parseCoachRoute } from '@/lib/app-routes'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import {
   installParentHubLaunchConsumer,
@@ -26,6 +26,9 @@ import { applySunlightMode, readSunlightMode } from '@/lib/sunlight-mode'
 
 const CoachDashboard = lazyWithChunkReload(() =>
   import('@/pages/CoachDashboard').then((m) => ({ default: m.CoachDashboard })),
+)
+const ChangelogPage = lazyWithChunkReload(() =>
+  import('@/pages/ChangelogPage').then((m) => ({ default: m.ChangelogPage })),
 )
 const ParentHubScreen = lazyWithChunkReload(() =>
   import('@/components/ParentHubScreen').then((m) => ({ default: m.ParentHubScreen })),
@@ -94,6 +97,9 @@ export default function App() {
   const [trackerRoute, setTrackerRoute] = useState(() => parseStatTrackerRoute())
   const [parentHubRoute, setParentHubRoute] = useState(() => bootstrapParentHubRoute())
   const [landingRoute, setLandingRoute] = useState(() => isLandingPath(window.location.pathname))
+  const [changelogRoute, setChangelogRoute] = useState(() =>
+    isChangelogPath(window.location.pathname),
+  )
   const [coachRoute, setCoachRoute] = useState(() => parseCoachRoute(window.location.pathname))
 
   useEffect(() => {
@@ -110,6 +116,7 @@ export default function App() {
       setTrackerRoute(parseStatTrackerRoute())
       setParentHubRoute(nextHub)
       setLandingRoute(isLandingPath(window.location.pathname))
+      setChangelogRoute(isChangelogPath(window.location.pathname))
       setCoachRoute(parseCoachRoute(window.location.pathname))
     }
     syncRoute()
@@ -145,13 +152,19 @@ export default function App() {
         <LandingPage />
       ) : (
         <AuthProvider>
-          <ErrorBoundary
-            sectionLabel="Staff app"
-            resetKey={coachRoute.teamId ?? 'no-team'}
-            className="min-h-dvh bg-background"
-          >
-            <AuthenticatedApp sessionTeamId={coachRoute.teamId} />
-          </ErrorBoundary>
+          {changelogRoute ? (
+            <ScreenSuspense>
+              <ChangelogPage />
+            </ScreenSuspense>
+          ) : (
+            <ErrorBoundary
+              sectionLabel="Staff app"
+              resetKey={coachRoute.teamId ?? 'no-team'}
+              className="min-h-dvh bg-background"
+            >
+              <AuthenticatedApp sessionTeamId={coachRoute.teamId} />
+            </ErrorBoundary>
+          )}
         </AuthProvider>
       )}
     </SunlightModeProvider>
