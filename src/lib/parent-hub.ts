@@ -1,7 +1,7 @@
 import {
   isPeriodEndSubEvent,
+  isPeriodStartBoundary,
   isStartingLineupEvent,
-  isTaggedStartingLineupNote,
   parsePositionSwitchNote,
   parseStartingLineupPosition,
   parseTacticalPositionNote,
@@ -794,24 +794,19 @@ export function assignParentEventPeriodIndexes(
     (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
   )
   let period = 1
-  let hadNonLineupInPeriod = false
   let lastTimestamp = 0
   const periodById = new Map<string, number>()
 
   for (const event of chrono) {
-    const taggedLineup =
-      event.eventType === 'sub_in' && isTaggedStartingLineupNote(event.eventNotes)
-    const clockResetToKickoff =
-      event.eventType === 'sub_in' &&
-      event.timestamp <= 0 &&
-      event.timestamp < lastTimestamp - 30
-
-    if (hadNonLineupInPeriod && (taggedLineup || clockResetToKickoff)) {
+    if (
+      isPeriodStartBoundary({
+        eventType: event.eventType,
+        eventNotes: event.eventNotes,
+        timestamp: event.timestamp,
+        previousTimestamp: lastTimestamp,
+      })
+    ) {
       period += 1
-      hadNonLineupInPeriod = false
-    }
-    if (!taggedLineup) {
-      hadNonLineupInPeriod = true
     }
     lastTimestamp = event.timestamp
     periodById.set(event.id, period)

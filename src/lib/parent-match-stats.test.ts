@@ -278,4 +278,66 @@ describe('buildParentMatchPlayerStats', () => {
     expect(parentExtraPeriodStats(ada, 3)).toEqual([])
     expect(formatParentTotalRole(ada, 3)).toBe('Started all')
   })
+
+  it('does not invent extra periods from a mid-period clock rewind', () => {
+    const period = 18 * 60
+    const rows = buildParentMatchPlayerStats(
+      [
+        event({
+          id: 'p2-ada',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('ST'),
+          createdAt: '2026-09-12T15:22:46.000Z',
+        }),
+        event({
+          id: 'sub-out',
+          eventType: 'sub_out',
+          timestamp: 317,
+          createdAt: '2026-09-12T15:28:05.000Z',
+        }),
+        event({
+          id: 'shot',
+          eventType: 'shot_away',
+          timestamp: 140,
+          createdAt: '2026-09-12T15:28:37.000Z',
+        }),
+        event({
+          id: 'goal',
+          eventType: 'goal',
+          timestamp: 173,
+          createdAt: '2026-09-12T15:36:49.000Z',
+        }),
+        event({
+          id: 'p2-end',
+          eventType: 'sub_out',
+          timestamp: 1075,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-12T15:40:47.000Z',
+        }),
+        event({
+          id: 'p3-ada',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('CM'),
+          createdAt: '2026-09-12T15:45:21.000Z',
+        }),
+        event({
+          id: 'p3-end',
+          eventType: 'sub_out',
+          timestamp: period,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-12T16:03:21.000Z',
+        }),
+      ],
+      'm1',
+      18,
+      players,
+    )
+
+    const ada = rows.find((row) => row.playerId === ADA)!
+    expect(ada.extraHalves).toEqual([])
+    expect(ada.halves[0].seconds).toBe(317)
+    expect(ada.halves[1].seconds).toBe(period)
+    expect(ada.total.seconds).toBe(317 + period)
+    expect(ada.total.seconds).toBeLessThanOrEqual(period * 2)
+  })
 })

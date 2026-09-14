@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isPositionMicroShift,
+  isPeriodStartBoundary,
   mergePositionSwitchNote,
   POSITION_MICRO_SHIFT_SECONDS,
   positionSwitchNote,
@@ -61,6 +62,55 @@ describe('isPositionMicroShift', () => {
         incomingTimestamp: 5,
         previousCreatedAtMs: 1_000,
         nowMs: 1_000 + 60_000,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('isPeriodStartBoundary', () => {
+  it('starts the next period on a tagged lineup after play', () => {
+    expect(
+      isPeriodStartBoundary({
+        eventType: 'sub_in',
+        eventNotes: 'starting_lineup|ST',
+        timestamp: 0,
+        previousTimestamp: 1048,
+      }),
+    ).toBe(true)
+  })
+
+  it('starts the next period on a legacy untagged kickoff reset', () => {
+    expect(
+      isPeriodStartBoundary({
+        eventType: 'sub_in',
+        eventNotes: 'CM',
+        timestamp: 0,
+        previousTimestamp: 1800,
+      }),
+    ).toBe(true)
+  })
+
+  it('does not treat a mid-period clock rewind as a new period', () => {
+    expect(
+      isPeriodStartBoundary({
+        eventType: 'shot_away',
+        timestamp: 140,
+        previousTimestamp: 317,
+      }),
+    ).toBe(false)
+    expect(
+      isPeriodStartBoundary({
+        eventType: 'goal',
+        timestamp: 173,
+        previousTimestamp: 817,
+      }),
+    ).toBe(false)
+    expect(
+      isPeriodStartBoundary({
+        eventType: 'sub_in',
+        eventNotes: 'ST',
+        timestamp: 173,
+        previousTimestamp: 817,
       }),
     ).toBe(false)
   })

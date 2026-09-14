@@ -61,6 +61,7 @@
     "supabase-player-impact-rpc-migration.sql",
     "supabase-position-micro-shift-migration.sql",
     "supabase-player-impact-gk-minutes-migration.sql",
-    "supabase-match-period-start-time-migration.sql"
+    "supabase-match-period-start-time-migration.sql",
+    "supabase-player-impact-period-boundary-migration.sql"
   ]
 }

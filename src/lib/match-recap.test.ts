@@ -89,6 +89,54 @@ describe('buildAbsoluteMatchTimeline', () => {
     expect(timeline[0]?.absTimestamp).toBe(0)
     expect(timeline[1]?.absTimestamp).toBe(1590)
   })
+
+  it('keeps mid-period clock rewinds in the same period', () => {
+    const period = 18 * 60
+    const timeline = buildAbsoluteMatchTimeline(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-12T15:22:46.000Z',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 317,
+          created_at: '2026-09-12T15:28:05.000Z',
+          player_id: 'p2',
+        }),
+        event({
+          event_type: 'shot_away',
+          timestamp: 140,
+          created_at: '2026-09-12T15:28:37.000Z',
+          player_id: null,
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 817,
+          event_notes: 'RCB',
+          created_at: '2026-09-12T15:36:28.000Z',
+          player_id: 'p2',
+        }),
+        event({
+          event_type: 'goal',
+          timestamp: 173,
+          created_at: '2026-09-12T15:36:49.000Z',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 1075,
+          event_notes: 'period_end',
+          created_at: '2026-09-12T15:40:47.000Z',
+        }),
+      ],
+      period,
+    )
+
+    expect(timeline.every((row) => row.periodIndex === 0)).toBe(true)
+    expect(timeline.at(-1)?.absTimestamp).toBe(1075)
+  })
 })
 
 describe('aggregatePlayerRecaps', () => {
@@ -240,6 +288,100 @@ describe('aggregatePlayerRecaps', () => {
     )
 
     expect(stats.get('p1')?.totalSeconds).toBe(period * 3)
+  })
+
+  it('does not add a full period when the clock is rewound mid-period', () => {
+    const period = 18 * 60
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-12T15:22:46.000Z',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 317,
+          created_at: '2026-09-12T15:28:05.000Z',
+          player_id: 'p2',
+        }),
+        event({
+          event_type: 'shot_away',
+          timestamp: 140,
+          created_at: '2026-09-12T15:28:37.000Z',
+          player_id: null,
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 817,
+          event_notes: 'RCB',
+          created_at: '2026-09-12T15:36:28.000Z',
+          player_id: 'p2',
+        }),
+        event({
+          event_type: 'goal',
+          timestamp: 173,
+          created_at: '2026-09-12T15:36:49.000Z',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 1075,
+          event_notes: 'period_end',
+          created_at: '2026-09-12T15:40:47.000Z',
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-12T15:45:21.000Z',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: period,
+          event_notes: 'period_end',
+          created_at: '2026-09-12T16:03:21.000Z',
+        }),
+      ],
+      period,
+    )
+
+    expect(stats.get('p1')?.totalSeconds).toBe(1075 + period)
+    expect(stats.get('p1')?.totalSeconds).toBeLessThanOrEqual(period * 2)
+  })
+
+  it('banks the previous period when kickoff overwrites an open stint', () => {
+    const period = 18 * 60
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-12T15:01:32.000Z',
+        }),
+        event({
+          event_type: 'goal',
+          timestamp: 1000,
+          created_at: '2026-09-12T15:18:12.000Z',
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|CM',
+          created_at: '2026-09-12T15:22:46.000Z',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: period,
+          event_notes: 'period_end',
+          created_at: '2026-09-12T15:40:46.000Z',
+        }),
+      ],
+      period,
+    )
+
+    expect(stats.get('p1')?.totalSeconds).toBe(1000 + period)
   })
 })
 

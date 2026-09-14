@@ -27,6 +27,24 @@ export function isTaggedStartingLineupNote(notes: string | null | undefined): bo
   return raw.startsWith(STARTING_LINEUP_NOTE_PREFIX) || raw === 'starting_lineup'
 }
 
+/**
+ * Clock rewind that starts the next period — kickoff remaining, not a mid-period
+ * length/remaining edit. Those drops used to inject a full period of padding
+ * into recap minutes.
+ */
+export function isPeriodStartBoundary(input: {
+  eventType: string
+  eventNotes?: string | null
+  timestamp: number
+  previousTimestamp: number
+}): boolean {
+  if (input.eventType !== 'sub_in') return false
+  if (isTaggedStartingLineupNote(input.eventNotes) && input.previousTimestamp > 30) {
+    return true
+  }
+  return input.timestamp <= 0 && input.timestamp < input.previousTimestamp - 30
+}
+
 export function isStartingLineupEvent(
   eventType: string,
   notes: string | null | undefined,

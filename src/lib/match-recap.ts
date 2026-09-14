@@ -1,4 +1,4 @@
-import { cleanRecapPositionNote } from '@/lib/match-event-notes'
+import { cleanRecapPositionNote, isPeriodStartBoundary } from '@/lib/match-event-notes'
 import { isGoalkeeperPosition } from '@/lib/match-shot-save'
 import { allocateSecondsByRole } from '@/lib/play-time'
 import { normalizeRecapPosition } from '@/lib/positions'
@@ -79,7 +79,7 @@ export function playerPositionReviewKey(playerId: string, position: string): str
   return `${playerId}::${normalizeRecapPosition(position)}`
 }
 
-type TimelineEvent = DbMatchEvent & { absTimestamp: number }
+type TimelineEvent = DbMatchEvent & { absTimestamp: number; periodIndex: number }
 
 function periodRebaseSeconds(
   periodEvents: DbMatchEvent[],
@@ -116,11 +116,15 @@ export function buildAbsoluteMatchTimeline(
   let lastTimestamp = 0
 
   for (const event of sorted) {
-    const newPeriod =
+    if (
       bucket.length > 0 &&
-      (event.timestamp < lastTimestamp - 30 ||
-        (Boolean(event.event_notes?.startsWith('starting_lineup')) && lastTimestamp > 30))
-    if (newPeriod) {
+      isPeriodStartBoundary({
+        eventType: event.event_type,
+        eventNotes: event.event_notes,
+        timestamp: event.timestamp,
+        previousTimestamp: lastTimestamp,
+      })
+    ) {
       periods.push(bucket)
       bucket = []
     }
@@ -132,11 +136,15 @@ export function buildAbsoluteMatchTimeline(
   const timeline: TimelineEvent[] = []
   let periodOffset = 0
 
-  for (const period of periods) {
+  for (const [periodIndex, period] of periods.entries()) {
     const rebase = periodRebaseSeconds(period, halfLengthSeconds)
     for (const event of period) {
       const periodSeconds = Math.max(0, event.timestamp - rebase)
-      timeline.push({ ...event, absTimestamp: periodOffset + periodSeconds })
+      timeline.push({
+        ...event,
+        absTimestamp: periodOffset + periodSeconds,
+        periodIndex,
+      })
     }
     const last = period[period.length - 1]
     periodOffset += Math.max(halfLengthSeconds, (last?.timestamp ?? 0) - rebase)
@@ -229,6 +237,8 @@ export function aggregatePlayerRecaps(
 
   type OpenStint = { start: number; position: string | null }
   const openStints = new Map<string, OpenStint>()
+  let currentPeriodIndex = timeline[0]?.periodIndex ?? 0
+  let lastAbsTimestamp = 0
 
   const resolveStintPosition = (
     notes: string | null | undefined,
@@ -253,7 +263,20 @@ export function aggregatePlayerRecaps(
     else row.fieldSeconds += seconds
   }
 
+  const closeOpenStintsAt = (end: number) => {
+    for (const [playerId, open] of openStints) {
+      addStintSeconds(ensure(playerId), open.start, end, open.position)
+    }
+    openStints.clear()
+  }
+
   for (const event of timeline) {
+    if (event.periodIndex > currentPeriodIndex) {
+      closeOpenStintsAt(lastAbsTimestamp)
+      currentPeriodIndex = event.periodIndex
+    }
+    lastAbsTimestamp = event.absTimestamp
+
     if (
       event.event_type === 'opponent_goal' ||
       event.event_type === 'shot_home' ||

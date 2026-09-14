@@ -370,6 +370,55 @@ describe('assignParentEventPeriodIndexes', () => {
     expect(periodById.get('end1')).toBe(1)
     expect(periodById.get('lu2')).toBe(2)
   })
+
+  it('does not start a new period when the clock is rewound mid-period', () => {
+    const periodById = assignParentEventPeriodIndexes([
+      event({
+        id: 'lu1',
+        eventType: 'sub_in',
+        timestamp: 0,
+        eventNotes: startingLineupNote('ST'),
+        createdAt: '2026-09-12T15:22:46.000Z',
+      }),
+      event({
+        id: 'sub',
+        eventType: 'sub_out',
+        timestamp: 317,
+        createdAt: '2026-09-12T15:28:05.000Z',
+      }),
+      event({
+        id: 'shot',
+        eventType: 'shot_away',
+        timestamp: 140,
+        createdAt: '2026-09-12T15:28:37.000Z',
+      }),
+      event({
+        id: 'goal',
+        eventType: 'goal',
+        timestamp: 173,
+        createdAt: '2026-09-12T15:36:49.000Z',
+      }),
+      event({
+        id: 'end1',
+        eventType: 'sub_out',
+        timestamp: 1075,
+        eventNotes: 'period_end',
+        createdAt: '2026-09-12T15:40:47.000Z',
+      }),
+      event({
+        id: 'lu2',
+        eventType: 'sub_in',
+        timestamp: 0,
+        eventNotes: startingLineupNote('CM'),
+        createdAt: '2026-09-12T15:45:21.000Z',
+      }),
+    ])
+
+    expect(periodById.get('shot')).toBe(1)
+    expect(periodById.get('goal')).toBe(1)
+    expect(periodById.get('end1')).toBe(1)
+    expect(periodById.get('lu2')).toBe(2)
+  })
 })
 
 describe('formatParentPeriodEndedLabel', () => {
