@@ -19,7 +19,7 @@ export function OpponentStrengthToggle({
         Opponent Strength
       </span>
       <p className="mb-2 text-xs text-muted-foreground">
-        Relative opponent level for Weighted Impact (WPI).
+        After the whistle — used for Weighted Impact (WPI). Skip if you are unsure.
       </p>
       <div
         role="group"

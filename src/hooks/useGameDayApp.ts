@@ -31,11 +31,6 @@ import {
   resolveLiveMatchClock,
 } from '@/lib/match-clock'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
-import {
-  opponentStrengthFromMatch,
-  opponentStrengthToTier,
-  type OpponentStrength,
-} from '@/lib/opponent-strength'
 import type { SubFrequency } from '@/lib/sub-rotation'
 import {
   DEFAULT_FORMATION_ID,
@@ -185,12 +180,8 @@ function scheduledPreloadContext(input: {
   firstHalfFormation: string
   slotAssignments?: Record<string, string | null> | null
   slotLabelOverrides?: Record<string, string> | null
-  opponentStrength?: OpponentStrength | null
 }): Record<string, unknown> {
   const labels = input.slotLabelOverrides
-  const opponentTier = input.opponentStrength
-    ? opponentStrengthToTier(input.opponentStrength)
-    : null
   return {
     preloadFormation: input.firstHalfFormation,
     preloadSlotAssignments: hasSlotAssignments(input.slotAssignments)
@@ -198,9 +189,6 @@ function scheduledPreloadContext(input: {
       : null,
     preloadSlotLabelOverrides:
       labels && Object.keys(labels).length > 0 ? labels : null,
-    ...(opponentTier
-      ? { opponentTier, opponentStrength: input.opponentStrength }
-      : {}),
   }
 }
 
@@ -320,7 +308,6 @@ export function useGameDayApp() {
   const [subIntervalSeconds, setSubIntervalSeconds] = useState<number | null>(null)
 
   const [opponent, setOpponent] = useState('')
-  const [opponentStrength, setOpponentStrength] = useState<OpponentStrength | null>(null)
   const [locationType, setLocationType] = useState<LocationType>('home')
   const [tournamentGame, setTournamentGame] = useState(false)
   const [isTestMatch, setIsTestMatch] = useState(false)
@@ -1302,7 +1289,6 @@ export function useGameDayApp() {
   const loadScheduledMatchIntoSetup = useCallback(
     (match: DbMatch) => {
       setOpponent(match.opponent)
-      setOpponentStrength(opponentStrengthFromMatch(match))
       setLocationType(resolveMatchLocationType(match))
       setTournamentGame(Boolean(match.tournament_game))
       setIsTestMatch(Boolean(match.is_test))
@@ -1426,7 +1412,6 @@ export function useGameDayApp() {
 
         setSelectedTeamId(match.team_id)
         setOpponent(match.opponent)
-        setOpponentStrength(opponentStrengthFromMatch(match))
         setLocationType(resolveMatchLocationType(match))
         setTournamentGame(Boolean(match.tournament_game))
         setIsTestMatch(Boolean(match.is_test))
@@ -1931,7 +1916,6 @@ export function useGameDayApp() {
       gkPlaysFullHalf?: boolean
       slotAssignments?: Record<string, string | null> | null
       slotLabelOverrides?: Record<string, string> | null
-      opponentStrength?: OpponentStrength | null
     }) => {
       const existing = await fetchActiveMatch(input.teamId)
       if (existing) {
@@ -1975,7 +1959,6 @@ export function useGameDayApp() {
           matchTime: input.matchTime,
           subIntervalSeconds: input.subIntervalSeconds ?? null,
           gkPlaysFullHalf: input.gkPlaysFullHalf ?? true,
-          opponentStrength: input.opponentStrength ?? null,
           status: 'live',
         })
         createdMatchId = match.id
@@ -2006,7 +1989,6 @@ export function useGameDayApp() {
           firstHalfFormation: input.firstHalfFormation,
           slotAssignments: liveSlots,
           slotLabelOverrides: input.slotLabelOverrides,
-          opponentStrength: input.opponentStrength,
         })
         await saveQualitativeContext(match.id, preloadContext)
         qualitativeContextRef.current = preloadContext
@@ -2111,7 +2093,6 @@ export function useGameDayApp() {
       navigateHome?: boolean
       slotAssignments?: Record<string, string | null> | null
       slotLabelOverrides?: Record<string, string> | null
-      opponentStrength?: OpponentStrength | null
     }) => {
       const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
       const isTournamentKnockout = input.tournamentGame
@@ -2152,7 +2133,6 @@ export function useGameDayApp() {
           coach_name: input.coachName.trim() || null,
           sub_interval_seconds: input.subIntervalSeconds ?? null,
           gk_plays_full_half: input.gkPlaysFullHalf ?? true,
-          opponent_strength: input.opponentStrength ?? null,
         })
         await replaceMatchStats(
           input.existingMatchId,
@@ -2194,7 +2174,6 @@ export function useGameDayApp() {
                     coach_name: input.coachName.trim() || row.coach_name,
                     sub_interval_seconds: input.subIntervalSeconds ?? null,
                     gk_plays_full_half: input.gkPlaysFullHalf ?? true,
-                    opponent_strength: input.opponentStrength ?? null,
                   }
                 : row,
             )
@@ -2227,7 +2206,6 @@ export function useGameDayApp() {
           matchTime: input.matchTime,
           subIntervalSeconds: input.subIntervalSeconds ?? null,
           gkPlaysFullHalf: input.gkPlaysFullHalf ?? true,
-          opponentStrength: input.opponentStrength ?? null,
           status: 'scheduled',
         })
         createdMatchId = match.id
@@ -2772,7 +2750,6 @@ export function useGameDayApp() {
     setAwayPkScore(0)
     setPkWinnerIsUs(null)
     setPkGkPlayerId(null)
-    setOpponentStrength(null)
     setLocationType('home')
     setTournamentGame(false)
     setIsTestMatch(false)
@@ -3218,8 +3195,6 @@ export function useGameDayApp() {
     subIntervalSeconds,
     opponent,
     setOpponent,
-    opponentStrength,
-    setOpponentStrength,
     locationType,
     setLocationType,
     tournamentGame,
