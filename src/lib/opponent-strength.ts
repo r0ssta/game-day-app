@@ -19,11 +19,20 @@ export const OPPONENT_STRENGTH_MULTIPLIER = {
 /** Coach 1–5 rating that leaves WPI unchanged (matches missing reviews). */
 export const WPI_BASELINE_COACH_RATING = 3
 
+/** Extra offense for the scorer, on top of the on-pitch team goal. */
+export const WPI_GOAL_BONUS = 2
+
+/** Extra offense for the assister, on top of the on-pitch team goal. */
+export const WPI_ASSIST_BONUS = 1
+
+/** Team goals at which a personal G/A bonus is unchanged (matches a typical match). */
+export const WPI_SCORELINE_REF_GOALS = 3
+
 export const WPI_TOOLTIP =
-  'Weighted Impact (WPI) is Offense + Defense. Each match weights on-pitch goals, shots, and corners by opponent strength (Better ×1.5, Equal ×1.0, Lesser ×0.5) and the coach’s 1–5 player rating (÷3 so a 3 is baseline). Unset strength counts as Equal; missing rating counts as 3. Minutes are not a separate multiplier.'
+  'Weighted Impact (WPI) is Offense + Defense. Each match weights on-pitch goals, shots, and corners by opponent strength (Better ×1.5, Equal ×1.0, Lesser ×0.5) and the coach’s 1–5 player rating (÷3 so a 3 is baseline). Scorers get +2 extra offense and assisters +1, scaled by √(3 ÷ team goals) so a 6-0 counts less per goal than a 2-1, then by those same opponent and rating weights. Unset strength counts as Equal; missing rating counts as 3. Minutes are not a separate multiplier.'
 
 export const WPI_OFFENSE_TOOLTIP =
-  'Offense is our goals, shots, and corners while the player was on the field, with the same opponent and rating weights as WPI. Higher is better. Offense + Defense = WPI.'
+  'Offense is our goals, shots, and corners while the player was on the field, plus a personal goal/assist bonus (+2 per goal, +1 per assist) that shrinks in high-scoring games and grows in tight ones, then the same opponent and rating weights as WPI. Higher is better. Offense + Defense = WPI.'
 
 export const WPI_DEFENSE_TOOLTIP =
   'Defense is their goals, shots, and corners while the player was on the field, shown as a minus, with the same opponent and rating weights as WPI. Closer to zero is better. Offense + Defense = WPI.'
@@ -56,6 +65,14 @@ export function opponentStrengthMultiplier(
   return OPPONENT_STRENGTH_MULTIPLIER.equal
 }
 
+export function wpiScorelineFactor(matchTeamGoals: number): number {
+  const teamGoals =
+    Number.isFinite(matchTeamGoals) && matchTeamGoals > 0
+      ? matchTeamGoals
+      : WPI_SCORELINE_REF_GOALS
+  return Math.sqrt(WPI_SCORELINE_REF_GOALS / Math.max(1, teamGoals))
+}
+
 export function computeWeightedNetShots(
   netShotDifferential: number,
   opponentStrength: OpponentStrength | null | undefined,
@@ -82,6 +99,9 @@ export function computeWeightedSides(input: {
   opponentShots?: number
   teamCorners?: number
   opponentCorners?: number
+  playerGoals?: number
+  playerAssists?: number
+  matchTeamGoals?: number
   opponentStrength?: OpponentStrength | null
   coachRating?: number | null
 }): { offense: number; defense: number; combined: number } {
@@ -91,16 +111,20 @@ export function computeWeightedSides(input: {
       : input.coachRating
   const weight =
     opponentStrengthMultiplier(input.opponentStrength) * (rating / WPI_BASELINE_COACH_RATING)
+  const scoreline = wpiScorelineFactor(input.matchTeamGoals ?? WPI_SCORELINE_REF_GOALS)
+  const personalBonus =
+    (WPI_GOAL_BONUS * (input.playerGoals ?? 0) + WPI_ASSIST_BONUS * (input.playerAssists ?? 0)) *
+    scoreline
   const offense =
-    (input.teamGoals ?? 0) + (input.teamShots ?? 0) + (input.teamCorners ?? 0)
+    (input.teamGoals ?? 0) + (input.teamShots ?? 0) + (input.teamCorners ?? 0) + personalBonus
   const against =
     (input.opponentGoals ?? 0) + (input.opponentShots ?? 0) + (input.opponentCorners ?? 0)
   const offenseWeighted = offense * weight
-  const defenseWeighted = -against * weight
+  const defenseWeighted = against === 0 ? 0 : -against * weight
   return {
-    offense: offenseWeighted,
+    offense: offenseWeighted === 0 ? 0 : offenseWeighted,
     defense: defenseWeighted,
-    combined: offenseWeighted + defenseWeighted,
+    combined: offenseWeighted + defenseWeighted === 0 ? 0 : offenseWeighted + defenseWeighted,
   }
 }
 

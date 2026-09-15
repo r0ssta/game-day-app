@@ -22,6 +22,8 @@ function row(partial: Partial<DbPlayerImpact> & Pick<DbPlayerImpact, 'player_id'
     team_goals: 3,
     opponent_goals: 1,
     goal_plus_minus: 2,
+    player_goals: 1,
+    player_assists: 1,
     team_shots: 8,
     opponent_shots: 5,
     net_shot_differential: 3,

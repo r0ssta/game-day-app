@@ -16,6 +16,7 @@ export const CHANGELOG: ChangelogRelease[] = [
     title: 'Smoother game days',
     features: [
       'Weighted Impact (WPI) splits into Offense and Defense, then combines them',
+      'WPI gives scorers and assisters extra offense that shrinks in blowouts and grows in tight games, then scales by opponent strength',
       'Lineup sync fixed when two coaches work the same live match',
       'Tournament extra time and penalty kicks added',
       'Background clock fixes so the timer stays accurate if you leave the app',

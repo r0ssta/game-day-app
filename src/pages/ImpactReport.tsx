@@ -245,7 +245,7 @@ function ImpactTable({
                     <span className="min-w-0">
                       <span className="block truncate">{name}</span>
                       <span className="block text-[11px] font-medium text-muted-foreground">
-                        {row.team_goals} GF · {row.opponent_goals} GA · {row.team_shots} / {row.opponent_shots} shots · {row.team_corners} / {row.opponent_corners} corners
+                        {row.player_goals} G · {row.player_assists} A · {row.team_goals} GF · {row.opponent_goals} GA · {row.team_shots} / {row.opponent_shots} shots · {row.team_corners} / {row.opponent_corners} corners
                         {row.total_gk_seconds > 0
                           ? ` · 🧤 ${row.gk_goals_conceded} GA · ${row.gk_saves} SV`
                           : ''}
@@ -329,7 +329,7 @@ export function ImpactReport({
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Player Impact"
-          subtitle="On-pitch goal, shot, and corner differential while each player was on the field. Offense is our events, Defense is theirs as a minus, and WPI is Offense + Defense after opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
+          subtitle="On-pitch goal, shot, and corner differential while each player was on the field. Scorers and assisters get extra offense that shrinks in blowouts and grows in tight games, then scales by opponent strength. Offense is our events, Defense is theirs as a minus, and WPI is Offense + Defense after opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
           onHome={onBackToHome}
           teamSwitcher={teamSwitcher}
         />

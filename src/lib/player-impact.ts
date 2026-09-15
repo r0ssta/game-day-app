@@ -75,6 +75,8 @@ export function normalizePlayerImpactRow(row: PlayerImpactRow): PlayerImpactRow 
     net_corner_differential:
       row.net_corner_differential ??
       (row.team_corners ?? 0) - (row.opponent_corners ?? 0),
+    player_goals: Math.max(0, Math.floor(row.player_goals ?? 0)),
+    player_assists: Math.max(0, Math.floor(row.player_assists ?? 0)),
     offensive_performance_index: Number(row.offensive_performance_index ?? 0) || 0,
     defensive_performance_index: Number(row.defensive_performance_index ?? 0) || 0,
     weighted_performance_index: Number(row.weighted_performance_index ?? 0) || 0,
