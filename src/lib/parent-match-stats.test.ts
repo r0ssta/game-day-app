@@ -340,4 +340,91 @@ describe('buildParentMatchPlayerStats', () => {
     expect(ada.total.seconds).toBe(317 + period)
     expect(ada.total.seconds).toBeLessThanOrEqual(period * 2)
   })
+
+  it('treats first-half kickoff XI as starters when lineup rows were never logged', () => {
+    const rows = buildParentMatchPlayerStats(
+      [
+        event({
+          id: 'shot',
+          eventType: 'shot_away',
+          playerId: null,
+          timestamp: 246,
+          createdAt: '2026-09-13T20:04:20.000Z',
+        }),
+        event({
+          id: 'out-ada',
+          eventType: 'sub_out',
+          timestamp: 410,
+          createdAt: '2026-09-13T20:07:03.000Z',
+        }),
+        event({
+          id: 'in-bess',
+          eventType: 'sub_in',
+          playerId: BESS,
+          playerName: 'Bess',
+          jersey: 1,
+          timestamp: 410,
+          eventNotes: 'LW',
+          createdAt: '2026-09-13T20:07:03.050Z',
+        }),
+        event({
+          id: 'back-ada',
+          eventType: 'sub_in',
+          timestamp: 898,
+          eventNotes: 'ST',
+          createdAt: '2026-09-13T20:15:11.000Z',
+        }),
+        event({
+          id: 'end1-bess',
+          eventType: 'sub_out',
+          playerId: BESS,
+          playerName: 'Bess',
+          jersey: 1,
+          timestamp: 1800,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-13T20:30:16.000Z',
+        }),
+        event({
+          id: 'end1-ada',
+          eventType: 'sub_out',
+          timestamp: 1800,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-13T20:30:16.050Z',
+        }),
+        event({
+          id: 'lu2-bess',
+          eventType: 'sub_in',
+          playerId: BESS,
+          playerName: 'Bess',
+          jersey: 1,
+          eventNotes: startingLineupNote('GK'),
+          createdAt: '2026-09-13T20:37:33.000Z',
+        }),
+        event({
+          id: 'end2-bess',
+          eventType: 'sub_out',
+          playerId: BESS,
+          playerName: 'Bess',
+          jersey: 1,
+          timestamp: 1800,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-13T21:07:33.000Z',
+        }),
+      ],
+      'm1',
+      30,
+      players,
+    )
+
+    const ada = rows.find((row) => row.playerId === ADA)!
+    const bess = rows.find((row) => row.playerId === BESS)!
+
+    expect(ada.halves[0].started).toBe(true)
+    expect(ada.halves[0].seconds).toBe(410 + (1800 - 898))
+    expect(formatParentHalfRole(ada.halves[0])).toBe('Started')
+    expect(bess.halves[0].started).toBe(false)
+    expect(formatParentHalfRole(bess.halves[0])).toBe('Came on')
+    expect(bess.halves[1].started).toBe(true)
+    expect(formatParentHalfRole(bess.halves[1])).toBe('Started')
+  })
 })

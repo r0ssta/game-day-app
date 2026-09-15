@@ -32,10 +32,10 @@ export const WPI_TOOLTIP =
   'Weighted Impact (WPI) is Offense + Defense. Each match weights on-pitch goals, shots, and corners by opponent strength (Better ×1.5, Equal ×1.0, Lesser ×0.5) and the coach’s 1–5 player rating (÷3 so a 3 is baseline). Scorers get +2 extra offense and assisters +1, scaled by √(3 ÷ team goals) so a 6-0 counts less per goal than a 2-1, then by those same opponent and rating weights. Unset strength counts as Equal; missing rating counts as 3. Minutes are not a separate multiplier.'
 
 export const WPI_OFFENSE_TOOLTIP =
-  'Offense is our goals, shots, and corners while the player was on the field, plus a personal goal/assist bonus (+2 per goal, +1 per assist) that shrinks in high-scoring games and grows in tight ones, then the same opponent and rating weights as WPI. Higher is better. Offense + Defense = WPI.'
+  'Offense is our goals, shots, and corners while the player was on the field, including time in goal, plus a personal goal/assist bonus (+2 per goal, +1 per assist) that shrinks in high-scoring games and grows in tight ones, then the same opponent and rating weights as WPI. Higher is better. Offense + Defense = WPI.'
 
 export const WPI_DEFENSE_TOOLTIP =
-  'Defense is their goals, shots, and corners while the player was on the field, shown as a minus, with the same opponent and rating weights as WPI. Closer to zero is better. Offense + Defense = WPI.'
+  'Defense is their goals, shots, and corners while the player was on the field, including time in goal, shown as a minus, with the same opponent and rating weights as WPI. Closer to zero is better. Offense + Defense = WPI.'
 
 export function isOpponentStrength(value: unknown): value is OpponentStrength {
   return value === 'lesser' || value === 'equal' || value === 'better'

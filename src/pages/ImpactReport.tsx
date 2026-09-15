@@ -329,7 +329,7 @@ export function ImpactReport({
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
         <ScreenHeader
           title="Player Impact"
-          subtitle="On-pitch goal, shot, and corner differential while each player was on the field. Scorers and assisters get extra offense that shrinks in blowouts and grows in tight games, then scales by opponent strength. Offense is our events, Defense is theirs as a minus, and WPI is Offense + Defense after opponent strength and coach rating. Goalkeeper minutes are timed separately and excluded from field +/-."
+          subtitle="On-pitch goal, shot, and corner differential while each player was on the field, including time in goal. Scorers and assisters get extra offense that shrinks in blowouts and grows in tight games, then scales by opponent strength. Offense is our events, Defense is theirs as a minus, and WPI is Offense + Defense after opponent strength and coach rating. Goalkeeper minutes are timed separately; the glove line shows GK goals against and saves."
           onHome={onBackToHome}
           teamSwitcher={teamSwitcher}
         />

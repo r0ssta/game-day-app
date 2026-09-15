@@ -17,6 +17,8 @@ export const CHANGELOG: ChangelogRelease[] = [
     features: [
       'Weighted Impact (WPI) splits into Offense and Defense, then combines them',
       'WPI gives scorers and assisters extra offense that shrinks in blowouts and grows in tight games, then scales by opponent strength',
+      'Goalkeeper time now counts in on-pitch +/- and WPI, so a half in goal is no longer invisible',
+      'Parent Hub recap no longer labels first-half starters as Came on when kickoff XI was not logged',
       'Lineup sync fixed when two coaches work the same live match',
       'Tournament extra time and penalty kicks added',
       'Background clock fixes so the timer stays accurate if you leave the app',

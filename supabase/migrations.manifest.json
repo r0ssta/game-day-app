@@ -68,6 +68,7 @@
     "supabase-player-impact-wpi-goals-migration.sql",
     "supabase-player-impact-wpi-off-def-migration.sql",
     "supabase-player-impact-wpi-goal-assist-bonus-migration.sql",
-    "supabase-player-impact-wpi-scoreline-ga-migration.sql"
+    "supabase-player-impact-wpi-scoreline-ga-migration.sql",
+    "supabase-player-impact-wpi-gk-on-pitch-migration.sql"
   ]
 }

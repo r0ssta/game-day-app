@@ -3,6 +3,7 @@ import {
   cleanRecapPositionNote,
   isPeriodEndSubEvent,
   isStartingLineupEvent,
+  parsePositionSwitchNote,
 } from '@/lib/match-event-notes'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import {
@@ -248,6 +249,29 @@ export function buildParentMatchPlayerStats(
     closeOpen(playerId, endAt)
   }
 
+  /**
+   * Kickoff XI is missing when the 1st half clock started without
+   * `starting_lineup|` rows. Anyone already on the pitch in that period
+   * (subbed off, moved, scored, saved, booked) started the half — do not
+   * label their later re-entry or first logged touch as "Came on".
+   */
+  const ensureImplicitStart = (
+    playerId: string,
+    period: number,
+    position?: string | null,
+  ) => {
+    const row = ensurePlayer(playerId)
+    if (row.open) return
+    const half = halfForPeriod(row.halves, period)
+    if (half.started || half.seconds > 0) return
+    half.started = true
+    row.open = {
+      period,
+      position: position?.trim() || '—',
+      startTimestamp: 0,
+    }
+  }
+
   for (const event of chrono) {
     const period = periodById.get(event.id) ?? 1
     lastTimestampByPeriod.set(
@@ -275,17 +299,24 @@ export function buildParentMatchPlayerStats(
           startTimestamp: event.timestamp,
         }
         break
-      case 'position_change':
-        if (row.open) {
-          closeOpen(event.playerId, event.timestamp)
+      case 'position_change': {
+        if (!row.open) {
+          ensureImplicitStart(
+            event.playerId,
+            period,
+            parsePositionSwitchNote(event.eventNotes)?.from,
+          )
         }
+        closeOpen(event.playerId, event.timestamp)
         row.open = {
           period,
           position: position ?? '—',
           startTimestamp: event.timestamp,
         }
         break
+      }
       case 'sub_out':
+        if (!row.open) ensureImplicitStart(event.playerId, period, position)
         closeOpen(event.playerId, event.timestamp)
         break
       case 'goal':
