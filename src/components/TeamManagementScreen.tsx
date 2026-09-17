@@ -22,6 +22,7 @@ import type { LocationType } from '@/lib/match-location'
 import { getDefaultFormationId, isFormationValidForFormat } from '@/lib/formations'
 import { getMaxFieldPlayers } from '@/lib/lineup'
 import { formatPlayerFullName, buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
+import { JERSEY_INPUT_PROPS, parseJerseyNumber } from '@/lib/jersey-number'
 import {
   teamFormatLabel,
   type TeamFormat,
@@ -183,9 +184,12 @@ function TeamRosterTab({
     if (!trimmedFirst || !trimmedLast) return
     let jersey: number | null = null
     if (number.trim()) {
-      const parsed = Number(number.trim())
-      if (Number.isNaN(parsed)) return
-      jersey = parsed
+      const parsed = parseJerseyNumber(number)
+      if (!parsed.ok) {
+        onToast(parsed.error)
+        return
+      }
+      jersey = parsed.value
     }
     setSaving(true)
     try {
@@ -225,9 +229,12 @@ function TeamRosterTab({
     if (!trimmedFirst || !trimmedLast) return
     let jersey: number | null = null
     if (editDraft.number.trim()) {
-      const parsed = Number(editDraft.number.trim())
-      if (Number.isNaN(parsed)) return
-      jersey = parsed
+      const parsed = parseJerseyNumber(editDraft.number)
+      if (!parsed.ok) {
+        onToast(parsed.error)
+        return
+      }
+      jersey = parsed.value
     }
     setSaving(true)
     try {
@@ -273,7 +280,7 @@ function TeamRosterTab({
             />
           </div>
           <input
-            type="number"
+            {...JERSEY_INPUT_PROPS}
             value={editDraft.number}
             onChange={(e) => setEditDraft((d) => ({ ...d, number: e.target.value }))}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm tabular-nums"
@@ -406,7 +413,7 @@ function TeamRosterTab({
             />
           </div>
           <input
-            type="number"
+            {...JERSEY_INPUT_PROPS}
             value={number}
             onChange={(e) => setNumber(e.target.value)}
             placeholder={suggestedJersey ? `#${suggestedJersey}` : 'Jersey'}
@@ -515,8 +522,11 @@ function TeamSettingsTab({
   const selectedCoach = useMemo(() => {
     const needle = coachName.trim().toLowerCase()
     if (!needle) return ''
-    return knownOptions.find((name) => name.toLowerCase() === needle) ?? ''
+    return knownOptions.find((name) => name.toLowerCase() === needle) ?? coachName.trim()
   }, [coachName, knownOptions])
+
+  const showSavedCoachOption =
+    selectedCoach !== '' && !knownOptions.some((name) => name === selectedCoach)
 
   const coachChanged = selectedCoach !== primaryCoachName.trim()
   const canSave = Boolean(selectedCoach) && coachChanged && !saving
@@ -573,6 +583,9 @@ function TeamSettingsTab({
             <option value="" disabled>
               Select a coach…
             </option>
+            {showSavedCoachOption ? (
+              <option value={selectedCoach}>{selectedCoach}</option>
+            ) : null}
             {knownOptions.map((name) => (
               <option key={name} value={name}>
                 {name}

@@ -265,6 +265,7 @@ export function MatchSetupPage({
               <input
                 id="opponent"
                 type="text"
+                required
                 value={opponent}
                 onChange={(e) => onOpponentChange(e.target.value)}
                 placeholder="e.g. Beach FC"

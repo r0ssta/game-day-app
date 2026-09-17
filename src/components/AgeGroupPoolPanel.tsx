@@ -8,6 +8,7 @@ import {
   isAgeGroup,
 } from '@/lib/age-groups'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { JERSEY_INPUT_PROPS, parseJerseyNumber } from '@/lib/jersey-number'
 import { fetchSeasonRosterTeamByPlayerId } from '@/lib/supabase-api'
 import type { DbPlayer } from '@/types/database'
 import { cn } from '@/lib/utils'
@@ -175,11 +176,20 @@ export function AgeGroupPoolPanel({
             onToast('First name is required')
             return
           }
+          if (!lastName.trim()) {
+            onToast('Last name is required')
+            return
+          }
+          const parsedJersey = parseJerseyNumber(jersey)
+          if (!parsedJersey.ok) {
+            onToast(parsedJersey.error)
+            return
+          }
           setBusy(true)
           void onCreatePoolPlayer({
             firstName: firstName.trim(),
             lastName: lastName.trim(),
-            jersey: jersey.trim() ? Number(jersey) : null,
+            jersey: parsedJersey.value,
             ageGroup,
           })
             .then(() => {
@@ -197,19 +207,21 @@ export function AgeGroupPoolPanel({
           value={firstName}
           onChange={(e) => setFirstName(e.target.value)}
           placeholder="First"
+          required
           className="min-h-11 rounded-xl border-2 border-border bg-background px-3 text-sm font-semibold"
         />
         <input
           value={lastName}
           onChange={(e) => setLastName(e.target.value)}
           placeholder="Last"
+          required
           className="min-h-11 rounded-xl border-2 border-border bg-background px-3 text-sm font-semibold"
         />
         <input
           value={jersey}
           onChange={(e) => setJersey(e.target.value)}
           placeholder="#"
-          inputMode="numeric"
+          {...JERSEY_INPUT_PROPS}
           className="min-h-11 rounded-xl border-2 border-border bg-background px-3 text-sm font-semibold"
         />
         <button

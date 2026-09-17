@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ClipboardList, Users, X } from 'lucide-react'
+import { CheckCircle2, AlertCircle, ClipboardList, Users, X } from 'lucide-react'
 import {
   STAT_TRACKER_ACTIONS,
   buildStatTrackerFeed,
@@ -21,6 +21,7 @@ import {
   insertStatTrackerEvent,
 } from '@/lib/supabase-api'
 import { cn } from '@/lib/utils'
+import { inferToastTone } from '@/lib/app-toast'
 import { APP_CONTAINER, APP_SHELL, MODAL_OVERLAY, MODAL_PANEL } from '@/lib/layout'
 import type { MatchPeriod } from '@/types/match'
 import type { DbMatch } from '@/types/database'
@@ -445,8 +446,19 @@ export function StatTrackerScreen({ matchId, token }: StatTrackerScreenProps) {
 
       {toast ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-          <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-            <CheckCircle2 className="size-5" strokeWidth={2.5} />
+          <div
+            role={inferToastTone(toast) === 'error' ? 'alert' : 'status'}
+            className={
+              inferToastTone(toast) === 'error'
+                ? 'flex items-center gap-2 rounded-full bg-danger px-4 py-2.5 text-sm font-bold text-danger-foreground shadow-lg'
+                : 'flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg'
+            }
+          >
+            {inferToastTone(toast) === 'error' ? (
+              <AlertCircle className="size-5" strokeWidth={2.5} />
+            ) : (
+              <CheckCircle2 className="size-5" strokeWidth={2.5} />
+            )}
             {toast}
           </div>
         </div>

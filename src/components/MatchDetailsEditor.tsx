@@ -97,6 +97,10 @@ export function MatchDetailsEditor({
     const nextLength = Number(draftLength)
     const nextDate = draftDate.trim()
     const nextTime = draftTime.trim().slice(0, 5)
+    if (!nextOpponent) {
+      onToast('Enter an opponent name')
+      return
+    }
     if (!nextDate) {
       onToast('Choose a valid game date')
       return
@@ -173,6 +177,7 @@ export function MatchDetailsEditor({
             <input
               id="recap-opponent"
               type="text"
+              required
               value={draftOpponent}
               onChange={(e) => setDraftOpponent(e.target.value)}
               placeholder="e.g. Beach FC"

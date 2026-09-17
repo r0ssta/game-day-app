@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useSunlightMode } from '@/contexts/SunlightModeContext'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
+import { parseEmail } from '@/lib/email'
 import { cn } from '@/lib/utils'
 
 type AuthMode = 'sign_in' | 'register'
@@ -104,18 +105,18 @@ export function AuthScreen() {
 
   const onSubmitEmail = async (event: FormEvent) => {
     event.preventDefault()
-    const trimmed = email.trim()
-    if (!trimmed) {
-      setError('Email is required')
+    const parsed = parseEmail(email)
+    if (!parsed.ok) {
+      setError(parsed.error)
       return
     }
 
     // Advance immediately so switching to Mail (or a suspended tab) still
     // lands on the code entry UI once the email is on its way.
-    enterOtpStep(trimmed, mode)
+    enterOtpStep(parsed.value, mode)
     setBusy(true)
     try {
-      await sendCode(trimmed)
+      await sendCode(parsed.value)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send login code')
     } finally {

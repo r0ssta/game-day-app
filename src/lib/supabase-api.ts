@@ -28,6 +28,12 @@ import {
   type QualitativeContext,
 } from '@/lib/qualitative-context'
 import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEventType, type StatTrackerRosterPlayer, rosterPlayerFromDb } from '@/lib/stat-tracker'
+import {
+  assertJerseyNumber,
+  JERSEY_IN_USE_MESSAGE,
+  JERSEY_NUMBER_RANGE_MESSAGE,
+} from '@/lib/jersey-number'
+import { parseEmail } from '@/lib/email'
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import type {
   Database,
@@ -142,6 +148,41 @@ export function formatSupabaseError(err: unknown): string {
   }
   if (err instanceof Error) return err.message
   return 'Unknown error'
+}
+
+export function formatPlayerWriteError(
+  err: unknown,
+  fallback = 'Failed to add player',
+): string {
+  if (err instanceof Error) {
+    const message = err.message.trim()
+    if (
+      message === JERSEY_NUMBER_RANGE_MESSAGE ||
+      message === JERSEY_IN_USE_MESSAGE ||
+      message === 'First name is required' ||
+      message === 'Last name is required' ||
+      message === 'Club is required'
+    ) {
+      return message
+    }
+  }
+  const raw = formatSupabaseError(err)
+  const lower = raw.toLowerCase()
+  if (
+    lower.includes('season_rosters_team_jersey_unique') ||
+    (lower.includes('duplicate key') && lower.includes('jersey'))
+  ) {
+    return JERSEY_IN_USE_MESSAGE
+  }
+  if (
+    lower.includes('integer out of range') ||
+    lower.includes('numeric field overflow') ||
+    lower.includes('invalid input syntax') ||
+    lower.includes('value too long')
+  ) {
+    return JERSEY_NUMBER_RANGE_MESSAGE
+  }
+  return raw.trim() || fallback
 }
 
 function isMissingColumnError(err: unknown): boolean {
@@ -613,6 +654,7 @@ export async function assignPlayerToSeasonRoster(input: {
   playerId: string
   primaryJerseyNumber?: number | null
 }): Promise<DbSeasonRoster> {
+  const primaryJerseyNumber = assertJerseyNumber(input.primaryJerseyNumber ?? null)
   const { data, error } = await supabase
     .from('season_rosters')
     .upsert(
@@ -620,13 +662,13 @@ export async function assignPlayerToSeasonRoster(input: {
         season_id: input.seasonId,
         team_id: input.teamId,
         player_id: input.playerId,
-        primary_jersey_number: input.primaryJerseyNumber ?? null,
+        primary_jersey_number: primaryJerseyNumber,
       },
       { onConflict: 'season_id,team_id,player_id' },
     )
     .select()
     .single()
-  if (error) throw error
+  if (error) throw new Error(formatPlayerWriteError(error))
   return data
 }
 
@@ -932,6 +974,8 @@ export async function upsertPlayer(input: {
   const firstName = input.firstName.trim()
   const lastName = input.lastName.trim()
   if (!firstName) throw new Error('First name is required')
+  if (!lastName) throw new Error('Last name is required')
+  const jersey = assertJerseyNumber(input.jersey)
 
   const primaryPosition = input.primaryPosition?.trim() || DEFAULT_PRIMARY_POSITION
   const secondaryPosition = input.secondaryPosition?.trim() || DEFAULT_SECONDARY_POSITION
@@ -939,7 +983,7 @@ export async function upsertPlayer(input: {
   const baseUpdate = {
     first_name: firstName,
     last_name: lastName,
-    jersey: input.jersey,
+    jersey,
     age_group: input.ageGroup,
     is_guest: input.isGuest ?? false,
     position: legacyPosition,
@@ -960,7 +1004,7 @@ export async function upsertPlayer(input: {
       .eq('id', input.id)
       .select()
       .single()
-    if (error) throw error
+    if (error) throw new Error(formatPlayerWriteError(error))
     player = data
   } else {
     if (!input.clubId) throw new Error('Club is required')
@@ -971,7 +1015,7 @@ export async function upsertPlayer(input: {
       secondary_position: secondaryPosition,
     }
     const { data, error } = await supabase.from('players').insert(withProfile).select().single()
-    if (error) throw error
+    if (error) throw new Error(formatPlayerWriteError(error))
     player = data
   }
 
@@ -980,7 +1024,7 @@ export async function upsertPlayer(input: {
       seasonId: input.seasonId,
       teamId: input.teamId,
       playerId: player.id,
-      primaryJerseyNumber: input.jersey,
+      primaryJerseyNumber: jersey,
     })
   }
 
@@ -2663,7 +2707,9 @@ export async function createStaffInvite(input: {
   displayName?: string
   clubId: string
 }): Promise<CreateStaffInviteResult> {
-  const email = input.email.trim().toLowerCase()
+  const parsedEmail = parseEmail(input.email)
+  if (!parsedEmail.ok) throw new Error(parsedEmail.error)
+  const email = parsedEmail.value
   const displayName = input.displayName?.trim() || undefined
   const teamIds = input.teamAssignments.map((a) => a.teamId)
   const teamRoles = input.teamAssignments.map((a) => a.teamRole)

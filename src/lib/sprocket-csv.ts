@@ -1,4 +1,5 @@
 import { parseLegacyPlayerName } from '@/lib/player-names'
+import { parseJerseyNumber } from '@/lib/jersey-number'
 import {
   DEFAULT_PRIMARY_POSITION,
   isRosterProfilePosition,
@@ -125,13 +126,9 @@ function findColumnIndex(headers: string[], candidates: string[]): number {
 }
 
 function parseJersey(raw: string): number | null | 'invalid' {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  const cleaned = trimmed.replace(/^#/, '').trim()
-  if (!cleaned) return null
-  const parsed = Number(cleaned)
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 99) return 'invalid'
-  return parsed
+  const parsed = parseJerseyNumber(raw)
+  if (!parsed.ok) return 'invalid'
+  return parsed.value
 }
 
 export function mapSprocketPosition(raw: string): RosterProfilePosition {

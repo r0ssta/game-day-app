@@ -120,3 +120,47 @@ export function resolveCoachSessionTeamId(input: {
   }
   return pool[0]?.id ?? null
 }
+
+export type CoachRouteTeamResolution = {
+  unknownRouteTeamId: string | null
+  selectedTeamId: string | null
+  fallbackTeamId: string | null
+}
+
+/**
+ * Resolve the staff session team from the URL without silently swapping an
+ * unknown `/coach/teams/:teamId` for the last-used team.
+ */
+export function resolveCoachRouteTeam(input: {
+  routeTeamId: string | null
+  teams: Array<{ id: string; activeStatus?: boolean; active_status?: boolean }>
+  persistedTeamId: string | null
+}): CoachRouteTeamResolution {
+  const fallbackTeamId = resolveCoachSessionTeamId({
+    routeTeamId: null,
+    teams: input.teams,
+    persistedTeamId: input.persistedTeamId,
+  })
+
+  if (input.routeTeamId) {
+    const routeTeam = input.teams.find((team) => team.id === input.routeTeamId)
+    if (!routeTeam) {
+      return {
+        unknownRouteTeamId: input.routeTeamId,
+        selectedTeamId: null,
+        fallbackTeamId,
+      }
+    }
+    return {
+      unknownRouteTeamId: null,
+      selectedTeamId: routeTeam.id,
+      fallbackTeamId,
+    }
+  }
+
+  return {
+    unknownRouteTeamId: null,
+    selectedTeamId: fallbackTeamId,
+    fallbackTeamId,
+  }
+}

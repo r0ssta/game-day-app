@@ -17,10 +17,10 @@ import {
   CLUB_NAME_FULL,
 } from '@/lib/branding'
 import { LANDING_PATH, navigateApp } from '@/lib/app-routes'
+import { isValidEmail } from '@/lib/email'
 import { cn } from '@/lib/utils'
 
 const LANDING_TITLE = 'Game Day · Coach-first youth soccer'
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const FEATURES = [
   {
@@ -90,7 +90,7 @@ export function LandingPage() {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const trimmed = email.trim().toLowerCase()
-    if (!EMAIL_RE.test(trimmed)) {
+    if (!isValidEmail(trimmed)) {
       setError('Enter a valid email to join the waitlist.')
       return
     }

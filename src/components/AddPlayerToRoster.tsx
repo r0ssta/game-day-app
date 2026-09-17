@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { UserPlus, X } from 'lucide-react'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { JERSEY_INPUT_PROPS, parseJerseyNumber } from '@/lib/jersey-number'
 import {
   DEFAULT_PRIMARY_POSITION,
   DEFAULT_SECONDARY_POSITION,
@@ -45,6 +46,7 @@ export function AddPlayerToRoster({
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [number, setNumber] = useState('')
+  const [jerseyError, setJerseyError] = useState<string | null>(null)
   const [isGuest, setIsGuest] = useState(false)
   const [primaryPosition, setPrimaryPosition] = useState<RosterProfilePosition>(DEFAULT_PRIMARY_POSITION)
   const [secondaryPosition, setSecondaryPosition] =
@@ -86,6 +88,7 @@ export function AddPlayerToRoster({
     setLastName('')
     setIsGuest(false)
     setNumber('')
+    setJerseyError(null)
     setPrimaryPosition(DEFAULT_PRIMARY_POSITION)
     setSecondaryPosition(DEFAULT_SECONDARY_POSITION)
     setMode('pool')
@@ -111,12 +114,13 @@ export function AddPlayerToRoster({
     const trimmedFirst = firstName.trim()
     const trimmedLast = lastName.trim()
     const jerseyRaw = number.trim()
-    let jersey: number | null = null
-    if (jerseyRaw !== '') {
-      const parsed = Number(jerseyRaw)
-      if (Number.isNaN(parsed)) return
-      jersey = parsed
+    const parsedJersey = parseJerseyNumber(jerseyRaw)
+    if (!parsedJersey.ok) {
+      setJerseyError(parsedJersey.error)
+      return
     }
+    setJerseyError(null)
+    const jersey = parsedJersey.value
 
     setSaving(true)
     try {
@@ -290,14 +294,19 @@ export function AddPlayerToRoster({
             </label>
             <input
               id="new-player-jersey"
-              type="number"
-              min={0}
-              max={99}
+              {...JERSEY_INPUT_PROPS}
               value={number}
-              onChange={(e) => setNumber(e.target.value)}
+              onChange={(e) => {
+                setNumber(e.target.value)
+                if (jerseyError) setJerseyError(null)
+              }}
               placeholder={suggestedJersey ? `Optional · e.g. ${suggestedJersey}` : 'Optional'}
+              aria-invalid={Boolean(jerseyError)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base font-semibold tabular-nums text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
             />
+            {jerseyError ? (
+              <p className="mt-1.5 text-xs font-semibold text-danger">{jerseyError}</p>
+            ) : null}
           </div>
 
           <RosterPositionFields

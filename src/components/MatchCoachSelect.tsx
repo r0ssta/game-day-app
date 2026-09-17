@@ -46,8 +46,13 @@ export function MatchCoachSelect({
     const fromTeam = teamNames.find((entry) => entry.name.toLowerCase() === needle)
     if (fromTeam) return fromTeam.name
     const fromClub = otherCoaches.find((name) => name.toLowerCase() === needle)
-    return fromClub ?? ''
+    return fromClub ?? value.trim()
   }, [value, teamNames, otherCoaches])
+
+  const showSavedOption =
+    selectedValue !== '' &&
+    !teamNames.some((entry) => entry.name === selectedValue) &&
+    !otherCoaches.includes(selectedValue)
 
   return (
     <div>
@@ -66,6 +71,7 @@ export function MatchCoachSelect({
         <option value="" disabled>
           Select a coach…
         </option>
+        {showSavedOption ? <option value={selectedValue}>{selectedValue}</option> : null}
         {teamNames.length > 0 ? (
           <optgroup label="This team">
             {teamNames.map((entry) => (

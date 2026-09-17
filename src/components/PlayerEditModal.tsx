@@ -4,6 +4,7 @@ import {
   RosterPositionFields,
 } from '@/components/RosterPositionFields'
 import type { RosterProfilePosition } from '@/lib/positions'
+import { JERSEY_INPUT_PROPS } from '@/lib/jersey-number'
 import { cn } from '@/lib/utils'
 import { MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 
@@ -106,9 +107,7 @@ export function PlayerEditModal({
             </label>
             <input
               id="player-number"
-              type="number"
-              min={0}
-              max={99}
+              {...JERSEY_INPUT_PROPS}
               value={draft.number}
               onChange={(e) => onChange({ ...draft, number: e.target.value })}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-lg font-semibold tabular-nums text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"

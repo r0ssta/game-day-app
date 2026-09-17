@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Building2, ChevronRight, RefreshCw, UserPlus } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
+import { parseEmail } from '@/lib/email'
 import {
   createClub,
   createStaffInvite,
@@ -82,20 +83,20 @@ export function PlatformAdminScreen({
 
   const handleInviteDirector = async (event: FormEvent) => {
     event.preventDefault()
-    const email = inviteEmail.trim()
+    const email = parseEmail(inviteEmail)
     if (!inviteClubId) {
       onToast('Select a club first')
       return
     }
-    if (!email) {
-      onToast('Enter an email address')
+    if (!email.ok) {
+      onToast(email.error)
       return
     }
 
     setInviteBusy(true)
     try {
       const result: CreateStaffInviteResult = await createStaffInvite({
-        email,
+        email: email.value,
         appRole: 'director',
         teamAssignments: [],
         displayName: inviteName,

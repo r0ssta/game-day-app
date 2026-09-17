@@ -41,6 +41,7 @@ import {
   normalizeAgeGroup,
   stripAgeGroupFromTeamName,
 } from '@/lib/age-groups'
+import { parseEmail } from '@/lib/email'
 import {
   cancelStaffInvite,
   createStaffInvite,
@@ -372,16 +373,16 @@ export function ClubAdminScreen({
 
   const handleCreateInvite = async (event: FormEvent) => {
     event.preventDefault()
-    const email = inviteEmail.trim()
-    if (!email) {
-      onToast('Enter an email address')
+    const email = parseEmail(inviteEmail)
+    if (!email.ok) {
+      onToast(email.error)
       return
     }
 
     setInviteBusy(true)
     try {
       const result = await createStaffInvite({
-        email,
+        email: email.value,
         appRole: inviteAppRole,
         teamAssignments: inviteAssignments,
         displayName: inviteName,

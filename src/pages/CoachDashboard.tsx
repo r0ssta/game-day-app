@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, AlertCircle } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { HomeScreen } from '@/components/HomeScreen'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
@@ -100,6 +100,7 @@ import {
   syncMatchRecord,
   ensureStatTrackerToken,
   formatSupabaseError,
+  formatPlayerWriteError,
   fetchPendingReviewMatchesByTeamId,
   fetchMatchEvents,
 } from '@/lib/supabase-api'
@@ -138,6 +139,8 @@ import {
 } from '@/lib/match-periods'
 import { APP_CONTAINER, APP_SHELL_LOCKED } from '@/lib/layout'
 import { nextJerseyNumber } from '@/lib/next-jersey-number'
+import { parseJerseyNumber } from '@/lib/jersey-number'
+import { inferToastTone, type ToastTone } from '@/lib/app-toast'
 
 const ReportingScreen = lazyWithChunkReload(() =>
   import('@/components/ReportingScreen').then((m) => ({ default: m.ReportingScreen })),
@@ -256,6 +259,9 @@ export function CoachDashboard() {
     setFirstHalfStarterIds,
     rosterLoading,
     activeTeamId,
+    unknownRouteTeamId,
+    unknownRouteMatchId,
+    fallbackTeamId,
     setActiveTeamId,
     activeTeamFormat,
     activeTeamAgeGroup,
@@ -401,7 +407,14 @@ export function CoachDashboard() {
 
   const suggestedJersey = nextJerseyNumber(masterRoster)
 
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToastState] = useState<{ message: string; tone: ToastTone } | null>(null)
+  const setToast = useCallback((message: string | null, tone?: ToastTone) => {
+    if (!message) {
+      setToastState(null)
+      return
+    }
+    setToastState({ message, tone: tone ?? inferToastTone(message) })
+  }, [])
   const [adjustSettingsOpen, setAdjustSettingsOpen] = useState(false)
   const [adjustSettingsBusy, setAdjustSettingsBusy] = useState(false)
   const { syncPending, isPending, run: runSync } = useOptimisticSync()
@@ -444,9 +457,9 @@ export function CoachDashboard() {
   }, [appMode, matchId])
   const failToast = useCallback(
     (fallback: string) => (err: unknown) => {
-      setToast(formatMatchWriteError(err, fallback))
+      setToast(formatMatchWriteError(err, fallback), 'error')
     },
-    [],
+    [setToast],
   )
   const handleSaveHalfLength = useCallback(
     async (nextMinutes: number) => {
@@ -672,9 +685,20 @@ export function CoachDashboard() {
 
   const toastOverlay = toast ? (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[90] flex justify-center px-4">
-      <div className="flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg">
-        <CheckCircle2 className="size-5" strokeWidth={2.5} />
-        {toast}
+      <div
+        role={toast.tone === 'error' ? 'alert' : 'status'}
+        className={
+          toast.tone === 'error'
+            ? 'flex items-center gap-2 rounded-full bg-danger px-4 py-2.5 text-sm font-bold text-danger-foreground shadow-lg'
+            : 'flex items-center gap-2 rounded-full bg-neon px-4 py-2.5 text-sm font-bold text-neon-foreground shadow-lg'
+        }
+      >
+        {toast.tone === 'error' ? (
+          <AlertCircle className="size-5" strokeWidth={2.5} />
+        ) : (
+          <CheckCircle2 className="size-5" strokeWidth={2.5} />
+        )}
+        {toast.message}
       </div>
     </div>
   ) : null
@@ -804,7 +828,9 @@ export function CoachDashboard() {
     (!setupCoachName.trim() ||
     !allCoachNames.some((name) => name.toLowerCase() === setupCoachName.trim().toLowerCase())
       ? 'Select a head coach'
-      : null)
+      : !opponent.trim()
+        ? 'Enter an opponent name'
+        : null)
   const canStartMatch = startMatchBlockReason === null && Boolean(activeTeamId)
   const canBeginSecondHalf = isHalftimeLineupValid(halftimeSecondHalf, maxFieldPlayers)
   const activeFormation = resolveFormationIdForFormat(
@@ -870,9 +896,10 @@ export function CoachDashboard() {
   useEffect(() => {
     if (!toast) return
     const durationMs =
-      toast === WAKE_LOCK_BLOCKED_TOAST ||
-      toast === AUTH_RECONNECT_TOAST ||
-      toast.startsWith('Parent alerts')
+      toast.tone === 'error' ||
+      toast.message === WAKE_LOCK_BLOCKED_TOAST ||
+      toast.message === AUTH_RECONNECT_TOAST ||
+      toast.message.startsWith('Parent alerts')
         ? 5000
         : 2200
     const id = setTimeout(() => setToast(null), durationMs)
@@ -1664,13 +1691,12 @@ export function CoachDashboard() {
     const lastName = editDraft.lastName.trim()
     if (!firstName || !lastName) return
 
-    const jerseyRaw = editDraft.number.trim()
-    let jersey: number | null = null
-    if (jerseyRaw !== '') {
-      const parsed = Number(jerseyRaw)
-      if (Number.isNaN(parsed)) return
-      jersey = parsed
+    const parsedJersey = parseJerseyNumber(editDraft.number)
+    if (!parsedJersey.ok) {
+      setToast(parsedJersey.error, 'error')
+      return
     }
+    const jersey = parsedJersey.value
 
     try {
       await updatePlayer(editDraft.id, {
@@ -1683,7 +1709,7 @@ export function CoachDashboard() {
       })
       setEditDraft(null)
     } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Failed to save player')
+      setToast(formatPlayerWriteError(err, 'Failed to save player'), 'error')
     }
   }, [editDraft, updatePlayer])
 
@@ -1701,7 +1727,7 @@ export function CoachDashboard() {
         const jerseyLabel = input.jersey !== null ? `#${input.jersey} ` : ''
         setToast(`Added ${jerseyLabel}${formatPlayerFullName(input.firstName, input.lastName)}`)
       } catch (err) {
-        setToast(err instanceof Error ? err.message : 'Failed to add player')
+        setToast(formatPlayerWriteError(err), 'error')
         throw err
       }
     },
@@ -2823,6 +2849,57 @@ export function CoachDashboard() {
         <div className="max-w-md rounded-xl border border-danger/40 bg-card p-6 text-center">
           <p className="font-bold text-danger">Failed to connect</p>
           <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (unknownRouteTeamId) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background px-4">
+        <div className="max-w-md rounded-xl border border-border bg-card p-6 text-center">
+          <p className="font-display text-xl font-bold uppercase tracking-wide text-foreground">
+            Team not found
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This team doesn’t exist or you don’t have access to it.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (fallbackTeamId) replaceApp(coachTeamPath(fallbackTeamId))
+              else replaceApp(COACH_APP_PATH)
+            }}
+            className="mt-5 min-h-11 rounded-xl bg-athletic px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-athletic-foreground"
+          >
+            Back to teams
+          </button>
+        </div>
+      </main>
+    )
+  }
+
+  if (unknownRouteMatchId) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background px-4">
+        <div className="max-w-md rounded-xl border border-border bg-card p-6 text-center">
+          <p className="font-display text-xl font-bold uppercase tracking-wide text-foreground">
+            Match not found
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This match doesn’t exist or you don’t have access to it.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeTeamId) replaceApp(coachTeamPath(activeTeamId))
+              else if (fallbackTeamId) replaceApp(coachTeamPath(fallbackTeamId))
+              else replaceApp(COACH_APP_PATH)
+            }}
+            className="mt-5 min-h-11 rounded-xl bg-athletic px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-athletic-foreground"
+          >
+            Back to team
+          </button>
         </div>
       </main>
     )
