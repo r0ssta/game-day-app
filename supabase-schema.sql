@@ -2259,3 +2259,4 @@ notify pgrst, 'reload schema';
 -- (clubs, club_memberships, platform_admins, club_id on tenant roots).
 -- Super-admin audit log lives in supabase-system-admin-audit-log-migration.sql.
 -- Club directors creating teams: supabase-teams-director-create-migration.sql.
+-- Platform/system admins opening any club: supabase-platform-admin-club-access-migration.sql.

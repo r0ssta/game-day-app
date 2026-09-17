@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Building2, RefreshCw, UserPlus } from 'lucide-react'
+import { Building2, ChevronRight, RefreshCw, UserPlus } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import {
@@ -14,9 +14,16 @@ import { cn } from '@/lib/utils'
 type PlatformAdminScreenProps = {
   onBackToHome: () => void
   onToast: (message: string) => void
+  onOpenClub: (clubId: string) => void
+  onClubsChanged?: () => void
 }
 
-export function PlatformAdminScreen({ onBackToHome, onToast }: PlatformAdminScreenProps) {
+export function PlatformAdminScreen({
+  onBackToHome,
+  onToast,
+  onOpenClub,
+  onClubsChanged,
+}: PlatformAdminScreenProps) {
   const [clubs, setClubs] = useState<DbClub[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -65,6 +72,7 @@ export function PlatformAdminScreen({ onBackToHome, onToast }: PlatformAdminScre
       setInviteClubId(created.id)
       setClubName('')
       onToast(`Created ${created.name}`)
+      onClubsChanged?.()
     } catch (err) {
       onToast(err instanceof Error ? err.message : 'Failed to create club')
     } finally {
@@ -112,7 +120,7 @@ export function PlatformAdminScreen({ onBackToHome, onToast }: PlatformAdminScre
       <div className={`${APP_CONTAINER} pb-10 pt-6`}>
         <ScreenHeader
           title="Platform Admin"
-          subtitle="Create sandbox clubs and invite their directors — you stay in Virginia Velocity"
+          subtitle="Create sandbox clubs and invite their directors — open a club to work in it, the same way you switch teams"
           onHome={onBackToHome}
         />
 
@@ -149,14 +157,25 @@ export function PlatformAdminScreen({ onBackToHome, onToast }: PlatformAdminScre
           ) : (
             <ul className="space-y-2">
               {clubs.map((club) => (
-                <li
-                  key={club.id}
-                  className="rounded-xl border-2 border-border bg-background px-3 py-3"
-                >
-                  <p className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
-                    {club.name}
-                  </p>
-                  <p className="text-xs font-semibold text-muted-foreground">/{club.slug}</p>
+                <li key={club.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenClub(club.id)}
+                    className="flex w-full touch-manipulation items-center justify-between gap-3 rounded-xl border-2 border-border bg-background px-3 py-3 text-left active:scale-[0.99]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block font-display text-sm font-bold uppercase tracking-wide text-foreground">
+                        {club.name}
+                      </span>
+                      <span className="block text-xs font-semibold text-muted-foreground">
+                        /{club.slug}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-athletic">
+                      Open
+                      <ChevronRight className="size-4" strokeWidth={2.5} />
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>

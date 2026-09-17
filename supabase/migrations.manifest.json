@@ -73,6 +73,7 @@
     "supabase-clubs-tenancy-migration.sql",
     "supabase-system-admin-audit-log-migration.sql",
     "supabase-teams-director-create-migration.sql",
-    "supabase-teams-select-no-recursion-migration.sql"
+    "supabase-teams-select-no-recursion-migration.sql",
+    "supabase-platform-admin-club-access-migration.sql"
   ]
 }

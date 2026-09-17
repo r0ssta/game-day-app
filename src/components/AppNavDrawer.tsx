@@ -350,8 +350,13 @@ export function AppNavDrawer({
               </span>
               <select
                 value={activeClubId ?? ''}
-                onChange={(event) => onClubChange(event.target.value)}
-                className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-3 text-sm font-bold text-foreground"
+                disabled={teamSwitchDisabled}
+                title={teamSwitchDisabled ? 'Club locked during live match' : undefined}
+                onChange={(event) => {
+                  onClubChange(event.target.value)
+                  onOpenChange(false)
+                }}
+                className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-3 text-sm font-bold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {clubs.map((club) => (
                   <option key={club.id} value={club.id}>

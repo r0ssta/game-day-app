@@ -1088,7 +1088,10 @@ export function useGameDayApp() {
         if (resolvedTeamId) {
           setSelectedTeamId(resolvedTeamId)
           persistActiveTeamId(resolvedTeamId)
-          if (shouldCanonicalizeActiveTeamPath(window.location.pathname)) {
+          if (
+            shouldCanonicalizeActiveTeamPath(window.location.pathname) ||
+            (route.teamId != null && route.teamId !== resolvedTeamId)
+          ) {
             replaceApp(coachTeamPath(resolvedTeamId))
           }
         } else {

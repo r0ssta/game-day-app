@@ -198,7 +198,11 @@ export function CoachDashboard() {
     currentClubId,
     currentClubName,
     clubMemberships,
+    accessibleClubs,
     setCurrentClubId,
+    isPlatformAdmin,
+    isSystemAdmin,
+    refreshRole,
   } = useAuth()
 
   const {
@@ -2928,6 +2932,13 @@ export function CoachDashboard() {
       <PlatformAdminScreen
         onBackToHome={() => setAppMode('home')}
         onToast={setToast}
+        onOpenClub={(clubId) => {
+          setCurrentClubId(clubId)
+          setAppMode('home')
+        }}
+        onClubsChanged={() => {
+          void refreshRole()
+        }}
       />
     )
   }
@@ -3506,10 +3517,20 @@ export function CoachDashboard() {
       onTeamChange={setActiveTeamId}
       teamSwitchDisabled={teamSwitchDisabled}
       teamLabel={activeTeamName || undefined}
-      staffRoleLabel={role ? formatAppRoleLabel(role) : null}
+      staffRoleLabel={
+        currentClubId &&
+        !clubMemberships.some((row) => row.clubId === currentClubId) &&
+        (isPlatformAdmin || isSystemAdmin)
+          ? isPlatformAdmin
+            ? 'Platform Admin'
+            : 'System Admin'
+          : role
+            ? formatAppRoleLabel(role)
+            : null
+      }
       userEmail={user?.email ?? null}
       onSignOut={() => void signOut()}
-      clubs={clubMemberships.map((row) => ({ id: row.clubId, name: row.clubName }))}
+      clubs={accessibleClubs.map((club) => ({ id: club.id, name: club.name }))}
       activeClubId={currentClubId}
       onClubChange={setCurrentClubId}
       toast={toastOverlay}
