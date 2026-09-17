@@ -3,11 +3,22 @@ import { AuthScreen } from '@/components/AuthScreen'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { COACH_APP_PATH, replaceApp } from '@/lib/app-routes'
-import { fetchAuditLogs } from '@/lib/audit-log'
+import { fetchAuditLogs, summarizeLastActive } from '@/lib/audit-log'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { supabase } from '@/supabaseClient'
 import type { DbAuditLog } from '@/types/database'
+
+function formatRelative(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const deltaMs = Date.now() - date.getTime()
+  if (deltaMs < 60_000) return 'just now'
+  if (deltaMs < 3_600_000) return `${Math.floor(deltaMs / 60_000)} min ago`
+  if (deltaMs < 86_400_000) return `${Math.floor(deltaMs / 3_600_000)} hr ago`
+  const days = Math.floor(deltaMs / 86_400_000)
+  return days === 1 ? '1 day ago' : `${days} days ago`
+}
 
 function formatTimestamp(value: string): string {
   const date = new Date(value)
@@ -119,7 +130,7 @@ export function SuperAdminActivityScreen() {
       <div className={`${APP_CONTAINER} pb-10 pt-6`}>
         <ScreenHeader
           title="Activity"
-          subtitle="High-level usage — logins, matches created, kickoffs, and full-time"
+          subtitle="Last open and high-level usage — not every tap on the pitch"
           onHome={() => replaceApp(COACH_APP_PATH)}
         />
 
@@ -134,38 +145,81 @@ export function SuperAdminActivityScreen() {
         ) : logs.length === 0 ? (
           <p className="mt-6 text-sm font-semibold text-muted-foreground">No activity logged yet.</p>
         ) : (
-          <div className="mt-6 overflow-x-auto rounded-2xl border-2 border-border bg-card">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b-2 border-border bg-background text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-3">Timestamp</th>
-                  <th className="px-3 py-3">User ID</th>
-                  <th className="px-3 py-3">Action</th>
-                  <th className="px-3 py-3">Metadata</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((row) => (
-                  <tr key={row.id} className="border-b border-border align-top last:border-b-0">
-                    <td className="whitespace-nowrap px-3 py-3 font-semibold text-foreground">
-                      {formatTimestamp(row.created_at)}
-                    </td>
-                    <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
-                      {row.user_id ?? '—'}
-                    </td>
-                    <td className="px-3 py-3 font-bold uppercase tracking-wide text-foreground">
-                      {row.action_type}
-                    </td>
-                    <td className="px-3 py-3">
-                      <pre className="max-w-[28rem] overflow-x-auto whitespace-pre-wrap text-xs font-semibold text-muted-foreground">
-                        {formatMetadata(row.metadata)}
-                      </pre>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <section className="mt-6">
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Last active
+              </h2>
+              <div className="mt-3 overflow-x-auto rounded-2xl border-2 border-border bg-card">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b-2 border-border bg-background text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-3">Staff</th>
+                      <th className="px-3 py-3">Last seen</th>
+                      <th className="px-3 py-3">Last action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summarizeLastActive(logs).map((row) => (
+                      <tr key={row.userId} className="border-b border-border last:border-b-0">
+                        <td className="px-3 py-3">
+                          <p className="font-semibold text-foreground">{row.email ?? 'Unknown email'}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{row.userId}</p>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 font-semibold text-foreground">
+                          {formatRelative(row.lastAt)}
+                          <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
+                            {formatTimestamp(row.lastAt)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-bold uppercase tracking-wide text-foreground">
+                          {row.lastAction}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="mt-8">
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Event log
+              </h2>
+              <div className="mt-3 overflow-x-auto rounded-2xl border-2 border-border bg-card">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b-2 border-border bg-background text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-3">Timestamp</th>
+                      <th className="px-3 py-3">User ID</th>
+                      <th className="px-3 py-3">Action</th>
+                      <th className="px-3 py-3">Metadata</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((row) => (
+                      <tr key={row.id} className="border-b border-border align-top last:border-b-0">
+                        <td className="whitespace-nowrap px-3 py-3 font-semibold text-foreground">
+                          {formatTimestamp(row.created_at)}
+                        </td>
+                        <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
+                          {row.user_id ?? '—'}
+                        </td>
+                        <td className="px-3 py-3 font-bold uppercase tracking-wide text-foreground">
+                          {row.action_type}
+                        </td>
+                        <td className="px-3 py-3">
+                          <pre className="max-w-[28rem] overflow-x-auto whitespace-pre-wrap text-xs font-semibold text-muted-foreground">
+                            {formatMetadata(row.metadata)}
+                          </pre>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
         )}
       </div>
     </main>

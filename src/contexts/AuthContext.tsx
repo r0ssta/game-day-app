@@ -24,7 +24,7 @@ import {
   isTeamRole,
 } from '@/lib/staff-roles'
 import { persistActiveClubId, readPersistedActiveClubId } from '@/lib/team-context'
-import { logSystemActivity } from '@/lib/audit-log'
+import { logSystemActivity, noteStaffAppPresence } from '@/lib/audit-log'
 
 export type TeamMembership = {
   teamId: string
@@ -279,6 +279,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshOnForeground = () => {
       if (document.visibilityState !== 'visible') return
       if (!session) return
+      if (session.user?.id) {
+        noteStaffAppPresence({
+          userId: session.user.id,
+          email: session.user.email,
+          clubId: currentClubId,
+        })
+      }
       if (!sessionNeedsRefresh(session.expires_at)) {
         setAuthHealth('ok')
         return
@@ -299,7 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', refreshOnForeground)
       window.removeEventListener('pageshow', onPageShow)
     }
-  }, [sessionLoading, session])
+  }, [currentClubId, session, sessionLoading])
 
   useEffect(() => {
     if (sessionLoading) return
@@ -320,6 +327,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [sessionLoading, user?.id, loadAccess])
+
+  useEffect(() => {
+    if (sessionLoading || accessLoading || !user?.id) return
+    noteStaffAppPresence({
+      userId: user.id,
+      email: user.email,
+      clubId: currentClubId,
+    })
+  }, [accessLoading, currentClubId, sessionLoading, user?.email, user?.id])
 
   const sendLoginOtp = useCallback(async (email: string) => {
     const trimmed = email.trim()
