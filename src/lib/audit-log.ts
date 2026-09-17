@@ -1,11 +1,15 @@
 import { isAutomationStaffEmail } from '@/lib/automation-staff'
 import { supabase } from '@/supabaseClient'
-import type { DbAuditLog, Json } from '@/types/database'
+import type { DbAuditLog, DbStaffLastSeen, Json } from '@/types/database'
 
 /** Don't log another app_opened for the same user within this window. */
 export const APP_OPENED_DEBOUNCE_MS = 6 * 60 * 60 * 1000
 
+/** Refresh last-seen while the staff app is in use, without flooding the event log. */
+export const LAST_SEEN_TOUCH_MS = 5 * 60 * 1000
+
 const lastOpenedAtByUser = new Map<string, number>()
+const lastSeenAtByUser = new Map<string, number>()
 
 export type StaffLastActive = {
   userId: string
@@ -19,13 +23,13 @@ export async function logSystemActivity(input: {
   clubId?: string | null
   teamId?: string | null
   metadata?: Record<string, unknown>
-}): Promise<void> {
+}): Promise<boolean> {
   const actionType = input.actionType.trim()
-  if (!actionType) return
-  if (isAutomationStaffEmail(input.metadata?.email as string | undefined)) return
+  if (!actionType) return false
+  if (isAutomationStaffEmail(input.metadata?.email as string | undefined)) return false
 
   const { data: sessionData } = await supabase.auth.getSession()
-  if (isAutomationStaffEmail(sessionData.session?.user.email)) return
+  if (isAutomationStaffEmail(sessionData.session?.user.email)) return false
 
   const { error } = await supabase.rpc('log_system_activity', {
     p_action_type: actionType,
@@ -35,7 +39,26 @@ export async function logSystemActivity(input: {
   })
   if (error) {
     console.warn('[audit] failed to log activity', error.message)
+    return false
   }
+  return true
+}
+
+async function touchStaffLastSeen(input: {
+  actionType: string
+  clubId?: string | null
+  email?: string | null
+}): Promise<boolean> {
+  const { error } = await supabase.rpc('touch_staff_last_seen', {
+    p_action_type: input.actionType,
+    p_club_id: input.clubId ?? null,
+    p_email: input.email?.trim() || null,
+  })
+  if (error) {
+    console.warn('[audit] failed to touch last seen', error.message)
+    return false
+  }
+  return true
 }
 
 export async function fetchAuditLogs(limit = 200): Promise<DbAuditLog[]> {
@@ -48,20 +71,40 @@ export async function fetchAuditLogs(limit = 200): Promise<DbAuditLog[]> {
   return (data ?? []).filter((row) => !isAutomationStaffEmail(emailFromAuditMetadata(row.metadata)))
 }
 
+export async function fetchStaffLastSeen(): Promise<StaffLastActive[]> {
+  const { data, error } = await supabase
+    .from('staff_last_seen')
+    .select('user_id, last_seen_at, last_action, email')
+    .order('last_seen_at', { ascending: false })
+  if (error) throw error
+  return (data ?? [])
+    .filter((row) => !isAutomationStaffEmail(row.email))
+    .map(staffLastSeenToActive)
+}
+
 export function shouldRecordAppOpened(lastRecordedAt: number | null, now: number): boolean {
   if (lastRecordedAt == null) return true
   return now - lastRecordedAt >= APP_OPENED_DEBOUNCE_MS
+}
+
+export function shouldTouchLastSeen(lastTouchedAt: number | null, now: number): boolean {
+  if (lastTouchedAt == null) return true
+  return now - lastTouchedAt >= LAST_SEEN_TOUCH_MS
 }
 
 function appOpenedStorageKey(userId: string): string {
   return `audit:app_opened:${userId}`
 }
 
-function readStoredOpenedAt(userId: string): number | null {
-  const memory = lastOpenedAtByUser.get(userId) ?? null
+function lastSeenStorageKey(userId: string): string {
+  return `audit:last_seen:${userId}`
+}
+
+function readStoredTimestamp(memory: Map<string, number>, storageKey: string, userId: string): number | null {
+  const fromMemory = memory.get(userId) ?? null
   let stored: number | null = null
   try {
-    const raw = window.localStorage.getItem(appOpenedStorageKey(userId))
+    const raw = window.localStorage.getItem(storageKey)
     if (raw) {
       const parsed = Number(raw)
       stored = Number.isFinite(parsed) ? parsed : null
@@ -69,21 +112,63 @@ function readStoredOpenedAt(userId: string): number | null {
   } catch {
     stored = null
   }
-  if (memory == null) return stored
-  if (stored == null) return memory
-  return Math.max(memory, stored)
+  if (fromMemory == null) return stored
+  if (stored == null) return fromMemory
+  return Math.max(fromMemory, stored)
 }
 
-function rememberOpenedAt(userId: string, at: number): void {
-  lastOpenedAtByUser.set(userId, at)
+function rememberTimestamp(memory: Map<string, number>, storageKey: string, userId: string, at: number): void {
+  memory.set(userId, at)
   try {
-    window.localStorage.setItem(appOpenedStorageKey(userId), String(at))
+    window.localStorage.setItem(storageKey, String(at))
   } catch {
     // Private mode — in-memory debounce still prevents a visibility-change flood.
   }
 }
 
-/** Persist a coarse "they had the staff app open" row, at most every 6 hours. */
+function forgetTimestamp(memory: Map<string, number>, storageKey: string, userId: string): void {
+  memory.delete(userId)
+  try {
+    window.localStorage.removeItem(storageKey)
+  } catch {
+    // Private mode — in-memory debounce is enough.
+  }
+}
+
+function readStoredOpenedAt(userId: string): number | null {
+  return readStoredTimestamp(lastOpenedAtByUser, appOpenedStorageKey(userId), userId)
+}
+
+function rememberOpenedAt(userId: string, at: number): void {
+  rememberTimestamp(lastOpenedAtByUser, appOpenedStorageKey(userId), userId, at)
+}
+
+function forgetOpenedAt(userId: string): void {
+  forgetTimestamp(lastOpenedAtByUser, appOpenedStorageKey(userId), userId)
+}
+
+function readStoredLastSeenAt(userId: string): number | null {
+  return readStoredTimestamp(lastSeenAtByUser, lastSeenStorageKey(userId), userId)
+}
+
+function rememberLastSeenAt(userId: string, at: number): void {
+  rememberTimestamp(lastSeenAtByUser, lastSeenStorageKey(userId), userId, at)
+}
+
+function forgetLastSeenAt(userId: string): void {
+  forgetTimestamp(lastSeenAtByUser, lastSeenStorageKey(userId), userId)
+}
+
+function staffLastSeenToActive(row: Pick<DbStaffLastSeen, 'user_id' | 'last_seen_at' | 'last_action' | 'email'>): StaffLastActive {
+  return {
+    userId: row.user_id,
+    lastAt: row.last_seen_at,
+    lastAction: row.last_action,
+    email: row.email,
+  }
+}
+
+/** Persist recency (every 5 min) and a coarse app_opened audit row (every 6 hours). */
 export function noteStaffAppPresence(input: {
   userId: string
   email?: string | null
@@ -95,15 +180,31 @@ export function noteStaffAppPresence(input: {
   if (isAutomationStaffEmail(input.email)) return
 
   const now = Date.now()
+  const email = input.email?.trim() || null
+  const clubId = input.clubId ?? null
+
+  if (shouldTouchLastSeen(readStoredLastSeenAt(userId), now)) {
+    rememberLastSeenAt(userId, now)
+    void touchStaffLastSeen({
+      actionType: 'app_opened',
+      clubId,
+      email,
+    }).then((ok) => {
+      if (!ok) forgetLastSeenAt(userId)
+    })
+  }
+
   if (!shouldRecordAppOpened(readStoredOpenedAt(userId), now)) return
   rememberOpenedAt(userId, now)
 
   void logSystemActivity({
     actionType: 'app_opened',
-    clubId: input.clubId ?? null,
+    clubId,
     metadata: {
-      email: input.email?.trim() || null,
+      email,
     },
+  }).then((ok) => {
+    if (!ok) forgetOpenedAt(userId)
   })
 }
 

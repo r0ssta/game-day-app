@@ -73,7 +73,7 @@ import {
   isAssignableAppRole,
   isTeamRole,
 } from '@/lib/staff-roles'
-import { type AgeGroup, formatForAgeGroup } from '@/lib/age-groups'
+import { type AgeGroup, formatForAgeGroup, formatTeamDisplayName } from '@/lib/age-groups'
 import {
   MatchReviewSchema,
   MatchSchema,
@@ -717,6 +717,16 @@ export async function insertTeam(input: {
     .select()
     .single()
   if (error) throw new Error(error.message || 'Failed to create team')
+  void logSystemActivity({
+    actionType: 'team_added',
+    clubId: data.club_id,
+    teamId: data.id,
+    metadata: {
+      teamName: formatTeamDisplayName(data.name, data.age_group),
+      ageGroup: data.age_group ?? input.ageGroup,
+      format: data.format,
+    },
+  })
   return data
 }
 

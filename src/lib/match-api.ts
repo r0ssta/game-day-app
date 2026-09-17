@@ -202,8 +202,29 @@ export async function apiFinalizePk(
 
 export async function apiFinalizeReview(
   input: FinalizeReviewInput,
+  audit?: {
+    teamId?: string | null
+    teamName?: string | null
+    opponent?: string | null
+    homeScore?: number | null
+    awayScore?: number | null
+  } | false,
 ): Promise<MatchActionResult<{ status: string }>> {
-  return postMatchAction('/api/match/finalize-review', input)
+  const result = await postMatchAction<{ status: string }>('/api/match/finalize-review', input)
+  if (result.ok && audit) {
+    void logSystemActivity({
+      actionType: 'match_recap_completed',
+      teamId: audit.teamId ?? null,
+      metadata: {
+        matchId: input.matchId,
+        teamName: audit.teamName ?? null,
+        opponent: audit.opponent ?? null,
+        homeScore: audit.homeScore ?? null,
+        awayScore: audit.awayScore ?? null,
+      },
+    })
+  }
+  return result
 }
 
 export async function apiRemoveLastGoal(

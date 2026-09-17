@@ -579,7 +579,18 @@ export function PostGameRecap({
         qualitativeContext: qualitativePayload,
         parentFacingRecap,
       })
-      const finalized = await apiFinalizeReview({ matchId })
+      const finalized = await apiFinalizeReview(
+        { matchId },
+        isCompletedMatch
+          ? false
+          : {
+              teamId: matchRecord?.team_id ?? null,
+              teamName,
+              opponent,
+              homeScore,
+              awayScore,
+            },
+      )
       if (!finalized.ok) {
         throw new Error(finalized.error)
       }

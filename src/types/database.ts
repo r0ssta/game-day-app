@@ -304,6 +304,14 @@ export type DbAuditLog = {
   created_at: string
 }
 
+export type DbStaffLastSeen = {
+  user_id: string
+  last_seen_at: string
+  last_action: string
+  email: string | null
+  club_id: string | null
+}
+
 export type DbUserRole = {
   user_id: string
   app_role: 'director' | 'coach' | 'pending'
@@ -418,6 +426,20 @@ export type Database = {
         Row: DbAuditLog
         Insert: Omit<DbAuditLog, 'id' | 'created_at'> & { id?: string; created_at?: string }
         Update: Partial<DbAuditLog>
+      }
+      staff_last_seen: {
+        Row: DbStaffLastSeen
+        Insert: DbStaffLastSeen
+        Update: Partial<DbStaffLastSeen>
+        Relationships: [
+          {
+            foreignKeyName: 'staff_last_seen_club_id_fkey'
+            columns: ['club_id']
+            isOneToOne: false
+            referencedRelation: 'clubs'
+            referencedColumns: ['id']
+          },
+        ]
       }
       teams: {
         Row: DbTeam
@@ -683,6 +705,14 @@ export type Database = {
           p_metadata?: Json
         }
         Returns: string
+      }
+      touch_staff_last_seen: {
+        Args: {
+          p_action_type?: string
+          p_club_id?: string | null
+          p_email?: string | null
+        }
+        Returns: undefined
       }
       update_staff_display_name: {
         Args: { p_user_id: string; p_display_name: string }

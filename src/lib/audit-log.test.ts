@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { AUTOMATION_STAFF_EMAIL } from './automation-staff'
 import {
   APP_OPENED_DEBOUNCE_MS,
+  LAST_SEEN_TOUCH_MS,
   extraAuditMetadata,
   shouldRecordAppOpened,
+  shouldTouchLastSeen,
   summarizeLastActive,
 } from './audit-log'
 import type { DbAuditLog } from '@/types/database'
@@ -27,6 +29,16 @@ describe('shouldRecordAppOpened', () => {
     expect(shouldRecordAppOpened(now, now + 60_000)).toBe(false)
     expect(shouldRecordAppOpened(now, now + APP_OPENED_DEBOUNCE_MS - 1)).toBe(false)
     expect(shouldRecordAppOpened(now, now + APP_OPENED_DEBOUNCE_MS)).toBe(true)
+  })
+})
+
+describe('shouldTouchLastSeen', () => {
+  it('touches immediately, then waits five minutes', () => {
+    const now = 1_000_000
+    expect(shouldTouchLastSeen(null, now)).toBe(true)
+    expect(shouldTouchLastSeen(now, now + 60_000)).toBe(false)
+    expect(shouldTouchLastSeen(now, now + LAST_SEEN_TOUCH_MS - 1)).toBe(false)
+    expect(shouldTouchLastSeen(now, now + LAST_SEEN_TOUCH_MS)).toBe(true)
   })
 })
 

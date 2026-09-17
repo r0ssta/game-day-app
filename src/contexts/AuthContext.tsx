@@ -30,7 +30,7 @@ import {
   type AccessibleClub,
 } from '@/lib/accessible-clubs'
 import { persistActiveClubId, readPersistedActiveClubId } from '@/lib/team-context'
-import { logSystemActivity, noteStaffAppPresence } from '@/lib/audit-log'
+import { LAST_SEEN_TOUCH_MS, logSystemActivity, noteStaffAppPresence } from '@/lib/audit-log'
 
 export type TeamMembership = {
   teamId: string
@@ -358,11 +358,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (sessionLoading || accessLoading || !user?.id) return
-    noteStaffAppPresence({
-      userId: user.id,
-      email: user.email,
-      clubId: currentClubId,
-    })
+
+    const ping = () => {
+      if (document.visibilityState !== 'visible') return
+      noteStaffAppPresence({
+        userId: user.id,
+        email: user.email,
+        clubId: currentClubId,
+      })
+    }
+
+    ping()
+    const intervalId = window.setInterval(ping, LAST_SEEN_TOUCH_MS)
+    return () => {
+      window.clearInterval(intervalId)
+    }
   }, [accessLoading, currentClubId, sessionLoading, user?.email, user?.id])
 
   const sendLoginOtp = useCallback(async (email: string) => {

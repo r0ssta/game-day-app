@@ -3,7 +3,14 @@ import { AuthScreen } from '@/components/AuthScreen'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { COACH_APP_PATH, replaceApp } from '@/lib/app-routes'
-import { fetchAuditLogs, extraAuditMetadata, emailFromAuditMetadata, summarizeLastActive } from '@/lib/audit-log'
+import {
+  extraAuditMetadata,
+  emailFromAuditMetadata,
+  fetchAuditLogs,
+  fetchStaffLastSeen,
+  summarizeLastActive,
+  type StaffLastActive,
+} from '@/lib/audit-log'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { supabase } from '@/supabaseClient'
@@ -38,6 +45,7 @@ export function SuperAdminActivityScreen() {
   const { loading, accessLoading, isAuthenticated, user } = useAuth()
   const [allowed, setAllowed] = useState<boolean | null>(null)
   const [logs, setLogs] = useState<DbAuditLog[]>([])
+  const [lastActive, setLastActive] = useState<StaffLastActive[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loadingLogs, setLoadingLogs] = useState(false)
 
@@ -80,9 +88,11 @@ export function SuperAdminActivityScreen() {
     let cancelled = false
     setLoadingLogs(true)
     setError(null)
-    void fetchAuditLogs()
-      .then((rows) => {
-        if (!cancelled) setLogs(rows)
+    void Promise.all([fetchAuditLogs(), fetchStaffLastSeen().catch(() => null)])
+      .then(([rows, seen]) => {
+        if (cancelled) return
+        setLogs(rows)
+        setLastActive(seen ?? summarizeLastActive(rows))
       })
       .catch((err) => {
         if (!cancelled) {
@@ -130,7 +140,7 @@ export function SuperAdminActivityScreen() {
       <div className={`${APP_CONTAINER} pb-10 pt-6`}>
         <ScreenHeader
           title="Activity"
-          subtitle="Last open and high-level usage — not every tap on the pitch"
+          subtitle="Who had the staff app open recently — not every tap on the pitch"
           onHome={() => replaceApp(COACH_APP_PATH)}
         />
 
@@ -142,7 +152,7 @@ export function SuperAdminActivityScreen() {
 
         {loadingLogs ? (
           <p className="mt-6 text-sm font-semibold text-muted-foreground">Loading activity…</p>
-        ) : logs.length === 0 ? (
+        ) : lastActive.length === 0 && logs.length === 0 ? (
           <p className="mt-6 text-sm font-semibold text-muted-foreground">No activity logged yet.</p>
         ) : (
           <>
@@ -150,36 +160,40 @@ export function SuperAdminActivityScreen() {
               <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Last active
               </h2>
-              <div className="mt-3 overflow-x-auto rounded-2xl border-2 border-border bg-card">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="border-b-2 border-border bg-background text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-3">Staff</th>
-                      <th className="px-3 py-3">Last seen</th>
-                      <th className="px-3 py-3">Last action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summarizeLastActive(logs).map((row) => (
-                      <tr key={row.userId} className="border-b border-border last:border-b-0">
-                        <td className="px-3 py-3">
-                          <p className="font-semibold text-foreground">{row.email ?? 'Unknown email'}</p>
-                          <p className="font-mono text-xs text-muted-foreground">{row.userId}</p>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 font-semibold text-foreground">
-                          {formatRelative(row.lastAt)}
-                          <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
-                            {formatTimestamp(row.lastAt)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 font-bold uppercase tracking-wide text-foreground">
-                          {row.lastAction}
-                        </td>
+              {lastActive.length === 0 ? (
+                <p className="mt-3 text-sm font-semibold text-muted-foreground">No recent staff activity.</p>
+              ) : (
+                <div className="mt-3 overflow-x-auto rounded-2xl border-2 border-border bg-card">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="border-b-2 border-border bg-background text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-3">Staff</th>
+                        <th className="px-3 py-3">Last seen</th>
+                        <th className="px-3 py-3">Last action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {lastActive.map((row) => (
+                        <tr key={row.userId} className="border-b border-border last:border-b-0">
+                          <td className="px-3 py-3">
+                            <p className="font-semibold text-foreground">{row.email ?? 'Unknown email'}</p>
+                            <p className="font-mono text-xs text-muted-foreground">{row.userId}</p>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold text-foreground">
+                            {formatRelative(row.lastAt)}
+                            <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
+                              {formatTimestamp(row.lastAt)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 font-bold uppercase tracking-wide text-foreground">
+                            {row.lastAction}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
 
             <section className="mt-8">
