@@ -1,6 +1,7 @@
 export type DbTeam = {
   id: string
   name: string
+  club_id: string
   /** URL-safe unique key for public Parent Hub (`/hub/:slug`). */
   slug: string
   /** Hex theme used by the dynamic PWA manifest (`#rrggbb`). */
@@ -17,12 +18,14 @@ export type DbTeam = {
 
 export type DbCoach = {
   id: string
+  club_id: string
   name: string
   created_at: string
 }
 
 export type DbPlayer = {
   id: string
+  club_id: string
   first_name: string
   last_name: string
   /** Club pool jersey hint — season_rosters.primary_jersey_number is authoritative per team/season. */
@@ -46,6 +49,7 @@ export type SeasonStatus = 'active' | 'archived'
 
 export type DbSeason = {
   id: string
+  club_id: string
   name: string
   status: SeasonStatus
   /** First day of start month (YYYY-MM-01), or null if unset */
@@ -265,6 +269,26 @@ export type DbLineupPreset = {
   updated_at: string
 }
 
+export type DbClub = {
+  id: string
+  name: string
+  slug: string
+  created_at: string
+}
+
+export type DbClubMembership = {
+  user_id: string
+  club_id: string
+  app_role: 'director' | 'coach' | 'pending'
+  created_at: string
+  updated_at: string
+}
+
+export type DbPlatformAdmin = {
+  user_id: string
+  created_at: string
+}
+
 export type DbUserRole = {
   user_id: string
   app_role: 'director' | 'coach' | 'pending'
@@ -302,6 +326,7 @@ export type DbWebPushSubscription = {
 
 export type DbStaffInvite = {
   id: string
+  club_id: string
   email: string
   display_name: string | null
   app_role: 'director' | 'coach'
@@ -342,6 +367,33 @@ type WithRelationships<T> = {
 export type Database = {
   public: {
     Tables: WithRelationships<{
+      clubs: {
+        Row: DbClub
+        Insert: Omit<DbClub, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<DbClub>
+      }
+      club_memberships: {
+        Row: DbClubMembership
+        Insert: Omit<DbClubMembership, 'created_at' | 'updated_at'> & {
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<DbClubMembership>
+        Relationships: [
+          {
+            foreignKeyName: 'club_memberships_club_id_fkey'
+            columns: ['club_id']
+            isOneToOne: false
+            referencedRelation: 'clubs'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      platform_admins: {
+        Row: DbPlatformAdmin
+        Insert: Omit<DbPlatformAdmin, 'created_at'> & { created_at?: string }
+        Update: Partial<DbPlatformAdmin>
+      }
       teams: {
         Row: DbTeam
         Insert: Omit<DbTeam, 'id' | 'created_at' | 'slug' | 'brand_color' | 'logo_url'> & {
@@ -583,8 +635,20 @@ export type Database = {
         Returns: undefined
       }
       delete_staff_user: {
-        Args: { p_user_id: string }
+        Args: { p_user_id: string; p_club_id: string }
         Returns: undefined
+      }
+      set_club_member_role: {
+        Args: {
+          p_user_id: string
+          p_club_id: string
+          p_app_role: 'director' | 'coach' | 'pending'
+        }
+        Returns: undefined
+      }
+      create_club: {
+        Args: { p_name: string; p_slug?: string | null }
+        Returns: DbClub
       }
       update_staff_display_name: {
         Args: { p_user_id: string; p_display_name: string }
@@ -598,6 +662,7 @@ export type Database = {
           p_display_name?: string | null
           p_default_team_role?: 'head_coach' | 'assistant_coach'
           p_team_roles?: Array<'head_coach' | 'assistant_coach'>
+          p_club_id: string
         }
         Returns: Json
       }

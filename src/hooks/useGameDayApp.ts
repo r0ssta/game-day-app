@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import {
   createDefaultSetupLineup,
   ensureHalftimeStarters,
@@ -201,6 +202,7 @@ function asContextRecord(raw: unknown): Record<string, unknown> {
 
 export function useGameDayApp() {
   const { teamId: routeTeamId, matchId: routeMatchId } = useParams()
+  const { currentClubId, currentClubName, accessLoading } = useAuth()
   const routeTeamIdRef = useRef(routeTeamId)
   const routeMatchIdRef = useRef(routeMatchId)
   routeTeamIdRef.current = routeTeamId
@@ -1040,16 +1042,28 @@ export function useGameDayApp() {
     let cancelled = false
 
     async function load() {
+      if (accessLoading) return
       setLoading(true)
       setLoadError(null)
       try {
+        if (!currentClubId) {
+          if (cancelled) return
+          setTeams([])
+          setCoaches([])
+          setSeasons([])
+          setActiveSeasonState(null)
+          setClubStaffCoachNames([])
+          setSelectedTeamId(null)
+          return
+        }
+
         const [teamsData, coachesData, seasonsData, activeSeasonData, clubStaffNames] =
           await Promise.all([
-            fetchTeams({ includeArchived: true }),
-            fetchCoaches(),
-            fetchSeasons(),
-            fetchActiveSeason(),
-            fetchClubStaffCoachNames().catch(() => [] as string[]),
+            fetchTeams({ includeArchived: true, clubId: currentClubId }),
+            fetchCoaches(currentClubId),
+            fetchSeasons(currentClubId),
+            fetchActiveSeason(currentClubId),
+            fetchClubStaffCoachNames(currentClubId).catch(() => [] as string[]),
           ])
 
         if (cancelled) return
@@ -1061,8 +1075,12 @@ export function useGameDayApp() {
         setClubStaffCoachNames(clubStaffNames)
 
         const route = parseCoachRoute(window.location.pathname)
+        const routeTeamAllowed =
+          route.teamId && teamsData.some((team) => team.id === route.teamId)
+            ? route.teamId
+            : null
         const resolvedTeamId = resolveCoachSessionTeamId({
-          routeTeamId: route.teamId,
+          routeTeamId: routeTeamAllowed,
           teams: teamsData,
           persistedTeamId: readPersistedActiveTeamId(),
         })
@@ -1073,6 +1091,8 @@ export function useGameDayApp() {
           if (shouldCanonicalizeActiveTeamPath(window.location.pathname)) {
             replaceApp(coachTeamPath(resolvedTeamId))
           }
+        } else {
+          setSelectedTeamId(null)
         }
 
         const seasonIdForRoster = activeSeasonData?.id ?? null
@@ -1103,7 +1123,7 @@ export function useGameDayApp() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [accessLoading, applyRoster, currentClubId])
 
   useEffect(() => {
     const prev = setupCoachPrefillRef.current
@@ -1257,7 +1277,7 @@ export function useGameDayApp() {
       if (!selectedTeamId) throw new Error('Select a team before importing matches')
       const coachName =
         teams.find((entry) => entry.id === selectedTeamId)?.primary_coach_name?.trim() || ''
-      const coachId = coachName ? await resolveCoachIdForName(coachName) : null
+      const coachId = coachName ? await resolveCoachIdForName(coachName, currentClubId) : null
       if (!activeSeason) throw new Error('No active season — create one in Club Admin')
       const created = await createScheduledMatchRecord({
         teamId: selectedTeamId,
@@ -1548,12 +1568,14 @@ export function useGameDayApp() {
   const selectTeam = setActiveTeamId
 
   const createTeam = useCallback(async (input: { name?: string; ageGroup: AgeGroup }) => {
+    if (!currentClubId) throw new Error('Select a club first')
+    const clubName = currentClubName || undefined
     const rawName =
-      input.name?.trim() || defaultTeamNameForAgeGroup(input.ageGroup)
+      input.name?.trim() || defaultTeamNameForAgeGroup(input.ageGroup, clubName)
     const name =
       stripAgeGroupFromTeamName(rawName, input.ageGroup) ||
-      defaultTeamNameForAgeGroup(input.ageGroup)
-    const team = await insertTeam({ name, ageGroup: input.ageGroup })
+      defaultTeamNameForAgeGroup(input.ageGroup, clubName)
+    const team = await insertTeam({ name, ageGroup: input.ageGroup, clubId: currentClubId })
     setTeams((prev) =>
       [...prev, team].sort((a, b) =>
         formatTeamDisplayName(a.name, a.age_group).localeCompare(
@@ -1563,7 +1585,7 @@ export function useGameDayApp() {
     )
     selectTeam(team.id)
     return team.id
-  }, [selectTeam])
+  }, [currentClubId, currentClubName, selectTeam])
 
   const activeTeamAgeGroup = useMemo(() => {
     const team = teams.find((entry) => entry.id === selectedTeamId)
@@ -1747,6 +1769,7 @@ export function useGameDayApp() {
       const ageGroup = input.ageGroup ?? resolveTeamAgeGroup(team?.age_group)
 
       const created = await upsertPlayer({
+        clubId: currentClubId ?? undefined,
         teamId: selectedTeamId,
         seasonId: activeSeason.id,
         ageGroup,
@@ -1939,7 +1962,7 @@ export function useGameDayApp() {
             : 2
 
       try {
-        const coachId = await resolveCoachIdForName(input.coachName)
+        const coachId = await resolveCoachIdForName(input.coachName, currentClubId)
         if (!activeSeason) throw new Error('No active season — create one in Club Admin')
         const match = await createMatchRecord({
           teamId: input.teamId,
@@ -2114,7 +2137,7 @@ export function useGameDayApp() {
           : input.matchTime.trim() || null
 
       if (input.existingMatchId) {
-        const coachId = await resolveCoachIdForName(input.coachName)
+        const coachId = await resolveCoachIdForName(input.coachName, currentClubId)
         await updateMatchRecord(input.existingMatchId, {
           opponent: input.opponent,
           location: input.locationType,
@@ -2186,7 +2209,7 @@ export function useGameDayApp() {
 
       let createdMatchId: string | null = null
       try {
-        const coachId = await resolveCoachIdForName(input.coachName)
+        const coachId = await resolveCoachIdForName(input.coachName, currentClubId)
         if (!activeSeason) throw new Error('No active season — create one in Club Admin')
         const match = await createMatchRecord({
           teamId: input.teamId,
@@ -2856,10 +2879,10 @@ export function useGameDayApp() {
   const openPendingReviewRecap = openMatchRecap
 
   useEffect(() => {
-    if (routeTeamId && routeTeamId !== selectedTeamId) {
-      setSelectedTeamId(routeTeamId)
-    }
-  }, [routeTeamId, selectedTeamId])
+    if (!routeTeamId || routeTeamId === selectedTeamId) return
+    if (!teams.some((team) => team.id === routeTeamId)) return
+    setSelectedTeamId(routeTeamId)
+  }, [routeTeamId, selectedTeamId, teams])
 
   useEffect(() => {
     if (loading || !selectedTeamId) return
@@ -2963,7 +2986,9 @@ export function useGameDayApp() {
       primaryPosition?: string
       secondaryPosition?: string
     }) => {
+      if (!currentClubId) throw new Error('Select a club first')
       return upsertPlayer({
+        clubId: currentClubId,
         ageGroup: input.ageGroup,
         firstName: input.firstName,
         lastName: input.lastName,
@@ -2973,7 +2998,7 @@ export function useGameDayApp() {
         secondaryPosition: input.secondaryPosition,
       })
     },
-    [],
+    [currentClubId],
   )
 
   const setSetupMatchPosition = useCallback((id: string, matchPosition: string) => {
@@ -2982,15 +3007,17 @@ export function useGameDayApp() {
 
   const createSeasonRecord = useCallback(
     async (input: { name: string; startsOn?: string | null; endsOn?: string | null }) => {
+      if (!currentClubId) throw new Error('Select a club first')
       const created = await createSeason({
         name: input.name,
+        clubId: currentClubId,
         startsOn: input.startsOn ?? null,
         endsOn: input.endsOn ?? null,
       })
       setSeasons((prev) => [created, ...prev])
       return created
     },
-    [],
+    [currentClubId],
   )
 
   const updateSeasonRecord = useCallback(
@@ -3219,6 +3246,8 @@ export function useGameDayApp() {
     setPlayerAttending,
     setStartFirstHalf,
     createTeam,
+    currentClubId,
+    currentClubName,
     updateTeamProfile,
     setTeamActive,
     removeTeam,

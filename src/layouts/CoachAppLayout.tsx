@@ -20,6 +20,9 @@ type CoachAppLayoutProps = {
   staffRoleLabel?: string | null
   userEmail?: string | null
   onSignOut?: () => void
+  clubs?: Array<{ id: string; name: string }>
+  activeClubId?: string | null
+  onClubChange?: (clubId: string) => void
   toast?: ReactNode
   children: ReactNode
 }
@@ -37,6 +40,9 @@ export function CoachAppLayout({
   staffRoleLabel,
   userEmail,
   onSignOut,
+  clubs,
+  activeClubId,
+  onClubChange,
   toast,
   children,
 }: CoachAppLayoutProps) {
@@ -55,6 +61,9 @@ export function CoachAppLayout({
         staffRoleLabel={staffRoleLabel}
         userEmail={userEmail}
         onSignOut={onSignOut}
+        clubs={clubs}
+        activeClubId={activeClubId}
+        onClubChange={onClubChange}
       />
       <AppNavShell>
         <ScreenSuspense>{children}</ScreenSuspense>

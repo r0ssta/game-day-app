@@ -31,6 +31,7 @@ import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEv
 import { aggregateTeamShotSaveTotals } from '@/lib/match-shot-save'
 import type {
   Database,
+  DbClub,
   DbCoach,
   DbLineupPreset,
   DbMatch,
@@ -301,9 +302,11 @@ function logSyncError(label: string, error: unknown) {
 
 export async function fetchTeams(options?: {
   includeArchived?: boolean
+  clubId?: string | null
 }): Promise<DbTeam[]> {
   let query = supabase.from('teams').select('*').order('name')
   if (!options?.includeArchived) query = query.eq('active_status', true)
+  if (options?.clubId) query = query.eq('club_id', options.clubId)
   const { data, error } = await query
   if (error) throw error
   return parseDbRows(TeamSchema, data, 'teams')
@@ -317,8 +320,10 @@ export async function fetchTeamsByIds(teamIds: string[]): Promise<DbTeam[]> {
   return parseDbRows(TeamSchema, data, 'teamsByIds')
 }
 
-export async function fetchCoaches(): Promise<DbCoach[]> {
-  const { data, error } = await supabase.from('coaches').select('*').order('name')
+export async function fetchCoaches(clubId?: string | null): Promise<DbCoach[]> {
+  let query = supabase.from('coaches').select('*').order('name')
+  if (clubId) query = query.eq('club_id', clubId)
+  const { data, error } = await query
   if (error) throw error
   return data ?? []
 }
@@ -383,10 +388,11 @@ export async function fetchPlayersByIds(playerIds: string[]): Promise<DbPlayer[]
 
 export async function fetchAgeGroupPoolPlayers(
   ageGroup: AgeGroup,
-  options?: { includeInactive?: boolean },
+  options?: { includeInactive?: boolean; clubId?: string | null },
 ): Promise<DbPlayer[]> {
   let query = supabase.from('players').select('*').eq('age_group', ageGroup)
   if (!options?.includeInactive) query = query.eq('active_status', true)
+  if (options?.clubId) query = query.eq('club_id', options.clubId)
   const { data, error } = await query.order('last_name').order('first_name')
   if (error) throw error
   return parseDbRows(PlayerSchema, data, 'ageGroupPoolPlayers')
@@ -413,10 +419,12 @@ export async function fetchSeasonRosterTeamByPlayerId(
 export async function fetchClubPlayers(options?: {
   includeInactive?: boolean
   ageGroup?: AgeGroup | null
+  clubId?: string | null
 }): Promise<DbPlayer[]> {
   let query = supabase.from('players').select('*')
   if (!options?.includeInactive) query = query.eq('active_status', true)
   if (options?.ageGroup) query = query.eq('age_group', options.ageGroup)
+  if (options?.clubId) query = query.eq('club_id', options.clubId)
   const { data, error } = await query.order('last_name').order('first_name')
   if (error) throw error
   return parseDbRows(PlayerSchema, data, 'clubPlayers')
@@ -502,32 +510,34 @@ export async function fetchPlayerMatchAppearances(
   )
 }
 
-export async function fetchSeasons(): Promise<DbSeason[]> {
-  const { data, error } = await supabase
-    .from('seasons')
-    .select('*')
-    .order('created_at', { ascending: false })
+export async function fetchSeasons(clubId?: string | null): Promise<DbSeason[]> {
+  let query = supabase.from('seasons').select('*').order('created_at', { ascending: false })
+  if (clubId) query = query.eq('club_id', clubId)
+  const { data, error } = await query
   if (error) throw error
   return data ?? []
 }
 
-export async function fetchActiveSeason(): Promise<DbSeason | null> {
-  const { data, error } = await supabase
+export async function fetchActiveSeason(clubId?: string | null): Promise<DbSeason | null> {
+  let query = supabase
     .from('seasons')
     .select('*')
     .eq('status', 'active' satisfies SeasonStatus)
-    .maybeSingle()
+  if (clubId) query = query.eq('club_id', clubId)
+  const { data, error } = await query.maybeSingle()
   if (error) throw error
   return data
 }
 
 export async function createSeason(input: {
   name: string
+  clubId: string
   startsOn?: string | null
   endsOn?: string | null
 }): Promise<DbSeason> {
   const trimmed = input.name.trim()
   if (!trimmed) throw new Error('Season name is required')
+  if (!input.clubId) throw new Error('Club is required')
   const startsOn = input.startsOn ?? null
   const endsOn = input.endsOn ?? null
   if (startsOn && endsOn && endsOn < startsOn) {
@@ -537,6 +547,7 @@ export async function createSeason(input: {
     .from('seasons')
     .insert({
       name: trimmed,
+      club_id: input.clubId,
       status: 'archived' satisfies SeasonStatus,
       starts_on: startsOn,
       ends_on: endsOn,
@@ -646,13 +657,16 @@ export async function setPlayerActiveStatus(playerId: string, active: boolean): 
 export async function insertTeam(input: {
   name: string
   ageGroup: AgeGroup
+  clubId: string
 }): Promise<DbTeam> {
   const trimmed = input.name.trim()
+  if (!input.clubId) throw new Error('Club is required')
   const format = formatForAgeGroup(input.ageGroup)
   const { data, error } = await supabase
     .from('teams')
     .insert({
       name: trimmed,
+      club_id: input.clubId,
       format,
       age_group: input.ageGroup,
       active_status: true,
@@ -747,9 +761,14 @@ export function resolveMatchCoachName(match: DbMatch, coach: DbCoach | null): st
   return coach?.name?.trim() ?? ''
 }
 
-export async function insertCoach(name: string): Promise<DbCoach> {
+export async function insertCoach(name: string, clubId: string): Promise<DbCoach> {
   const trimmed = name.trim()
-  const { data, error } = await supabase.from('coaches').insert({ name: trimmed }).select().single()
+  if (!clubId) throw new Error('Club is required')
+  const { data, error } = await supabase
+    .from('coaches')
+    .insert({ name: trimmed, club_id: clubId })
+    .select()
+    .single()
   if (error) throw error
   return data
 }
@@ -760,8 +779,10 @@ export async function findTeamByName(name: string): Promise<DbTeam | null> {
   return data
 }
 
-export async function findCoachByName(name: string): Promise<DbCoach | null> {
-  const { data, error } = await supabase.from('coaches').select('*').eq('name', name.trim()).maybeSingle()
+export async function findCoachByName(name: string, clubId?: string | null): Promise<DbCoach | null> {
+  let query = supabase.from('coaches').select('*').eq('name', name.trim())
+  if (clubId) query = query.eq('club_id', clubId)
+  const { data, error } = await query.maybeSingle()
   if (error) throw error
   return data
 }
@@ -829,14 +850,17 @@ export async function fetchTeamCoachingStaff(teamId: string): Promise<TeamCoachi
  * Display names for Directors and Staff who coach any team — used in the Game Day
  * coach picker so you can cover for another age group.
  */
-export async function fetchClubStaffCoachNames(): Promise<string[]> {
+export async function fetchClubStaffCoachNames(clubId?: string | null): Promise<string[]> {
+  let membershipsQuery = supabase
+    .from('club_memberships')
+    .select('user_id, app_role')
+    .in('app_role', ['director', 'coach'])
+  if (clubId) membershipsQuery = membershipsQuery.eq('club_id', clubId)
+
   const [rolesRes, profilesRes, membersRes] = await Promise.all([
-    supabase
-      .from('user_roles')
-      .select('user_id, app_role, display_name')
-      .in('app_role', ['director', 'coach']),
+    membershipsQuery,
     supabase.from('profiles').select('id, email, display_name'),
-    supabase.from('team_members').select('user_id'),
+    supabase.from('team_members').select('user_id, team_id'),
   ])
 
   if (rolesRes.error) throw rolesRes.error
@@ -866,7 +890,7 @@ export async function fetchClubStaffCoachNames(): Promise<string[]> {
     const isDirector = row.app_role === 'director'
     const isAssignedCoach = row.app_role === 'coach' && memberIds.has(row.user_id)
     if (!isDirector && !isAssignedCoach) continue
-    const name = resolveName(row.user_id, row.display_name)
+    const name = resolveName(row.user_id, null)
     if (name) names.add(name)
   }
 
@@ -879,16 +903,20 @@ export async function fetchClubStaffCoachNames(): Promise<string[]> {
   return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 }
 
-export async function resolveCoachIdForName(name: string): Promise<string | null> {
+export async function resolveCoachIdForName(
+  name: string,
+  clubId?: string | null,
+): Promise<string | null> {
   const trimmed = name.trim()
   if (!trimmed) return null
 
-  const existing = await findCoachByName(trimmed)
+  const existing = await findCoachByName(trimmed, clubId)
   return existing?.id ?? null
 }
 
 export async function upsertPlayer(input: {
   id?: string
+  clubId?: string
   teamId?: string
   seasonId?: string
   ageGroup: AgeGroup
@@ -934,8 +962,10 @@ export async function upsertPlayer(input: {
     if (error) throw error
     player = data
   } else {
+    if (!input.clubId) throw new Error('Club is required')
     const withProfile = {
       ...baseUpdate,
+      club_id: input.clubId,
       primary_position: primaryPosition,
       secondary_position: secondaryPosition,
     }
@@ -2426,39 +2456,45 @@ export type ClubAdminUserRow = {
   teamAssignments: ClubAdminTeamAssignment[]
 }
 
-export async function fetchClubAdminUsers(): Promise<ClubAdminUserRow[]> {
-  const [profilesRes, rolesRes, membersRes] = await Promise.all([
+export async function fetchClubAdminUsers(clubId: string): Promise<ClubAdminUserRow[]> {
+  if (!clubId) return []
+  const [membershipsRes, profilesRes, membersRes, teamsRes] = await Promise.all([
+    supabase
+      .from('club_memberships')
+      .select('user_id, app_role')
+      .eq('club_id', clubId),
     supabase.from('profiles').select('id, email, display_name').order('email'),
-    supabase.from('user_roles').select('user_id, app_role, display_name'),
     supabase.from('team_members').select('user_id, team_id, team_role'),
+    supabase.from('teams').select('id').eq('club_id', clubId),
   ])
 
+  if (membershipsRes.error) throw membershipsRes.error
   if (profilesRes.error) throw profilesRes.error
-  if (rolesRes.error) throw rolesRes.error
   if (membersRes.error) throw membersRes.error
+  if (teamsRes.error) throw teamsRes.error
 
-  const roleByUser = new Map(
-    (rolesRes.data ?? []).map((row) => [row.user_id, row] as const),
-  )
+  const clubTeamIds = new Set((teamsRes.data ?? []).map((row) => row.id))
+  const profileById = new Map((profilesRes.data ?? []).map((row) => [row.id, row] as const))
   const teamsByUser = new Map<string, ClubAdminTeamAssignment[]>()
   for (const row of membersRes.data ?? []) {
+    if (!clubTeamIds.has(row.team_id)) continue
     const list = teamsByUser.get(row.user_id) ?? []
     const teamRole = isTeamRole(row.team_role) ? row.team_role : 'assistant_coach'
     list.push({ teamId: row.team_id, teamRole })
     teamsByUser.set(row.user_id, list)
   }
 
-  return (profilesRes.data ?? []).flatMap((profile) => {
-    if (isAutomationStaffEmail(profile.email)) return []
-    const roleRow = roleByUser.get(profile.id)
-    const roleValue = roleRow?.app_role
+  return (membershipsRes.data ?? []).flatMap((membership) => {
+    const profile = profileById.get(membership.user_id)
+    if (isAutomationStaffEmail(profile?.email)) return []
+    const roleValue = membership.app_role
     return [
       {
-        id: profile.id,
-        email: profile.email,
-        displayName: profile.display_name ?? roleRow?.display_name ?? null,
+        id: membership.user_id,
+        email: profile?.email ?? null,
+        displayName: profile?.display_name ?? null,
         appRole: isAppRole(roleValue) ? roleValue : 'pending',
-        teamAssignments: teamsByUser.get(profile.id) ?? [],
+        teamAssignments: teamsByUser.get(membership.user_id) ?? [],
       },
     ]
   })
@@ -2467,23 +2503,36 @@ export async function fetchClubAdminUsers(): Promise<ClubAdminUserRow[]> {
 export async function updateClubUserAppRole(
   userId: string,
   appRole: AssignableAppRole | 'pending',
+  clubId: string,
 ): Promise<void> {
-  const { error } = await supabase
-    .from('user_roles')
-    .update({ app_role: appRole, updated_at: new Date().toISOString() })
-    .eq('user_id', userId)
+  const { error } = await supabase.rpc('set_club_member_role', {
+    p_user_id: userId,
+    p_club_id: clubId,
+    p_app_role: appRole,
+  })
   if (error) throw error
 }
 
 export async function replaceClubUserTeams(
   userId: string,
   assignments: ClubAdminTeamAssignment[],
+  clubTeamIds: string[],
 ): Promise<void> {
-  const { error: deleteError } = await supabase
-    .from('team_members')
-    .delete()
-    .eq('user_id', userId)
-  if (deleteError) throw deleteError
+  const scopedIds = clubTeamIds.filter(Boolean)
+  if (scopedIds.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('user_id', userId)
+      .in('team_id', scopedIds)
+    if (deleteError) throw deleteError
+  } else {
+    const { error: deleteError } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('user_id', userId)
+    if (deleteError) throw deleteError
+  }
 
   const unique = new Map<string, TeamRole>()
   for (const row of assignments) {
@@ -2502,15 +2551,15 @@ export async function replaceClubUserTeams(
   if (insertError) throw insertError
 }
 
-export async function revokeClubUserAccess(userId: string): Promise<void> {
-  await replaceClubUserTeams(userId, [])
-  await updateClubUserAppRole(userId, 'pending')
+export async function revokeClubUserAccess(userId: string, clubId: string): Promise<void> {
+  await updateClubUserAppRole(userId, 'pending', clubId)
 }
 
 /** Permanently delete a staff auth user (directors only). */
-export async function deleteClubUser(userId: string): Promise<void> {
+export async function deleteClubUser(userId: string, clubId: string): Promise<void> {
   const { error } = await supabase.rpc('delete_staff_user', {
     p_user_id: userId,
+    p_club_id: clubId,
   })
   if (error) throw error
 }
@@ -2546,13 +2595,14 @@ export type CreateStaffInviteResult = {
   userId?: string
 }
 
-export async function fetchPendingStaffInvites(): Promise<StaffInviteRow[]> {
+export async function fetchPendingStaffInvites(clubId: string): Promise<StaffInviteRow[]> {
   const { data, error } = await supabase
     .from('staff_invites')
     .select(
       'id, email, display_name, app_role, team_ids, team_roles, default_team_role, status, created_at',
     )
     .eq('status', 'pending')
+    .eq('club_id', clubId)
     .order('created_at', { ascending: false })
   if (error) throw error
 
@@ -2588,12 +2638,14 @@ export async function createStaffInvite(input: {
   appRole: AssignableAppRole
   teamAssignments: ClubAdminTeamAssignment[]
   displayName?: string
+  clubId: string
 }): Promise<CreateStaffInviteResult> {
   const email = input.email.trim().toLowerCase()
   const displayName = input.displayName?.trim() || undefined
   const teamIds = input.teamAssignments.map((a) => a.teamId)
   const teamRoles = input.teamAssignments.map((a) => a.teamRole)
   const defaultTeamRole = teamRoles[0] ?? 'assistant_coach'
+  if (!input.clubId) throw new Error('Club is required')
 
   const { data, error } = await supabase.rpc('create_staff_invite', {
     p_email: email,
@@ -2602,6 +2654,7 @@ export async function createStaffInvite(input: {
     p_display_name: displayName ?? null,
     p_default_team_role: defaultTeamRole,
     p_team_roles: teamRoles,
+    p_club_id: input.clubId,
   })
   if (error) throw error
 
@@ -2657,5 +2710,26 @@ export async function fetchPlayerImpact(input: {
   const { data, error } = await supabase.rpc('calculate_player_impact', params)
   if (error) throw new Error(formatSupabaseError(error))
   return (data ?? []) as DbPlayerImpact[]
+}
+
+export async function fetchClubs(): Promise<DbClub[]> {
+  const { data, error } = await supabase.from('clubs').select('*').order('name')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function createClub(input: {
+  name: string
+  slug?: string
+}): Promise<DbClub> {
+  const name = input.name.trim()
+  if (!name) throw new Error('Club name is required')
+  const { data, error } = await supabase.rpc('create_club', {
+    p_name: name,
+    p_slug: input.slug?.trim() || undefined,
+  })
+  if (error) throw error
+  if (!data) throw new Error('Club was not created')
+  return data
 }
 

@@ -14,24 +14,41 @@ import {
   type AppRole,
   type TeamRole,
   canAccessClubAdmin,
+  canAccessPlatformAdmin,
   canDeleteMatches,
   canUseSprocketIntegration,
   isActiveAppRole,
+  isActiveStaffUser,
   isAppRole,
   isTeamRole,
 } from '@/lib/staff-roles'
+import {
+  persistActiveClubId,
+  readPersistedActiveClubId,
+} from '@/lib/team-context'
 
 export type TeamMembership = {
   teamId: string
   teamRole: TeamRole
 }
 
+export type ClubMembership = {
+  clubId: string
+  clubName: string
+  clubSlug: string
+  appRole: AppRole
+}
+
 type AuthContextValue = {
   session: Session | null
   user: User | null
-  /** App-level role (director | coach | pending). */
+  /** App-level role for the current club (director | coach | pending). */
   role: AppRole | null
   appRole: AppRole | null
+  currentClubId: string | null
+  currentClubName: string | null
+  clubMemberships: ClubMembership[]
+  isPlatformAdmin: boolean
   teamMemberships: TeamMembership[]
   /** True while reading the persisted auth session (blocks the login gate). */
   loading: boolean
@@ -40,6 +57,8 @@ type AuthContextValue = {
   isAuthenticated: boolean
   isActiveStaff: boolean
   canAccessClubAdmin: boolean
+  canAccessPlatformAdmin: boolean
+  setCurrentClubId: (clubId: string) => void
   getTeamRole: (teamId: string | null | undefined) => TeamRole | null
   canDeleteMatchesForTeam: (teamId: string | null | undefined) => boolean
   canUseSprocketForTeam: (teamId: string | null | undefined) => boolean
@@ -58,19 +77,54 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 /** Never leave coaches stuck on the splash — unblock after this many ms. */
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 4_000
 
-async function fetchUserAppRole(userId: string): Promise<AppRole | null> {
+async function fetchClubMemberships(userId: string): Promise<ClubMembership[]> {
   const { data, error } = await supabase
-    .from('user_roles')
-    .select('app_role')
+    .from('club_memberships')
+    .select('club_id, app_role, clubs(name, slug)')
+    .eq('user_id', userId)
+
+  if (error) {
+    console.warn('[auth] failed to load club memberships', error.message)
+    return []
+  }
+
+  return (data ?? []).flatMap((row) => {
+    if (!isAppRole(row.app_role)) return []
+    const club = Array.isArray(row.clubs) ? row.clubs[0] : row.clubs
+    return [
+      {
+        clubId: row.club_id,
+        clubName: club?.name?.trim() || 'Club',
+        clubSlug: club?.slug?.trim() || row.club_id,
+        appRole: row.app_role,
+      },
+    ]
+  })
+}
+
+async function fetchIsPlatformAdmin(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('platform_admins')
+    .select('user_id')
     .eq('user_id', userId)
     .maybeSingle()
 
   if (error) {
-    console.warn('[auth] failed to load app role', error.message)
-    return null
+    console.warn('[auth] failed to load platform admin', error.message)
+    return false
   }
 
-  return isAppRole(data?.app_role) ? data.app_role : null
+  return Boolean(data?.user_id)
+}
+
+function resolveCurrentClubId(memberships: ClubMembership[]): string | null {
+  if (memberships.length === 0) return null
+  const persisted = readPersistedActiveClubId()
+  if (persisted && memberships.some((row) => row.clubId === persisted)) {
+    return persisted
+  }
+  const velocity = memberships.find((row) => row.clubSlug === 'virginia-velocity')
+  return velocity?.clubId ?? memberships[0]?.clubId ?? null
 }
 
 async function fetchTeamMemberships(userId: string): Promise<TeamMembership[]> {
@@ -90,45 +144,67 @@ async function fetchTeamMemberships(userId: string): Promise<TeamMembership[]> {
   })
 }
 
-async function resolveAppRole(userId: string): Promise<AppRole | null> {
-  let role = await fetchUserAppRole(userId)
-
-  if (!isActiveAppRole(role)) {
-    const { data, error } = await supabase.rpc('claim_bootstrap_director')
-    if (error) {
-      console.warn('[auth] bootstrap director claim skipped', error.message)
-    } else if (isAppRole(data)) {
-      role = data
-    } else {
-      role = await fetchUserAppRole(userId)
-    }
+async function maybeClaimBootstrap(): Promise<void> {
+  const { error } = await supabase.rpc('claim_bootstrap_director')
+  if (error) {
+    console.warn('[auth] bootstrap director claim skipped', error.message)
   }
-
-  return role
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [role, setRole] = useState<AppRole | null>(null)
+  const [currentClubId, setCurrentClubIdState] = useState<string | null>(null)
+  const [clubMemberships, setClubMemberships] = useState<ClubMembership[]>([])
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [teamMemberships, setTeamMemberships] = useState<TeamMembership[]>([])
   const [sessionLoading, setSessionLoading] = useState(true)
   const [accessLoading, setAccessLoading] = useState(false)
   const [authHealth, setAuthHealth] = useState<'ok' | 'reconnecting' | 'failed'>('ok')
 
+  const applyMemberships = useCallback((memberships: ClubMembership[], preferredClubId?: string | null) => {
+    setClubMemberships(memberships)
+    const nextClubId =
+      preferredClubId && memberships.some((row) => row.clubId === preferredClubId)
+        ? preferredClubId
+        : resolveCurrentClubId(memberships)
+    setCurrentClubIdState(nextClubId)
+    persistActiveClubId(nextClubId)
+    const membership = memberships.find((row) => row.clubId === nextClubId)
+    setRole(membership?.appRole ?? (memberships.length === 0 ? 'pending' : null))
+  }, [])
+
   const loadAccess = useCallback(async (userId: string | undefined | null) => {
     if (!userId) {
       setRole(null)
+      setCurrentClubIdState(null)
+      setClubMemberships([])
+      setIsPlatformAdmin(false)
       setTeamMemberships([])
       return
     }
-    const [nextRole, nextMemberships] = await Promise.all([
-      resolveAppRole(userId),
+
+    let [memberships, platformAdmin, nextMemberships] = await Promise.all([
+      fetchClubMemberships(userId),
+      fetchIsPlatformAdmin(userId),
       fetchTeamMemberships(userId),
     ])
-    setRole(nextRole)
+
+    const hasActiveClub = memberships.some((row) => isActiveAppRole(row.appRole))
+    if (!hasActiveClub && !platformAdmin) {
+      await maybeClaimBootstrap()
+      ;[memberships, platformAdmin, nextMemberships] = await Promise.all([
+        fetchClubMemberships(userId),
+        fetchIsPlatformAdmin(userId),
+        fetchTeamMemberships(userId),
+      ])
+    }
+
+    setIsPlatformAdmin(platformAdmin)
     setTeamMemberships(nextMemberships)
-  }, [])
+    applyMemberships(memberships)
+  }, [applyMemberships])
 
   const refreshRole = useCallback(async () => {
     const userId = (await supabase.auth.getUser()).data.user?.id
@@ -264,8 +340,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
     setRole(null)
+    setCurrentClubIdState(null)
+    setClubMemberships([])
+    setIsPlatformAdmin(false)
     setTeamMemberships([])
   }, [])
+
+  const setCurrentClubId = useCallback(
+    (clubId: string) => {
+      applyMemberships(clubMemberships, clubId)
+    },
+    [applyMemberships, clubMemberships],
+  )
 
   const getTeamRole = useCallback(
     (teamId: string | null | undefined): TeamRole | null => {
@@ -286,18 +372,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [role, getTeamRole],
   )
 
+  const currentClubName =
+    clubMemberships.find((row) => row.clubId === currentClubId)?.clubName ?? null
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       user,
       role,
       appRole: role,
+      currentClubId,
+      currentClubName,
+      clubMemberships,
+      isPlatformAdmin,
       teamMemberships,
       loading: sessionLoading,
       accessLoading,
       isAuthenticated: Boolean(session?.user),
-      isActiveStaff: isActiveAppRole(role),
+      isActiveStaff: isActiveStaffUser(role, isPlatformAdmin),
       canAccessClubAdmin: canAccessClubAdmin(role),
+      canAccessPlatformAdmin: canAccessPlatformAdmin(isPlatformAdmin),
+      setCurrentClubId,
       getTeamRole,
       canDeleteMatchesForTeam,
       canUseSprocketForTeam,
@@ -311,9 +406,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       user,
       role,
+      currentClubId,
+      currentClubName,
+      clubMemberships,
+      isPlatformAdmin,
       teamMemberships,
       sessionLoading,
       accessLoading,
+      setCurrentClubId,
       getTeamRole,
       canDeleteMatchesForTeam,
       canUseSprocketForTeam,

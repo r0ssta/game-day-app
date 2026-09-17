@@ -9,6 +9,7 @@ export type AppMode =
   | 'recap_history'
   | 'impact'
   | 'club_admin'
+  | 'platform_admin'
   | 'match'
   | 'halftime'
   | 'penalty_shootout'

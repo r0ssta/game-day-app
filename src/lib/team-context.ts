@@ -20,10 +20,32 @@ export type TeamSelectorOption = {
  * `/coach/teams/:teamId` URL. Do not read this while a team is already in the path.
  */
 export const ACTIVE_TEAM_STORAGE_KEY = 'game-day-active-team-id'
+export const ACTIVE_CLUB_STORAGE_KEY = 'game-day-active-club-id'
 
 export function readPersistedActiveTeamId(): string | null {
   try {
     const value = localStorage.getItem(ACTIVE_TEAM_STORAGE_KEY)
+    return value && value.trim().length > 0 ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function persistActiveClubId(clubId: string | null) {
+  try {
+    if (!clubId) {
+      localStorage.removeItem(ACTIVE_CLUB_STORAGE_KEY)
+      return
+    }
+    localStorage.setItem(ACTIVE_CLUB_STORAGE_KEY, clubId)
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.)
+  }
+}
+
+export function readPersistedActiveClubId(): string | null {
+  try {
+    const value = localStorage.getItem(ACTIVE_CLUB_STORAGE_KEY)
     return value && value.trim().length > 0 ? value : null
   } catch {
     return null
@@ -62,15 +84,17 @@ export function resolveTeamScope(
  * Archived teams are excluded; filter/sort hooks for club membership later.
  */
 export function teamsForSelector(
-  teams: Array<{ id: string; name: string; activeStatus?: boolean }>,
+  teams: Array<{ id: string; name: string; activeStatus?: boolean; clubId?: string | null }>,
   _access?: { clubId?: string | null; roles?: string[] },
 ): TeamSelectorOption[] {
+  const clubId = _access?.clubId
   return teams
     .filter((team) => team.activeStatus !== false)
+    .filter((team) => !clubId || !team.clubId || team.clubId === clubId)
     .map((team) => ({
       id: team.id,
       name: team.name,
-      clubId: null,
+      clubId: team.clubId ?? clubId ?? null,
       accessRole: null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name))

@@ -41,7 +41,6 @@ import {
   normalizeAgeGroup,
   stripAgeGroupFromTeamName,
 } from '@/lib/age-groups'
-import { CLUB_NAME } from '@/lib/branding'
 import {
   cancelStaffInvite,
   createStaffInvite,
@@ -179,6 +178,8 @@ type ClubAdminScreenProps = {
     options?: { includeInactive?: boolean },
   ) => Promise<import('@/types/database').DbPlayer[]>
   onSetPlayerActive: (playerId: string, active: boolean) => Promise<unknown>
+  clubId: string
+  clubName: string
   onBackToHome: () => void
   onToast: (message: string) => void
 }
@@ -202,6 +203,8 @@ export function ClubAdminScreen({
   onAssignPoolPlayer,
   loadAgeGroupPool,
   onSetPlayerActive,
+  clubId,
+  clubName,
   onBackToHome,
   onToast,
 }: ClubAdminScreenProps) {
@@ -239,8 +242,8 @@ export function ClubAdminScreen({
     setError(null)
     try {
       const [rows, pendingInvites] = await Promise.all([
-        fetchClubAdminUsers(),
-        fetchPendingStaffInvites(),
+        fetchClubAdminUsers(clubId),
+        fetchPendingStaffInvites(clubId),
       ])
       setUsers(rows)
       setInvites(pendingInvites)
@@ -258,7 +261,7 @@ export function ClubAdminScreen({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [clubId])
 
   useEffect(() => {
     void loadUsers()
@@ -268,7 +271,7 @@ export function ClubAdminScreen({
     event.preventDefault()
     setCreateTeamBusy(true)
     try {
-      const name = newTeamName.trim() || defaultTeamNameForAgeGroup(newTeamAgeGroup, CLUB_NAME)
+      const name = newTeamName.trim() || defaultTeamNameForAgeGroup(newTeamAgeGroup, clubName)
       await onCreateTeam({ name, ageGroup: newTeamAgeGroup })
       setNewTeamName('')
       onToast(`Created ${formatTeamDisplayName(name, newTeamAgeGroup)}`)
@@ -376,6 +379,7 @@ export function ClubAdminScreen({
         appRole: inviteAppRole,
         teamAssignments: inviteAssignments,
         displayName: inviteName,
+        clubId,
       })
       setInviteEmail('')
       setInviteName('')
@@ -411,7 +415,7 @@ export function ClubAdminScreen({
   const handleRoleChange = async (userId: string, nextRole: AssignableAppRole) => {
     setBusyUserId(userId)
     try {
-      await updateClubUserAppRole(userId, nextRole)
+      await updateClubUserAppRole(userId, nextRole, clubId)
       setUsers((prev) =>
         prev.map((row) => (row.id === userId ? { ...row, appRole: nextRole } : row)),
       )
@@ -450,7 +454,11 @@ export function ClubAdminScreen({
     const nextAssignments = draftAssignments[user.id] ?? []
     setBusyUserId(user.id)
     try {
-      await replaceClubUserTeams(user.id, nextAssignments)
+      await replaceClubUserTeams(
+        user.id,
+        nextAssignments,
+        teams.map((team) => team.id),
+      )
       setUsers((prev) =>
         prev.map((row) =>
           row.id === user.id ? { ...row, teamAssignments: [...nextAssignments] } : row,
@@ -476,7 +484,7 @@ export function ClubAdminScreen({
 
     setBusyUserId(user.id)
     try {
-      await revokeClubUserAccess(user.id)
+      await revokeClubUserAccess(user.id, clubId)
       setUsers((prev) =>
         prev.map((row) =>
           row.id === user.id
@@ -546,7 +554,7 @@ export function ClubAdminScreen({
 
     setBusyUserId(user.id)
     try {
-      await deleteClubUser(user.id)
+      await deleteClubUser(user.id, clubId)
       setUsers((prev) => prev.filter((row) => row.id !== user.id))
       setDraftAssignments((prev) => {
         const next = { ...prev }
@@ -579,7 +587,7 @@ export function ClubAdminScreen({
     <main className={APP_SHELL}>
       <div className={`${APP_CONTAINER} pb-10 pt-6`}>
         <ScreenHeader
-          title="Club Admin"
+          title={`${clubName} · Club Admin`}
           subtitle="Directors only — seasons, teams, staff, and player development"
           onHome={onBackToHome}
         />

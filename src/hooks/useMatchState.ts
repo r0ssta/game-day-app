@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import { useRoster } from '@/hooks/useRoster'
 import { useStaffAuth } from '@/hooks/useStaffAuth'
 import {
@@ -130,6 +131,7 @@ const DEFAULT_TOTAL_PERIODS: TotalPeriods = 2
 const DEFAULT_HALF_LENGTH = defaultPeriodLengthMinutes(DEFAULT_TOTAL_PERIODS)
 
 export function useMatchState() {
+  const { currentClubId, accessLoading } = useAuth()
   const { teamId: routeTeamId, matchId: routeMatchId } = useParams()
   const routeTeamIdRef = useRef(routeTeamId)
   const routeMatchIdRef = useRef(routeMatchId)
@@ -822,16 +824,27 @@ export function useMatchState() {
     let cancelled = false
 
     async function load() {
+      if (accessLoading) return
       setLoading(true)
       setLoadError(null)
       try {
+        if (!currentClubId) {
+          if (cancelled) return
+          setTeams([])
+          setCoaches([])
+          setSeasons([])
+          setActiveSeasonState(null)
+          setClubStaffCoachNames([])
+          return
+        }
+
         const [teamsData, coachesData, seasonsData, activeSeasonData, clubStaffNames] =
           await Promise.all([
-            fetchTeams({ includeArchived: true }),
-            fetchCoaches(),
-            fetchSeasons(),
-            fetchActiveSeason(),
-            fetchClubStaffCoachNames().catch(() => [] as string[]),
+            fetchTeams({ includeArchived: true, clubId: currentClubId }),
+            fetchCoaches(currentClubId),
+            fetchSeasons(currentClubId),
+            fetchActiveSeason(currentClubId),
+            fetchClubStaffCoachNames(currentClubId).catch(() => [] as string[]),
           ])
 
         if (cancelled) return
@@ -885,7 +898,7 @@ export function useMatchState() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [accessLoading, currentClubId])
 
 
 
@@ -1115,7 +1128,10 @@ export function useMatchState() {
             : 2
 
       try {
-        const coachId = await resolveCoachIdForName(input.coachName)
+        const coachId = await resolveCoachIdForName(
+          input.coachName,
+          teams.find((t) => t.id === input.teamId)?.club_id,
+        )
         if (!activeSeason) throw new Error('No active season — create one in Club Admin')
         const match = await createMatchRecord({
           teamId: input.teamId,
@@ -1247,7 +1263,10 @@ export function useMatchState() {
 
       let createdMatchId: string | null = null
       try {
-        const coachId = await resolveCoachIdForName(input.coachName)
+        const coachId = await resolveCoachIdForName(
+          input.coachName,
+          teams.find((t) => t.id === input.teamId)?.club_id,
+        )
         if (!activeSeason) throw new Error('No active season — create one in Club Admin')
         const match = await createMatchRecord({
           teamId: input.teamId,

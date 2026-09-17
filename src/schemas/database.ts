@@ -13,6 +13,7 @@ export const TeamSchema: z.ZodType<DbTeam> = z
   .object({
     id: z.string().min(1),
     name: z.string(),
+    club_id: z.string().min(1).catch(''),
     slug: z.string().catch(''),
     brand_color: z.string().catch('#12141c'),
     logo_url: z.string().nullable().catch(null),
@@ -28,6 +29,7 @@ export const TeamSchema: z.ZodType<DbTeam> = z
 export const PlayerSchema: z.ZodType<DbPlayer> = z
   .object({
     id: z.string().min(1),
+    club_id: z.string().min(1).catch(''),
     first_name: z.string().catch(''),
     last_name: z.string().catch(''),
     jersey: z.number().nullable().catch(null),

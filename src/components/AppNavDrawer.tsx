@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   History,
+  Globe,
   Home,
   Megaphone,
   Menu,
@@ -29,6 +30,7 @@ export type AppNavSection =
   | 'recaps'
   | 'roster'
   | 'club_admin'
+  | 'platform_admin'
 
 export type AppNavItem = {
   id: AppNavSection
@@ -52,6 +54,9 @@ type AppNavDrawerProps = {
   staffRoleLabel?: string | null
   userEmail?: string | null
   onSignOut?: () => void
+  clubs?: Array<{ id: string; name: string }>
+  activeClubId?: string | null
+  onClubChange?: (clubId: string) => void
 }
 
 export function buildAppNavItems(input: {
@@ -59,6 +64,7 @@ export function buildAppNavItems(input: {
   teamReady: boolean
   hasLiveMatch: boolean
   showClubAdmin?: boolean
+  showPlatformAdmin?: boolean
 }): AppNavItem[] {
   const teamDisabled = !input.teamReady
 
@@ -124,6 +130,16 @@ export function buildAppNavItems(input: {
     })
   }
 
+  if (input.showPlatformAdmin) {
+    items.push({
+      id: 'platform_admin',
+      label: 'Platform Admin',
+      description: 'Create sandbox clubs and invite directors',
+      icon: Globe,
+      active: input.activeSection === 'platform_admin',
+    })
+  }
+
   return items
 }
 
@@ -135,6 +151,7 @@ export function resolveActiveNavSection(appMode: string, reportingTab?: string):
   if (appMode === 'recap_history' || appMode === 'recap') return 'recaps'
   if (appMode === 'team') return 'roster'
   if (appMode === 'club_admin') return 'club_admin'
+  if (appMode === 'platform_admin') return 'platform_admin'
   if (appMode === 'reporting') return 'recaps'
   return null
 }
@@ -196,6 +213,9 @@ export function AppNavDrawer({
   staffRoleLabel,
   userEmail,
   onSignOut,
+  clubs,
+  activeClubId,
+  onClubChange,
 }: AppNavDrawerProps) {
   const { hasUnreadUpdates, markAsRead, releases } = useChangelog()
   const [whatsNewOpen, setWhatsNewOpen] = useState(false)
@@ -310,6 +330,24 @@ export function AppNavDrawer({
               <p className="truncate text-xs text-muted-foreground">Viewing {teamLabel}</p>
             ) : null}
           </div>
+          {clubs && clubs.length > 1 && onClubChange ? (
+            <label className="block space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Club
+              </span>
+              <select
+                value={activeClubId ?? ''}
+                onChange={(event) => onClubChange(event.target.value)}
+                className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-border bg-background px-3 text-sm font-bold text-foreground"
+              >
+                {clubs.map((club) => (
+                  <option key={club.id} value={club.id}>
+                    {club.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <GlobalTeamSelector
             variant="panel"
             teams={teams}

@@ -34,6 +34,17 @@ export function canAccessClubAdmin(appRole: AppRole | null | undefined): boolean
   return appRole === 'director'
 }
 
+export function canAccessPlatformAdmin(isPlatformAdmin: boolean | null | undefined): boolean {
+  return Boolean(isPlatformAdmin)
+}
+
+export function isActiveStaffUser(
+  appRole: AppRole | null | undefined,
+  isPlatformAdmin: boolean | null | undefined,
+): boolean {
+  return isActiveAppRole(appRole) || Boolean(isPlatformAdmin)
+}
+
 /**
  * Destructive / admin actions for a team (delete match, Sprocket, etc.).
  * Global directors always; otherwise requires head_coach on that team.

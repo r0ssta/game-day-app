@@ -156,6 +156,9 @@ const MatchRecapHistoryScreen = lazyWithChunkReload(() =>
 const ClubAdminScreen = lazyWithChunkReload(() =>
   import('@/components/ClubAdminScreen').then((m) => ({ default: m.ClubAdminScreen })),
 )
+const PlatformAdminScreen = lazyWithChunkReload(() =>
+  import('@/components/PlatformAdminScreen').then((m) => ({ default: m.PlatformAdminScreen })),
+)
 const PenaltyShootoutScreen = lazyWithChunkReload(() =>
   import('@/components/PenaltyShootoutScreen').then((m) => ({ default: m.PenaltyShootoutScreen })),
 )
@@ -183,12 +186,17 @@ const AdjustMatchSettingsSheet = lazyWithChunkReload(() =>
 export function CoachDashboard() {
   const {
     canAccessClubAdmin,
+    canAccessPlatformAdmin,
     canDeleteMatchesForTeam,
     canUseSprocketForTeam,
     role,
     user,
     signOut,
     authHealth,
+    currentClubId,
+    currentClubName,
+    clubMemberships,
+    setCurrentClubId,
   } = useAuth()
 
   const {
@@ -483,9 +491,11 @@ export function CoachDashboard() {
           id: team.id,
           name: formatTeamDisplayName(team.name, team.age_group),
           activeStatus: team.active_status !== false,
+          clubId: team.club_id,
         })),
+        { clubId: currentClubId },
       ),
-    [teams],
+    [currentClubId, teams],
   )
 
   const teamSwitchDisabled =
@@ -500,8 +510,9 @@ export function CoachDashboard() {
         teamReady: Boolean(activeTeamId),
         hasLiveMatch,
         showClubAdmin: canAccessClubAdmin,
+        showPlatformAdmin: canAccessPlatformAdmin,
       }),
-    [appMode, reportingTab, activeTeamId, hasLiveMatch, canAccessClubAdmin],
+    [appMode, reportingTab, activeTeamId, hasLiveMatch, canAccessClubAdmin, canAccessPlatformAdmin],
   )
 
   const screenTeamSwitcher = (
@@ -607,11 +618,22 @@ export function CoachDashboard() {
           leaveImpactPath()
           setAppMode('club_admin')
           break
+        case 'platform_admin':
+          if (!canAccessPlatformAdmin) {
+            setToast('Platform Admin is available to platform admins only')
+            leaveImpactPath()
+            setAppMode('home')
+            break
+          }
+          leaveImpactPath()
+          setAppMode('platform_admin')
+          break
       }
     },
     [
       activeTeamId,
       canAccessClubAdmin,
+      canAccessPlatformAdmin,
       hasLiveMatch,
       hasPendingRecap,
       leaveImpactPath,
@@ -870,7 +892,10 @@ export function CoachDashboard() {
     if (appMode === 'club_admin' && !canAccessClubAdmin) {
       setAppMode('home')
     }
-  }, [appMode, canAccessClubAdmin, setAppMode])
+    if (appMode === 'platform_admin' && !canAccessPlatformAdmin) {
+      setAppMode('home')
+    }
+  }, [appMode, canAccessClubAdmin, canAccessPlatformAdmin, setAppMode])
 
   useEffect(() => {
     if (activeTeamId && isImpactReportPath(window.location.pathname)) {
@@ -2859,10 +2884,27 @@ export function CoachDashboard() {
         onArchiveSeason={async (seasonId) => archiveSeasonRecord(seasonId)}
         onCreatePoolPlayer={async (input) => createPoolPlayer(input)}
         onAssignPoolPlayer={async (input) => assignPlayerToSeasonRoster(input)}
-        loadAgeGroupPool={fetchAgeGroupPoolPlayers}
+        loadAgeGroupPool={(ageGroup, options) =>
+          fetchAgeGroupPoolPlayers(ageGroup, { ...options, clubId: currentClubId })
+        }
         onSetPlayerActive={async (playerId, active) => {
           await setPlayerActive(playerId, active)
         }}
+        clubId={currentClubId ?? ''}
+        clubName={currentClubName || 'Club'}
+        onBackToHome={() => setAppMode('home')}
+        onToast={setToast}
+      />
+    )
+  }
+
+  if (appMode === 'platform_admin') {
+    if (!canAccessPlatformAdmin) {
+      return null
+    }
+
+    return (
+      <PlatformAdminScreen
         onBackToHome={() => setAppMode('home')}
         onToast={setToast}
       />
@@ -2981,7 +3023,9 @@ export function CoachDashboard() {
             await addGuestFromPool(playerId)
             setToast('Guest player added to this match')
           }}
-          loadAgeGroupPool={fetchAgeGroupPoolPlayers}
+          loadAgeGroupPool={(ageGroup) =>
+            fetchAgeGroupPoolPlayers(ageGroup, { clubId: currentClubId })
+          }
         />
         <PlayerEditModal
           draft={editDraft}
@@ -3444,6 +3488,9 @@ export function CoachDashboard() {
       staffRoleLabel={role ? formatAppRoleLabel(role) : null}
       userEmail={user?.email ?? null}
       onSignOut={() => void signOut()}
+      clubs={clubMemberships.map((row) => ({ id: row.clubId, name: row.clubName }))}
+      activeClubId={currentClubId}
+      onClubChange={setCurrentClubId}
       toast={toastOverlay}
     >
       {renderScreen()}

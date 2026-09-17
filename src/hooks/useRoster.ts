@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import type { AgeGroup } from '@/lib/age-groups'
 import {
   defaultTeamNameForAgeGroup,
@@ -67,6 +68,7 @@ export function useRoster({
   onApplyRoster,
   onTeamShapeChange,
 }: UseRosterOptions) {
+  const { currentClubId, currentClubName } = useAuth()
   const { teamId: routeTeamId } = useParams()
   const routeTeamIdRef = useRef(routeTeamId)
   routeTeamIdRef.current = routeTeamId
@@ -227,7 +229,7 @@ export function useRoster({
       if (!selectedTeamId) throw new Error('Select a team before importing matches')
       const coachName =
         teams.find((entry) => entry.id === selectedTeamId)?.primary_coach_name?.trim() || ''
-      const coachId = coachName ? await resolveCoachIdForName(coachName) : null
+      const coachId = coachName ? await resolveCoachIdForName(coachName, currentClubId) : null
       if (!activeSeason) throw new Error('No active season — create one in Club Admin')
       const created = await createScheduledMatchRecord({
         teamId: selectedTeamId,
@@ -264,22 +266,24 @@ export function useRoster({
   }, [])
 
   useEffect(() => {
-    if (routeTeamId && routeTeamId !== selectedTeamId) {
-      setSelectedTeamId(routeTeamId)
-      setMasterRoster([])
-      setTeamRoster([])
-      setLineupPresets([])
-      setScheduledMatches([])
-    }
-  }, [routeTeamId, selectedTeamId])
+    if (!routeTeamId || routeTeamId === selectedTeamId) return
+    if (!teams.some((team) => team.id === routeTeamId)) return
+    setSelectedTeamId(routeTeamId)
+    setMasterRoster([])
+    setTeamRoster([])
+    setLineupPresets([])
+    setScheduledMatches([])
+  }, [routeTeamId, selectedTeamId, teams])
 
   const createTeamRecord = useCallback(async (input: { name?: string; ageGroup: AgeGroup }) => {
+    if (!currentClubId) throw new Error('Select a club first')
+    const clubName = currentClubName || undefined
     const rawName =
-      input.name?.trim() || defaultTeamNameForAgeGroup(input.ageGroup)
+      input.name?.trim() || defaultTeamNameForAgeGroup(input.ageGroup, clubName)
     const name =
       stripAgeGroupFromTeamName(rawName, input.ageGroup) ||
-      defaultTeamNameForAgeGroup(input.ageGroup)
-    const team = await insertTeam({ name, ageGroup: input.ageGroup })
+      defaultTeamNameForAgeGroup(input.ageGroup, clubName)
+    const team = await insertTeam({ name, ageGroup: input.ageGroup, clubId: currentClubId })
     setTeams((prev) =>
       [...prev, team].sort((a, b) =>
         formatTeamDisplayName(a.name, a.age_group).localeCompare(
@@ -288,7 +292,7 @@ export function useRoster({
       ),
     )
     return team
-  }, [])
+  }, [currentClubId, currentClubName])
 
   const activeTeamAgeGroup = useMemo(() => {
     const team = teams.find((entry) => entry.id === selectedTeamId)
@@ -561,15 +565,17 @@ export function useRoster({
 
   const createSeasonRecord = useCallback(
     async (input: { name: string; startsOn?: string | null; endsOn?: string | null }) => {
+      if (!currentClubId) throw new Error('Select a club first')
       const created = await createSeason({
         name: input.name,
+        clubId: currentClubId,
         startsOn: input.startsOn ?? null,
         endsOn: input.endsOn ?? null,
       })
       setSeasons((prev) => [created, ...prev])
       return created
     },
-    [],
+    [currentClubId],
   )
 
   const updateSeasonRecord = useCallback(

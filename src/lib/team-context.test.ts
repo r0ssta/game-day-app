@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveCoachSessionTeamId } from './team-context'
+import { resolveCoachSessionTeamId, teamsForSelector } from './team-context'
 
 describe('resolveCoachSessionTeamId', () => {
   const teams = [
@@ -36,5 +36,20 @@ describe('resolveCoachSessionTeamId', () => {
         persistedTeamId: null,
       }),
     ).toBe('team-a')
+  })
+})
+
+describe('teamsForSelector', () => {
+  it('keeps only teams for the current club when clubId is set', () => {
+    const options = teamsForSelector(
+      [
+        { id: 'vv', name: 'Maroon', activeStatus: true, clubId: 'club-vv' },
+        { id: 'demo', name: 'Demo', activeStatus: true, clubId: 'club-demo' },
+      ],
+      { clubId: 'club-demo' },
+    )
+    expect(options).toEqual([
+      { id: 'demo', name: 'Demo', clubId: 'club-demo', accessRole: null },
+    ])
   })
 })
