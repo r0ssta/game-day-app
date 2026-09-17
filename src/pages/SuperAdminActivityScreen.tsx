@@ -3,7 +3,7 @@ import { AuthScreen } from '@/components/AuthScreen'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { COACH_APP_PATH, replaceApp } from '@/lib/app-routes'
-import { fetchAuditLogs, summarizeLastActive } from '@/lib/audit-log'
+import { fetchAuditLogs, extraAuditMetadata, emailFromAuditMetadata, summarizeLastActive } from '@/lib/audit-log'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { supabase } from '@/supabaseClient'
@@ -26,7 +26,7 @@ function formatTimestamp(value: string): string {
   return date.toLocaleString()
 }
 
-function formatMetadata(metadata: DbAuditLog['metadata']): string {
+function formatMetadata(metadata: ReturnType<typeof extraAuditMetadata>): string {
   try {
     return JSON.stringify(metadata ?? {}, null, 2)
   } catch {
@@ -191,30 +191,42 @@ export function SuperAdminActivityScreen() {
                   <thead className="border-b-2 border-border bg-background text-xs font-bold uppercase tracking-wide text-muted-foreground">
                     <tr>
                       <th className="px-3 py-3">Timestamp</th>
-                      <th className="px-3 py-3">User ID</th>
+                      <th className="px-3 py-3">Staff</th>
                       <th className="px-3 py-3">Action</th>
-                      <th className="px-3 py-3">Metadata</th>
+                      <th className="px-3 py-3">Details</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {logs.map((row) => (
+                    {logs.map((row) => {
+                      const extra = extraAuditMetadata(row.metadata)
+                      return (
                       <tr key={row.id} className="border-b border-border align-top last:border-b-0">
                         <td className="whitespace-nowrap px-3 py-3 font-semibold text-foreground">
                           {formatTimestamp(row.created_at)}
                         </td>
-                        <td className="px-3 py-3 font-mono text-xs text-muted-foreground">
-                          {row.user_id ?? '—'}
+                        <td className="px-3 py-3">
+                          <p className="font-semibold text-foreground">
+                            {emailFromAuditMetadata(row.metadata) ?? '—'}
+                          </p>
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {row.user_id ?? '—'}
+                          </p>
                         </td>
                         <td className="px-3 py-3 font-bold uppercase tracking-wide text-foreground">
                           {row.action_type}
                         </td>
                         <td className="px-3 py-3">
-                          <pre className="max-w-[28rem] overflow-x-auto whitespace-pre-wrap text-xs font-semibold text-muted-foreground">
-                            {formatMetadata(row.metadata)}
-                          </pre>
+                          {extra ? (
+                            <pre className="max-w-[28rem] overflow-x-auto whitespace-pre-wrap text-xs font-semibold text-muted-foreground">
+                              {formatMetadata(extra)}
+                            </pre>
+                          ) : (
+                            <span className="text-xs font-semibold text-muted-foreground">—</span>
+                          )}
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -674,7 +674,7 @@ export async function insertTeam(input: {
     })
     .select()
     .single()
-  if (error) throw error
+  if (error) throw new Error(error.message || 'Failed to create team')
   return data
 }
 

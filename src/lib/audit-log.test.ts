@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { AUTOMATION_STAFF_EMAIL } from './automation-staff'
 import {
   APP_OPENED_DEBOUNCE_MS,
+  extraAuditMetadata,
   shouldRecordAppOpened,
   summarizeLastActive,
 } from './audit-log'
@@ -67,5 +69,39 @@ describe('summarizeLastActive', () => {
         email: 'b@club.test',
       },
     ])
+  })
+
+  it('hides the Playwright automation account', () => {
+    const rows = summarizeLastActive([
+      log({
+        id: 'e2e',
+        user_id: 'user-e2e',
+        action_type: 'app_opened',
+        metadata: { email: AUTOMATION_STAFF_EMAIL },
+      }),
+      log({
+        id: 'real',
+        user_id: 'user-a',
+        action_type: 'app_opened',
+        metadata: { email: 'coach@club.test' },
+      }),
+    ])
+    expect(rows).toEqual([
+      {
+        userId: 'user-a',
+        lastAt: '2026-09-17T14:00:00.000Z',
+        lastAction: 'app_opened',
+        email: 'coach@club.test',
+      },
+    ])
+  })
+})
+
+describe('extraAuditMetadata', () => {
+  it('strips email so the event table can show it as a normal column', () => {
+    expect(extraAuditMetadata({ email: 'coach@club.test' })).toBeNull()
+    expect(extraAuditMetadata({ email: 'coach@club.test', matchId: 'abc' })).toEqual({
+      matchId: 'abc',
+    })
   })
 })

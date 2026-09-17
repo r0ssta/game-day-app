@@ -1,5 +1,6 @@
+import { isAutomationStaffEmail } from '@/lib/automation-staff'
 import { supabase } from '@/supabaseClient'
-import type { DbAuditLog } from '@/types/database'
+import type { DbAuditLog, Json } from '@/types/database'
 
 /** Don't log another app_opened for the same user within this window. */
 export const APP_OPENED_DEBOUNCE_MS = 6 * 60 * 60 * 1000
@@ -21,6 +22,10 @@ export async function logSystemActivity(input: {
 }): Promise<void> {
   const actionType = input.actionType.trim()
   if (!actionType) return
+  if (isAutomationStaffEmail(input.metadata?.email as string | undefined)) return
+
+  const { data: sessionData } = await supabase.auth.getSession()
+  if (isAutomationStaffEmail(sessionData.session?.user.email)) return
 
   const { error } = await supabase.rpc('log_system_activity', {
     p_action_type: actionType,
@@ -40,7 +45,7 @@ export async function fetchAuditLogs(limit = 200): Promise<DbAuditLog[]> {
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) throw error
-  return data ?? []
+  return (data ?? []).filter((row) => !isAutomationStaffEmail(emailFromAuditMetadata(row.metadata)))
 }
 
 export function shouldRecordAppOpened(lastRecordedAt: number | null, now: number): boolean {
@@ -87,6 +92,7 @@ export function noteStaffAppPresence(input: {
   if (typeof window === 'undefined') return
   const userId = input.userId.trim()
   if (!userId) return
+  if (isAutomationStaffEmail(input.email)) return
 
   const now = Date.now()
   if (!shouldRecordAppOpened(readStoredOpenedAt(userId), now)) return
@@ -107,6 +113,13 @@ export function emailFromAuditMetadata(metadata: DbAuditLog['metadata']): string
   return typeof email === 'string' && email.trim() ? email.trim() : null
 }
 
+export function extraAuditMetadata(metadata: DbAuditLog['metadata']): Record<string, Json | undefined> | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const rest: Record<string, Json | undefined> = { ...metadata }
+  delete rest.email
+  return Object.keys(rest).length > 0 ? rest : null
+}
+
 /** Newest-first logs → one row per user with their most recent action. */
 export function summarizeLastActive(logs: DbAuditLog[]): StaffLastActive[] {
   const byUser = new Map<string, StaffLastActive>()
@@ -115,6 +128,7 @@ export function summarizeLastActive(logs: DbAuditLog[]): StaffLastActive[] {
   for (const row of logs) {
     if (!row.user_id) continue
     const email = emailFromAuditMetadata(row.metadata)
+    if (isAutomationStaffEmail(email)) continue
     if (email && !emails.has(row.user_id)) emails.set(row.user_id, email)
     if (byUser.has(row.user_id)) continue
     byUser.set(row.user_id, {
