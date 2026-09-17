@@ -38,6 +38,10 @@ export function canAccessPlatformAdmin(isPlatformAdmin: boolean | null | undefin
   return Boolean(isPlatformAdmin)
 }
 
+export function canAccessSystemAdmin(isSystemAdmin: boolean | null | undefined): boolean {
+  return Boolean(isSystemAdmin)
+}
+
 export function isActiveStaffUser(
   appRole: AppRole | null | undefined,
   isPlatformAdmin: boolean | null | undefined,

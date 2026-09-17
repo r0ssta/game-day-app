@@ -70,6 +70,7 @@
     "supabase-player-impact-wpi-goal-assist-bonus-migration.sql",
     "supabase-player-impact-wpi-scoreline-ga-migration.sql",
     "supabase-player-impact-wpi-gk-on-pitch-migration.sql",
-    "supabase-clubs-tenancy-migration.sql"
+    "supabase-clubs-tenancy-migration.sql",
+    "supabase-system-admin-audit-log-migration.sql"
   ]
 }

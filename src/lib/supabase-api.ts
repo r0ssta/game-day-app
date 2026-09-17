@@ -76,6 +76,7 @@ import {
 } from '@/schemas'
 import { parseDbRow, parseDbRows } from '@/lib/zod-parse'
 import { IN_PROGRESS_MATCH_STATUSES } from '@/lib/match-status'
+import { logSystemActivity } from '@/lib/audit-log'
 
 export type MatchEventInput = {
   matchId: string
@@ -1106,7 +1107,29 @@ export async function createMatchRecord(input: {
       .insert(payload as Database['public']['Tables']['matches']['Insert'])
       .select()
       .single()
-    if (!error) return data
+    if (!error) {
+      void (async () => {
+        const { data: team } = await supabase
+          .from('teams')
+          .select('club_id')
+          .eq('id', input.teamId)
+          .maybeSingle()
+        await logSystemActivity({
+          actionType: 'match_created',
+          clubId: team?.club_id ?? null,
+          teamId: input.teamId,
+          metadata: {
+            matchId: data.id,
+            opponent: input.opponent,
+            status,
+            isTest,
+            locationType: input.locationType,
+            tournamentGame: input.tournamentGame,
+          },
+        })
+      })()
+      return data
+    }
     lastError = error
     if (!isMissingColumnError(error)) break
   }

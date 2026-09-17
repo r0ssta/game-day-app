@@ -21,6 +21,12 @@ import { parsePkAttemptNotes } from '@/lib/penalty-kicks'
 import { ParentHubPayloadSchema } from '@/schemas'
 import { parseDbRow } from '@/lib/zod-parse'
 import {
+  isAdminActivityPath,
+  isChangelogPath,
+  isImpactReportPath,
+  isLandingPath,
+} from '@/lib/app-routes'
+import {
   buildCardPush,
   buildFullTimePush,
   buildGoalPush,
@@ -206,6 +212,14 @@ export function restoreStandaloneParentHubPath(): boolean {
   if (parseParentHubRoute()) return false
 
   const path = window.location.pathname
+  if (
+    isAdminActivityPath(path) ||
+    isChangelogPath(path) ||
+    isLandingPath(path) ||
+    isImpactReportPath(path)
+  ) {
+    return false
+  }
   // Only bounce marketing / staff roots — never hijack tracker or other public routes.
   const isCoachRoot =
     path === '/' ||

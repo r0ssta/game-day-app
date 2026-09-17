@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ADMIN_ACTIVITY_PATH,
   CHANGELOG_PATH,
   coachImpactPath,
   coachMatchPath,
   coachTeamPath,
+  isAdminActivityPath,
   isChangelogPath,
   isImpactReportPath,
   isLandingPath,
@@ -40,6 +42,17 @@ describe('isChangelogPath', () => {
   })
 })
 
+describe('isAdminActivityPath', () => {
+  it('only matches /admin/activity', () => {
+    expect(isAdminActivityPath('/admin/activity')).toBe(true)
+    expect(isAdminActivityPath('/admin/activity/')).toBe(true)
+    expect(isAdminActivityPath(ADMIN_ACTIVITY_PATH)).toBe(true)
+    expect(isAdminActivityPath('/admin')).toBe(false)
+    expect(isAdminActivityPath('/')).toBe(false)
+    expect(isAdminActivityPath('/changelog')).toBe(false)
+  })
+})
+
 describe('shouldCanonicalizeActiveTeamPath', () => {
   it('fills a bare staff root with the last-used team', () => {
     expect(shouldCanonicalizeActiveTeamPath('/')).toBe(true)
@@ -51,6 +64,7 @@ describe('shouldCanonicalizeActiveTeamPath', () => {
     expect(shouldCanonicalizeActiveTeamPath('/impact')).toBe(false)
     expect(shouldCanonicalizeActiveTeamPath('/changelog')).toBe(false)
     expect(shouldCanonicalizeActiveTeamPath('/waitlist')).toBe(false)
+    expect(shouldCanonicalizeActiveTeamPath('/admin/activity')).toBe(false)
   })
 })
 

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   Activity,
   BarChart3,
+  ClipboardList,
   History,
   Globe,
   Home,
@@ -31,6 +32,7 @@ export type AppNavSection =
   | 'roster'
   | 'club_admin'
   | 'platform_admin'
+  | 'system_activity'
 
 export type AppNavItem = {
   id: AppNavSection
@@ -65,6 +67,7 @@ export function buildAppNavItems(input: {
   hasLiveMatch: boolean
   showClubAdmin?: boolean
   showPlatformAdmin?: boolean
+  showSystemAdmin?: boolean
 }): AppNavItem[] {
   const teamDisabled = !input.teamReady
 
@@ -137,6 +140,16 @@ export function buildAppNavItems(input: {
       description: 'Create sandbox clubs and invite directors',
       icon: Globe,
       active: input.activeSection === 'platform_admin',
+    })
+  }
+
+  if (input.showSystemAdmin) {
+    items.push({
+      id: 'system_activity',
+      label: 'Activity',
+      description: 'Super-admin audit log across clubs',
+      icon: ClipboardList,
+      active: input.activeSection === 'system_activity',
     })
   }
 

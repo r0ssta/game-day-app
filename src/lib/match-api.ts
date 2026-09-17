@@ -1,4 +1,5 @@
 import { AUTH_RECONNECT_TOAST, ensureFreshSession } from '@/lib/auth-session'
+import { logSystemActivity } from '@/lib/audit-log'
 import type {
   EndRegulationInput,
   FinalizePkInput,
@@ -129,7 +130,21 @@ export async function apiLogSubstitution(
 export async function apiLogPeriod(
   input: LogPeriodInput,
 ): Promise<MatchActionResult<{ kind: LogPeriodInput['kind']; period: number }>> {
-  return postMatchAction('/api/match/log-period', input)
+  const result = await postMatchAction<{ kind: LogPeriodInput['kind']; period: number }>(
+    '/api/match/log-period',
+    input,
+  )
+  if (result.ok && input.kind === 'start' && input.period === 1) {
+    void logSystemActivity({
+      actionType: 'match_started',
+      metadata: {
+        matchId: input.matchId,
+        opponent: input.opponent,
+        teamName: input.teamName,
+      },
+    })
+  }
+  return result
 }
 
 export async function apiLogPkAttempt(
@@ -157,7 +172,26 @@ export async function apiEndRegulation(
     extraTimeHalfMinutes?: number | null
   }>
 > {
-  return postMatchAction('/api/match/end-regulation', input)
+  const result = await postMatchAction<{
+    status: string
+    enterPenaltyShootout: boolean
+    enterExtraTime?: boolean
+    advanceExtraTime?: boolean
+    extraTimeHalfMinutes?: number | null
+  }>('/api/match/end-regulation', input)
+  if (result.ok && !input.enterExtraTime && !input.advanceExtraTime) {
+    void logSystemActivity({
+      actionType: 'match_completed',
+      metadata: {
+        matchId: input.matchId,
+        opponent: input.opponent ?? null,
+        homeScore: input.homeScore ?? null,
+        awayScore: input.awayScore ?? null,
+        viaPenalties: Boolean(input.enterPenaltyShootout),
+      },
+    })
+  }
+  return result
 }
 
 export async function apiFinalizePk(

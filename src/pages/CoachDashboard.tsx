@@ -36,6 +36,7 @@ import { OpponentGoalCategorySheet } from '@/components/OpponentGoalCategoryShee
 import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
 import {
+  ADMIN_ACTIVITY_PATH,
   COACH_APP_PATH,
   coachImpactPath,
   coachTeamPath,
@@ -187,6 +188,7 @@ export function CoachDashboard() {
   const {
     canAccessClubAdmin,
     canAccessPlatformAdmin,
+    canAccessSystemAdmin,
     canDeleteMatchesForTeam,
     canUseSprocketForTeam,
     role,
@@ -511,8 +513,17 @@ export function CoachDashboard() {
         hasLiveMatch,
         showClubAdmin: canAccessClubAdmin,
         showPlatformAdmin: canAccessPlatformAdmin,
+        showSystemAdmin: canAccessSystemAdmin,
       }),
-    [appMode, reportingTab, activeTeamId, hasLiveMatch, canAccessClubAdmin, canAccessPlatformAdmin],
+    [
+      appMode,
+      reportingTab,
+      activeTeamId,
+      hasLiveMatch,
+      canAccessClubAdmin,
+      canAccessPlatformAdmin,
+      canAccessSystemAdmin,
+    ],
   )
 
   const screenTeamSwitcher = (
@@ -628,12 +639,22 @@ export function CoachDashboard() {
           leaveImpactPath()
           setAppMode('platform_admin')
           break
+        case 'system_activity':
+          if (!canAccessSystemAdmin) {
+            setToast('Activity is available to system admins only')
+            leaveImpactPath()
+            setAppMode('home')
+            break
+          }
+          navigateApp(ADMIN_ACTIVITY_PATH)
+          break
       }
     },
     [
       activeTeamId,
       canAccessClubAdmin,
       canAccessPlatformAdmin,
+      canAccessSystemAdmin,
       hasLiveMatch,
       hasPendingRecap,
       leaveImpactPath,

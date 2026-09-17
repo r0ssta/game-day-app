@@ -7,7 +7,7 @@ import { PwaUpdateToast } from '@/components/PwaUpdateToast'
 import { ScreenSuspense } from '@/components/Spinner'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { SunlightModeProvider } from '@/contexts/SunlightModeContext'
-import { isChangelogPath, isLandingPath, parseCoachRoute } from '@/lib/app-routes'
+import { isAdminActivityPath, isChangelogPath, isLandingPath, parseCoachRoute } from '@/lib/app-routes'
 import { APP_DOCUMENT_TITLE } from '@/lib/branding'
 import {
   installParentHubLaunchConsumer,
@@ -29,6 +29,9 @@ const CoachDashboard = lazyWithChunkReload(() =>
 )
 const ChangelogPage = lazyWithChunkReload(() =>
   import('@/pages/ChangelogPage').then((m) => ({ default: m.ChangelogPage })),
+)
+const SuperAdminActivityScreen = lazyWithChunkReload(() =>
+  import('@/pages/SuperAdminActivityScreen').then((m) => ({ default: m.SuperAdminActivityScreen })),
 )
 const ParentHubScreen = lazyWithChunkReload(() =>
   import('@/components/ParentHubScreen').then((m) => ({ default: m.ParentHubScreen })),
@@ -100,6 +103,9 @@ export default function App() {
   const [changelogRoute, setChangelogRoute] = useState(() =>
     isChangelogPath(window.location.pathname),
   )
+  const [adminActivityRoute, setAdminActivityRoute] = useState(() =>
+    isAdminActivityPath(window.location.pathname),
+  )
   const [coachRoute, setCoachRoute] = useState(() => parseCoachRoute(window.location.pathname))
 
   useEffect(() => {
@@ -117,6 +123,7 @@ export default function App() {
       setParentHubRoute(nextHub)
       setLandingRoute(isLandingPath(window.location.pathname))
       setChangelogRoute(isChangelogPath(window.location.pathname))
+      setAdminActivityRoute(isAdminActivityPath(window.location.pathname))
       setCoachRoute(parseCoachRoute(window.location.pathname))
     }
     syncRoute()
@@ -155,6 +162,10 @@ export default function App() {
           {changelogRoute ? (
             <ScreenSuspense>
               <ChangelogPage />
+            </ScreenSuspense>
+          ) : adminActivityRoute ? (
+            <ScreenSuspense>
+              <SuperAdminActivityScreen />
             </ScreenSuspense>
           ) : (
             <ErrorBoundary

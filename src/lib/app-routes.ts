@@ -6,6 +6,8 @@ export const LANDING_PATH = '/waitlist'
 export const CHANGELOG_PATH = '/changelog'
 /** Staff-only Player Impact report. Hidden from Parent Hub (`/hub/:slug`). */
 export const IMPACT_REPORT_PATH = '/impact'
+/** Super-admin audit log. Guarded in SuperAdminActivityScreen. */
+export const ADMIN_ACTIVITY_PATH = '/admin/activity'
 
 function normalizePathname(pathname: string): string {
   const trimmed = pathname.trim()
@@ -88,12 +90,22 @@ export function isImpactReportPath(pathname: string): boolean {
   return path === IMPACT_REPORT_PATH || COACH_TEAM_IMPACT_RE.test(path)
 }
 
+/** True for the super-admin audit log. */
+export function isAdminActivityPath(pathname: string): boolean {
+  return normalizePathname(pathname) === ADMIN_ACTIVITY_PATH
+}
+
 /**
  * True when a missing team id in the URL should be filled with the last-used team.
  * Public pages (changelog, waitlist) and the impact report must not be rewritten.
  */
 export function shouldCanonicalizeActiveTeamPath(pathname: string): boolean {
-  if (isImpactReportPath(pathname) || isChangelogPath(pathname) || isLandingPath(pathname)) {
+  if (
+    isImpactReportPath(pathname) ||
+    isChangelogPath(pathname) ||
+    isLandingPath(pathname) ||
+    isAdminActivityPath(pathname)
+  ) {
     return false
   }
   return parseCoachRoute(pathname).teamId == null

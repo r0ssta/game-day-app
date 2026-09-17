@@ -15,6 +15,7 @@ import {
   type TeamRole,
   canAccessClubAdmin,
   canAccessPlatformAdmin,
+  canAccessSystemAdmin,
   canDeleteMatches,
   canUseSprocketIntegration,
   isActiveAppRole,
@@ -22,10 +23,8 @@ import {
   isAppRole,
   isTeamRole,
 } from '@/lib/staff-roles'
-import {
-  persistActiveClubId,
-  readPersistedActiveClubId,
-} from '@/lib/team-context'
+import { persistActiveClubId, readPersistedActiveClubId } from '@/lib/team-context'
+import { logSystemActivity } from '@/lib/audit-log'
 
 export type TeamMembership = {
   teamId: string
@@ -49,6 +48,7 @@ type AuthContextValue = {
   currentClubName: string | null
   clubMemberships: ClubMembership[]
   isPlatformAdmin: boolean
+  isSystemAdmin: boolean
   teamMemberships: TeamMembership[]
   /** True while reading the persisted auth session (blocks the login gate). */
   loading: boolean
@@ -58,6 +58,7 @@ type AuthContextValue = {
   isActiveStaff: boolean
   canAccessClubAdmin: boolean
   canAccessPlatformAdmin: boolean
+  canAccessSystemAdmin: boolean
   setCurrentClubId: (clubId: string) => void
   getTeamRole: (teamId: string | null | undefined) => TeamRole | null
   canDeleteMatchesForTeam: (teamId: string | null | undefined) => boolean
@@ -117,6 +118,21 @@ async function fetchIsPlatformAdmin(userId: string): Promise<boolean> {
   return Boolean(data?.user_id)
 }
 
+async function fetchIsSystemAdmin(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('system_admins')
+    .select('user_id')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[auth] failed to load system admin', error.message)
+    return false
+  }
+
+  return Boolean(data?.user_id)
+}
+
 function resolveCurrentClubId(memberships: ClubMembership[]): string | null {
   if (memberships.length === 0) return null
   const persisted = readPersistedActiveClubId()
@@ -158,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentClubId, setCurrentClubIdState] = useState<string | null>(null)
   const [clubMemberships, setClubMemberships] = useState<ClubMembership[]>([])
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false)
   const [teamMemberships, setTeamMemberships] = useState<TeamMembership[]>([])
   const [sessionLoading, setSessionLoading] = useState(true)
   const [accessLoading, setAccessLoading] = useState(false)
@@ -181,27 +198,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentClubIdState(null)
       setClubMemberships([])
       setIsPlatformAdmin(false)
+      setIsSystemAdmin(false)
       setTeamMemberships([])
       return
     }
 
-    let [memberships, platformAdmin, nextMemberships] = await Promise.all([
+    let [memberships, platformAdmin, systemAdmin, nextMemberships] = await Promise.all([
       fetchClubMemberships(userId),
       fetchIsPlatformAdmin(userId),
+      fetchIsSystemAdmin(userId),
       fetchTeamMemberships(userId),
     ])
 
     const hasActiveClub = memberships.some((row) => isActiveAppRole(row.appRole))
     if (!hasActiveClub && !platformAdmin) {
       await maybeClaimBootstrap()
-      ;[memberships, platformAdmin, nextMemberships] = await Promise.all([
+      ;[memberships, platformAdmin, systemAdmin, nextMemberships] = await Promise.all([
         fetchClubMemberships(userId),
         fetchIsPlatformAdmin(userId),
+        fetchIsSystemAdmin(userId),
         fetchTeamMemberships(userId),
       ])
     }
 
     setIsPlatformAdmin(platformAdmin)
+    setIsSystemAdmin(systemAdmin)
     setTeamMemberships(nextMemberships)
     applyMemberships(memberships)
   }, [applyMemberships])
@@ -334,6 +355,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       throw error
     }
+
+    void logSystemActivity({ actionType: 'login', metadata: { email: trimmedEmail } })
   }, [])
 
   const signOut = useCallback(async () => {
@@ -343,6 +366,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentClubIdState(null)
     setClubMemberships([])
     setIsPlatformAdmin(false)
+    setIsSystemAdmin(false)
     setTeamMemberships([])
   }, [])
 
@@ -385,6 +409,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentClubName,
       clubMemberships,
       isPlatformAdmin,
+      isSystemAdmin,
       teamMemberships,
       loading: sessionLoading,
       accessLoading,
@@ -392,6 +417,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isActiveStaff: isActiveStaffUser(role, isPlatformAdmin),
       canAccessClubAdmin: canAccessClubAdmin(role),
       canAccessPlatformAdmin: canAccessPlatformAdmin(isPlatformAdmin),
+      canAccessSystemAdmin: canAccessSystemAdmin(isSystemAdmin),
       setCurrentClubId,
       getTeamRole,
       canDeleteMatchesForTeam,
@@ -410,6 +436,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentClubName,
       clubMemberships,
       isPlatformAdmin,
+      isSystemAdmin,
       teamMemberships,
       sessionLoading,
       accessLoading,

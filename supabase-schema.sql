@@ -2257,3 +2257,4 @@ notify pgrst, 'reload schema';
 
 -- Multi-club tenancy lives in supabase-clubs-tenancy-migration.sql
 -- (clubs, club_memberships, platform_admins, club_id on tenant roots).
+-- Super-admin audit log lives in supabase-system-admin-audit-log-migration.sql.

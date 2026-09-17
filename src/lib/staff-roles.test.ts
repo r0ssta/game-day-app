@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canAccessClubAdmin,
   canAccessPlatformAdmin,
+  canAccessSystemAdmin,
   isActiveStaffUser,
 } from './staff-roles'
 
@@ -17,6 +18,12 @@ describe('staff-roles club access', () => {
     expect(canAccessPlatformAdmin(true)).toBe(true)
     expect(canAccessPlatformAdmin(false)).toBe(false)
     expect(canAccessPlatformAdmin(null)).toBe(false)
+  })
+
+  it('gates system admin Activity on the system_admins flag', () => {
+    expect(canAccessSystemAdmin(true)).toBe(true)
+    expect(canAccessSystemAdmin(false)).toBe(false)
+    expect(canAccessSystemAdmin(null)).toBe(false)
   })
 
   it('lets platform admins into the app even without a club role', () => {

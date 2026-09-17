@@ -289,6 +289,21 @@ export type DbPlatformAdmin = {
   created_at: string
 }
 
+export type DbSystemAdmin = {
+  user_id: string
+  created_at: string
+}
+
+export type DbAuditLog = {
+  id: string
+  user_id: string | null
+  club_id: string | null
+  team_id: string | null
+  action_type: string
+  metadata: Json
+  created_at: string
+}
+
 export type DbUserRole = {
   user_id: string
   app_role: 'director' | 'coach' | 'pending'
@@ -393,6 +408,16 @@ export type Database = {
         Row: DbPlatformAdmin
         Insert: Omit<DbPlatformAdmin, 'created_at'> & { created_at?: string }
         Update: Partial<DbPlatformAdmin>
+      }
+      system_admins: {
+        Row: DbSystemAdmin
+        Insert: Omit<DbSystemAdmin, 'created_at'> & { created_at?: string }
+        Update: Partial<DbSystemAdmin>
+      }
+      audit_logs: {
+        Row: DbAuditLog
+        Insert: Omit<DbAuditLog, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<DbAuditLog>
       }
       teams: {
         Row: DbTeam
@@ -649,6 +674,15 @@ export type Database = {
       create_club: {
         Args: { p_name: string; p_slug?: string | null }
         Returns: DbClub
+      }
+      log_system_activity: {
+        Args: {
+          p_action_type: string
+          p_club_id?: string | null
+          p_team_id?: string | null
+          p_metadata?: Json
+        }
+        Returns: string
       }
       update_staff_display_name: {
         Args: { p_user_id: string; p_display_name: string }
