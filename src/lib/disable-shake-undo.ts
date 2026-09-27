@@ -48,7 +48,6 @@ export function clearTextFieldUndoStack(el: HTMLInputElement | HTMLTextAreaEleme
 }
 
 let installed = false
-let clearing = false
 
 export function installDisableShakeUndo() {
   if (installed || typeof document === 'undefined') return
@@ -63,23 +62,22 @@ export function installDisableShakeUndo() {
     true,
   )
 
-  const clear = (target: EventTarget | null) => {
-    if (clearing || !isTextField(target)) return
-    clearing = true
-    try {
-      clearTextFieldUndoStack(target)
-    } finally {
-      clearing = false
-    }
+  const scheduleClear = (target: EventTarget | null) => {
+    if (!isTextField(target)) return
+    const field = target
+    const value = field.value
+    // React's value tracker treats a `.value` write during this event as the
+    // keystroke already being applied, then drops onChange. Controlled fields
+    // (opponent, notes) snap back to empty. Clear the undo stack after the event.
+    queueMicrotask(() => {
+      if (!field.isConnected || field.value !== value) return
+      clearTextFieldUndoStack(field)
+    })
   }
 
-  document.addEventListener(
-    'input',
-    (event) => {
-      if (event instanceof InputEvent && event.isComposing) return
-      clear(event.target)
-    },
-    true,
-  )
-  document.addEventListener('compositionend', (event) => clear(event.target), true)
+  document.addEventListener('input', (event) => {
+    if (event instanceof InputEvent && event.isComposing) return
+    scheduleClear(event.target)
+  })
+  document.addEventListener('compositionend', (event) => scheduleClear(event.target))
 }
