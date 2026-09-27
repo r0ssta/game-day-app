@@ -28,6 +28,7 @@ import {
   initialHalfClock,
   kickoffPeriodClockAnchor,
   parsePeriodStartTimeMs,
+  pausePeriodClock,
   planHalfLengthOverride,
   resolveLiveMatchClock,
 } from '@/lib/match-clock'
@@ -338,6 +339,10 @@ export function useGameDayApp() {
   const lastClockWriteAtRef = useRef(0)
   const [periodStartTime, setPeriodStartTime] = useState<string | null>(null)
   const [accumulatedSecondsBeforePause, setAccumulatedSecondsBeforePause] = useState(0)
+  const periodStartTimeRef = useRef(periodStartTime)
+  const accumulatedSecondsRef = useRef(accumulatedSecondsBeforePause)
+  periodStartTimeRef.current = periodStartTime
+  accumulatedSecondsRef.current = accumulatedSecondsBeforePause
   const halfLengthWriteEchoRef = useRef<{ at: number; minutes: number } | null>(null)
   const hydrateInFlightRef = useRef(false)
   const localWriteGenRef = useRef(0)
@@ -622,6 +627,17 @@ export function useGameDayApp() {
   }, [setRunning])
 
   const releaseLocalClock = useCallback(() => {
+    // A stopped clock reports only banked elapsed. Bank the live period first,
+    // or the face rewinds to kickoff and full time is stamped as 0:00.
+    if (runningRef.current) {
+      const elapsed = pausePeriodClock({
+        periodStartTime: periodStartTimeRef.current,
+        accumulatedSecondsBeforePause: accumulatedSecondsRef.current,
+        nowMs: Date.now(),
+      }).accumulatedSecondsBeforePause
+      accumulatedSecondsRef.current = elapsed
+      setAccumulatedSecondsBeforePause(elapsed)
+    }
     localClockOwnedRef.current = false
     runningRef.current = false
     liveStateRef.current = {

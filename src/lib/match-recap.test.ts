@@ -383,6 +383,64 @@ describe('aggregatePlayerRecaps', () => {
 
     expect(stats.get('p1')?.totalSeconds).toBe(1000 + period)
   })
+
+  it('counts the final period when the full-time whistle was stamped at 0:00', () => {
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-26T18:44:37.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 2106,
+          event_notes: 'period_end',
+          created_at: '2026-09-26T19:19:42.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-26T19:26:42.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|CM',
+          created_at: '2026-09-26T19:26:42.000Z',
+          player_id: 'p2',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 600,
+          created_at: '2026-09-26T19:36:42.000Z',
+          player_id: 'p2',
+        }),
+        event({
+          event_type: 'goal',
+          timestamp: 2020,
+          created_at: '2026-09-26T20:00:22.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 0,
+          event_notes: 'period_end',
+          created_at: '2026-09-26T20:01:30.000Z',
+          player_id: 'p1',
+        }),
+      ],
+      35 * 60,
+    )
+
+    expect(stats.get('p1')?.totalSeconds).toBe(2106 + 2088)
+    expect(stats.get('p2')?.totalSeconds).toBe(600)
+  })
 })
 
 function recapPlayer(

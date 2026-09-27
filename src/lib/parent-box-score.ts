@@ -46,25 +46,73 @@ export function periodColumnLabels(totalPeriods?: number | null, extraCount = 0)
   })
 }
 
-/** Actual on-clock length of each period — prefer tagged period_end. */
+type PeriodClockSample = {
+  timestamp: number
+  createdAt: string
+  isPeriodEnd: boolean
+}
+
+/**
+ * On-clock length of one period.
+ * A real `period_end` wins over a later sub. A whistle stored at 0:00 is the
+ * stopped-clock rewind (full-time remaining snapped back to kickoff), so the
+ * length is the later of the last logged action and kickoff-to-whistle wall time.
+ */
+export function playedSecondsForPeriod(events: PeriodClockSample[]): number {
+  if (events.length === 0) return 0
+
+  let endStamp = -1
+  let maxStamp = 0
+  let firstCreated = events[0]!.createdAt
+  let zeroEndCreated: string | null = null
+
+  for (const event of events) {
+    const ts = Math.max(0, Math.floor(event.timestamp))
+    if (event.createdAt < firstCreated) firstCreated = event.createdAt
+    if (event.isPeriodEnd) {
+      endStamp = Math.max(endStamp, ts)
+      if (ts === 0 && (!zeroEndCreated || event.createdAt > zeroEndCreated)) {
+        zeroEndCreated = event.createdAt
+      }
+      continue
+    }
+    maxStamp = Math.max(maxStamp, ts)
+  }
+
+  if (endStamp > 0) return endStamp
+  if (endStamp < 0) return maxStamp
+
+  let played = maxStamp
+  if (zeroEndCreated) {
+    const wallMs = Date.parse(zeroEndCreated) - Date.parse(firstCreated)
+    if (Number.isFinite(wallMs) && wallMs > 0) {
+      played = Math.max(played, Math.round(wallMs / 1000))
+    }
+  }
+  return played
+}
+
+/** Actual on-clock length of each period — prefer a real tagged period_end. */
 export function computeParentPeriodPlayedSeconds(events: ParentLiveEvent[]): number[] {
   if (events.length === 0) return []
   const periodById = assignParentEventPeriodIndexes(events)
-  const endByPeriod = new Map<number, number>()
-  const maxByPeriod = new Map<number, number>()
+  const byPeriod = new Map<number, PeriodClockSample[]>()
 
   for (const event of events) {
     const period = periodById.get(event.id) ?? 1
-    maxByPeriod.set(period, Math.max(maxByPeriod.get(period) ?? 0, Math.max(0, event.timestamp)))
-    if (isPeriodEndSubEvent(event.eventType, event.eventNotes)) {
-      endByPeriod.set(period, Math.max(endByPeriod.get(period) ?? 0, Math.max(0, event.timestamp)))
-    }
+    const bucket = byPeriod.get(period) ?? []
+    bucket.push({
+      timestamp: event.timestamp,
+      createdAt: event.createdAt,
+      isPeriodEnd: isPeriodEndSubEvent(event.eventType, event.eventNotes),
+    })
+    byPeriod.set(period, bucket)
   }
 
   const maxPeriod = Math.max(1, ...periodById.values())
   const seconds: number[] = []
   for (let period = 1; period <= maxPeriod; period += 1) {
-    seconds.push(endByPeriod.get(period) ?? maxByPeriod.get(period) ?? 0)
+    seconds.push(playedSecondsForPeriod(byPeriod.get(period) ?? []))
   }
   return seconds
 }

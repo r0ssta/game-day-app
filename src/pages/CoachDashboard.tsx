@@ -711,6 +711,7 @@ export function CoachDashboard() {
   const halftimeLabelOverridesRef = useRef<Record<string, string> | null>(null)
 
   const clockSyncRef = useRef(seconds)
+  const endWhistleSecondsRef = useRef<number | null>(null)
 
   useEffect(() => {
     clockSyncRef.current = seconds
@@ -1200,6 +1201,7 @@ export function CoachDashboard() {
   }, [matchId, handleDeleteMatch])
 
   const handleEndGame = useCallback(() => {
+    endWhistleSecondsRef.current = seconds
     releaseLocalClock()
     if (
       shouldAutoEnterPenaltyShootoutAfterExtraTime({
@@ -1248,7 +1250,8 @@ export function CoachDashboard() {
       setEndingMatch(true)
       try {
         const enterPks = false
-        await finishGame(seconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
+        const clockSeconds = endWhistleSecondsRef.current ?? seconds
+        await finishGame(clockSeconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
         setEndTimingOpen(false)
         setToast(
           endedOnTime
@@ -1267,7 +1270,8 @@ export function CoachDashboard() {
   const handleTiedGamePenaltyShootout = useCallback(async () => {
     setEndingMatch(true)
     try {
-      await finishGame(seconds, undefined, { enterPenaltyShootout: true })
+      const clockSeconds = endWhistleSecondsRef.current ?? seconds
+      await finishGame(clockSeconds, undefined, { enterPenaltyShootout: true })
       setTiedGameOpen(false)
       setToast('Tied regulation — starting penalty shootout')
     } catch (err) {
@@ -1281,7 +1285,8 @@ export function CoachDashboard() {
     async (halfMinutes: number) => {
       setEndingMatch(true)
       try {
-        await finishGame(seconds, undefined, {
+        const clockSeconds = endWhistleSecondsRef.current ?? seconds
+        await finishGame(clockSeconds, undefined, {
           enterExtraTime: true,
           extraTimeHalfMinutes: halfMinutes,
         })

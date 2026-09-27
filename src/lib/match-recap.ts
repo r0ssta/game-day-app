@@ -1,4 +1,8 @@
-import { cleanRecapPositionNote, isPeriodStartBoundary } from '@/lib/match-event-notes'
+import {
+  cleanRecapPositionNote,
+  isPeriodEndSubEvent,
+  isPeriodStartBoundary,
+} from '@/lib/match-event-notes'
 import { isGoalkeeperPosition } from '@/lib/match-shot-save'
 import { allocateSecondsByRole } from '@/lib/play-time'
 import { normalizeRecapPosition } from '@/lib/positions'
@@ -153,6 +157,38 @@ export function buildAbsoluteMatchTimeline(
   return timeline
 }
 
+/**
+ * Full-time whistles logged after the clock was stopped are stored at timestamp
+ * 0. Recover that period's end on the absolute timeline from kickoff-to-whistle
+ * wall time, without shrinking past the last real on-clock action.
+ */
+function zeroWhistleAbsTimestamp(periodEvents: TimelineEvent[]): number | null {
+  const zeroEnds = periodEvents.filter(
+    (event) => isPeriodEndSubEvent(event.event_type, event.event_notes) && event.timestamp <= 0,
+  )
+  if (zeroEnds.length === 0) return null
+  const hasPositiveEnd = periodEvents.some(
+    (event) => isPeriodEndSubEvent(event.event_type, event.event_notes) && event.timestamp > 0,
+  )
+  if (hasPositiveEnd) return null
+
+  let first = periodEvents[0]!
+  let maxAbs = 0
+  let zeroEndAt = zeroEnds[0]!.created_at
+  for (const event of periodEvents) {
+    if (event.created_at < first.created_at) first = event
+    if (isPeriodEndSubEvent(event.event_type, event.event_notes) && event.timestamp <= 0) {
+      if (event.created_at > zeroEndAt) zeroEndAt = event.created_at
+      continue
+    }
+    maxAbs = Math.max(maxAbs, event.absTimestamp)
+  }
+
+  const wallMs = Date.parse(zeroEndAt) - Date.parse(first.created_at)
+  const wall = Number.isFinite(wallMs) ? Math.max(0, Math.round(wallMs / 1000)) : 0
+  return Math.max(maxAbs, first.absTimestamp + wall)
+}
+
 function addRecapPosition(positions: string[], rawPosition: string | null | undefined) {
   const cleaned = cleanRecapPositionNote(rawPosition) ?? rawPosition?.trim() ?? ''
   const position = normalizeRecapPosition(cleaned)
@@ -205,6 +241,18 @@ export function aggregatePlayerRecaps(
   playersById?: Map<string, Pick<MatchPlayer, 'matchPosition'>>,
 ): Map<string, PlayerRecapStats> {
   const timeline = buildAbsoluteMatchTimeline(events, halfLengthSeconds)
+  const recoveredWhistleAbs = new Map<number, number>()
+  const timelineByPeriod = new Map<number, TimelineEvent[]>()
+  for (const event of timeline) {
+    const bucket = timelineByPeriod.get(event.periodIndex) ?? []
+    bucket.push(event)
+    timelineByPeriod.set(event.periodIndex, bucket)
+  }
+  for (const [periodIndex, periodEvents] of timelineByPeriod) {
+    const whistleAbs = zeroWhistleAbsTimestamp(periodEvents)
+    if (whistleAbs != null) recoveredWhistleAbs.set(periodIndex, whistleAbs)
+  }
+
   const stats = new Map<
     string,
     {
@@ -315,7 +363,12 @@ export function aggregatePlayerRecaps(
       case 'sub_out': {
         const open = openStints.get(event.player_id)
         if (open) {
-          addStintSeconds(row, open.start, event.absTimestamp, open.position)
+          let end = event.absTimestamp
+          if (isPeriodEndSubEvent(event.event_type, event.event_notes) && event.timestamp <= 0) {
+            const recovered = recoveredWhistleAbs.get(event.periodIndex)
+            if (recovered != null) end = Math.max(end, recovered)
+          }
+          addStintSeconds(row, open.start, end, open.position)
           openStints.delete(event.player_id)
         }
         break

@@ -153,4 +153,83 @@ describe('buildParentTeamBoxScore', () => {
     ])
     expect(seconds).toEqual([1798])
   })
+
+  it('adds the final period when full time was stamped at 0:00', () => {
+    const seconds = computeParentPeriodPlayedSeconds([
+      event({
+        id: 'lu1',
+        eventType: 'sub_in',
+        eventNotes: startingLineupNote('ST'),
+        createdAt: '2026-09-26T18:44:37.000Z',
+      }),
+      event({
+        id: 'end1',
+        eventType: 'sub_out',
+        timestamp: 2106,
+        eventNotes: 'period_end',
+        createdAt: '2026-09-26T19:19:42.000Z',
+      }),
+      event({
+        id: 'lu2',
+        eventType: 'sub_in',
+        eventNotes: startingLineupNote('ST'),
+        createdAt: '2026-09-26T19:26:42.000Z',
+      }),
+      event({
+        id: 'g2',
+        eventType: 'goal',
+        timestamp: 2020,
+        createdAt: '2026-09-26T20:00:22.000Z',
+      }),
+      event({
+        id: 'end2',
+        eventType: 'sub_out',
+        timestamp: 0,
+        eventNotes: 'period_end',
+        createdAt: '2026-09-26T20:01:30.000Z',
+      }),
+    ])
+    // 1H whistle 2106s + 2H kickoff 19:26:42 through full time 20:01:30 (2088s)
+    expect(seconds).toEqual([2106, 2088])
+
+    const model = buildParentTeamBoxScore(
+      [
+        event({
+          id: 'lu1',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('ST'),
+          createdAt: '2026-09-26T18:44:37.000Z',
+        }),
+        event({
+          id: 'end1',
+          eventType: 'sub_out',
+          timestamp: 2106,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-26T19:19:42.000Z',
+        }),
+        event({
+          id: 'lu2',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('ST'),
+          createdAt: '2026-09-26T19:26:42.000Z',
+        }),
+        event({
+          id: 'g2',
+          eventType: 'goal',
+          timestamp: 2020,
+          createdAt: '2026-09-26T20:00:22.000Z',
+        }),
+        event({
+          id: 'end2',
+          eventType: 'sub_out',
+          timestamp: 0,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-26T20:01:30.000Z',
+        }),
+      ],
+      { halfLengthMinutes: 35, totalPeriods: 2 },
+    )
+    expect(model.playedSeconds).toBe(2106 + 2088)
+    expect(model.playedLengthLabel).toBe('69:54')
+  })
 })
