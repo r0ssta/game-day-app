@@ -22,6 +22,7 @@ import {
   fetchMatchStatsByMatchId,
   rebuildMatchPlayers,
 } from '@/lib/supabase-api'
+import { addShotType, type ShotTypeCounts } from '@/lib/shot-reporting'
 import type { DbMatchEvent } from '@/types/database'
 import { includeInMatchRecord } from '@/lib/match-availability'
 import type { MatchPlayer, RosterPlayer } from '@/types/match'
@@ -34,6 +35,8 @@ export type PlayerRecapStats = {
   positions: string[]
   goals: number
   assists: number
+  shots: number
+  shotsByType: ShotTypeCounts
   saves: number
   yellowCards: number
   redCards: number
@@ -55,6 +58,8 @@ export type PlayerRecapReview = {
   positions: string[]
   goals: number
   assists: number
+  shots: number
+  shotsByType: ShotTypeCounts
   saves: number
   yellowCards: number
   redCards: number
@@ -262,6 +267,8 @@ export function aggregatePlayerRecaps(
       gkSeconds: number
       goals: number
       assists: number
+      shots: number
+      shotsByType: ShotTypeCounts
       saves: number
       yellowCards: number
       redCards: number
@@ -276,6 +283,8 @@ export function aggregatePlayerRecaps(
         gkSeconds: 0,
         goals: 0,
         assists: 0,
+        shots: 0,
+        shotsByType: {},
         saves: 0,
         yellowCards: 0,
         redCards: 0,
@@ -325,6 +334,12 @@ export function aggregatePlayerRecaps(
       currentPeriodIndex = event.periodIndex
     }
     lastAbsTimestamp = event.absTimestamp
+
+    if (event.event_type === 'shot_home' && event.player_id) {
+      const shooter = ensure(event.player_id)
+      shooter.shots += 1
+      addShotType(shooter.shotsByType, event.event_notes)
+    }
 
     if (
       event.event_type === 'opponent_goal' ||
@@ -405,6 +420,8 @@ export function aggregatePlayerRecaps(
       gkSeconds: 0,
       goals: 0,
       assists: 0,
+      shots: 0,
+      shotsByType: {},
       saves: 0,
       yellowCards: 0,
       redCards: 0,
@@ -418,6 +435,8 @@ export function aggregatePlayerRecaps(
       positions: computePlayerPositionsFromTimeline(playerId, timeline, fallbackPosition),
       goals: row.goals,
       assists: row.assists,
+      shots: row.shots,
+      shotsByType: row.shotsByType,
       saves: row.saves,
       yellowCards: row.yellowCards,
       redCards: row.redCards,
@@ -557,6 +576,8 @@ export function buildRecapRows(
         positions,
         goals: stats?.goals ?? 0,
         assists: stats?.assists ?? 0,
+        shots: stats?.shots ?? 0,
+        shotsByType: stats?.shotsByType ?? {},
         saves: stats?.saves ?? 0,
         yellowCards: stats?.yellowCards ?? 0,
         redCards: stats?.redCards ?? 0,

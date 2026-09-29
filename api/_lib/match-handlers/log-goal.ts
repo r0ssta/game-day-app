@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth.js'
 import { requireMatchAccess } from '../match-access.js'
-import { LogGoalInputSchema } from '../match-action-schemas.js'
+import { LogGoalInputSchema, parseShotType } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import { buildGoalPush } from '../push-copy.js'
 import { queueTeamWebPush } from '../send-web-push.js'
@@ -41,15 +41,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const eventType = input.ourGoal ? 'goal' : 'opponent_goal'
-    const shotType = input.ourGoal ? 'shot_home' : 'shot_away'
+    const pairedShotType = input.ourGoal ? 'shot_home' : 'shot_away'
+    const ourShotType = input.ourGoal ? parseShotType(input.eventNotes) : null
+    const isPk = input.ourGoal ? ourShotType === 'PK' || input.isPk : input.isPk
+    const scorerId = input.ourGoal ? (input.scorerId ?? null) : null
     const plusMinusDelta: 1 | -1 = input.ourGoal ? 1 : -1
 
     if (
       await isDuplicateLiveEvent(auth.supabase, {
         matchId: input.matchId,
         eventType,
-        playerId: input.ourGoal ? (input.scorerId ?? null) : null,
-        isPk: input.isPk,
+        playerId: scorerId,
+        isPk,
       })
     ) {
       const { data: latest } = await auth.supabase
@@ -73,21 +76,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const events: MatchEventInsert[] = [
         {
           match_id: input.matchId,
-          player_id: input.ourGoal ? (input.scorerId ?? null) : null,
+          player_id: scorerId,
           event_type: eventType,
           timestamp: input.timestamp,
-          event_notes: input.ourGoal ? null : (input.eventNotes ?? null),
+          event_notes: input.ourGoal ? ourShotType : (input.eventNotes ?? null),
           formation: input.formation,
-          assist_player_id: input.ourGoal && !input.isPk ? (input.assistPlayerId ?? null) : null,
-          is_pk: input.isPk,
+          assist_player_id:
+            input.ourGoal && scorerId && !isPk ? (input.assistPlayerId ?? null) : null,
+          is_pk: isPk,
         },
       ]
       if (input.pairAutoShot) {
         events.push({
           match_id: input.matchId,
-          player_id: null,
-          event_type: shotType,
+          player_id: scorerId,
+          event_type: pairedShotType,
           timestamp: input.timestamp,
+          event_notes: ourShotType,
           formation: input.formation,
           is_pk: false,
         })
@@ -106,7 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       awayScore: nextAway,
       scorerLabel: input.scorerLabel,
       assistLabel: input.assistLabel,
-      isPk: input.isPk,
+      isPk,
       ourGoal: input.ourGoal,
       eventNotes: input.eventNotes,
     })

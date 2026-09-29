@@ -52,12 +52,7 @@ export function emptyTeamBoxScoreTotals(): TeamBoxScoreTotals {
   }
 }
 
-export function applyTeamBoxScoreEvent(
-  totals: TeamBoxScoreTotals,
-  eventType: string,
-  isPk?: boolean | null,
-): void {
-  if (isPk && (eventType === 'goal' || eventType === 'opponent_goal')) return
+export function applyTeamBoxScoreEvent(totals: TeamBoxScoreTotals, eventType: string): void {
   switch (eventType) {
     case 'goal':
       totals.homeGoals += 1

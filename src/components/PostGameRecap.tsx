@@ -50,6 +50,7 @@ import {
   hasTeamShotSaveTotals,
 } from '@/lib/match-shot-save'
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
+import { formatPlayerShots } from '@/lib/shot-reporting'
 import { MatchDetailsEditor, type MatchDetailsSaved } from '@/components/MatchDetailsEditor'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import {
@@ -1027,6 +1028,7 @@ export function PostGameRecap({
                       </p>
                       <p className="text-xs font-semibold text-muted-foreground">
                         Goals {row.goals} · Assists {row.assists}
+                        {row.shots > 0 ? ` · ${formatPlayerShots(row.shots, row.shotsByType)}` : ''}
                         {row.saves > 0 ? ` · Saves ${row.saves}` : ''}
                         {row.yellowCards > 0 || row.redCards > 0
                           ? ` · YC ${row.yellowCards} · RC ${row.redCards}`

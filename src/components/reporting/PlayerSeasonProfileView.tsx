@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
+import { formatPlayerShots, formatShotTypeCounts } from '@/lib/shot-reporting'
 import { formatPlusMinus } from '@/lib/plus-minus'
 import {
   emptyPlayerRatingTrend,
@@ -217,6 +218,17 @@ export function PlayerSeasonProfileView({
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Shots
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-foreground">{stats.shots}</dd>
+              {formatShotTypeCounts(stats.shotsByType) ? (
+                <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                  {formatShotTypeCounts(stats.shotsByType)}
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Yellow Cards
               </dt>
               <dd className="mt-0.5 font-bold tabular-nums text-amber-600">{stats.yellowCards}</dd>
@@ -391,6 +403,7 @@ export function PlayerSeasonProfileView({
                   <p className="mt-1 text-xs font-semibold text-muted-foreground">
                     {formatRecapMinutes(log.minutes)} · {log.positions.join(', ')} · G {log.goals}{' '}
                     · A {log.assists}
+                    {log.shots > 0 ? ` · ${formatPlayerShots(log.shots, log.shotsByType)}` : ''}
                     {log.yellowCards > 0 || log.redCards > 0
                       ? ` · YC ${log.yellowCards} · RC ${log.redCards}`
                       : ''}{' '}

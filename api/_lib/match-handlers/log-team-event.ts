@@ -44,10 +44,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const eventType = teamEventType(input.eventKind, input.side)
-    const playerId =
-      input.eventKind === 'save' && input.side === 'home'
-        ? (input.playerId ?? null)
-        : null
+    const taggable = input.eventKind === 'shot' || input.eventKind === 'save'
+    const taggedPlayerId = input.playerId ?? null
+    const isHomeShot = input.eventKind === 'shot' && input.side === 'home'
+    const isHomeSave = input.eventKind === 'save' && input.side === 'home'
+    const isAwaySave = input.eventKind === 'save' && input.side === 'away'
+    const playerId = isHomeShot || isHomeSave || isAwaySave ? taggedPlayerId : null
+    const pairedShotPlayerId = isAwaySave ? taggedPlayerId : null
+    const eventNotes = taggable ? (input.eventNotes ?? null) : null
     const pairAutoShot = input.eventKind === 'save' && input.pairAutoShot
 
     if (
@@ -55,8 +59,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       (await isDuplicateLiveEvent(auth.supabase, {
         matchId: input.matchId,
         eventType,
-        playerId: null,
+        playerId,
         isPk: false,
+        eventNotes,
       }))
     ) {
       return res.status(200).json({
@@ -75,16 +80,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           event_type: eventType,
           timestamp: input.timestamp,
           formation: input.formation,
+          event_notes: eventNotes,
           is_pk: false,
         },
       ]
       if (pairAutoShot) {
         rows.push({
           match_id: input.matchId,
-          player_id: null,
+          player_id: pairedShotPlayerId,
           event_type: pairedShotType(input.side),
           timestamp: input.timestamp,
           formation: input.formation,
+          event_notes: eventNotes,
           is_pk: false,
         })
       }

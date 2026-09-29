@@ -4,6 +4,7 @@ import { BackToHomeButton } from '@/components/AppNavigation'
 import { PlayingTimeBar, PlayingTimeLegend } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal, playersFromRoster } from '@/components/ParentRecapEmailModal'
 import { loadHistoricalRecapRows, type PlayerRecapReview } from '@/lib/match-recap'
+import { formatPlayerShots } from '@/lib/shot-reporting'
 import { maxPlayingTimeSeconds } from '@/lib/playing-time-bar'
 import {
   formatQualitativeContextSummary,
@@ -345,6 +346,7 @@ export function MatchRecapDetailView({
                           <p className="mt-1.5 text-xs text-muted-foreground">{positionsLabel}</p>
                           <p className="text-xs font-semibold text-muted-foreground">
                             Goals {row.goals} · Assists {row.assists}
+                            {row.shots > 0 ? ` · ${formatPlayerShots(row.shots, row.shotsByType)}` : ''}
                             {row.saves > 0 ? ` · Saves ${row.saves}` : ''}
                             {row.yellowCards > 0 || row.redCards > 0
                               ? ` · YC ${row.yellowCards} · RC ${row.redCards}`

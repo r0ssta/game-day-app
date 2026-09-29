@@ -30,6 +30,7 @@ import {
   rebuildMatchPlayers,
 } from '@/lib/supabase-api'
 import { matchResultBucket } from '@/lib/penalty-kicks'
+import { mergeShotTypeCounts, type ShotTypeCounts } from '@/lib/shot-reporting'
 import type { DbMatch } from '@/types/database'
 import type { RosterPlayer } from '@/types/match'
 
@@ -60,6 +61,8 @@ export type PlayerMatchLog = {
   minutes: number
   goals: number
   assists: number
+  shots: number
+  shotsByType: ShotTypeCounts
   yellowCards: number
   redCards: number
   plusMinus: number
@@ -75,6 +78,8 @@ export type PlayerSeasonStats = {
   averageMinutesPerMatch: number
   goals: number
   assists: number
+  shots: number
+  shotsByType: ShotTypeCounts
   yellowCards: number
   redCards: number
   plusMinus: number
@@ -162,6 +167,8 @@ export function emptyPlayerSeasonStats(playerId: string): PlayerSeasonStats {
     averageMinutesPerMatch: 0,
     goals: 0,
     assists: 0,
+    shots: 0,
+    shotsByType: {},
     yellowCards: 0,
     redCards: 0,
     plusMinus: 0,
@@ -302,6 +309,8 @@ export async function loadSeasonReport(
         const minutes = recap?.totalSeconds ?? stat.total_seconds_played ?? 0
         const goals = recap?.goals ?? 0
         const assists = recap?.assists ?? 0
+        const shots = recap?.shots ?? 0
+        const shotsByType = recap?.shotsByType ?? {}
         const yellowCards = recap?.yellowCards ?? 0
         const redCards = recap?.redCards ?? 0
         const positions =
@@ -325,6 +334,8 @@ export async function loadSeasonReport(
         entry.totalMinutes += minutes
         entry.goals += goals
         entry.assists += assists
+        entry.shots += shots
+        mergeShotTypeCounts(entry.shotsByType, shotsByType)
         entry.yellowCards += yellowCards
         entry.redCards += redCards
         entry.plusMinus += plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0
@@ -383,6 +394,8 @@ export async function loadSeasonReport(
           minutes,
           goals,
           assists,
+          shots,
+          shotsByType,
           yellowCards,
           redCards,
           plusMinus: plusMinusLedger.get(stat.player_id) ?? stat.plus_minus ?? 0,

@@ -8,6 +8,17 @@ import { z } from 'zod'
 export const MatchActionSideSchema = z.enum(['home', 'away'])
 export const MatchTeamEventKindSchema = z.enum(['shot', 'save', 'corner'])
 
+/** Coach-facing labels stored on match_events.event_notes for shots and saves. */
+export const SHOT_TYPES = ['Free Kick', 'PK', 'Short-range', 'Long-range'] as const
+
+export const ShotTypeSchema = z.enum(SHOT_TYPES)
+export type ShotType = z.infer<typeof ShotTypeSchema>
+
+export function parseShotType(notes: string | null | undefined): ShotType | null {
+  const parsed = ShotTypeSchema.safeParse((notes ?? '').trim())
+  return parsed.success ? parsed.data : null
+}
+
 /** Shot / save / corner from the live match dashboard. */
 export const LogTeamEventInputSchema = z.object({
   matchId: z.string().uuid(),
@@ -15,10 +26,12 @@ export const LogTeamEventInputSchema = z.object({
   eventKind: MatchTeamEventKindSchema,
   timestamp: z.number().int().finite(),
   formation: z.string().catch(''),
-  /** Required for home saves so we can attribute the GK; optional otherwise. */
+  /** Home shot taker, home save keeper, or our shooter on an opponent save. */
   playerId: z.string().uuid().nullable().optional(),
   /** When true, also insert the paired auto-shot (save → opposing shot). Default true. */
   pairAutoShot: z.boolean().optional().default(true),
+  /** Optional shot type. Omit or null when the coach skips the tag. */
+  eventNotes: ShotTypeSchema.nullable().optional(),
 })
 
 export type LogTeamEventInput = z.infer<typeof LogTeamEventInputSchema>
@@ -63,19 +76,12 @@ export const LogGoalInputSchema = z
     onFieldPlayerIds: z.array(z.string().uuid()).default([]),
     pairAutoShot: z.boolean().optional().default(true),
     /**
-     * Optional opponent-goal category. Persisted as match_events.event_notes.
-     * Omit or null when the coach skips a reason.
+     * Our goal: optional shot type. Opponent goal: optional category.
+     * Omit or null when the coach skips the tag.
      */
-    eventNotes: OpponentGoalCategorySchema.nullable().optional(),
+    eventNotes: z.string().nullable().optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.ourGoal && !value.scorerId) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'scorerId is required for our goals',
-        path: ['scorerId'],
-      })
-    }
     if (
       value.ourGoal &&
       value.assistPlayerId &&
@@ -86,6 +92,19 @@ export const LogGoalInputSchema = z
         code: 'custom',
         message: 'assistPlayerId cannot equal scorerId',
         path: ['assistPlayerId'],
+      })
+    }
+    if (value.eventNotes == null || value.eventNotes.trim() === '') return
+    const notesOk = value.ourGoal
+      ? parseShotType(value.eventNotes) != null
+      : parseOpponentGoalCategory(value.eventNotes) != null
+    if (!notesOk) {
+      ctx.addIssue({
+        code: 'custom',
+        message: value.ourGoal
+          ? 'eventNotes must be a shot type for our goals'
+          : 'eventNotes must be an opponent-goal category',
+        path: ['eventNotes'],
       })
     }
   })

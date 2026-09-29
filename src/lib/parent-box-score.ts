@@ -7,11 +7,16 @@ import {
   type TeamBoxScoreTotals,
 } from '@/lib/match-shot-save'
 import { assignParentEventPeriodIndexes, type ParentLiveEvent } from '@/lib/parent-hub'
+import { countCornerGoals } from '@/lib/corner-goals'
+import { summarizeMatchShots, type PlayerShotLine, type ShotTypeScoreline } from '@/lib/shot-reporting'
 
 export type ParentTeamBoxScoreModel = {
   periodLabels: string[]
   periods: TeamBoxScoreTotals[]
   total: TeamBoxScoreTotals
+  shotTypes: ShotTypeScoreline[]
+  playerShots: PlayerShotLine[]
+  cornerGoals: { us: number; them: number }
   setupLengthTitle: string
   setupLengthLabel: string
   playedSeconds: number
@@ -128,7 +133,7 @@ export function buildParentTeamBoxScore(
   for (const event of events) {
     const period = periodById.get(event.id) ?? 1
     const bucket = byPeriod.get(period) ?? emptyTeamBoxScoreTotals()
-    applyTeamBoxScoreEvent(bucket, event.eventType, event.isPk)
+    applyTeamBoxScoreEvent(bucket, event.eventType)
     byPeriod.set(period, bucket)
   }
 
@@ -141,11 +146,15 @@ export function buildParentTeamBoxScore(
   const periodLabels = periodColumnLabels(options.totalPeriods, extraCount)
   const periods = periodLabels.map((_, index) => byPeriod.get(index + 1) ?? emptyTeamBoxScoreTotals())
   const playedSeconds = playedByPeriod.reduce((sum, seconds) => sum + seconds, 0)
+  const shots = summarizeMatchShots(events)
 
   return {
     periodLabels,
     periods,
     total,
+    shotTypes: shots.shotTypes,
+    playerShots: shots.playerShots,
+    cornerGoals: countCornerGoals(events),
     setupLengthTitle: options.totalPeriods === 3 ? 'Period length' : 'Half length',
     setupLengthLabel: formatParentSetupLengthLabel(options.halfLengthMinutes),
     playedSeconds,

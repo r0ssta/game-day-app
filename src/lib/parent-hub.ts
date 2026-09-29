@@ -6,7 +6,8 @@ import {
   parseStartingLineupPosition,
   parseTacticalPositionNote,
 } from '@/lib/match-event-notes'
-import { parseOpponentGoalCategory } from '@/schemas/match-actions'
+import { goalIdsFromCorners } from '@/lib/corner-goals'
+import { parseOpponentGoalCategory, parseShotType } from '@/schemas/match-actions'
 import { supabase } from '@/supabaseClient'
 import { ENABLE_PARENT_HUB } from '@/lib/feature-flags'
 import {
@@ -844,6 +845,7 @@ export type ParentTimelineRow =
       sortAt: string
       periodIndex: number
       event: ParentLiveEvent
+      fromCorner?: boolean
     }
   | {
       kind: 'lineup'
@@ -1013,6 +1015,7 @@ export function buildParentTimelineRows(
 ): ParentTimelineRow[] {
   const filtered = hidePairedParentShots(filterParentLiveTimeline(events))
   const periodById = assignParentEventPeriodIndexes(events)
+  const fromCorners = goalIdsFromCorners(events)
   const lineupByPeriod = new Map<number, ParentLiveEvent[]>()
   const switches = synthesizePositionSwitchRows(filtered, periodById)
   const other: ParentLiveEvent[] = []
@@ -1035,6 +1038,7 @@ export function buildParentTimelineRows(
     sortAt: event.createdAt,
     periodIndex: periodById.get(event.id) ?? 1,
     event,
+    fromCorner: fromCorners.has(event.id) || undefined,
   }))
 
   for (const [periodIndex, lineupEvents] of lineupByPeriod) {
@@ -1064,7 +1068,12 @@ export function buildParentTimelineRows(
 export function formatParentEventLine(
   event: ParentLiveEvent,
   opponent: string,
-  options?: { periodIndex?: number; teamName?: string; totalPeriods?: number | null },
+  options?: {
+    periodIndex?: number
+    teamName?: string
+    totalPeriods?: number | null
+    fromCorner?: boolean
+  },
 ): string {
   const periodIndex = options?.periodIndex ?? 1
   const periodPrefix = `${formatFeedPeriodPrefix(periodIndex, options?.totalPeriods)} `
@@ -1083,15 +1092,20 @@ export function formatParentEventLine(
       : `${lineupLabel} · ${name}`
   } else {
     switch (event.eventType) {
-      case 'goal':
-        line = `${minute} GOAL · ${name}${event.isPk ? ' (PK)' : ''}${
-          event.assistPlayerName ? ` · Assist by ${event.assistPlayerName}` : ''
-        }`
+      case 'goal': {
+        const shotType = parseShotType(event.eventNotes) ?? (event.isPk ? 'PK' : null)
+        const who = event.playerName?.trim() || teamLabel
+        const typeBit = shotType ? ` · ${shotType}` : ''
+        const assist = event.assistPlayerName ? ` · Assist by ${event.assistPlayerName}` : ''
+        const cornerBit = options?.fromCorner ? ' · from a corner' : ''
+        line = `${minute} GOAL · ${who}${typeBit}${cornerBit}${assist}`
         break
+      }
       case 'opponent_goal': {
         const category = parseOpponentGoalCategory(event.eventNotes)
         const how = category ? ` · ${category}` : event.isPk ? ' (PK)' : ''
-        line = `${minute} ${opponentLabel} Goal${how}`
+        const cornerBit = options?.fromCorner ? ' · from a corner' : ''
+        line = `${minute} ${opponentLabel} Goal${how}${cornerBit}`
         break
       }
       case 'yellow_card':
@@ -1112,21 +1126,36 @@ export function formatParentEventLine(
         line = `${minute} ${formatPositionSwitchLabel([event])}`
         break
       case 'shot_home':
-        line = `${minute} Shot · ${teamLabel}`
-        break
-      case 'shot_away':
-        line = `${minute} Shot · ${opponentLabel}`
-        break
-      case 'save_home': {
-        const gkName = event.playerName?.trim()
-        line = gkName
-          ? `${minute} Shot by ${opponentLabel}, Save by ${gkName}`
-          : `${minute} Save by ${teamLabel}`
+      case 'shot_away': {
+        const who = event.eventType === 'shot_home' ? teamLabel : opponentLabel
+        const shotType = parseShotType(event.eventNotes)
+        const shooter =
+          shotType && event.eventType === 'shot_home' ? event.playerName?.trim() || null : null
+        const detail = [shotType, shooter].filter(Boolean).join(' · ')
+        line = detail ? `${minute} Shot · ${who} · ${detail}` : `${minute} Shot · ${who}`
         break
       }
-      case 'save_away':
-        line = `${minute} Save by ${opponentLabel}`
+      case 'save_home': {
+        const gkName = event.playerName?.trim()
+        const shotType = parseShotType(event.eventNotes)
+        const typeBit = shotType ? ` · ${shotType}` : ''
+        line = gkName
+          ? `${minute} Shot by ${opponentLabel}${typeBit}, Save by ${gkName}`
+          : `${minute} Save by ${teamLabel}${typeBit}`
         break
+      }
+      case 'save_away': {
+        const shotType = parseShotType(event.eventNotes)
+        const shooter = shotType ? event.playerName?.trim() || null : null
+        if (shooter) {
+          line = `${minute} Shot by ${shooter}${shotType ? ` · ${shotType}` : ''}, Save by ${opponentLabel}`
+        } else {
+          line = shotType
+            ? `${minute} Save by ${opponentLabel} · ${shotType}`
+            : `${minute} Save by ${opponentLabel}`
+        }
+        break
+      }
       case 'corner_home':
         line = `${minute} Corner · ${teamLabel}`
         break
@@ -1173,6 +1202,7 @@ export function formatParentTimelineRowCopy(
       periodIndex: row.periodIndex,
       teamName: options?.teamName,
       totalPeriods: options?.totalPeriods,
+      fromCorner: row.fromCorner,
     }),
   }
 }

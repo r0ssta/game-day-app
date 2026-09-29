@@ -11,6 +11,7 @@ import {
   LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
   parseOpponentGoalCategory,
+  parseShotType,
   LogAvailabilityInputSchema,
   RemoveLastGoalInputSchema,
 } from './match-actions'
@@ -39,7 +40,43 @@ describe('match action Zod schemas', () => {
     expect(parsed.success).toBe(true)
   })
 
-  it('LogGoalInputSchema requires scorerId for our goals', () => {
+  it('LogTeamEventInputSchema accepts a tagged home shot', () => {
+    const parsed = LogTeamEventInputSchema.safeParse({
+      matchId: VALID_UUID,
+      side: 'home',
+      eventKind: 'shot',
+      timestamp: 12,
+      formation: '4-3-3',
+      pairAutoShot: false,
+      playerId: VALID_UUID,
+      eventNotes: 'Free Kick',
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.eventNotes).toBe('Free Kick')
+      expect(parsed.data.playerId).toBe(VALID_UUID)
+    }
+  })
+
+  it('LogTeamEventInputSchema rejects an unknown shot type', () => {
+    const parsed = LogTeamEventInputSchema.safeParse({
+      matchId: VALID_UUID,
+      side: 'home',
+      eventKind: 'shot',
+      timestamp: 12,
+      formation: '4-3-3',
+      eventNotes: 'Header',
+    })
+    expect(parsed.success).toBe(false)
+  })
+
+  it('parseShotType accepts known labels only', () => {
+    expect(parseShotType('PK')).toBe('PK')
+    expect(parseShotType('Header')).toBeNull()
+    expect(parseShotType(null)).toBeNull()
+  })
+
+  it('LogGoalInputSchema accepts our goal with a shot type and no scorer', () => {
     const parsed = LogGoalInputSchema.safeParse({
       matchId: VALID_UUID,
       ourGoal: true,
@@ -48,6 +85,22 @@ describe('match action Zod schemas', () => {
       formation: '4-3-3',
       homeScoreBefore: 0,
       awayScoreBefore: 0,
+      eventNotes: 'Short-range',
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data.eventNotes).toBe('Short-range')
+  })
+
+  it('LogGoalInputSchema rejects an opponent category on our goal', () => {
+    const parsed = LogGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      ourGoal: true,
+      isPk: false,
+      timestamp: 10,
+      formation: '4-3-3',
+      homeScoreBefore: 0,
+      awayScoreBefore: 0,
+      eventNotes: 'Great Play',
     })
     expect(parsed.success).toBe(false)
   })

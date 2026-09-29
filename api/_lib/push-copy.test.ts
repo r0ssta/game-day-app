@@ -17,6 +17,19 @@ describe('buildGoalPush', () => {
     expect(push.body).toContain('1–0')
   })
 
+  it('includes the shot type on our goals', () => {
+    const push = buildGoalPush({
+      teamName: 'Velocity',
+      opponent: 'Rivals',
+      homeScore: 1,
+      awayScore: 0,
+      scorerLabel: 'Brooks',
+      ourGoal: true,
+      eventNotes: 'Free Kick',
+    })
+    expect(push.body).toBe('Brooks · Free Kick · 1–0 vs Rivals')
+  })
+
   it('uses conceded copy for opponent goals, including PKs', () => {
     const push = buildGoalPush({
       teamName: 'Velocity',

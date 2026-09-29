@@ -17,6 +17,10 @@ export const CHANGELOG: ChangelogRelease[] = [
     features: [
       'Players marked out stay at the bottom of the pitch so you can bring them onto the bench',
       'Tap a bench player to mark them out — injured, left early, or no reason',
+      'Tag a shot or save as a free kick, penalty, short-range, or long-range try, and who took it',
+      'Recaps and season reporting show those shot types, and which of our players took them',
+      'Goals use the same shot types: free kick, penalty, short-range, or long-range',
+      'A goal within a minute of that team’s corner is tracked as from a corner',
     ],
   },
   {

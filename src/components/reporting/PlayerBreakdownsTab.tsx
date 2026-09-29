@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronRight, Users } from 'lucide-react'
 import { formatRecapMinutes } from '@/lib/match-recap'
+import { formatPlayerShots } from '@/lib/shot-reporting'
 import { formatPlusMinus } from '@/lib/plus-minus'
 import { formatPlayerFullName } from '@/lib/player-names'
 import { formatPlayerRating } from '@/lib/player-rating'
@@ -64,7 +65,9 @@ function PlayerRow({
         <span className="block truncate text-sm font-bold text-foreground">{name}</span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
           {stats.matchesPlayed} matches · {formatRecapMinutes(stats.totalMinutes)} · {stats.goals}{' '}
-          G · {stats.assists} A · {stats.yellowCards} YC · {stats.redCards} RC
+          G · {stats.assists} A
+          {stats.shots > 0 ? ` · ${formatPlayerShots(stats.shots, stats.shotsByType)}` : ''} ·{' '}
+          {stats.yellowCards} YC · {stats.redCards} RC
         </span>
         <span className="mt-0.5 block text-xs text-muted-foreground">
           {stats.ratingSampleSize > 0

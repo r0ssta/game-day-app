@@ -58,6 +58,25 @@ describe('formatParentEventLine', () => {
     expect(formatParentEventLine(event({ id: 's', eventType: 'shot_away' }), 'Rivals', names)).toBe(
       `1H 2' Shot · Rivals${clock}`,
     )
+    expect(
+      formatParentEventLine(
+        event({
+          id: 's',
+          eventType: 'shot_home',
+          eventNotes: 'Free Kick',
+          playerName: 'Maya',
+        }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' Shot · U11 Blitz · Free Kick · Maya${clock}`)
+    expect(
+      formatParentEventLine(
+        event({ id: 'sv', eventType: 'save_home', playerName: 'Maya', eventNotes: 'Long-range' }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' Shot by Rivals · Long-range, Save by Maya${clock}`)
     expect(formatParentEventLine(event({ id: 'c', eventType: 'corner_home' }), 'Rivals', names)).toBe(
       `1H 2' Corner · U11 Blitz${clock}`,
     )
@@ -77,6 +96,13 @@ describe('formatParentEventLine', () => {
     expect(formatParentEventLine(event({ id: 'sv', eventType: 'save_away' }), 'Rivals', names)).toBe(
       `1H 2' Save by Rivals${clock}`,
     )
+    expect(
+      formatParentEventLine(
+        event({ id: 'sv', eventType: 'save_away', eventNotes: 'PK', playerName: 'Maya' }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' Shot by Maya · PK, Save by Rivals${clock}`)
   })
 
   it('includes the position on a sub in', () => {
@@ -138,6 +164,21 @@ describe('formatParentEventLine', () => {
     ).toBe(`1H 2' GOAL · Ada · Assist by Bess${clock}`)
   })
 
+  it('includes the shot type on a tagged goal', () => {
+    expect(
+      formatParentEventLine(
+        event({
+          id: 'g',
+          eventType: 'goal',
+          eventNotes: 'Short-range',
+          assistPlayerName: 'Bess',
+        }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' GOAL · Ada · Short-range · Assist by Bess${clock}`)
+  })
+
   it('renders a PK attempt on the live feed', () => {
     expect(
       formatParentEventLine(
@@ -167,6 +208,29 @@ describe('hidePairedParentShots', () => {
 })
 
 describe('buildParentTimelineRows', () => {
+  it('marks a goal that follows that team’s corner within a minute', () => {
+    const rows = buildParentTimelineRows([
+      event({
+        id: 'corner',
+        eventType: 'corner_home',
+        timestamp: 600,
+        createdAt: '2026-09-02T18:10:00.000Z',
+      }),
+      event({
+        id: 'goal',
+        eventType: 'goal',
+        timestamp: 620,
+        playerName: 'Ada',
+        createdAt: '2026-09-02T18:10:20.000Z',
+      }),
+    ])
+    const goal = rows.find((row) => row.id === 'goal')
+    expect(goal?.kind).toBe('event')
+    if (goal?.kind !== 'event') return
+    expect(goal.fromCorner).toBe(true)
+    expect(formatParentTimelineRowCopy(goal, 'Rivals').title).toContain('from a corner')
+  })
+
   it('emits a half-ended card from period_end sub-offs even before full time', () => {
     const rows = buildParentTimelineRows(
       [

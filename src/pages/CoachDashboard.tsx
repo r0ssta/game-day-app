@@ -32,6 +32,11 @@ import { formatTeamDisplayName } from '@/lib/age-groups'
 import { resolveTeamAgeGroup } from '@/lib/season-roster'
 import type { ReportingTab } from '@/components/reporting/ReportingTabBar'
 import type { GoalWizardStep, GoalWizardTeam } from '@/components/GoalWizardModal'
+import type {
+  ShotSaveTagKind,
+  ShotSaveTagSide,
+  ShotSaveTagStep,
+} from '@/components/ShotSaveTagSheet'
 import { OpponentGoalCategorySheet } from '@/components/OpponentGoalCategorySheet'
 import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { useGameDayApp } from '@/hooks/useGameDayApp'
@@ -84,6 +89,7 @@ import {
   freezeFirstHalfStarters,
   stampAllOnField,
 } from '@/lib/play-time'
+import { isWithinCornerGoalWindow } from '@/lib/corner-goals'
 import {
   elapsedInHalf,
   formatClock,
@@ -111,7 +117,7 @@ import {
   type AvailabilityChange,
 } from '@/lib/match-availability'
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
-import { assertMatchActionOk, type OpponentGoalCategory } from '@/schemas/match-actions'
+import { assertMatchActionOk, type OpponentGoalCategory, type ShotType } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { liveEventDedupeKey, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
 import {
@@ -173,6 +179,9 @@ const PenaltyShootoutScreen = lazyWithChunkReload(() =>
 )
 const GoalWizardModal = lazyWithChunkReload(() =>
   import('@/components/GoalWizardModal').then((m) => ({ default: m.GoalWizardModal })),
+)
+const ShotSaveTagSheet = lazyWithChunkReload(() =>
+  import('@/components/ShotSaveTagSheet').then((m) => ({ default: m.ShotSaveTagSheet })),
 )
 const CardWizardModal = lazyWithChunkReload(() =>
   import('@/components/CardWizardModal').then((m) => ({ default: m.CardWizardModal })),
@@ -487,10 +496,16 @@ export function CoachDashboard() {
   const [recapReturnMode, setRecapReturnMode] = useState<
     'home' | 'recap_history' | 'reporting' | null
   >(null)
+  const [shotSaveTag, setShotSaveTag] = useState<{
+    kind: ShotSaveTagKind
+    side: ShotSaveTagSide
+    step: ShotSaveTagStep
+    shotType: ShotType | null
+  } | null>(null)
   const [goalWizardOpen, setGoalWizardOpen] = useState(false)
   const [goalWizardTeam, setGoalWizardTeam] = useState<GoalWizardTeam>('us')
-  const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>('goal_type')
-  const [goalIsPk, setGoalIsPk] = useState(false)
+  const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>('type')
+  const [goalShotType, setGoalShotType] = useState<ShotType | null>(null)
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
   const [opponentGoalSheetOpen, setOpponentGoalSheetOpen] = useState(false)
   const [cardWizardOpen, setCardWizardOpen] = useState(false)
@@ -717,6 +732,11 @@ export function CoachDashboard() {
 
   const clockSyncRef = useRef(seconds)
   const endWhistleSecondsRef = useRef<number | null>(null)
+  const lastCornerElapsedRef = useRef<{
+    period: number
+    home: number | null
+    away: number | null
+  }>({ period: 0, home: null, away: null })
 
   useEffect(() => {
     clockSyncRef.current = seconds
@@ -804,8 +824,8 @@ export function CoachDashboard() {
       void refreshPendingReviewMatches()
       setGoalWizardOpen(false)
       setGoalWizardTeam('us')
-      setGoalWizardStep('goal_type')
-      setGoalIsPk(false)
+      setGoalWizardStep('type')
+      setGoalShotType(null)
       setGoalScorerId(null)
       setOpponentGoalSheetOpen(false)
       setQaSpeedMultiplier(1)
@@ -2158,15 +2178,15 @@ export function CoachDashboard() {
   const closeGoalWizard = useCallback(() => {
     setGoalWizardOpen(false)
     setGoalWizardTeam('us')
-    setGoalWizardStep('goal_type')
-    setGoalIsPk(false)
+    setGoalWizardStep('type')
+    setGoalShotType(null)
     setGoalScorerId(null)
   }, [])
 
   const openGoalWizard = useCallback((team: GoalWizardTeam = 'us') => {
     setGoalWizardTeam(team)
-    setGoalWizardStep('goal_type')
-    setGoalIsPk(false)
+    setGoalWizardStep('type')
+    setGoalShotType(null)
     setGoalScorerId(null)
     setGoalWizardOpen(true)
   }, [])
@@ -2293,6 +2313,8 @@ export function CoachDashboard() {
         timestamp?: number
         /** When false, skip network (used when goal API already paired the shot). */
         persist?: boolean
+        shotType?: ShotType | null
+        playerId?: string | null
       },
     ) => {
       if (!matchId || !periodClockStarted) return
@@ -2309,14 +2331,25 @@ export function CoachDashboard() {
       } else {
         setAwayShots((n) => n + 1)
       }
+      const taggedPlayer =
+        options?.playerId != null ? players.find((player) => player.id === options.playerId) : null
+      const playerBit = taggedPlayer
+        ? formatPlayerLabel(
+            taggedPlayer,
+            buildSidelineNameMap(players.filter((player) => player.attending)),
+          )
+        : null
+      const detail = [options?.shotType, playerBit].filter(Boolean).join(' · ')
+      const sideLabel = side === 'home' ? 'Home' : 'Away'
+      const shotToast = detail ? `Shot · ${sideLabel} · ${detail}` : `Shot · ${sideLabel}`
       if (options?.persist === false) {
         if (!options?.silent) {
-          setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+          setToast(shotToast)
         }
         return
       }
       if (!options?.silent) {
-        setToast(side === 'home' ? 'Shot · Home' : 'Shot · Away')
+        setToast(shotToast)
       }
       void runOptimisticSync(
         async () => {
@@ -2327,6 +2360,8 @@ export function CoachDashboard() {
             timestamp: eventTimestamp,
             formation: activeFormation,
             pairAutoShot: false,
+            playerId: side === 'home' ? (options?.playerId ?? null) : null,
+            eventNotes: options?.shotType ?? null,
           })
           assertMatchActionOk(result)
           if (result.deduped) {
@@ -2351,16 +2386,12 @@ export function CoachDashboard() {
       seconds,
       halfLengthMinutes,
       activeFormation,
+      players,
       setHomeShots,
       setAwayShots,
       setToast,
       runOptimisticSync,
     ],
-  )
-
-  const commitTeamShot = useCallback(
-    (side: 'home' | 'away') => logTeamShot(side),
-    [logTeamShot],
   )
 
   const removeLastGoal = useCallback(
@@ -2397,6 +2428,17 @@ export function CoachDashboard() {
     [matchId, appMode, setHomeScore, setAwayScore, setHomeShots, setAwayShots, setPlayers, setToast],
   )
 
+  const goalFollowsCorner = useCallback(
+    (side: 'home' | 'away', goalTimestamp: number) => {
+      const corners = lastCornerElapsedRef.current
+      if (corners.period !== currentPeriod) return false
+      const cornerAt = side === 'home' ? corners.home : corners.away
+      if (cornerAt == null) return false
+      return isWithinCornerGoalWindow(goalTimestamp, cornerAt)
+    },
+    [currentPeriod],
+  )
+
   const commitOpponentGoal = useCallback(
     (category?: OpponentGoalCategory | null) => {
       if (!matchId) return
@@ -2420,10 +2462,16 @@ export function CoachDashboard() {
         persist: false,
       })
       setPlayers((prev) => applyPlusMinusDelta(prev, -1))
+      const fromCorner = goalFollowsCorner('away', eventTimestamp)
       setToast(
-        category
-          ? `Opponent goal · ${category} · ${opponentLabel} ${awayBefore + 1}`
-          : `Opponent goal · ${opponentLabel} ${awayBefore + 1}`,
+        [
+          'Opponent goal',
+          category,
+          fromCorner ? 'from a corner' : null,
+          `${opponentLabel} ${awayBefore + 1}`,
+        ]
+          .filter(Boolean)
+          .join(' · '),
       )
 
       void runOptimisticSync(
@@ -2481,6 +2529,7 @@ export function CoachDashboard() {
       logTeamShot,
       setToast,
       runOptimisticSync,
+      goalFollowsCorner,
     ],
   )
 
@@ -2488,6 +2537,14 @@ export function CoachDashboard() {
     (side: 'home' | 'away') => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const corners = lastCornerElapsedRef.current
+      if (corners.period !== currentPeriod) {
+        corners.period = currentPeriod
+        corners.home = null
+        corners.away = null
+      }
+      if (side === 'home') corners.home = eventTimestamp
+      else corners.away = eventTimestamp
       if (side === 'home') {
         setHomeCorners((n) => n + 1)
       } else {
@@ -2528,25 +2585,44 @@ export function CoachDashboard() {
       setAwayCorners,
       setToast,
       runOptimisticSync,
+      currentPeriod,
     ],
   )
 
   const commitTeamSave = useCallback(
-    (side: 'home' | 'away') => {
+    (
+      side: 'home' | 'away',
+      tag?: { shotType: ShotType | null; playerId: string | null },
+    ) => {
       if (!matchId || !periodClockStarted) return
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const shotType = tag?.shotType ?? null
       const gk = side === 'home' ? findActiveOnFieldGoalkeeper(players) : null
+      const shooter =
+        side === 'away' && tag?.playerId
+          ? (players.find((player) => player.id === tag.playerId) ?? null)
+          : null
 
       if (side === 'away') {
         setAwaySaves((n) => n + 1)
-        setToast('Save · Away')
+        const shooterBit = shooter
+          ? formatPlayerLabel(
+              shooter,
+              buildSidelineNameMap(players.filter((player) => player.attending)),
+            )
+          : null
+        const detail = [shotType, shooterBit].filter(Boolean).join(' · ')
+        setToast(detail ? `Save · Away · ${detail}` : 'Save · Away')
       } else {
         setHomeSaves((n) => n + 1)
         if (gk) {
           const label = formatPlayerFullName(gk.firstName, gk.lastName)
-          setToast(`Save · ${gk.number != null ? `#${gk.number} ` : ''}${label}`)
+          const who = `${gk.number != null ? `#${gk.number} ` : ''}${label}`
+          setToast(shotType ? `Save · ${who} · ${shotType}` : `Save · ${who}`)
         } else {
-          setToast('Save · Home (no GK on pitch)')
+          setToast(
+            shotType ? `Save · Home · ${shotType}` : 'Save · Home (no GK on pitch)',
+          )
         }
       }
 
@@ -2565,7 +2641,8 @@ export function CoachDashboard() {
               eventKind: 'save',
               timestamp: eventTimestamp,
               formation: activeFormation,
-              playerId: gk?.id ?? null,
+              playerId: side === 'home' ? (gk?.id ?? null) : (shooter?.id ?? null),
+              eventNotes: shotType,
               pairAutoShot: true,
             }),
           )
@@ -2603,13 +2680,75 @@ export function CoachDashboard() {
     ],
   )
 
+  const openShotSaveTag = useCallback(
+    (kind: ShotSaveTagKind, side: ShotSaveTagSide) => {
+      if (!matchId || !periodClockStarted) return
+      setShotSaveTag({ kind, side, step: 'type', shotType: null })
+    },
+    [matchId, periodClockStarted],
+  )
+
+  const closeShotSaveTag = useCallback(() => {
+    if (shotSaveTag?.step === 'player' && shotSaveTag.shotType) {
+      const { kind, side, shotType } = shotSaveTag
+      setShotSaveTag(null)
+      if (kind === 'shot') logTeamShot(side, { shotType, playerId: null })
+      else commitTeamSave(side, { shotType, playerId: null })
+      return
+    }
+    setShotSaveTag(null)
+  }, [shotSaveTag, logTeamShot, commitTeamSave])
+
+  const handleSelectShotType = useCallback(
+    (shotType: ShotType) => {
+      if (!shotSaveTag) return
+      const askForShooter =
+        (shotSaveTag.kind === 'shot' && shotSaveTag.side === 'home') ||
+        (shotSaveTag.kind === 'save' && shotSaveTag.side === 'away')
+      if (!askForShooter) {
+        const { kind, side } = shotSaveTag
+        setShotSaveTag(null)
+        if (kind === 'shot') logTeamShot(side, { shotType, playerId: null })
+        else commitTeamSave(side, { shotType, playerId: null })
+        return
+      }
+      setShotSaveTag({ ...shotSaveTag, step: 'player', shotType })
+    },
+    [shotSaveTag, logTeamShot, commitTeamSave],
+  )
+
+  const handleDontTagShotSave = useCallback(() => {
+    if (!shotSaveTag) return
+    const { kind, side, step, shotType } = shotSaveTag
+    setShotSaveTag(null)
+    if (step === 'type') {
+      if (kind === 'shot') logTeamShot(side)
+      else commitTeamSave(side, { shotType: null, playerId: null })
+      return
+    }
+    if (kind === 'shot') logTeamShot(side, { shotType, playerId: null })
+    else commitTeamSave(side, { shotType, playerId: null })
+  }, [shotSaveTag, logTeamShot, commitTeamSave])
+
+  const handleSelectShotSavePlayer = useCallback(
+    (playerId: string) => {
+      if (!shotSaveTag?.shotType) return
+      const { kind, side, shotType } = shotSaveTag
+      setShotSaveTag(null)
+      if (kind === 'shot') logTeamShot(side, { shotType, playerId })
+      else commitTeamSave(side, { shotType, playerId })
+    },
+    [shotSaveTag, logTeamShot, commitTeamSave],
+  )
+
   const commitOurGoal = useCallback(
-    (scorerId: string, assistPlayerId: string | null, isPk: boolean) => {
+    (scorerId: string | null, assistPlayerId: string | null, shotType: ShotType | null) => {
       if (!matchId) return
 
-      const scorer = players.find((p) => p.id === scorerId)
-      if (!scorer) return
-      if (assistPlayerId === scorerId) return
+      const isPk = shotType === 'PK'
+      const scorer = scorerId ? players.find((p) => p.id === scorerId) : null
+      if (scorerId && !scorer) return
+      if (assistPlayerId && assistPlayerId === scorerId) return
       if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'home']))) {
         setToast('Already recorded')
         closeGoalWizard()
@@ -2618,11 +2757,13 @@ export function CoachDashboard() {
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const assistPlayer =
-        !isPk && assistPlayerId ? players.find((p) => p.id === assistPlayerId) : null
+        scorer && !isPk && assistPlayerId ? players.find((p) => p.id === assistPlayerId) : null
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
-      const scorerLabel = formatPlayerLabel(scorer, sidelineMap)
+      const scorerLabel = scorer ? formatPlayerLabel(scorer, sidelineMap) : null
       const assistLabel = assistPlayer ? formatPlayerLabel(assistPlayer, sidelineMap) : null
-      const detail = isPk ? 'PK' : assistLabel ? assistLabel : 'Unassisted'
+      const detail = [scorerLabel, shotType, assistLabel ? `assist ${assistLabel}` : null]
+        .filter(Boolean)
+        .join(' · ')
       const onFieldPlayerIds = players
         .filter((p) => p.attending && p.isOnField)
         .map((p) => p.id)
@@ -2634,9 +2775,13 @@ export function CoachDashboard() {
         silent: true,
         timestamp: eventTimestamp,
         persist: false,
+        shotType,
+        playerId: scorerId,
       })
       setPlayers((prev) => applyPlusMinusDelta(prev, 1))
-      setToast(`Goal · ${scorerLabel} (${detail})`)
+      const fromCorner = goalFollowsCorner('home', eventTimestamp)
+      const goalDetail = [detail, fromCorner ? 'from a corner' : null].filter(Boolean).join(' · ')
+      setToast(goalDetail ? `Goal · ${goalDetail}` : 'Goal')
       closeGoalWizard()
 
       void runOptimisticSync(
@@ -2646,8 +2791,8 @@ export function CoachDashboard() {
             ourGoal: true,
             isPk,
             scorerId,
-            assistPlayerId: isPk ? null : assistPlayerId,
-            scorerLabel,
+            assistPlayerId: scorer && !isPk ? assistPlayerId : null,
+            scorerLabel: scorerLabel ?? undefined,
             assistLabel,
             timestamp: eventTimestamp,
             formation: activeFormation,
@@ -2658,6 +2803,7 @@ export function CoachDashboard() {
             teamSlug: activeTeamSlug,
             onFieldPlayerIds,
             pairAutoShot: true,
+            eventNotes: shotType,
           })
           assertMatchActionOk(result)
           setHomeScore(result.homeScore)
@@ -2698,13 +2844,34 @@ export function CoachDashboard() {
       logTeamShot,
       setToast,
       runOptimisticSync,
+      goalFollowsCorner,
     ],
   )
 
-  const handleSelectGoalType = useCallback((isPk: boolean) => {
-    setGoalIsPk(isPk)
+  const handleSelectGoalType = useCallback((shotType: ShotType) => {
+    setGoalShotType(shotType)
     setGoalWizardStep('scorer')
   }, [])
+
+  const handleDontTagGoal = useCallback(() => {
+    if (goalWizardStep === 'type') {
+      commitOurGoal(null, null, null)
+      return
+    }
+    commitOurGoal(null, null, goalShotType)
+  }, [goalWizardStep, goalShotType, commitOurGoal])
+
+  const closeGoalWizardFromSheet = useCallback(() => {
+    if (goalWizardStep === 'scorer') {
+      commitOurGoal(null, null, goalShotType)
+      return
+    }
+    if (goalWizardStep === 'assist' && goalScorerId) {
+      commitOurGoal(goalScorerId, null, goalShotType)
+      return
+    }
+    closeGoalWizard()
+  }, [goalWizardStep, goalShotType, goalScorerId, commitOurGoal, closeGoalWizard])
 
   const handleOpponentGoalCategory = useCallback(
     (category?: OpponentGoalCategory | null) => {
@@ -2717,21 +2884,21 @@ export function CoachDashboard() {
   const handleSelectGoalScorer = useCallback(
     (player: MatchPlayer) => {
       setGoalScorerId(player.id)
-      if (goalIsPk) {
-        commitOurGoal(player.id, null, true)
+      if (goalShotType === 'PK') {
+        commitOurGoal(player.id, null, goalShotType)
         return
       }
       setGoalWizardStep('assist')
     },
-    [goalIsPk, commitOurGoal],
+    [goalShotType, commitOurGoal],
   )
 
   const handleCompleteGoal = useCallback(
     (assistPlayerId: string | null) => {
       if (!goalScorerId) return
-      commitOurGoal(goalScorerId, assistPlayerId, goalIsPk)
+      commitOurGoal(goalScorerId, assistPlayerId, goalShotType)
     },
-    [goalScorerId, goalIsPk, commitOurGoal],
+    [goalScorerId, goalShotType, commitOurGoal],
   )
 
   const handlePkGkPlayerChange = useCallback(
@@ -3457,8 +3624,8 @@ export function CoachDashboard() {
         onLogGoal={() => openGoalWizard('us')}
         onOpponentGoal={() => setOpponentGoalSheetOpen(true)}
         onRemoveGoal={(side) => void removeLastGoal(side)}
-        onLogShot={commitTeamShot}
-        onLogSave={commitTeamSave}
+        onLogShot={(side) => openShotSaveTag('shot', side)}
+        onLogSave={(side) => openShotSaveTag('save', side)}
         onLogCorner={commitTeamCorner}
         onLogCard={() => setCardWizardOpen(true)}
         onShareStatTracker={
@@ -3551,19 +3718,37 @@ export function CoachDashboard() {
         ) : null}
       </StickyMatchActionBar>
 
+      {shotSaveTag ? (
+        <ModalSuspense>
+          <ShotSaveTagSheet
+            open
+            kind={shotSaveTag.kind}
+            side={shotSaveTag.side}
+            step={shotSaveTag.step}
+            shotType={shotSaveTag.shotType}
+            players={players}
+            onSelectType={handleSelectShotType}
+            onSelectPlayer={handleSelectShotSavePlayer}
+            onDontTag={handleDontTagShotSave}
+            onClose={closeShotSaveTag}
+          />
+        </ModalSuspense>
+      ) : null}
+
       {goalWizardOpen ? (
         <ModalSuspense>
           <GoalWizardModal
             open={goalWizardOpen}
             team={goalWizardTeam}
             step={goalWizardStep}
-            isPk={goalIsPk}
+            shotType={goalShotType}
             players={players}
             scorerId={goalScorerId}
-            onSelectGoalType={handleSelectGoalType}
+            onSelectType={handleSelectGoalType}
             onSelectScorer={handleSelectGoalScorer}
             onSelectAssist={handleCompleteGoal}
-            onClose={closeGoalWizard}
+            onDontTag={handleDontTagGoal}
+            onClose={closeGoalWizardFromSheet}
           />
         </ModalSuspense>
       ) : null}

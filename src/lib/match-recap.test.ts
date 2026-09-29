@@ -441,6 +441,46 @@ describe('aggregatePlayerRecaps', () => {
     expect(stats.get('p1')?.totalSeconds).toBe(2106 + 2088)
     expect(stats.get('p2')?.totalSeconds).toBe(600)
   })
+
+  it('credits our shooter on shot_home, including a paired opponent save, and ignores their shots', () => {
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'shot_home',
+          timestamp: 100,
+          event_notes: 'Short-range',
+          created_at: '2026-09-06T12:32:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'save_away',
+          timestamp: 200,
+          event_notes: 'PK',
+          created_at: '2026-09-06T12:33:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'shot_home',
+          timestamp: 200,
+          event_notes: 'PK',
+          created_at: '2026-09-06T12:33:01.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'shot_away',
+          timestamp: 300,
+          event_notes: 'Free Kick',
+          created_at: '2026-09-06T12:34:00.000Z',
+          player_id: 'p2',
+        }),
+      ],
+      30 * 60,
+    )
+
+    expect(stats.get('p1')?.shots).toBe(2)
+    expect(stats.get('p1')?.shotsByType).toEqual({ 'Short-range': 1, PK: 1 })
+    expect(stats.get('p1')?.saves).toBe(0)
+  })
 })
 
 function recapPlayer(
@@ -484,6 +524,8 @@ describe('resolveRecapRoleSeconds', () => {
           positions: ['ST', 'GK'],
           goals: 0,
           assists: 0,
+          shots: 0,
+          shotsByType: {},
           saves: 0,
           yellowCards: 0,
           redCards: 0,
@@ -510,6 +552,8 @@ describe('resolveRecapRoleSeconds', () => {
           positions: ['ST', 'GK'],
           goals: 0,
           assists: 0,
+          shots: 0,
+          shotsByType: {},
           saves: 0,
           yellowCards: 0,
           redCards: 0,
@@ -548,6 +592,8 @@ describe('buildRecapRows', () => {
             positions: ['GK'],
             goals: 0,
             assists: 0,
+            shots: 0,
+            shotsByType: {},
             saves: 2,
             yellowCards: 0,
             redCards: 0,
