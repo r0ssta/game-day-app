@@ -5,6 +5,7 @@ import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
 import { PlayingTimeBar, PlayingTimeLegend } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal } from '@/components/ParentRecapEmailModal'
 import { QualitativeContextFields } from '@/components/QualitativeContextFields'
+import { includeInMatchRecord } from '@/lib/match-availability'
 import {
   aggregatePlayerRecaps,
   buildRecapRows,
@@ -244,7 +245,7 @@ export function PostGameRecap({
         const recapStats = aggregatePlayerRecaps(
           events,
           resolvePeriodLengthMinutes(loadedMatch, halfLengthMinutes) * 60,
-          new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
+          new Map(players.filter((p) => includeInMatchRecord(p)).map((player) => [player.id, player])),
         )
         const savedReviews = indexSavedReviews(existingReviews)
         const recapRows = buildRecapRows(players, recapStats, savedReviews)
@@ -296,7 +297,7 @@ export function PostGameRecap({
     const recapStats = aggregatePlayerRecaps(
       events,
       halfLengthMinutes * 60,
-      new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
+      new Map(players.filter((p) => includeInMatchRecord(p)).map((player) => [player.id, player])),
     )
     setEventStats(recapStats)
     setMicroStats(aggregateMicroStats(events))
@@ -816,7 +817,7 @@ export function PostGameRecap({
             const recapStats = aggregatePlayerRecaps(
               matchEvents,
               next.periodLengthMinutes * 60,
-              new Map(players.filter((p) => p.attending).map((player) => [player.id, player])),
+              new Map(players.filter((p) => includeInMatchRecord(p)).map((player) => [player.id, player])),
             )
             setEventStats(recapStats)
             onMatchDetailsSaved?.(next)

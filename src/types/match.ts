@@ -1,5 +1,8 @@
 export type Impact = 'neutral' | 'positive' | 'negative'
 
+/** Why a player left the match after being marked in. */
+export type AbsenceReason = 'injured' | 'left_early'
+
 /** Top-level app views: home → team | match_setup | reporting | recap_history | impact → match | halftime | penalty_shootout → recap → home */
 export type AppMode =
   | 'home'
@@ -60,6 +63,8 @@ export type MatchPlayer = RosterPlayer & {
   yellowCardCount: number
   /** True after a red card — locked out of the bench for the rest of the match. */
   isSentOff: boolean
+  /** Set when they are marked out mid-match. Cleared when they come back to the bench. */
+  absenceReason?: AbsenceReason | null
 }
 
 export type MatchSetupConfig = {

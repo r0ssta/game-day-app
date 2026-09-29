@@ -57,9 +57,7 @@ export function aggregateParentRecapPlayerLines(
     events,
     halfLengthSeconds,
     new Map(
-      players
-        .filter((player) => player.attending !== false)
-        .map((player) => [player.id, { matchPosition: player.matchPosition }]),
+      players.map((player) => [player.id, { matchPosition: player.matchPosition }]),
     ),
   )
 

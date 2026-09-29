@@ -292,7 +292,7 @@ export async function loadSeasonReport(
       }
 
       for (const stat of stats) {
-        if (!stat.attending) continue
+        if (!stat.attending && (stat.total_seconds_played ?? 0) <= 0) continue
 
         const entry = playerStats.get(stat.player_id)
         if (!entry) continue

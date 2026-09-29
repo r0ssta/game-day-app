@@ -2365,3 +2365,17 @@ alter table public.match_events
 -- Position micro-shift merge: see supabase-position-micro-shift-migration.sql
 -- Absolute period clock: see supabase-match-period-start-time-migration.sql
 -- Weighted Performance Index: see supabase-player-impact-wpi-migration.sql
+
+-- Mid-match absence reason
+alter table public.match_stats
+  add column if not exists absence_reason text;
+
+alter table public.match_stats
+  drop constraint if exists match_stats_absence_reason_check;
+
+alter table public.match_stats
+  add constraint match_stats_absence_reason_check
+  check (
+    absence_reason is null
+    or absence_reason in ('injured', 'left_early')
+  );

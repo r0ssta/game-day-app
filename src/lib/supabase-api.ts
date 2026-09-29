@@ -14,6 +14,7 @@ import {
   rosterProfilePositionToLegacy,
 } from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
+import { parseAbsenceReason } from '@/lib/match-availability'
 import { allocateSecondsByRole, createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso, formatMatchDisplayDateTime } from '@/lib/match-schedule'
@@ -310,6 +311,7 @@ export function statToMatchPlayer(roster: RosterPlayer, stat: DbMatchStat): Matc
     plusMinus: stat.plus_minus ?? 0,
     yellowCardCount: 0,
     isSentOff: Boolean(stat.is_sent_off),
+    absenceReason: parseAbsenceReason(stat.absence_reason),
   }
 }
 
@@ -335,6 +337,7 @@ export function matchPlayerToStatPayload(matchId: string, player: MatchPlayer) {
     plus_minus: player.plusMinus,
     is_match_guest: player.isGuest,
     is_sent_off: player.isSentOff,
+    absence_reason: player.absenceReason ?? null,
   }
 }
 
@@ -527,7 +530,7 @@ export type PlayerMatchAppearanceRow = {
   match: DbMatch
 }
 
-/** Completed matches where the player was marked attending. */
+/** Completed matches the player attended or played in before leaving. */
 export async function fetchPlayerMatchAppearances(
   playerId: string,
 ): Promise<PlayerMatchAppearanceRow[]> {
@@ -535,7 +538,7 @@ export async function fetchPlayerMatchAppearances(
     .from('match_stats')
     .select('*, matches(*)')
     .eq('player_id', playerId)
-    .eq('attending', true)
+    .or('attending.eq.true,total_seconds_played.gt.0')
   if (error) throw error
 
   const rows: PlayerMatchAppearanceRow[] = []
@@ -1337,7 +1340,7 @@ export async function createMatchStats(
   }
 
   // Kickoff lineup events are written when staff taps Start half, not here.
-  return matchPlayers.filter((player) => player.attending)
+  return matchPlayers
 }
 
 export async function replaceMatchStats(
@@ -1379,7 +1382,7 @@ export async function replaceMatchStats(
     if (error) throw error
   }
 
-  return matchPlayers.filter((player) => player.attending)
+  return matchPlayers
 }
 
 export async function promoteScheduledMatchToLive(matchId: string): Promise<DbMatch> {
@@ -1557,8 +1560,8 @@ export async function upsertMatchStat(matchId: string, player: MatchPlayer) {
   })
   if (!error) return
   if (isMissingColumnError(error)) {
-    const { is_sent_off: _sentOff, ...withoutSentOff } = payload
-    const { error: retryError } = await supabase.from('match_stats').upsert(withoutSentOff, {
+    const { is_sent_off: _sentOff, absence_reason: _reason, ...withoutOptional } = payload
+    const { error: retryError } = await supabase.from('match_stats').upsert(withoutOptional, {
       onConflict: 'match_id,player_id',
     })
     if (retryError) throw retryError
@@ -1574,7 +1577,7 @@ export async function upsertMatchStats(matchId: string, players: MatchPlayer[]) 
   })
   if (!error) return
   if (isMissingColumnError(error)) {
-    const stripped = rows.map(({ is_sent_off: _sentOff, ...rest }) => rest)
+    const stripped = rows.map(({ is_sent_off: _sentOff, absence_reason: _reason, ...rest }) => rest)
     const { error: retryError } = await supabase.from('match_stats').upsert(stripped, {
       onConflict: 'match_id,player_id',
     })
@@ -1840,7 +1843,12 @@ export async function persistMatchPlusMinusFromEvents(matchId: string) {
   const ledger = computeMatchPlusMinus(events, match.half_length * 60, { firstHalfStarterIds })
 
   const updates = stats
-    .filter((row) => row.attending)
+    .filter(
+      (row) =>
+        row.attending ||
+        (row.total_seconds_played ?? 0) > 0 ||
+        ledger.has(row.player_id),
+    )
     .map((row) =>
       supabase
         .from('match_stats')

@@ -1,3 +1,4 @@
+import { includeInMatchRecord } from '@/lib/match-availability'
 import type { MatchPeriod, MatchPlayer } from '@/types/match'
 import { formatOpponentWithVenue } from '@/lib/match-location'
 import { formatPlayerFullName } from '@/lib/player-names'
@@ -32,7 +33,7 @@ export function buildMatchSummaryText(data: MatchSummaryData): string {
     'PLAYER MINUTES',
     '--------------',
     ...data.players
-      .filter((p) => p.attending)
+      .filter((p) => includeInMatchRecord(p))
       .sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
       .map((p) => {
         const totalSeconds = getLiveSecondsPlayed(

@@ -177,6 +177,24 @@ describe('mergeRemotePlayerOverlays', () => {
     expect(merged[0]?.yellowCardCount).toBe(1)
     expect(merged[0]?.plusMinus).toBe(1)
   })
+
+  it('pulls a player off the pitch when another device marks them out', () => {
+    const local = [player({ id: 'p1', isOnField: true, attending: true })]
+    const remote = [
+      player({
+        id: 'p1',
+        attending: false,
+        isOnField: false,
+        absenceReason: 'injured',
+      }),
+    ]
+    const merged = mergeRemotePlayerOverlays(local, remote)
+    expect(merged[0]).toMatchObject({
+      attending: false,
+      isOnField: false,
+      absenceReason: 'injured',
+    })
+  })
 })
 
 describe('shouldAdoptRemoteClock', () => {

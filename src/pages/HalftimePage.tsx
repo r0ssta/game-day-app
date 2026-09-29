@@ -1,4 +1,6 @@
 import { useMemo, useState, type MutableRefObject } from 'react'
+import { MarkPlayerOutSheet } from '@/components/MarkPlayerOutSheet'
+import { absenceReasonLabel } from '@/lib/match-availability'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { StaffPresenceCluster } from '@/components/StaffPresenceCluster'
 import type { MatchPresenceMember } from '@/lib/match-presence'
@@ -23,7 +25,7 @@ import {
 } from '@/lib/player-names'
 import type { FormationRole } from '@/lib/formations'
 import type { TeamFormat } from '@/lib/team-format'
-import type { MatchPlayer, TotalPeriods } from '@/types/match'
+import type { AbsenceReason, MatchPlayer, TotalPeriods } from '@/types/match'
 
 export type HalftimePageProps = {
   teamName: string
@@ -46,6 +48,10 @@ export type HalftimePageProps = {
   onLoadLineupPreset: (presetId: string) => void
   onAssignSecondHalfStarter: (playerId: string, role: FormationRole, tacticalPosition: string) => void
   onRemoveSecondHalfStarter: (playerId: string) => void
+  /** Put an out player back on the bench for the next period. */
+  onBringIn?: (playerId: string) => void
+  /** Mark a benched player out, with an optional reason. */
+  onMarkOut?: (playerId: string, reason: AbsenceReason | null) => void
   onBeginSecondHalf: () => void
   canBeginSecondHalf: boolean
   onBackToHome: () => void
@@ -74,6 +80,8 @@ export function HalftimePage({
   onLoadLineupPreset,
   onAssignSecondHalfStarter,
   onRemoveSecondHalfStarter,
+  onBringIn,
+  onMarkOut,
   onBeginSecondHalf,
   canBeginSecondHalf,
   onBackToHome,
@@ -81,12 +89,9 @@ export function HalftimePage({
   otherStaff = [],
 }: HalftimePageProps) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
+  const [markOutPlayerId, setMarkOutPlayerId] = useState<string | null>(null)
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
-  const attendingPlayers = players.filter((p) => p.attending)
-  const sidelineNameMap = useMemo(
-    () => buildSidelineNameMap(attendingPlayers),
-    [attendingPlayers],
-  )
+  const sidelineNameMap = useMemo(() => buildSidelineNameMap(players), [players])
   const firstHalfClock = formatMatchClockParts(seconds)
   const firstHalfEndedLabel = firstHalfClock.addedLabel
     ? `${firstHalfClock.regulation} ${firstHalfClock.addedLabel}`
@@ -95,7 +100,7 @@ export function HalftimePage({
   const endedLabel = formatPeriodLong(endedPeriod, totalPeriods)
   const startNextLabel = startNextPeriodButtonLabel(nextPeriod, totalPeriods)
   const periodStartRemaining = halfLengthMinutes * 60
-  const roleSeconds = attendingPlayers.map((player) => ({
+  const roleSeconds = players.map((player) => ({
     player,
     ...getRoleSecondsAsOf(player, seconds, periodStartRemaining),
   }))
@@ -176,15 +181,38 @@ export function HalftimePage({
             gkSeconds,
             maxPlayingSeconds: maxSeconds,
             didNotStartFirstHalf: !player.isFirstHalfStarter,
+            absenceLabel: absenceReasonLabel(player.absenceReason) ?? undefined,
+            lockAttendance: player.isSentOff,
             meta: player.matchPosition,
           }))}
-          attending={Object.fromEntries(attendingPlayers.map((p) => [p.id, true]))}
+          attending={Object.fromEntries(players.map((p) => [p.id, p.attending]))}
           starters={secondHalfStarters}
           maxFieldPlayers={maxFieldPlayers}
           teamFormat={activeTeamFormat}
           onAssignStarter={onAssignSecondHalfStarter}
           onRemoveStarter={onRemoveSecondHalfStarter}
+          onSetAttending={
+            onBringIn
+              ? (playerId, attending) => {
+                  if (attending) onBringIn(playerId)
+                }
+              : undefined
+          }
+          onMarkOut={onMarkOut ? (playerId) => setMarkOutPlayerId(playerId) : undefined}
         />
+        {markOutPlayerId && onMarkOut ? (
+          <MarkPlayerOutSheet
+            playerName={(() => {
+              const player = players.find((entry) => entry.id === markOutPlayerId)
+              return player ? formatPlayerFullName(player.firstName, player.lastName) : 'Player'
+            })()}
+            onChoose={(reason) => {
+              onMarkOut(markOutPlayerId, reason)
+              setMarkOutPlayerId(null)
+            }}
+            onClose={() => setMarkOutPlayerId(null)}
+          />
+        ) : null}
       </div>
 
       <div className="sticky bottom-0 z-20 border-t-2 border-border bg-background/95 px-4 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/90 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">

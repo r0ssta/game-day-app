@@ -23,6 +23,7 @@ import {
   rebuildMatchPlayers,
 } from '@/lib/supabase-api'
 import type { DbMatchEvent } from '@/types/database'
+import { includeInMatchRecord } from '@/lib/match-availability'
 import type { MatchPlayer, RosterPlayer } from '@/types/match'
 
 export type PlayerRecapStats = {
@@ -522,18 +523,23 @@ export function buildRecapRows(
 ): PlayerRecapReview[] {
   const participatingIds = new Set<string>()
   for (const player of players) {
-    if (player.attending) participatingIds.add(player.id)
+    const stats = eventStats.get(player.id)
+    if (includeInMatchRecord(player) || (stats?.totalSeconds ?? 0) > 0) {
+      participatingIds.add(player.id)
+    }
   }
   for (const playerId of eventStats.keys()) {
     const player = players.find((entry) => entry.id === playerId)
-    if (player && player.attending === false) continue
+    const stats = eventStats.get(playerId)
+    if (player && !includeInMatchRecord(player) && (stats?.totalSeconds ?? 0) <= 0) continue
     participatingIds.add(playerId)
   }
 
   return [...participatingIds]
     .map((playerId) => {
       const player = players.find((p) => p.id === playerId)
-      if (!player || player.attending === false) return null
+      const playedSeconds = eventStats.get(playerId)?.totalSeconds ?? 0
+      if (!player || (!includeInMatchRecord(player) && playedSeconds <= 0)) return null
 
       const stats = eventStats.get(playerId)
       const positions = resolvePlayerPositions(stats, player)

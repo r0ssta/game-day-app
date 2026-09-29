@@ -1364,7 +1364,7 @@ export function useMatchState() {
         }
       }
 
-      const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) => player.attending)
+      const matchPlayers = rebuildMatchPlayers(roster, stats)
       const rawContext =
         match.qualitative_context && typeof match.qualitative_context === 'object'
           ? (match.qualitative_context as Record<string, unknown>)
@@ -1810,7 +1810,9 @@ export function useMatchState() {
         roster.push(poolPlayerToGuestRoster(guest, match.team_id))
       }
     }
-    const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) => player.attending)
+    const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) =>
+      player.attending || player.totalSecondsPlayed > 0,
+    )
 
     setSelectedTeamId(match.team_id)
     persistActiveTeamId(match.team_id)

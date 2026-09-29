@@ -48,8 +48,8 @@ export function isMatchClockHeartbeatUpdate(
 }
 
 /**
- * Copy cards / +/- from a remote snapshot without moving players or
- * replacing local pitch selection / in-progress swaps.
+ * Copy cards, +/-, and availability from a remote snapshot without moving
+ * players who are still in the match or replacing an in-progress swap.
  */
 export function mergeRemotePlayerOverlays(
   local: MatchPlayer[],
@@ -61,19 +61,26 @@ export function mergeRemotePlayerOverlays(
   const next = local.map((player) => {
     const remotePlayer = remoteById.get(player.id)
     if (!remotePlayer) return player
-    if (
+    const localReason = player.absenceReason ?? null
+    const remoteReason = remotePlayer.absenceReason ?? null
+    const cardsMatch =
       player.yellowCardCount === remotePlayer.yellowCardCount &&
       player.isSentOff === remotePlayer.isSentOff &&
       player.plusMinus === remotePlayer.plusMinus
-    ) {
-      return player
-    }
+    const availabilityMatch =
+      player.attending === remotePlayer.attending && localReason === remoteReason
+    if (cardsMatch && availabilityMatch) return player
     changed = true
     return {
       ...player,
       yellowCardCount: remotePlayer.yellowCardCount,
       isSentOff: remotePlayer.isSentOff,
       plusMinus: remotePlayer.plusMinus,
+      attending: remotePlayer.attending,
+      absenceReason: remoteReason,
+      // Marked out on another device — take them off the pitch. Coming back
+      // lands on the bench; don't pull a local on-field player off otherwise.
+      ...(remotePlayer.attending ? {} : { isOnField: false, subbedInAt: null }),
     }
   })
   return changed ? next : local
@@ -304,9 +311,7 @@ export async function fetchLiveMatchSnapshot(
     }
   }
 
-  const matchPlayers = rebuildMatchPlayers(nextRoster, stats).filter(
-    (player) => player.attending,
-  )
+  const matchPlayers = rebuildMatchPlayers(nextRoster, stats)
   const players = applyCardsFromEvents(matchPlayers, events)
   const endedOnFieldIds = latestPeriodEndOnFieldIds(events)
 

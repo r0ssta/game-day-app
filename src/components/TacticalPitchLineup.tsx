@@ -48,6 +48,10 @@ export type PitchLineupPlayer = {
   maxPlayingSeconds?: number
   /** Intermission: highlight players who were not in the 1st-half starting XI. */
   didNotStartFirstHalf?: boolean
+  /** Injured / left early — shown on the out list during a match. */
+  absenceLabel?: string
+  /** Sent off — keep them on the list, but don't offer Out / bring-in. */
+  lockAttendance?: boolean
   matchPosition?: string
   primaryPosition?: string
   secondaryPosition?: string
@@ -62,6 +66,11 @@ type TacticalPitchLineupProps = {
   onAssignStarter: (playerId: string, role: FormationRole, tacticalPosition: string) => void
   onRemoveStarter: (playerId: string) => void
   onSetAttending?: (playerId: string, attending: boolean) => void
+  /**
+   * During a match, marking someone out asks for a reason first.
+   * When set, the bench Out button calls this instead of dropping them immediately.
+   */
+  onMarkOut?: (playerId: string) => void
   onEditPlayer?: (playerId: string) => void
   initialFormationId?: string
   formationId?: string
@@ -132,6 +141,7 @@ function PoolPlayerChip({
   onEdit,
   showAttendingToggle,
   enableDrag,
+  markOutLabel,
 }: {
   player: PitchLineupPlayer
   selected: boolean
@@ -140,6 +150,7 @@ function PoolPlayerChip({
   onEdit?: () => void
   showAttendingToggle: boolean
   enableDrag: boolean
+  markOutLabel?: string
 }) {
   return (
     <div
@@ -189,6 +200,11 @@ function PoolPlayerChip({
               {player.minutesLabel}
             </span>
           ) : null}
+            {player.absenceLabel ? (
+            <span className="text-[10px] font-bold uppercase tracking-wide text-danger">
+              {player.absenceLabel}
+            </span>
+          ) : null}
           {player.badge && !player.didNotStartFirstHalf ? (
             <span className="text-[10px] font-semibold text-muted-foreground">{player.badge}</span>
           ) : null}
@@ -212,7 +228,7 @@ function PoolPlayerChip({
           onClick={onToggleAttending}
           className={`${TOUCH_ROW} shrink-0 rounded-md border-2 border-border bg-secondary px-3 text-[10px] font-bold uppercase tracking-wide text-foreground active:scale-95`}
         >
-          Absent
+          {markOutLabel ?? 'Absent'}
         </button>
       )}
     </div>
@@ -228,6 +244,7 @@ export function TacticalPitchLineup({
   onAssignStarter,
   onRemoveStarter,
   onSetAttending,
+  onMarkOut,
   onEditPlayer,
   initialFormationId = '3-3-2',
   formationId: controlledFormationId,
@@ -678,10 +695,19 @@ export function TacticalPitchLineup({
                       selected={selectedPlayerId === player.id}
                       onSelect={() => handlePoolSelect(player.id)}
                       onToggleAttending={
-                        onSetAttending ? () => markPlayerAbsent(player.id) : undefined
+                        player.lockAttendance
+                          ? undefined
+                          : onMarkOut
+                            ? () => onMarkOut(player.id)
+                            : onSetAttending
+                              ? () => markPlayerAbsent(player.id)
+                              : undefined
                       }
                       onEdit={onEditPlayer ? () => onEditPlayer(player.id) : undefined}
-                      showAttendingToggle={Boolean(onSetAttending)}
+                      showAttendingToggle={
+                        !player.lockAttendance && Boolean(onMarkOut || onSetAttending)
+                      }
+                      markOutLabel={onMarkOut ? 'Out' : undefined}
                       enableDrag
                     />
                   </li>
@@ -698,7 +724,7 @@ export function TacticalPitchLineup({
               )}
             >
               <h3 className="mb-2 shrink-0 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                Absent
+                {onMarkOut ? 'Out' : 'Absent'}
               </h3>
               <ul
                 className={cn(
@@ -719,8 +745,9 @@ export function TacticalPitchLineup({
                 ))}
               </ul>
               <p className="mt-2 shrink-0 text-[10px] text-muted-foreground">
-                Tap a player to mark them Attending again. Absent players stay out of lineup, bench,
-                and post-game recap.
+                {onMarkOut
+                  ? 'Tap a player to put them on the bench.'
+                  : 'Tap a player to mark them Attending again. Absent players stay out of lineup, bench, and post-game recap.'}
               </p>
             </div>
           )}

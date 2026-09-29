@@ -9,6 +9,8 @@ import {
 } from 'react'
 import { Users, X } from 'lucide-react'
 import { FormationPitch } from '@/components/FormationPitch'
+import { MarkPlayerOutSheet } from '@/components/MarkPlayerOutSheet'
+import { absenceReasonLabel } from '@/lib/match-availability'
 import {
   getFormationById,
   getFormationsForFormat,
@@ -29,7 +31,7 @@ import {
 import { formatPlayingTimeClock, getLiveSecondsPlayed, needsSubRotationCue } from '@/lib/play-time'
 import { cn } from '@/lib/utils'
 import { PITCH_BENCH_LAYOUT_FLOW, PITCH_BENCH_SIDEBAR_FLOW } from '@/lib/layout'
-import type { Impact, MatchPlayer } from '@/types/match'
+import type { AbsenceReason, Impact, MatchPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
   return number !== null ? String(number) : '—'
@@ -60,6 +62,10 @@ type LiveTacticalPitchProps = {
   onSubIn: (benchId: string, tacticalPosition: string) => void
   onSubOut: (fieldId: string) => void
   onReassignPosition: (updates: PositionReassignUpdate[]) => void
+  /** Put an out player on the bench. */
+  onBringIn?: (playerId: string) => void
+  /** Mark a benched player out of the match. */
+  onMarkOut?: (playerId: string, reason: AbsenceReason | null) => void
   onSetImpact?: (id: string, impact: Impact) => void
   initialSlotAssignments?: Record<string, string | null>
   /** Fired after a coach move; the new map is the source of truth until kickoff. */
@@ -293,6 +299,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       onSubIn,
       onSubOut,
       onReassignPosition,
+      onBringIn,
+      onMarkOut,
       onSetImpact,
       initialSlotAssignments,
       onSlotAssignmentsChange,
@@ -318,6 +326,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     }))
 
     const [sheet, setSheet] = useState<SubSheetState | null>(null)
+    const [markOutPlayerId, setMarkOutPlayerId] = useState<string | null>(null)
     const [selection, setSelection] = useState<FieldSelection | null>(null)
     const [flashedPlayerIds, setFlashedPlayerIds] = useState<Set<string>>(new Set())
     const hydratedKeyRef = useRef<string | null>(null)
@@ -351,14 +360,18 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       [players, occupiedSlotPlayerIds, lineupDraftLocked],
     )
     const sentOffPlayers = useMemo(
-      () => players.filter((p) => p.attending && p.isSentOff),
+      () => players.filter((p) => p.isSentOff),
+      [players],
+    )
+    const outPlayers = useMemo(
+      () =>
+        players
+          .filter((p) => !p.attending && !p.isSentOff)
+          .sort((a, b) => (a.number ?? 999) - (b.number ?? 999)),
       [players],
     )
 
-    const sidelineNameMap = useMemo(
-      () => buildSidelineNameMap(players.filter((p) => p.attending)),
-      [players],
-    )
+    const sidelineNameMap = useMemo(() => buildSidelineNameMap(players), [players])
 
     const halfLengthSeconds = halfLengthMinutes * 60
 
@@ -387,11 +400,13 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     useEffect(() => {
       setSheet(null)
       setSelection(null)
+      setMarkOutPlayerId(null)
     }, [formationId])
 
     useEffect(() => {
       setSheet(null)
       setSelection(null)
+      setMarkOutPlayerId(null)
       lineupDraftLockedRef.current = false
       setLineupDraftLocked(false)
     }, [periodKey])
@@ -759,7 +774,8 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
 
         <p className="text-sm text-muted-foreground">
           Tap a player, then tap another slot to move or swap positions. Tap the same player again
-          (or Substitute) to bring someone on. Amber badges mean a long stint (~75% of the half).
+          (or Substitute) to bring someone on. Tap a bench player to mark them out. Amber badges
+          mean a long stint (~75% of the half).
         </p>
 
         {selection && selectedPlayer ? (
@@ -838,9 +854,13 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                       displayName={getSidelineName(player, sidelineNameMap)}
                       clockSeconds={clockSeconds}
                       onTap={
-                        selection ? () => handleBenchTapWhileSelected(player.id) : undefined
+                        selection
+                          ? () => handleBenchTapWhileSelected(player.id)
+                          : onMarkOut
+                            ? () => setMarkOutPlayerId(player.id)
+                            : undefined
                       }
-                      actionLabel={selection ? 'Swap in' : undefined}
+                      actionLabel={selection ? 'Swap in' : onMarkOut ? 'Mark out' : undefined}
                       onSetImpact={
                         onSetImpact ? (impact) => onSetImpact(player.id, impact) : undefined
                       }
@@ -849,6 +869,62 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                 </ul>
               )}
             </div>
+
+            {outPlayers.length > 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card/50 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    Out
+                  </h3>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {outPlayers.length}
+                  </span>
+                </div>
+                <ul className="space-y-2">
+                  {outPlayers.map((player) => {
+                    const reason = absenceReasonLabel(player.absenceReason)
+                    const displayName = getSidelineName(player, sidelineNameMap)
+                    const liveSeconds = getLiveSecondsPlayed(player, clockSeconds)
+                    return (
+                      <li key={player.id}>
+                        <div className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border-2 border-dashed border-border bg-card/70 px-3 py-3">
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-secondary text-[10px] font-semibold tabular-nums text-muted-foreground">
+                            {formatJersey(player.number)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <span className="truncate text-base font-bold text-foreground">
+                                {displayName}
+                              </span>
+                              <span className="font-display text-xl font-black tabular-nums leading-none text-muted-foreground">
+                                {formatPlayingTimeClock(liveSeconds)}
+                              </span>
+                            </div>
+                            {reason ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-danger">
+                                {reason}
+                              </span>
+                            ) : null}
+                          </div>
+                          {onBringIn ? (
+                            <button
+                              type="button"
+                              onClick={() => onBringIn(player.id)}
+                              className="min-h-11 shrink-0 touch-manipulation rounded-lg bg-neon px-3 py-2 text-xs font-black uppercase tracking-wide text-neon-foreground active:scale-[0.98]"
+                            >
+                              Bring in
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  Bring them in to put them on the bench.
+                </p>
+              </div>
+            ) : null}
 
             {sentOffPlayers.length > 0 ? (
               <div className="rounded-xl border-2 border-danger/30 bg-danger/5 p-3">
@@ -877,6 +953,24 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
             ) : null}
           </div>
         </FormationPitch>
+
+        {markOutPlayerId && onMarkOut ? (
+          <MarkPlayerOutSheet
+            playerName={getSidelineName(
+              playerById.get(markOutPlayerId) ?? {
+                id: markOutPlayerId,
+                firstName: 'Player',
+                lastName: '',
+              },
+              sidelineNameMap,
+            )}
+            onChoose={(reason) => {
+              onMarkOut(markOutPlayerId, reason)
+              setMarkOutPlayerId(null)
+            }}
+            onClose={() => setMarkOutPlayerId(null)}
+          />
+        ) : null}
 
         {sheet ? (
           <SubstituteSheet

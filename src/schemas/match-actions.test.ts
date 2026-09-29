@@ -11,6 +11,7 @@ import {
   LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
   parseOpponentGoalCategory,
+  LogAvailabilityInputSchema,
   RemoveLastGoalInputSchema,
 } from './match-actions'
 
@@ -336,5 +337,28 @@ describe('match action Zod schemas', () => {
       side: 'left',
     })
     expect(bad.success).toBe(false)
+  })
+
+  it('LogAvailabilityInputSchema accepts bring-in and rejects a reason when attending', () => {
+    const bringIn = LogAvailabilityInputSchema.safeParse({
+      matchId: VALID_UUID,
+      playerId: VALID_UUID,
+      attending: true,
+    })
+    expect(bringIn.success).toBe(true)
+    const markOut = LogAvailabilityInputSchema.safeParse({
+      matchId: VALID_UUID,
+      playerId: VALID_UUID,
+      attending: false,
+      reason: 'injured',
+    })
+    expect(markOut.success).toBe(true)
+    const both = LogAvailabilityInputSchema.safeParse({
+      matchId: VALID_UUID,
+      playerId: VALID_UUID,
+      attending: true,
+      reason: 'left_early',
+    })
+    expect(both.success).toBe(false)
   })
 })

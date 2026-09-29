@@ -4,6 +4,7 @@ const MATCH_ROUTES = [
   '/api/match/log-team-event',
   '/api/match/log-goal',
   '/api/match/log-card',
+  '/api/match/log-availability',
   '/api/match/log-substitution',
   '/api/match/log-formation',
   '/api/match/log-period',

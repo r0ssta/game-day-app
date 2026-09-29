@@ -10,6 +10,7 @@ import type {
   LogPeriodInput,
   LogPkAttemptInput,
   UpdatePkAttemptInput,
+  LogAvailabilityInput,
   LogSubstitutionInput,
   LogTeamEventInput,
   RemoveLastGoalInput,
@@ -119,6 +120,12 @@ export async function apiLogFormation(
   input: LogFormationInput,
 ): Promise<MatchActionResult<{ kind: LogFormationInput['kind'] }>> {
   return postMatchAction('/api/match/log-formation', input)
+}
+
+export async function apiLogAvailability(
+  input: LogAvailabilityInput,
+): Promise<MatchActionResult<{ attending: boolean }>> {
+  return postMatchAction('/api/match/log-availability', input)
 }
 
 export async function apiLogSubstitution(

@@ -140,6 +140,8 @@ create table if not exists public.match_stats (
   is_first_half_starter boolean not null default false,
   is_second_half_starter boolean not null default false,
   attending boolean not null default true,
+  absence_reason text
+    check (absence_reason is null or absence_reason in ('injured', 'left_early')),
   created_at timestamptz not null default now(),
   unique (match_id, player_id)
 );

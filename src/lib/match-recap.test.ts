@@ -560,4 +560,26 @@ describe('buildRecapRows', () => {
     expect(rows[0]?.gkSeconds).toBe(900)
     expect(rows[0]?.fieldSeconds).toBe(600)
   })
+
+  it('keeps a player who played and then left, and skips a full-match absence', () => {
+    const rows = buildRecapRows(
+      [
+        recapPlayer({
+          id: 'played',
+          attending: false,
+          totalSecondsPlayed: 600,
+          firstName: 'Played',
+        }),
+        recapPlayer({
+          id: 'absent',
+          attending: false,
+          totalSecondsPlayed: 0,
+          firstName: 'Absent',
+        }),
+      ],
+      new Map(),
+      new Map(),
+    )
+    expect(rows.map((row) => row.playerId)).toEqual(['played'])
+  })
 })

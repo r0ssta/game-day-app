@@ -104,7 +104,12 @@ import {
   fetchPendingReviewMatchesByTeamId,
   fetchMatchEvents,
 } from '@/lib/supabase-api'
-import { apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, apiUpdatePkAttempt, formatMatchWriteError } from '@/lib/match-api'
+import { apiLogAvailability, apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, apiUpdatePkAttempt, formatMatchWriteError } from '@/lib/match-api'
+import {
+  absenceReasonLabel,
+  applyAvailabilityChange,
+  type AvailabilityChange,
+} from '@/lib/match-availability'
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
 import { assertMatchActionOk, type OpponentGoalCategory } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
@@ -1884,6 +1889,64 @@ export function CoachDashboard() {
     ],
   )
 
+  const changePlayerAvailability = useCallback(
+    (playerId: string, change: AvailabilityChange) => {
+      if (!matchId) return
+      const next = applyAvailabilityChange(players, playerId, change)
+      if (!next) return
+      const previousPlayers = players
+      const player = next.find((entry) => entry.id === playerId)
+      if (!player) return
+
+      setPlayers(next)
+      if (!change.attending) setHalftimeStarter(playerId, false)
+      if (!periodClockStarted) {
+        pendingReadyPlayersRef.current = next
+        lockPreKickoffLineupDraft()
+      }
+
+      const sidelineMap = buildSidelineNameMap(next)
+      const label = formatPlayerLabel(player, sidelineMap)
+      if (change.attending) {
+        setToast(`Bench · ${label}`)
+      } else {
+        const reason = absenceReasonLabel(change.reason)
+        setToast(reason ? `Out · ${label} · ${reason}` : `Out · ${label}`)
+      }
+
+      void runOptimisticSync(
+        async () => {
+          assertMatchActionOk(
+            await apiLogAvailability({
+              matchId,
+              playerId,
+              attending: change.attending,
+              reason: change.attending ? null : change.reason,
+              totalSecondsPlayed: change.attending ? undefined : player.totalSecondsPlayed,
+            }),
+          )
+        },
+        {
+          label: 'changePlayerAvailability',
+          quiet: true,
+          onRevert: () => setPlayers(previousPlayers),
+          onErrorToast: failToast('Could not update availability — try again'),
+        },
+      )
+    },
+    [
+      matchId,
+      players,
+      periodClockStarted,
+      setPlayers,
+      setHalftimeStarter,
+      lockPreKickoffLineupDraft,
+      setToast,
+      runOptimisticSync,
+      failToast,
+    ],
+  )
+
   const handleLiveSubIn = useCallback(
     (benchId: string, tacticalPosition: string) => {
       if (!matchId) return
@@ -3280,6 +3343,10 @@ export function CoachDashboard() {
             )
           }}
           onRemoveSecondHalfStarter={(playerId) => setHalftimeStarter(playerId, false)}
+          onBringIn={(playerId) => changePlayerAvailability(playerId, { attending: true })}
+          onMarkOut={(playerId, reason) =>
+            changePlayerAvailability(playerId, { attending: false, reason })
+          }
           onBeginSecondHalf={() => void handleBeginSecondHalf()}
           canBeginSecondHalf={canBeginSecondHalf}
           onBackToHome={() => setAppMode('home')}
@@ -3437,6 +3504,10 @@ export function CoachDashboard() {
           onSubIn={handleLiveSubIn}
           onSubOut={handleLiveSubOut}
           onReassignPosition={handleLiveReassignPosition}
+          onBringIn={(playerId) => changePlayerAvailability(playerId, { attending: true })}
+          onMarkOut={(playerId, reason) =>
+            changePlayerAvailability(playerId, { attending: false, reason })
+          }
           onSlotAssignmentsChange={persistReadyToStartLineup}
           lineupDraftIsSourceOfTruth={!periodClockStarted}
         />

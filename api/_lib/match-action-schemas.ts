@@ -459,6 +459,31 @@ export const RemoveLastGoalInputSchema = z.object({
 
 export type RemoveLastGoalInput = z.infer<typeof RemoveLastGoalInputSchema>
 
+/** Bring an out player onto the bench, or mark a benched player out. */
+export const AbsenceReasonSchema = z.enum(['injured', 'left_early'])
+
+export const LogAvailabilityInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    playerId: z.string().uuid(),
+    attending: z.boolean(),
+    /** Omitted or null when they are out with no reason, or when bringing them in. */
+    reason: AbsenceReasonSchema.nullable().optional(),
+    /** Banked seconds when marking out, so a just-finished stint is not dropped. */
+    totalSecondsPlayed: z.number().nonnegative().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.attending && value.reason) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'reason is only set when marking a player out',
+        path: ['reason'],
+      })
+    }
+  })
+
+export type LogAvailabilityInput = z.infer<typeof LogAvailabilityInputSchema>
+
 export type MatchActionOk<T extends Record<string, unknown> = Record<string, never>> = {
   ok: true
 } & T

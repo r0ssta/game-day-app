@@ -241,6 +241,8 @@ export type DbMatchStat = {
   is_first_half_starter: boolean
   is_second_half_starter: boolean
   attending: boolean
+  /** injured | left_early when marked out during the match. Null if available or out with no reason. */
+  absence_reason?: 'injured' | 'left_early' | null
   plus_minus?: number
   is_match_guest?: boolean
   /** True after a red card (straight or second yellow). */
