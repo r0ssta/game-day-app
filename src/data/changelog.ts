@@ -20,7 +20,7 @@ export const CHANGELOG: ChangelogRelease[] = [
       'Tag a shot or save as a free kick, penalty, short-range, or long-range try, and who took it',
       'Recaps and season reporting show those shot types, and which of our players took them',
       'Goals use the same shot types: free kick, penalty, short-range, or long-range',
-      'A goal within a minute of that team’s corner is tracked as from a corner',
+      'If a corner was in the last 90 seconds, confirm whether the goal came directly from it',
     ],
   },
   {

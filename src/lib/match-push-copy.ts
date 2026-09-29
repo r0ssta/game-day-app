@@ -78,19 +78,22 @@ export function buildGoalPush(input: {
   isPk?: boolean
   ourGoal: boolean
   eventNotes?: string | null
+  fromCorner?: boolean
 }): { title: string; body: string } {
   const score = `${input.homeScore}–${input.awayScore}`
+  const cornerBit = input.fromCorner ? 'from a corner' : null
   if (!input.ourGoal) {
     const category = parseOpponentGoalCategory(input.eventNotes)
-    const how = category ? ` · ${category}` : input.isPk ? ' PK' : ''
+    const how = [category, cornerBit].filter(Boolean).join(' · ')
+    const howBit = how ? ` · ${how}` : input.isPk ? ' PK' : ''
     return {
       title: `${input.teamName} · Goal conceded`,
-      body: `${input.opponent || 'Opponent'}${how} · ${score}`,
+      body: `${input.opponent || 'Opponent'}${howBit} · ${score}`,
     }
   }
   const shotType = parseShotType(input.eventNotes) ?? (input.isPk ? 'PK' : null)
   const who = input.scorerLabel?.trim() || input.teamName
-  const detail = [shotType, input.assistLabel ? `assist ${input.assistLabel}` : null]
+  const detail = [shotType, cornerBit, input.assistLabel ? `assist ${input.assistLabel}` : null]
     .filter(Boolean)
     .join(' · ')
   return {

@@ -207,6 +207,8 @@ export type DbMatchEvent = {
   assist_player_id: string | null
   /** True when a regulation goal / opponent_goal came from a penalty kick. */
   is_pk?: boolean
+  /** Coach answer: this goal was a direct result of the preceding corner. Null when not asked. */
+  from_corner?: boolean | null
   /** Present for pk_attempt events. */
   pk_result: 'make' | 'miss' | null
   /** Present for pk_attempt events. */

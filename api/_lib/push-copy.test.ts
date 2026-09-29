@@ -30,6 +30,20 @@ describe('buildGoalPush', () => {
     expect(push.body).toBe('Brooks · Free Kick · 1–0 vs Rivals')
   })
 
+  it('includes a confirmed corner on our goals', () => {
+    const push = buildGoalPush({
+      teamName: 'Velocity',
+      opponent: 'Rivals',
+      homeScore: 1,
+      awayScore: 0,
+      scorerLabel: 'Brooks',
+      ourGoal: true,
+      eventNotes: 'Short-range',
+      fromCorner: true,
+    })
+    expect(push.body).toBe('Brooks · Short-range · from a corner · 1–0 vs Rivals')
+  })
+
   it('uses conceded copy for opponent goals, including PKs', () => {
     const push = buildGoalPush({
       teamName: 'Velocity',

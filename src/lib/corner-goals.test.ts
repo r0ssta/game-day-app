@@ -37,4 +37,15 @@ describe('goalIdsFromCorners', () => {
 
     expect(goalIdsFromCorners(events).size).toBe(0)
   })
+
+  it('uses the coach yes or no instead of the clock', () => {
+    const events = [
+      clock('c', 'corner_home', 100, '2026-09-29T18:00:00.000Z'),
+      { ...clock('no', 'goal', 120, '2026-09-29T18:00:20.000Z'), fromCorner: false },
+      { ...clock('yes', 'goal', 220, '2026-09-29T18:02:00.000Z'), fromCorner: true },
+    ]
+
+    expect(goalIdsFromCorners(events)).toEqual(new Set(['yes']))
+    expect(countCornerGoals(events)).toEqual({ us: 1, them: 0 })
+  })
 })

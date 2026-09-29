@@ -16,6 +16,8 @@ export type MatchEventInsert = {
   formation?: string | null
   assist_player_id?: string | null
   is_pk?: boolean
+  /** Coach said this goal was a direct result of the preceding corner. */
+  from_corner?: boolean | null
   pk_result?: 'make' | 'miss' | null
   pk_team?: 'us' | 'opponent' | null
 }
@@ -37,6 +39,9 @@ export function matchEventInsertPayload(row: MatchEventInsert): Record<string, u
     event_notes: row.event_notes ?? null,
     formation: row.formation ?? null,
     is_pk: row.is_pk === true,
+  }
+  if (row.event_type === 'goal' || row.event_type === 'opponent_goal') {
+    payload.from_corner = row.from_corner === true ? true : row.from_corner === false ? false : null
   }
   if (row.event_type === 'goal') {
     payload.assist_player_id = row.assist_player_id ?? null

@@ -11,15 +11,18 @@ function formatJersey(number: number | null) {
 }
 
 export type GoalWizardTeam = 'us' | 'opponent'
-export type GoalWizardStep = 'type' | 'scorer' | 'assist'
+export type GoalWizardStep = 'corner' | 'type' | 'scorer' | 'assist'
 
 type GoalWizardModalProps = {
   open: boolean
   team: GoalWizardTeam
   step: GoalWizardStep
+  /** True when this goal started with the corner question. */
+  includesCornerStep: boolean
   shotType: ShotType | null
   players: MatchPlayer[]
   scorerId: string | null
+  onSelectCorner: (fromCorner: boolean) => void
   onSelectType: (shotType: ShotType) => void
   onSelectScorer: (player: MatchPlayer) => void
   onSelectAssist: (assistPlayerId: string | null) => void
@@ -31,9 +34,11 @@ export function GoalWizardModal({
   open,
   team,
   step,
+  includesCornerStep,
   shotType,
   players,
   scorerId,
+  onSelectCorner,
   onSelectType,
   onSelectScorer,
   onSelectAssist,
@@ -59,11 +64,36 @@ export function GoalWizardModal({
   const scorer = scorerId ? onFieldPlayers.find((p) => p.id === scorerId) : null
   const teamLabel = team === 'us' ? 'Our Goal' : 'Opponent Goal'
   const asksForAssist = shotType !== 'PK'
-  const totalSteps = asksForAssist ? 3 : 2
-  const stepNumber = step === 'type' ? 1 : step === 'scorer' ? 2 : 3
+  const typeSteps = asksForAssist ? 3 : 2
+  const totalSteps = includesCornerStep ? typeSteps + 1 : typeSteps
+  const stepNumber =
+    step === 'corner'
+      ? 1
+      : step === 'type'
+        ? includesCornerStep
+          ? 2
+          : 1
+        : step === 'scorer'
+          ? includesCornerStep
+            ? 3
+            : 2
+          : includesCornerStep
+            ? 4
+            : 3
   const heading =
-    step === 'type' ? 'What kind?' : step === 'scorer' ? 'Who scored?' : 'Who assisted?'
-  const ariaLabel = step === 'type' ? `${teamLabel}: shot type` : `${teamLabel}: ${heading}`
+    step === 'corner'
+      ? 'Was this goal a direct result of the corner?'
+      : step === 'type'
+        ? 'What kind?'
+        : step === 'scorer'
+          ? 'Who scored?'
+          : 'Who assisted?'
+  const ariaLabel =
+    step === 'corner'
+      ? `${teamLabel}: from a corner`
+      : step === 'type'
+        ? `${teamLabel}: shot type`
+        : `${teamLabel}: ${heading}`
 
   return (
     <div
@@ -82,17 +112,28 @@ export function GoalWizardModal({
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
               <Goal className="size-4 text-neon" strokeWidth={2.5} />
               {teamLabel}
-              {step !== 'type' ? ` · Step ${stepNumber} of ${totalSteps}` : null}
+              {team === 'us' && (includesCornerStep || step !== 'type')
+                ? ` · Step ${stepNumber} of ${totalSteps}`
+                : null}
             </div>
-            <h2 className="font-display text-3xl font-black uppercase text-foreground">{heading}</h2>
+            <h2
+              className={cn(
+                'font-display font-black text-foreground',
+                step === 'corner' ? 'text-2xl leading-tight' : 'text-3xl uppercase',
+              )}
+            >
+              {heading}
+            </h2>
             <p className="mt-1 text-sm font-bold text-muted-foreground">
-              {step === 'type'
-                ? 'Close cancels. Don’t tag still counts it.'
-                : step === 'scorer'
-                  ? `${shotType ?? 'Goal'}. Close still logs it without a player.`
-                  : `${shotType ?? 'Goal'}${
-                      scorer ? ` · ${getSidelineName(scorer, sidelineNameMap)}` : ''
-                    }. Close still logs it.`}
+              {step === 'corner'
+                ? 'Close cancels.'
+                : step === 'type'
+                  ? 'Close cancels. Don’t tag still counts it.'
+                  : step === 'scorer'
+                    ? `${shotType ?? 'Goal'}. Close still logs it without a player.`
+                    : `${shotType ?? 'Goal'}${
+                        scorer ? ` · ${getSidelineName(scorer, sidelineNameMap)}` : ''
+                      }. Close still logs it.`}
             </p>
           </div>
           <button
@@ -104,6 +145,25 @@ export function GoalWizardModal({
             <X className="size-6" strokeWidth={3} />
           </button>
         </div>
+
+        {step === 'corner' ? (
+          <div className="flex flex-col gap-3 px-4 pb-4">
+            <button
+              type="button"
+              onClick={() => onSelectCorner(true)}
+              className="goal-log-corner-yes min-h-16 touch-manipulation rounded-xl border-2 border-border bg-card px-4 py-5 text-left font-display text-xl font-black tracking-wide text-foreground transition-transform active:scale-[0.98] active:bg-secondary"
+            >
+              Yes
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectCorner(false)}
+              className="goal-log-corner-no min-h-16 touch-manipulation rounded-xl border-2 border-border bg-card px-4 py-5 text-left font-display text-xl font-black tracking-wide text-foreground transition-transform active:scale-[0.98] active:bg-secondary"
+            >
+              No
+            </button>
+          </div>
+        ) : null}
 
         {step === 'type' ? (
           <div className="flex flex-col gap-3 px-4 pb-4">

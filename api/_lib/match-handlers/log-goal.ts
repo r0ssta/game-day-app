@@ -84,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           assist_player_id:
             input.ourGoal && scorerId && !isPk ? (input.assistPlayerId ?? null) : null,
           is_pk: isPk,
+          from_corner: input.fromCorner === true ? true : input.fromCorner === false ? false : null,
         },
       ]
       if (input.pairAutoShot) {
@@ -114,6 +115,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       isPk,
       ourGoal: input.ourGoal,
       eventNotes: input.eventNotes,
+      fromCorner: input.fromCorner === true,
     })
 
     const hubPath = input.teamSlug

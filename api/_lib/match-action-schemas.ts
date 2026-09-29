@@ -80,6 +80,11 @@ export const LogGoalInputSchema = z
      * Omit or null when the coach skips the tag.
      */
     eventNotes: z.string().nullable().optional(),
+    /**
+     * Coach answer when a same-side corner was recent.
+     * Null when the question was not asked.
+     */
+    fromCorner: z.boolean().nullable().optional(),
   })
   .superRefine((value, ctx) => {
     if (

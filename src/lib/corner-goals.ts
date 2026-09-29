@@ -1,7 +1,13 @@
 import { isPeriodStartBoundary } from '@/lib/match-event-notes'
 
-/** A goal counts as coming from a corner when it follows that team's corner on the match clock. */
+/**
+ * Older goals have no coach answer. Those still count when they follow that
+ * team's corner inside this window. A stored yes or no replaces it.
+ */
 export const CORNER_GOAL_WINDOW_SECONDS = 60
+
+/** Ask the coach when that team's corner is still this recent on the match clock. */
+export const CORNER_GOAL_PROMPT_SECONDS = 90
 
 export type CornerGoalClockEvent = {
   id: string
@@ -9,11 +15,37 @@ export type CornerGoalClockEvent = {
   timestamp: number
   createdAt: string
   eventNotes?: string | null
+  /** Coach answer. Null or omitted means the question was not asked. */
+  fromCorner?: boolean | null
 }
 
 export function isWithinCornerGoalWindow(goalTimestamp: number, cornerTimestamp: number): boolean {
   const delta = goalTimestamp - cornerTimestamp
   return delta >= 0 && delta <= CORNER_GOAL_WINDOW_SECONDS
+}
+
+export function isWithinCornerGoalPrompt(goalTimestamp: number, cornerTimestamp: number): boolean {
+  const delta = goalTimestamp - cornerTimestamp
+  return delta >= 0 && delta <= CORNER_GOAL_PROMPT_SECONDS
+}
+
+/** Latest same-period corner clock time for each side. Used to decide whether to ask. */
+export function latestCornerElapsedInPeriod(
+  events: CornerGoalClockEvent[],
+  period: number,
+): { home: number | null; away: number | null } {
+  const periodById = periodIndexes(events)
+  const ordered = events
+    .filter((event) => (periodById.get(event.id) ?? 1) === period)
+    .sort((a, b) => a.timestamp - b.timestamp || a.createdAt.localeCompare(b.createdAt))
+  let home: number | null = null
+  let away: number | null = null
+  for (const event of ordered) {
+    const side = cornerSide(event.eventType)
+    if (side === 'home') home = event.timestamp
+    else if (side === 'away') away = event.timestamp
+  }
+  return { home, away }
 }
 
 function cornerSide(eventType: string): 'home' | 'away' | null {
@@ -55,8 +87,8 @@ function periodIndexes(events: CornerGoalClockEvent[]): Map<string, number> {
 }
 
 /**
- * Goal and opponent-goal ids that follow the same team's corner within
- * {@link CORNER_GOAL_WINDOW_SECONDS} on the match clock, in the same period.
+ * Goal and opponent-goal ids the coach marked as from a corner.
+ * Goals with no stored answer fall back to {@link CORNER_GOAL_WINDOW_SECONDS}.
  */
 export function goalIdsFromCorners(events: CornerGoalClockEvent[]): Set<string> {
   const periodById = periodIndexes(events)
@@ -82,6 +114,11 @@ export function goalIdsFromCorners(events: CornerGoalClockEvent[]): Set<string> 
 
       const scoringSide = goalSide(event.eventType)
       if (!scoringSide) continue
+      if (event.fromCorner === true) {
+        ids.add(event.id)
+        continue
+      }
+      if (event.fromCorner === false) continue
       const cornerAt = scoringSide === 'home' ? lastHomeCorner : lastAwayCorner
       if (cornerAt == null) continue
       if (isWithinCornerGoalWindow(event.timestamp, cornerAt)) ids.add(event.id)

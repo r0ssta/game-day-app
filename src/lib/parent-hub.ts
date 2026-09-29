@@ -119,6 +119,7 @@ export type ParentLiveEvent = {
   timestamp: number
   eventNotes: string | null
   isPk: boolean | null
+  fromCorner?: boolean | null
   assistPlayerId: string | null
   assistPlayerName: string | null
   createdAt: string
@@ -1276,6 +1277,7 @@ type MatchEventLike = {
   event_notes: string | null
   assist_player_id: string | null
   is_pk?: boolean | null
+  from_corner?: boolean | null
   created_at: string
 }
 
@@ -1326,6 +1328,7 @@ export function parentLiveEventsFromMatchEvents(
         timestamp: event.timestamp,
         eventNotes: event.event_notes,
         isPk: event.is_pk ?? false,
+        fromCorner: event.from_corner ?? null,
         assistPlayerId: event.assist_player_id,
         assistPlayerName: nameOf(event.assist_player_id),
         createdAt: event.created_at,

@@ -89,7 +89,10 @@ import {
   freezeFirstHalfStarters,
   stampAllOnField,
 } from '@/lib/play-time'
-import { isWithinCornerGoalWindow } from '@/lib/corner-goals'
+import {
+  isWithinCornerGoalPrompt,
+  latestCornerElapsedInPeriod,
+} from '@/lib/corner-goals'
 import {
   elapsedInHalf,
   formatClock,
@@ -505,6 +508,7 @@ export function CoachDashboard() {
   const [goalWizardOpen, setGoalWizardOpen] = useState(false)
   const [goalWizardTeam, setGoalWizardTeam] = useState<GoalWizardTeam>('us')
   const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>('type')
+  const [goalFromCorner, setGoalFromCorner] = useState<boolean | null>(null)
   const [goalShotType, setGoalShotType] = useState<ShotType | null>(null)
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
   const [opponentGoalSheetOpen, setOpponentGoalSheetOpen] = useState(false)
@@ -737,6 +741,42 @@ export function CoachDashboard() {
     home: number | null
     away: number | null
   }>({ period: 0, home: null, away: null })
+
+  useEffect(() => {
+    if (!matchId || !periodClockStarted) return
+    let cancelled = false
+    void fetchMatchEvents(matchId)
+      .then((events) => {
+      if (cancelled) return
+      const latest = latestCornerElapsedInPeriod(
+        events.map((event) => ({
+          id: event.id,
+          eventType: event.event_type,
+          timestamp: event.timestamp,
+          createdAt: event.created_at,
+          eventNotes: event.event_notes,
+        })),
+        currentPeriod,
+      )
+      const corners = lastCornerElapsedRef.current
+      if (corners.period !== currentPeriod) {
+        corners.period = currentPeriod
+        corners.home = latest.home
+        corners.away = latest.away
+        return
+      }
+      if (latest.home != null && (corners.home == null || latest.home > corners.home)) {
+        corners.home = latest.home
+      }
+      if (latest.away != null && (corners.away == null || latest.away > corners.away)) {
+        corners.away = latest.away
+      }
+    })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [matchId, periodClockStarted, currentPeriod, homeCorners, awayCorners])
 
   useEffect(() => {
     clockSyncRef.current = seconds
@@ -2181,18 +2221,47 @@ export function CoachDashboard() {
     setGoalWizardStep('type')
     setGoalShotType(null)
     setGoalScorerId(null)
+    setGoalFromCorner(null)
   }, [])
 
-  const openGoalWizard = useCallback((team: GoalWizardTeam = 'us') => {
-    setGoalWizardTeam(team)
-    setGoalWizardStep('type')
-    setGoalShotType(null)
-    setGoalScorerId(null)
-    setGoalWizardOpen(true)
-  }, [])
+  const cornerPromptDue = useCallback(
+    (side: 'home' | 'away', goalTimestamp: number) => {
+      const corners = lastCornerElapsedRef.current
+      if (corners.period !== currentPeriod) return false
+      const cornerAt = side === 'home' ? corners.home : corners.away
+      if (cornerAt == null) return false
+      return isWithinCornerGoalPrompt(goalTimestamp, cornerAt)
+    },
+    [currentPeriod],
+  )
+
+  const openGoalWizard = useCallback(
+    (team: GoalWizardTeam = 'us') => {
+      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const ask = cornerPromptDue(team === 'us' ? 'home' : 'away', eventTimestamp)
+      setGoalWizardTeam(team)
+      setGoalShotType(null)
+      setGoalScorerId(null)
+      setGoalFromCorner(null)
+      setGoalWizardStep(ask ? 'corner' : 'type')
+      setGoalWizardOpen(true)
+    },
+    [seconds, halfLengthMinutes, cornerPromptDue],
+  )
+
+  const openOpponentGoal = useCallback(() => {
+    const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+    if (cornerPromptDue('away', eventTimestamp)) {
+      openGoalWizard('opponent')
+      return
+    }
+    setGoalFromCorner(null)
+    setOpponentGoalSheetOpen(true)
+  }, [seconds, halfLengthMinutes, cornerPromptDue, openGoalWizard])
 
   const closeOpponentGoalSheet = useCallback(() => {
     setOpponentGoalSheetOpen(false)
+    setGoalFromCorner(null)
   }, [])
 
   const handleConfirmCard = useCallback(
@@ -2428,19 +2497,8 @@ export function CoachDashboard() {
     [matchId, appMode, setHomeScore, setAwayScore, setHomeShots, setAwayShots, setPlayers, setToast],
   )
 
-  const goalFollowsCorner = useCallback(
-    (side: 'home' | 'away', goalTimestamp: number) => {
-      const corners = lastCornerElapsedRef.current
-      if (corners.period !== currentPeriod) return false
-      const cornerAt = side === 'home' ? corners.home : corners.away
-      if (cornerAt == null) return false
-      return isWithinCornerGoalWindow(goalTimestamp, cornerAt)
-    },
-    [currentPeriod],
-  )
-
   const commitOpponentGoal = useCallback(
-    (category?: OpponentGoalCategory | null) => {
+    (category?: OpponentGoalCategory | null, fromCorner?: boolean | null) => {
       if (!matchId) return
       if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'away']))) {
         setToast('Already recorded')
@@ -2462,12 +2520,12 @@ export function CoachDashboard() {
         persist: false,
       })
       setPlayers((prev) => applyPlusMinusDelta(prev, -1))
-      const fromCorner = goalFollowsCorner('away', eventTimestamp)
+      const cornerYes = fromCorner === true
       setToast(
         [
           'Opponent goal',
           category,
-          fromCorner ? 'from a corner' : null,
+          cornerYes ? 'from a corner' : null,
           `${opponentLabel} ${awayBefore + 1}`,
         ]
           .filter(Boolean)
@@ -2490,6 +2548,7 @@ export function CoachDashboard() {
             onFieldPlayerIds,
             pairAutoShot: true,
             eventNotes: category ?? null,
+            fromCorner: fromCorner ?? null,
           })
           assertMatchActionOk(result)
           setHomeScore(result.homeScore)
@@ -2529,7 +2588,6 @@ export function CoachDashboard() {
       logTeamShot,
       setToast,
       runOptimisticSync,
-      goalFollowsCorner,
     ],
   )
 
@@ -2742,7 +2800,12 @@ export function CoachDashboard() {
   )
 
   const commitOurGoal = useCallback(
-    (scorerId: string | null, assistPlayerId: string | null, shotType: ShotType | null) => {
+    (
+      scorerId: string | null,
+      assistPlayerId: string | null,
+      shotType: ShotType | null,
+      fromCorner: boolean | null,
+    ) => {
       if (!matchId) return
 
       const isPk = shotType === 'PK'
@@ -2779,8 +2842,8 @@ export function CoachDashboard() {
         playerId: scorerId,
       })
       setPlayers((prev) => applyPlusMinusDelta(prev, 1))
-      const fromCorner = goalFollowsCorner('home', eventTimestamp)
-      const goalDetail = [detail, fromCorner ? 'from a corner' : null].filter(Boolean).join(' · ')
+      const cornerYes = fromCorner === true
+      const goalDetail = [detail, cornerYes ? 'from a corner' : null].filter(Boolean).join(' · ')
       setToast(goalDetail ? `Goal · ${goalDetail}` : 'Goal')
       closeGoalWizard()
 
@@ -2804,6 +2867,7 @@ export function CoachDashboard() {
             onFieldPlayerIds,
             pairAutoShot: true,
             eventNotes: shotType,
+            fromCorner,
           })
           assertMatchActionOk(result)
           setHomeScore(result.homeScore)
@@ -2844,8 +2908,21 @@ export function CoachDashboard() {
       logTeamShot,
       setToast,
       runOptimisticSync,
-      goalFollowsCorner,
     ],
+  )
+
+  const handleSelectCorner = useCallback(
+    (fromCorner: boolean) => {
+      setGoalFromCorner(fromCorner)
+      if (goalWizardTeam === 'opponent') {
+        setGoalWizardOpen(false)
+        setGoalWizardStep('type')
+        setOpponentGoalSheetOpen(true)
+        return
+      }
+      setGoalWizardStep('type')
+    },
+    [goalWizardTeam],
   )
 
   const handleSelectGoalType = useCallback((shotType: ShotType) => {
@@ -2854,51 +2931,60 @@ export function CoachDashboard() {
   }, [])
 
   const handleDontTagGoal = useCallback(() => {
-    if (goalWizardStep === 'type') {
-      commitOurGoal(null, null, null)
+    if (goalWizardStep === 'corner') {
+      closeGoalWizard()
       return
     }
-    commitOurGoal(null, null, goalShotType)
-  }, [goalWizardStep, goalShotType, commitOurGoal])
+    if (goalWizardStep === 'type') {
+      commitOurGoal(null, null, null, goalFromCorner)
+      return
+    }
+    commitOurGoal(null, null, goalShotType, goalFromCorner)
+  }, [goalWizardStep, goalShotType, goalFromCorner, commitOurGoal, closeGoalWizard])
 
   const closeGoalWizardFromSheet = useCallback(() => {
+    if (goalWizardStep === 'corner') {
+      closeGoalWizard()
+      return
+    }
     if (goalWizardStep === 'scorer') {
-      commitOurGoal(null, null, goalShotType)
+      commitOurGoal(null, null, goalShotType, goalFromCorner)
       return
     }
     if (goalWizardStep === 'assist' && goalScorerId) {
-      commitOurGoal(goalScorerId, null, goalShotType)
+      commitOurGoal(goalScorerId, null, goalShotType, goalFromCorner)
       return
     }
     closeGoalWizard()
-  }, [goalWizardStep, goalShotType, goalScorerId, commitOurGoal, closeGoalWizard])
+  }, [goalWizardStep, goalShotType, goalScorerId, goalFromCorner, commitOurGoal, closeGoalWizard])
 
   const handleOpponentGoalCategory = useCallback(
     (category?: OpponentGoalCategory | null) => {
       setOpponentGoalSheetOpen(false)
-      commitOpponentGoal(category)
+      commitOpponentGoal(category, goalFromCorner)
+      setGoalFromCorner(null)
     },
-    [commitOpponentGoal],
+    [commitOpponentGoal, goalFromCorner],
   )
 
   const handleSelectGoalScorer = useCallback(
     (player: MatchPlayer) => {
       setGoalScorerId(player.id)
       if (goalShotType === 'PK') {
-        commitOurGoal(player.id, null, goalShotType)
+        commitOurGoal(player.id, null, goalShotType, goalFromCorner)
         return
       }
       setGoalWizardStep('assist')
     },
-    [goalShotType, commitOurGoal],
+    [goalShotType, goalFromCorner, commitOurGoal],
   )
 
   const handleCompleteGoal = useCallback(
     (assistPlayerId: string | null) => {
       if (!goalScorerId) return
-      commitOurGoal(goalScorerId, assistPlayerId, goalShotType)
+      commitOurGoal(goalScorerId, assistPlayerId, goalShotType, goalFromCorner)
     },
-    [goalScorerId, goalShotType, commitOurGoal],
+    [goalScorerId, goalShotType, goalFromCorner, commitOurGoal],
   )
 
   const handlePkGkPlayerChange = useCallback(
@@ -3622,7 +3708,7 @@ export function CoachDashboard() {
         onAdjustMatchSettings={() => setAdjustSettingsOpen(true)}
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}
-        onOpponentGoal={() => setOpponentGoalSheetOpen(true)}
+        onOpponentGoal={openOpponentGoal}
         onRemoveGoal={(side) => void removeLastGoal(side)}
         onLogShot={(side) => openShotSaveTag('shot', side)}
         onLogSave={(side) => openShotSaveTag('save', side)}
@@ -3741,9 +3827,11 @@ export function CoachDashboard() {
             open={goalWizardOpen}
             team={goalWizardTeam}
             step={goalWizardStep}
+            includesCornerStep={goalWizardStep === 'corner' || goalFromCorner !== null}
             shotType={goalShotType}
             players={players}
             scorerId={goalScorerId}
+            onSelectCorner={handleSelectCorner}
             onSelectType={handleSelectGoalType}
             onSelectScorer={handleSelectGoalScorer}
             onSelectAssist={handleCompleteGoal}

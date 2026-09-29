@@ -114,6 +114,7 @@ create table if not exists public.match_events (
   formation text,
   assist_player_id uuid references public.players (id) on delete set null,
   is_pk boolean not null default false,
+  from_corner boolean,
   created_at timestamptz not null default now(),
   constraint match_events_player_required_check check (
     event_type in (
