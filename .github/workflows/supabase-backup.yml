@@ -34,7 +34,10 @@ jobs:
             exit 1
           fi
 
-      - uses: supabase/setup-cli@v1
+      # v1 resolved "latest" through the unauthenticated GitHub releases API
+      # and failed the 2026-09-30 run with "rate limit exceeded". v3 installs
+      # the CLI from npm, so the nightly job no longer depends on that lookup.
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
