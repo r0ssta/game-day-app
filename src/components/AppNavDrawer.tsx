@@ -8,6 +8,7 @@ import {
   Home,
   Megaphone,
   Menu,
+  PenLine,
   Play,
   Shield,
   Users,
@@ -26,6 +27,7 @@ import { cn } from '@/lib/utils'
 export type AppNavSection =
   | 'home'
   | 'active_match'
+  | 'tactic_board'
   | 'season'
   | 'impact'
   | 'recaps'
@@ -88,6 +90,13 @@ export function buildAppNavItems(input: {
       icon: Play,
       disabled: teamDisabled,
       active: input.activeSection === 'active_match',
+    },
+    {
+      id: 'tactic_board',
+      label: 'Tactic Board',
+      description: 'Sketch a formation without starting a match',
+      icon: PenLine,
+      disabled: teamDisabled,
     },
     {
       id: 'season',

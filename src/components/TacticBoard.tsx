@@ -646,7 +646,7 @@ export function TacticBoardEntry({
   )
 }
 
-function TacticBoardSheet({
+export function TacticBoardSheet({
   teamId,
   matchId,
   phase,

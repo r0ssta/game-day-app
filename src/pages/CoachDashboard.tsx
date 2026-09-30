@@ -12,7 +12,8 @@ import {
 import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
 import { ModalSuspense } from '@/components/Spinner'
 import { MatchHeader } from '@/components/MatchHeader'
-import { TacticBoardEntry } from '@/components/TacticBoard'
+import { TacticBoardEntry, TacticBoardSheet } from '@/components/TacticBoard'
+import type { TacticBoardPhase } from '@/lib/tactic-board'
 import { QaSpeedControls } from '@/components/QaSpeedControls'
 import { PlayerEditModal, type PlayerEditDraft } from '@/components/PlayerEditModal'
 import {
@@ -204,6 +205,12 @@ const AdjustMatchSettingsSheet = lazyWithChunkReload(() =>
     default: m.AdjustMatchSettingsSheet,
   })),
 )
+
+function menuTacticPhase(appMode: string): TacticBoardPhase {
+  if (appMode === 'halftime') return 'halftime'
+  if (appMode === 'match' || appMode === 'penalty_shootout') return 'live'
+  return 'pregame'
+}
 
 export function CoachDashboard() {
   const {
@@ -526,6 +533,7 @@ export function CoachDashboard() {
   const [startingLiveMatchId, setStartingLiveMatchId] = useState<string | null>(null)
   const [qaSpeedMultiplier, setQaSpeedMultiplier] = useState<QaSpeedMultiplier>(1)
   const [navOpen, setNavOpen] = useState(false)
+  const [menuTacticOpen, setMenuTacticOpen] = useState(false)
   const [reportingTab, setReportingTab] = useState<ReportingTab>('matches')
 
   const teamOptions = useMemo(
@@ -689,6 +697,15 @@ export function CoachDashboard() {
             break
           }
           navigateApp(ADMIN_ACTIVITY_PATH)
+          break
+        case 'tactic_board':
+          if (!activeTeamId) {
+            setToast('Select a team on Home first')
+            leaveImpactPath()
+            setAppMode('home')
+            break
+          }
+          setMenuTacticOpen(true)
           break
       }
     },
@@ -3972,6 +3989,19 @@ export function CoachDashboard() {
       toast={toastOverlay}
     >
       {renderScreen()}
+      {menuTacticOpen ? (
+        <TacticBoardSheet
+          teamId={activeTeamId}
+          matchId={
+            appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout'
+              ? matchId
+              : null
+          }
+          phase={menuTacticPhase(appMode)}
+          format={activeTeamFormat}
+          onClose={() => setMenuTacticOpen(false)}
+        />
+      ) : null}
     </CoachAppLayout>
   )
 }
