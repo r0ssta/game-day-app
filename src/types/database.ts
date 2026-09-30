@@ -273,6 +273,15 @@ export type DbLineupPreset = {
   updated_at: string
 }
 
+export type DbTacticBoard = {
+  id: string
+  team_id: string
+  match_id: string | null
+  phase: 'pregame' | 'live' | 'halftime'
+  canvas_json: unknown
+  created_at: string
+}
+
 export type DbClub = {
   id: string
   name: string
@@ -545,6 +554,14 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<DbLineupPreset>
+      }
+      tactic_boards: {
+        Row: DbTacticBoard
+        Insert: Omit<DbTacticBoard, 'id' | 'created_at'> & {
+          id?: string
+          created_at?: string
+        }
+        Update: Partial<DbTacticBoard>
       }
       web_push_subscriptions: {
         Row: DbWebPushSubscription

@@ -5,6 +5,7 @@ import { AddPlayerToRoster } from '@/components/AddPlayerToRoster'
 import { HomeAwayToggle } from '@/components/HomeAwayToggle'
 import { MatchCoachSelect } from '@/components/MatchCoachSelect'
 import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
+import { TacticBoardEntry } from '@/components/TacticBoard'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { ENABLE_SUB_ASSISTANT } from '@/lib/feature-flags'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
@@ -196,6 +197,13 @@ export function MatchSetupPage({
             <p className="rounded-xl border border-neon/30 bg-neon/5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {activeTeamFormat} format · {maxFieldPlayers} on field
             </p>
+
+            <TacticBoardEntry
+              teamId={activeTeamId}
+              matchId={null}
+              phase="pregame"
+              format={activeTeamFormat}
+            />
 
             {onShareParentHub && parentHubUrl ? (
               <div className="space-y-2 rounded-xl border-2 border-border bg-card p-3">

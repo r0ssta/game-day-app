@@ -12,6 +12,7 @@ import {
 import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
 import { ModalSuspense } from '@/components/Spinner'
 import { MatchHeader } from '@/components/MatchHeader'
+import { TacticBoardEntry } from '@/components/TacticBoard'
 import { QaSpeedControls } from '@/components/QaSpeedControls'
 import { PlayerEditModal, type PlayerEditDraft } from '@/components/PlayerEditModal'
 import {
@@ -3604,6 +3605,8 @@ export function CoachDashboard() {
           canBeginSecondHalf={canBeginSecondHalf}
           onBackToHome={() => setAppMode('home')}
           activeTeamFormat={activeTeamFormat}
+          teamId={activeTeamId}
+          matchId={matchId}
           otherStaff={otherStaff}
         />
       </>
@@ -3738,6 +3741,13 @@ export function CoachDashboard() {
             periodClockStarted={periodClockStarted}
           />
         ) : null}
+
+        <TacticBoardEntry
+          teamId={activeTeamId}
+          matchId={matchId}
+          phase="live"
+          format={activeTeamFormat}
+        />
 
         <LiveTacticalPitch
           ref={livePitchRef}

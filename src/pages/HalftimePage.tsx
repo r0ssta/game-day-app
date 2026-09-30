@@ -4,6 +4,7 @@ import { absenceReasonLabel } from '@/lib/match-availability'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { StaffPresenceCluster } from '@/components/StaffPresenceCluster'
 import type { MatchPresenceMember } from '@/lib/match-presence'
+import { TacticBoardEntry } from '@/components/TacticBoard'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { getMaxFieldPlayers, hasSlotAssignments } from '@/lib/lineup'
@@ -56,6 +57,8 @@ export type HalftimePageProps = {
   canBeginSecondHalf: boolean
   onBackToHome: () => void
   activeTeamFormat: TeamFormat
+  teamId: string | null
+  matchId: string | null
   otherStaff?: MatchPresenceMember[]
 }
 
@@ -86,6 +89,8 @@ export function HalftimePage({
   canBeginSecondHalf,
   onBackToHome,
   activeTeamFormat,
+  teamId,
+  matchId,
   otherStaff = [],
 }: HalftimePageProps) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
@@ -127,6 +132,13 @@ export function HalftimePage({
           {' · '}
           <span className="text-amber-400">🧤 goalkeeper</span>
         </p>
+
+        <TacticBoardEntry
+          teamId={teamId}
+          matchId={matchId}
+          phase="halftime"
+          format={activeTeamFormat}
+        />
 
         {lineupPresets.length > 0 ? (
           <div>

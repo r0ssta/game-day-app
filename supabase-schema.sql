@@ -191,6 +191,22 @@ create table if not exists public.lineup_presets (
 
 create index if not exists idx_lineup_presets_team_id on public.lineup_presets (team_id);
 
+create table if not exists public.tactic_boards (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  match_id uuid references public.matches (id) on delete cascade,
+  phase text not null,
+  canvas_json jsonb not null,
+  created_at timestamptz not null default now(),
+  constraint tactic_boards_phase_check check (phase in ('pregame', 'live', 'halftime'))
+);
+
+create index if not exists idx_tactic_boards_team_created
+  on public.tactic_boards (team_id, created_at desc);
+
+create index if not exists idx_tactic_boards_match_id
+  on public.tactic_boards (match_id);
+
 create table if not exists public.match_stat_trackers (
   id uuid primary key default gen_random_uuid(),
   match_id uuid not null references public.matches (id) on delete cascade,
@@ -327,6 +343,7 @@ alter table public.match_events enable row level security;
 alter table public.match_stats enable row level security;
 alter table public.match_reviews enable row level security;
 alter table public.lineup_presets enable row level security;
+alter table public.tactic_boards enable row level security;
 alter table public.match_stat_trackers enable row level security;
 
 -- Teams
@@ -705,6 +722,7 @@ grant select, insert, delete on public.match_events to authenticated;
 grant select, insert, update on public.match_stats to authenticated;
 grant select, insert, update on public.match_reviews to authenticated;
 grant select, insert, update, delete on public.lineup_presets to authenticated;
+grant select, insert, update, delete on public.tactic_boards to authenticated;
 grant select, insert, update on public.match_stat_trackers to authenticated;
 
 grant select on public.teams to anon;
@@ -1314,6 +1332,56 @@ create policy "lineup_presets_update_staff"
 
 create policy "lineup_presets_delete_staff"
   on public.lineup_presets for delete to authenticated
+  using (
+    (select private.can_manage_destructive())
+    and (select private.has_team_access(team_id))
+  );
+
+-- TACTIC BOARDS
+drop policy if exists "tactic_boards_select_staff" on public.tactic_boards;
+drop policy if exists "tactic_boards_insert_staff" on public.tactic_boards;
+drop policy if exists "tactic_boards_update_staff" on public.tactic_boards;
+drop policy if exists "tactic_boards_delete_staff" on public.tactic_boards;
+
+create policy "tactic_boards_select_staff"
+  on public.tactic_boards for select to authenticated
+  using ((select private.is_staff()) and (select private.has_team_access(team_id)));
+
+create policy "tactic_boards_insert_staff"
+  on public.tactic_boards for insert to authenticated
+  with check (
+    (select private.is_staff())
+    and (select private.has_team_access(team_id))
+    and (
+      match_id is null
+      or exists (
+        select 1
+        from public.matches m
+        where m.id = match_id
+          and m.team_id = tactic_boards.team_id
+      )
+    )
+  );
+
+create policy "tactic_boards_update_staff"
+  on public.tactic_boards for update to authenticated
+  using ((select private.is_staff()) and (select private.has_team_access(team_id)))
+  with check (
+    (select private.is_staff())
+    and (select private.has_team_access(team_id))
+    and (
+      match_id is null
+      or exists (
+        select 1
+        from public.matches m
+        where m.id = match_id
+          and m.team_id = tactic_boards.team_id
+      )
+    )
+  );
+
+create policy "tactic_boards_delete_staff"
+  on public.tactic_boards for delete to authenticated
   using (
     (select private.can_manage_destructive())
     and (select private.has_team_access(team_id))

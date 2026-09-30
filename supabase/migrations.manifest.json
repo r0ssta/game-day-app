@@ -75,6 +75,7 @@
     "supabase-teams-director-create-migration.sql",
     "supabase-teams-select-no-recursion-migration.sql",
     "supabase-platform-admin-club-access-migration.sql",
-    "supabase-match-availability-migration.sql"
+    "supabase-match-availability-migration.sql",
+    "supabase-tactic-boards-migration.sql"
   ]
 }

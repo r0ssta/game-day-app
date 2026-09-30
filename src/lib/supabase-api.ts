@@ -49,10 +49,12 @@ import type {
   DbPlayerImpact,
   DbSeason,
   DbSeasonRoster,
+  DbTacticBoard,
   DbTeam,
   SeasonStatus,
 } from '@/types/database'
 import type { LineupPresetFormationJson } from '@/lib/lineup-presets'
+import { tacticBoardInsert, type TacticBoardPhase } from '@/lib/tactic-board'
 import type { Impact, MatchPlayer, RosterPlayer } from '@/types/match'
 import {
   abbreviateOpponentName,
@@ -2310,6 +2312,18 @@ export async function updateLineupPreset(
 export async function deleteLineupPreset(presetId: string): Promise<void> {
   const { error } = await supabase.from('lineup_presets').delete().eq('id', presetId)
   if (error) throw error
+}
+
+export async function saveTacticBoard(input: {
+  teamId: string
+  matchId: string | null
+  phase: TacticBoardPhase
+  canvasJson: string
+}): Promise<DbTacticBoard> {
+  const row = tacticBoardInsert(input)
+  const { data, error } = await supabase.from('tactic_boards').insert(row).select('*').single()
+  if (error) throw error
+  return data
 }
 
 export type StatTrackerContext = {
