@@ -83,6 +83,7 @@ export function TacticBoard({
   const stageRef = useRef<Konva.Stage>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const drawingRef = useRef(false)
+  const finishStrokeRef = useRef<() => void>(() => {})
   const lastCycleRef = useRef({ id: '', at: 0 })
   const placedShapes = useRef<{ our: string; their: string } | null>(null)
   const [format, setFormat] = useState<TeamFormat>(initialFormat)
@@ -115,6 +116,18 @@ export function TacticBoard({
   useEffect(() => {
     if (tool !== 'draw' && tool !== 'arrow' && tool !== 'curve') drawingRef.current = false
   }, [tool])
+
+  useEffect(() => {
+    const end = () => finishStrokeRef.current()
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    window.addEventListener('touchend', end)
+    return () => {
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      window.removeEventListener('touchend', end)
+    }
+  }, [])
 
   useEffect(() => {
     if (size.width < 2 || size.height < 2) return
@@ -178,15 +191,16 @@ export function TacticBoard({
     )
   }
 
-  function pointerPosition(event: Konva.KonvaEventObject<MouseEvent>) {
+  function pointerPosition(event: Konva.KonvaEventObject<Event>) {
     return event.target.getStage()?.getPointerPosition() ?? null
   }
 
-  function handleMouseDown(event: Konva.KonvaEventObject<MouseEvent>) {
+  function startStroke(event: Konva.KonvaEventObject<Event>) {
     if (tool !== 'draw' && tool !== 'arrow' && tool !== 'curve') return
+    if (drawingRef.current) return
     const pos = pointerPosition(event)
     if (!pos) return
-    event.evt.preventDefault()
+    if (event.evt.cancelable) event.evt.preventDefault()
     drawingRef.current = true
     const shaped = tool === 'arrow' || tool === 'curve'
     setStrokes((current) => [
@@ -200,11 +214,11 @@ export function TacticBoard({
     ])
   }
 
-  function handleMouseMove(event: Konva.KonvaEventObject<MouseEvent>) {
+  function moveStroke(event: Konva.KonvaEventObject<Event>) {
     if (!drawingRef.current || (tool !== 'draw' && tool !== 'arrow' && tool !== 'curve')) return
     const pos = pointerPosition(event)
     if (!pos) return
-    event.evt.preventDefault()
+    if (event.evt.cancelable) event.evt.preventDefault()
     setStrokes((current) => {
       const last = current[current.length - 1]
       if (!last) return current
@@ -217,7 +231,7 @@ export function TacticBoard({
     })
   }
 
-  function handleMouseUp() {
+  function finishStroke() {
     if (!drawingRef.current) return
     drawingRef.current = false
     setStrokes((current) => {
@@ -232,6 +246,8 @@ export function TacticBoard({
       return current
     })
   }
+
+  finishStrokeRef.current = finishStroke
 
   function undoStroke() {
     drawingRef.current = false
@@ -366,10 +382,17 @@ export function TacticBoard({
             ref={stageRef}
             width={size.width}
             height={size.height}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerDown={startStroke}
+            onPointerMove={moveStroke}
+            onPointerUp={finishStroke}
+            onPointerCancel={finishStroke}
+            onTouchStart={startStroke}
+            onTouchMove={moveStroke}
+            onTouchEnd={finishStroke}
+            onTouchCancel={finishStroke}
+            onMouseDown={startStroke}
+            onMouseMove={moveStroke}
+            onMouseUp={finishStroke}
             style={{ cursor: marking ? 'crosshair' : 'default' }}
           >
             <Layer>
