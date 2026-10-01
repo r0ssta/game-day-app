@@ -52,6 +52,29 @@ export function playersForTacticSide(input: {
   }))
 }
 
+/** Sample a quadratic arc from a drag. The bow sits to the left of the drag. */
+export function curvedArrowPoints(x1: number, y1: number, x2: number, y2: number): number[] {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.hypot(dx, dy)
+  if (length < 1) return [x1, y1, x2, y2]
+
+  const bend = length * 0.35
+  const cx = (x1 + x2) / 2 + (-dy / length) * bend
+  const cy = (y1 + y2) / 2 + (dx / length) * bend
+  const steps = 24
+  const points: number[] = []
+  for (let step = 0; step <= steps; step += 1) {
+    const t = step / steps
+    const remain = 1 - t
+    points.push(
+      remain * remain * x1 + 2 * remain * t * cx + t * t * x2,
+      remain * remain * y1 + 2 * remain * t * cy + t * t * y2,
+    )
+  }
+  return points
+}
+
 export function nextTacticRole(role: TacticRole): TacticRole {
   const index = TACTIC_ROLES.indexOf(role)
   return TACTIC_ROLES[(index + 1) % TACTIC_ROLES.length] ?? 'D'

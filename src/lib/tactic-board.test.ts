@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getDefaultFormationId } from './formations'
 import {
+  curvedArrowPoints,
   defaultTacticFormationId,
   nextTacticRole,
   playersForTacticSide,
@@ -44,6 +45,18 @@ describe('playersForTacticSide', () => {
       '3-2-1',
     ])
     expect(getDefaultFormationId('11v11')).toBe(tacticFormationsForFormat('11v11')[0]?.id)
+  })
+})
+
+describe('curvedArrowPoints', () => {
+  it('starts and ends on the drag and bows off the straight line', () => {
+    const points = curvedArrowPoints(0, 0, 100, 0)
+    expect(points[0]).toBe(0)
+    expect(points[1]).toBe(0)
+    expect(points.at(-2)).toBeCloseTo(100)
+    expect(points.at(-1)).toBeCloseTo(0)
+    const midY = points[points.length / 2]
+    expect(midY).toBeGreaterThan(10)
   })
 })
 

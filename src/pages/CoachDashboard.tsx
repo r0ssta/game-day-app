@@ -3281,6 +3281,7 @@ export function CoachDashboard() {
         onEditScheduledMatch={(id) => void handleEditScheduledMatch(id)}
         openingScheduledEditId={openingScheduledEditId}
         onTeamManagement={() => setAppMode('team')}
+        onTacticBoard={() => setMenuTacticOpen(true)}
         onReporting={() => {
           setReportingTab('matches')
           setAppMode('reporting')

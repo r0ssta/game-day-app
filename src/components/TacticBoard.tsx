@@ -3,6 +3,7 @@ import type Konva from 'konva'
 import { Arrow, Circle, Group, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import { formatSupabaseError, saveTacticBoard } from '@/lib/supabase-api'
 import {
+  curvedArrowPoints,
   defaultTacticFormationId,
   nextTacticRole,
   playersForTacticSide,
@@ -13,7 +14,7 @@ import {
 import { TEAM_FORMATS, type TeamFormat } from '@/lib/team-format'
 import { cn } from '@/lib/utils'
 
-type BoardTool = 'move' | 'draw' | 'arrow'
+type BoardTool = 'move' | 'draw' | 'arrow' | 'curve'
 
 type TacticPlayer = {
   id: string
@@ -35,7 +36,7 @@ type TacticObject = TacticPlayer | TacticBall
 
 type TacticStroke = {
   id: string
-  kind: 'line' | 'arrow'
+  kind: 'line' | 'arrow' | 'curve'
   color: string
   points: number[]
 }
@@ -112,7 +113,7 @@ export function TacticBoard({
   }, [])
 
   useEffect(() => {
-    if (tool !== 'draw' && tool !== 'arrow') drawingRef.current = false
+    if (tool !== 'draw' && tool !== 'arrow' && tool !== 'curve') drawingRef.current = false
   }, [tool])
 
   useEffect(() => {
@@ -182,25 +183,25 @@ export function TacticBoard({
   }
 
   function handleMouseDown(event: Konva.KonvaEventObject<MouseEvent>) {
-    if (tool !== 'draw' && tool !== 'arrow') return
+    if (tool !== 'draw' && tool !== 'arrow' && tool !== 'curve') return
     const pos = pointerPosition(event)
     if (!pos) return
     event.evt.preventDefault()
     drawingRef.current = true
-    const arrow = tool === 'arrow'
+    const shaped = tool === 'arrow' || tool === 'curve'
     setStrokes((current) => [
       ...current,
       {
         id: crypto.randomUUID(),
-        kind: arrow ? 'arrow' : 'line',
+        kind: tool === 'draw' ? 'line' : tool,
         color: ink,
-        points: arrow ? [pos.x, pos.y, pos.x, pos.y] : [pos.x, pos.y],
+        points: shaped ? [pos.x, pos.y, pos.x, pos.y] : [pos.x, pos.y],
       },
     ])
   }
 
   function handleMouseMove(event: Konva.KonvaEventObject<MouseEvent>) {
-    if (!drawingRef.current || (tool !== 'draw' && tool !== 'arrow')) return
+    if (!drawingRef.current || (tool !== 'draw' && tool !== 'arrow' && tool !== 'curve')) return
     const pos = pointerPosition(event)
     if (!pos) return
     event.evt.preventDefault()
@@ -209,7 +210,7 @@ export function TacticBoard({
       if (!last) return current
       const next = current.slice()
       next[next.length - 1] =
-        last.kind === 'arrow'
+        last.kind === 'arrow' || last.kind === 'curve'
           ? { ...last, points: [last.points[0] ?? pos.x, last.points[1] ?? pos.y, pos.x, pos.y] }
           : { ...last, points: [...last.points, pos.x, pos.y] }
       return next
@@ -222,7 +223,7 @@ export function TacticBoard({
     setStrokes((current) => {
       const last = current[current.length - 1]
       if (!last) return current
-      if (last.kind === 'arrow') {
+      if (last.kind === 'arrow' || last.kind === 'curve') {
         const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = last.points
         if (Math.hypot(x2 - x1, y2 - y1) < 10) return current.slice(0, -1)
       } else if (last.points.length < 4) {
@@ -262,7 +263,7 @@ export function TacticBoard({
     }
   }
 
-  const marking = tool === 'draw' || tool === 'arrow'
+  const marking = tool === 'draw' || tool === 'arrow' || tool === 'curve'
   const pad = PITCH_PAD
   const field = {
     x: pad,
@@ -301,7 +302,7 @@ export function TacticBoard({
             options={tacticFormationsForFormat(format)}
           />
         </div>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-2">
           <ToolButton
             label="Draw"
             pressed={tool === 'draw'}
@@ -311,6 +312,11 @@ export function TacticBoard({
             label="Arrow"
             pressed={tool === 'arrow'}
             onClick={() => setTool((current) => (current === 'arrow' ? 'move' : 'arrow'))}
+          />
+          <ToolButton
+            label="Curve"
+            pressed={tool === 'curve'}
+            onClick={() => setTool((current) => (current === 'curve' ? 'move' : 'curve'))}
           />
           <ToolButton label="Undo" disabled={strokes.length === 0} onClick={undoStroke} />
           <ToolButton label="Erase" disabled={strokes.length === 0} onClick={eraseStrokes} />
@@ -345,7 +351,9 @@ export function TacticBoard({
             ? 'Drag to draw'
             : tool === 'arrow'
               ? 'Drag to add an arrow'
-              : 'Tap a player to switch D, MF, F'}
+              : tool === 'curve'
+                ? 'Drag to add a curved arrow'
+                : 'Tap a player to switch D, MF, F'}
         </p>
       </div>
 
@@ -440,26 +448,35 @@ export function TacticBoard({
               />
 
               {strokes.map((stroke) =>
-                stroke.kind === 'arrow' ? (
-                  <Arrow
-                    key={stroke.id}
-                    points={stroke.points}
-                    stroke={stroke.color}
-                    fill={stroke.color}
-                    strokeWidth={4}
-                    pointerLength={16}
-                    pointerWidth={16}
-                    lineCap="round"
-                    lineJoin="round"
-                    listening={false}
-                  />
-                ) : (
+                stroke.kind === 'line' ? (
                   <Line
                     key={stroke.id}
                     points={stroke.points}
                     stroke={stroke.color}
                     strokeWidth={4}
                     tension={0.4}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                  />
+                ) : (
+                  <Arrow
+                    key={stroke.id}
+                    points={
+                      stroke.kind === 'curve'
+                        ? curvedArrowPoints(
+                            stroke.points[0] ?? 0,
+                            stroke.points[1] ?? 0,
+                            stroke.points[2] ?? 0,
+                            stroke.points[3] ?? 0,
+                          )
+                        : stroke.points
+                    }
+                    stroke={stroke.color}
+                    fill={stroke.color}
+                    strokeWidth={4}
+                    pointerLength={16}
+                    pointerWidth={16}
                     lineCap="round"
                     lineJoin="round"
                     listening={false}

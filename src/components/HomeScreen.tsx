@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { BarChart3, ClipboardList, FileText, Pencil, Play, Users } from 'lucide-react'
+import { BarChart3, ClipboardList, FileText, PenLine, Pencil, Play, Users } from 'lucide-react'
 import { TeamSelector } from '@/components/AppNavigation'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { GameRecapNeededAlerts } from '@/components/reporting/GameRecapNeededAlerts'
@@ -29,6 +29,7 @@ type HomeScreenProps = {
   onEditScheduledMatch: (matchId: string) => void
   openingScheduledEditId?: string | null
   onTeamManagement: () => void
+  onTacticBoard: () => void
   onReporting: () => void
   onViewRecaps: () => void
   onResumeMatch: () => void
@@ -53,6 +54,7 @@ export function HomeScreen({
   onEditScheduledMatch,
   openingScheduledEditId,
   onTeamManagement,
+  onTacticBoard,
   onReporting,
   onViewRecaps,
   onResumeMatch,
@@ -214,6 +216,14 @@ export function HomeScreen({
               onClick={onScheduleNewGame}
             />
           ) : null}
+
+          <HomeActionButton
+            icon={<PenLine className="size-7 text-athletic" strokeWidth={2.5} />}
+            title="Tactic Board"
+            description="Sketch a formation without starting a match"
+            disabled={!teamReady}
+            onClick={onTacticBoard}
+          />
 
           <HomeActionButton
             icon={<Users className="size-7 text-athletic" strokeWidth={2.5} />}
