@@ -52,16 +52,32 @@ export function playersForTacticSide(input: {
   }))
 }
 
-/** Sample a quadratic arc from a drag. The bow sits to the left of the drag. */
-export function curvedArrowPoints(x1: number, y1: number, x2: number, y2: number): number[] {
+/** Fit a quadratic arc to a drag. The bow follows whichever side the path traveled. */
+export function curvedArrowPoints(drag: number[]): number[] {
+  if (drag.length < 4) return drag
+  const x1 = drag[0] ?? 0
+  const y1 = drag[1] ?? 0
+  const x2 = drag.at(-2) ?? x1
+  const y2 = drag.at(-1) ?? y1
   const dx = x2 - x1
   const dy = y2 - y1
   const length = Math.hypot(dx, dy)
   if (length < 1) return [x1, y1, x2, y2]
 
-  const bend = length * 0.35
-  const cx = (x1 + x2) / 2 + (-dy / length) * bend
-  const cy = (y1 + y2) / 2 + (dx / length) * bend
+  const nx = -dy / length
+  const ny = dx / length
+  let bow = 0
+  for (let index = 2; index < drag.length - 2; index += 2) {
+    const px = drag[index] ?? 0
+    const py = drag[index + 1] ?? 0
+    const signed = (px - x1) * nx + (py - y1) * ny
+    if (Math.abs(signed) > Math.abs(bow)) bow = signed
+  }
+
+  const midX = (x1 + x2) / 2 + nx * bow
+  const midY = (y1 + y2) / 2 + ny * bow
+  const cx = 2 * midX - 0.5 * x1 - 0.5 * x2
+  const cy = 2 * midY - 0.5 * y1 - 0.5 * y2
   const steps = 24
   const points: number[] = []
   for (let step = 0; step <= steps; step += 1) {

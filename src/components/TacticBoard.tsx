@@ -202,14 +202,13 @@ export function TacticBoard({
     if (!pos) return
     if (event.evt.cancelable) event.evt.preventDefault()
     drawingRef.current = true
-    const shaped = tool === 'arrow' || tool === 'curve'
     setStrokes((current) => [
       ...current,
       {
         id: crypto.randomUUID(),
         kind: tool === 'draw' ? 'line' : tool,
         color: ink,
-        points: shaped ? [pos.x, pos.y, pos.x, pos.y] : [pos.x, pos.y],
+        points: tool === 'arrow' ? [pos.x, pos.y, pos.x, pos.y] : [pos.x, pos.y],
       },
     ])
   }
@@ -224,7 +223,7 @@ export function TacticBoard({
       if (!last) return current
       const next = current.slice()
       next[next.length - 1] =
-        last.kind === 'arrow' || last.kind === 'curve'
+        last.kind === 'arrow'
           ? { ...last, points: [last.points[0] ?? pos.x, last.points[1] ?? pos.y, pos.x, pos.y] }
           : { ...last, points: [...last.points, pos.x, pos.y] }
       return next
@@ -238,7 +237,10 @@ export function TacticBoard({
       const last = current[current.length - 1]
       if (!last) return current
       if (last.kind === 'arrow' || last.kind === 'curve') {
-        const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = last.points
+        const x1 = last.points[0] ?? 0
+        const y1 = last.points[1] ?? 0
+        const x2 = last.points.at(-2) ?? x1
+        const y2 = last.points.at(-1) ?? y1
         if (Math.hypot(x2 - x1, y2 - y1) < 10) return current.slice(0, -1)
       } else if (last.points.length < 4) {
         return current.slice(0, -1)
@@ -368,7 +370,7 @@ export function TacticBoard({
             : tool === 'arrow'
               ? 'Drag to add an arrow'
               : tool === 'curve'
-                ? 'Drag to add a curved arrow'
+                ? 'Drag the way you want it to bend'
                 : 'Tap a player to switch D, MF, F'}
         </p>
       </div>
@@ -486,14 +488,7 @@ export function TacticBoard({
                   <Arrow
                     key={stroke.id}
                     points={
-                      stroke.kind === 'curve'
-                        ? curvedArrowPoints(
-                            stroke.points[0] ?? 0,
-                            stroke.points[1] ?? 0,
-                            stroke.points[2] ?? 0,
-                            stroke.points[3] ?? 0,
-                          )
-                        : stroke.points
+                      stroke.kind === 'curve' ? curvedArrowPoints(stroke.points) : stroke.points
                     }
                     stroke={stroke.color}
                     fill={stroke.color}
