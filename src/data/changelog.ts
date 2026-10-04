@@ -11,6 +11,15 @@ export type ChangelogRelease = {
 /** Newest release first. `version` is compared to `last_seen_version`. */
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: '2026.10.04',
+    date: 'October 4, 2026',
+    title: 'Own goals and Goal taps',
+    features: [
+      'Own Goal is a goal type — tap it and the score counts, with no scorer or shot',
+      'Closing the Goal sheet still logs the goal; Undo drops a tap you did not mean',
+    ],
+  },
+  {
     version: '2026.09.29',
     date: 'September 29, 2026',
     title: 'Change who’s in during the game',

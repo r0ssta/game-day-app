@@ -126,7 +126,7 @@ import {
   type AvailabilityChange,
 } from '@/lib/match-availability'
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
-import { assertMatchActionOk, type OpponentGoalCategory, type ShotType } from '@/schemas/match-actions'
+import { assertMatchActionOk, type GoalType, type OpponentGoalCategory, type ShotType } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { liveEventDedupeKey, SERVER_LIVE_EVENT_DEDUPE_MS, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
 import { goalWizardCloseCommit } from '@/lib/goal-wizard-close'
@@ -519,7 +519,7 @@ export function CoachDashboard() {
   const [goalWizardTeam, setGoalWizardTeam] = useState<GoalWizardTeam>('us')
   const [goalWizardStep, setGoalWizardStep] = useState<GoalWizardStep>('type')
   const [goalFromCorner, setGoalFromCorner] = useState<boolean | null>(null)
-  const [goalShotType, setGoalShotType] = useState<ShotType | null>(null)
+  const [goalShotType, setGoalShotType] = useState<GoalType | null>(null)
   const [goalScorerId, setGoalScorerId] = useState<string | null>(null)
   const [opponentGoalSheetOpen, setOpponentGoalSheetOpen] = useState(false)
   const [cardWizardOpen, setCardWizardOpen] = useState(false)
@@ -2527,13 +2527,16 @@ export function CoachDashboard() {
         .map((p) => p.id)
       const homeBefore = homeScore
       const awayBefore = awayScore
+      const ownGoal = category === 'Own Goal'
 
       setAwayScore((current) => current + 1)
-      logTeamShot('away', {
-        silent: true,
-        timestamp: eventTimestamp,
-        persist: false,
-      })
+      if (!ownGoal) {
+        logTeamShot('away', {
+          silent: true,
+          timestamp: eventTimestamp,
+          persist: false,
+        })
+      }
       setPlayers((prev) => applyPlusMinusDelta(prev, -1))
       const cornerYes = fromCorner === true
       setToast(
@@ -2561,7 +2564,7 @@ export function CoachDashboard() {
             opponent: matchOpponent,
             teamSlug: activeTeamSlug,
             onFieldPlayerIds,
-            pairAutoShot: true,
+            pairAutoShot: !ownGoal,
             eventNotes: category ?? null,
             fromCorner: fromCorner ?? null,
           })
@@ -2569,7 +2572,7 @@ export function CoachDashboard() {
           setHomeScore(result.homeScore)
           setAwayScore(result.awayScore)
           if (result.deduped) {
-            setAwayShots((n) => Math.max(0, n - 1))
+            if (!ownGoal) setAwayShots((n) => Math.max(0, n - 1))
             setPlayers((prev) => applyPlusMinusDelta(prev, 1))
           }
         },
@@ -2578,7 +2581,7 @@ export function CoachDashboard() {
           quiet: true,
           onRevert: () => {
             setAwayScore(awayBefore)
-            setAwayShots((n) => Math.max(0, n - 1))
+            if (!ownGoal) setAwayShots((n) => Math.max(0, n - 1))
             setPlayers((prev) => applyPlusMinusDelta(prev, 1))
           },
           onErrorToast: failToast('Could not save goal — try again'),
@@ -2818,14 +2821,15 @@ export function CoachDashboard() {
     (
       scorerId: string | null,
       assistPlayerId: string | null,
-      shotType: ShotType | null,
+      shotType: GoalType | null,
       fromCorner: boolean | null,
     ) => {
       if (!matchId) return
 
       const isPk = shotType === 'PK'
-      const scorer = scorerId ? players.find((p) => p.id === scorerId) : null
-      if (scorerId && !scorer) return
+      const ownGoal = shotType === 'Own Goal'
+      const scorer = !ownGoal && scorerId ? players.find((p) => p.id === scorerId) : null
+      if (!ownGoal && scorerId && !scorer) return
       if (assistPlayerId && assistPlayerId === scorerId) return
       if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'home']), Date.now(), SERVER_LIVE_EVENT_DEDUPE_MS)) {
         setToast('Already recorded')
@@ -2835,7 +2839,9 @@ export function CoachDashboard() {
 
       const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
       const assistPlayer =
-        scorer && !isPk && assistPlayerId ? players.find((p) => p.id === assistPlayerId) : null
+        scorer && !isPk && !ownGoal && assistPlayerId
+          ? players.find((p) => p.id === assistPlayerId)
+          : null
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const scorerLabel = scorer ? formatPlayerLabel(scorer, sidelineMap) : null
       const assistLabel = assistPlayer ? formatPlayerLabel(assistPlayer, sidelineMap) : null
@@ -2849,13 +2855,15 @@ export function CoachDashboard() {
       const awayBefore = awayScore
 
       setHomeScore((s) => s + 1)
-      logTeamShot('home', {
-        silent: true,
-        timestamp: eventTimestamp,
-        persist: false,
-        shotType,
-        playerId: scorerId,
-      })
+      if (!ownGoal) {
+        logTeamShot('home', {
+          silent: true,
+          timestamp: eventTimestamp,
+          persist: false,
+          shotType,
+          playerId: scorerId,
+        })
+      }
       setPlayers((prev) => applyPlusMinusDelta(prev, 1))
       const cornerYes = fromCorner === true
       const goalDetail = [detail, cornerYes ? 'from a corner' : null].filter(Boolean).join(' · ')
@@ -2868,8 +2876,8 @@ export function CoachDashboard() {
             matchId,
             ourGoal: true,
             isPk,
-            scorerId,
-            assistPlayerId: scorer && !isPk ? assistPlayerId : null,
+            scorerId: ownGoal ? null : scorerId,
+            assistPlayerId: scorer && !isPk && !ownGoal ? assistPlayerId : null,
             scorerLabel: scorerLabel ?? undefined,
             assistLabel,
             timestamp: eventTimestamp,
@@ -2880,7 +2888,7 @@ export function CoachDashboard() {
             opponent: matchOpponent,
             teamSlug: activeTeamSlug,
             onFieldPlayerIds,
-            pairAutoShot: true,
+            pairAutoShot: !ownGoal,
             eventNotes: shotType,
             fromCorner,
           })
@@ -2888,7 +2896,7 @@ export function CoachDashboard() {
           setHomeScore(result.homeScore)
           setAwayScore(result.awayScore)
           if (result.deduped) {
-            setHomeShots((n) => Math.max(0, n - 1))
+            if (!ownGoal) setHomeShots((n) => Math.max(0, n - 1))
             setPlayers((prev) => applyPlusMinusDelta(prev, -1))
           }
         },
@@ -2897,7 +2905,7 @@ export function CoachDashboard() {
           quiet: true,
           onRevert: () => {
             setHomeScore(homeBefore)
-            setHomeShots((n) => Math.max(0, n - 1))
+            if (!ownGoal) setHomeShots((n) => Math.max(0, n - 1))
             setPlayers((prev) => applyPlusMinusDelta(prev, -1))
           },
           onErrorToast: failToast('Could not save goal — try again'),
@@ -2940,10 +2948,17 @@ export function CoachDashboard() {
     [goalWizardTeam],
   )
 
-  const handleSelectGoalType = useCallback((shotType: ShotType) => {
-    setGoalShotType(shotType)
-    setGoalWizardStep('scorer')
-  }, [])
+  const handleSelectGoalType = useCallback(
+    (shotType: GoalType) => {
+      setGoalShotType(shotType)
+      if (shotType === 'Own Goal') {
+        commitOurGoal(null, null, shotType, goalFromCorner)
+        return
+      }
+      setGoalWizardStep('scorer')
+    },
+    [goalFromCorner, commitOurGoal],
+  )
 
   const handleDontTagGoal = useCallback(() => {
     if (goalWizardTeam === 'opponent') {

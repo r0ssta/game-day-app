@@ -11,6 +11,7 @@ import {
   LogSubstitutionInputSchema,
   LogTeamEventInputSchema,
   parseOpponentGoalCategory,
+  parseGoalType,
   parseShotType,
   LogAvailabilityInputSchema,
   RemoveLastGoalInputSchema,
@@ -72,8 +73,31 @@ describe('match action Zod schemas', () => {
 
   it('parseShotType accepts known labels only', () => {
     expect(parseShotType('PK')).toBe('PK')
+    expect(parseShotType('Own Goal')).toBeNull()
     expect(parseShotType('Header')).toBeNull()
     expect(parseShotType(null)).toBeNull()
+  })
+
+  it('parseGoalType accepts shot types and Own Goal', () => {
+    expect(parseGoalType('PK')).toBe('PK')
+    expect(parseGoalType('Own Goal')).toBe('Own Goal')
+    expect(parseGoalType('Header')).toBeNull()
+  })
+
+  it('LogGoalInputSchema accepts an own goal without a scorer', () => {
+    const parsed = LogGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      ourGoal: true,
+      isPk: false,
+      timestamp: 10,
+      formation: '4-3-3',
+      homeScoreBefore: 0,
+      awayScoreBefore: 0,
+      eventNotes: 'Own Goal',
+      pairAutoShot: false,
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data.eventNotes).toBe('Own Goal')
   })
 
   it('LogGoalInputSchema accepts our goal with a shot type and no scorer', () => {
@@ -137,6 +161,7 @@ describe('match action Zod schemas', () => {
 
   it('parseOpponentGoalCategory accepts known labels only', () => {
     expect(parseOpponentGoalCategory('Great Play')).toBe('Great Play')
+    expect(parseOpponentGoalCategory('Own Goal')).toBe('Own Goal')
     expect(parseOpponentGoalCategory('Lucky bounce')).toBeNull()
     expect(parseOpponentGoalCategory(null)).toBeNull()
   })

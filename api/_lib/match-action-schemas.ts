@@ -14,9 +14,26 @@ export const SHOT_TYPES = ['Free Kick', 'PK', 'Short-range', 'Long-range'] as co
 export const ShotTypeSchema = z.enum(SHOT_TYPES)
 export type ShotType = z.infer<typeof ShotTypeSchema>
 
+export const OWN_GOAL_TYPE = 'Own Goal' as const
+
+/** Goal wizard labels. Own Goal is a goal tag only — not a shot/save type. */
+export const GOAL_TYPES = [...SHOT_TYPES, OWN_GOAL_TYPE] as const
+
+export const GoalTypeSchema = z.enum(GOAL_TYPES)
+export type GoalType = z.infer<typeof GoalTypeSchema>
+
 export function parseShotType(notes: string | null | undefined): ShotType | null {
   const parsed = ShotTypeSchema.safeParse((notes ?? '').trim())
   return parsed.success ? parsed.data : null
+}
+
+export function parseGoalType(notes: string | null | undefined): GoalType | null {
+  const parsed = GoalTypeSchema.safeParse((notes ?? '').trim())
+  return parsed.success ? parsed.data : null
+}
+
+export function isOwnGoalType(notes: string | null | undefined): boolean {
+  return parseGoalType(notes) === OWN_GOAL_TYPE
 }
 
 /** Shot / save / corner from the live match dashboard. */
@@ -42,6 +59,7 @@ export const OPPONENT_GOAL_CATEGORIES = [
   'Caught on the Counter',
   'Set Piece / PK',
   'Great Play',
+  'Own Goal',
 ] as const
 
 export const OpponentGoalCategorySchema = z.enum(OPPONENT_GOAL_CATEGORIES)
@@ -101,13 +119,13 @@ export const LogGoalInputSchema = z
     }
     if (value.eventNotes == null || value.eventNotes.trim() === '') return
     const notesOk = value.ourGoal
-      ? parseShotType(value.eventNotes) != null
+      ? parseGoalType(value.eventNotes) != null
       : parseOpponentGoalCategory(value.eventNotes) != null
     if (!notesOk) {
       ctx.addIssue({
         code: 'custom',
         message: value.ourGoal
-          ? 'eventNotes must be a shot type for our goals'
+          ? 'eventNotes must be a goal type for our goals'
           : 'eventNotes must be an opponent-goal category',
         path: ['eventNotes'],
       })

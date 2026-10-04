@@ -1,12 +1,12 @@
 import type { GoalWizardStep, GoalWizardTeam } from '@/components/GoalWizardModal'
-import type { ShotType } from '@/schemas/match-actions'
+import type { GoalType } from '@/schemas/match-actions'
 
 export type GoalWizardCloseCommit =
   | {
       kind: 'our'
       scorerId: string | null
       assistPlayerId: string | null
-      shotType: ShotType | null
+      shotType: GoalType | null
       fromCorner: boolean | null
     }
   | {
@@ -21,7 +21,7 @@ export type GoalWizardCloseCommit =
 export function goalWizardCloseCommit(input: {
   team: GoalWizardTeam
   step: GoalWizardStep
-  shotType: ShotType | null
+  shotType: GoalType | null
   scorerId: string | null
   fromCorner: boolean | null
 }): GoalWizardCloseCommit {

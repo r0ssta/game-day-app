@@ -3,7 +3,7 @@ import { Goal, X } from 'lucide-react'
 import { buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
 import { cn } from '@/lib/utils'
 import { MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
-import { SHOT_TYPES, type ShotType } from '@/schemas/match-actions'
+import { GOAL_TYPES, type GoalType } from '@/schemas/match-actions'
 import type { MatchPlayer } from '@/types/match'
 
 function formatJersey(number: number | null) {
@@ -19,11 +19,11 @@ type GoalWizardModalProps = {
   step: GoalWizardStep
   /** True when this goal started with the corner question. */
   includesCornerStep: boolean
-  shotType: ShotType | null
+  shotType: GoalType | null
   players: MatchPlayer[]
   scorerId: string | null
   onSelectCorner: (fromCorner: boolean) => void
-  onSelectType: (shotType: ShotType) => void
+  onSelectType: (shotType: GoalType) => void
   onSelectScorer: (player: MatchPlayer) => void
   onSelectAssist: (assistPlayerId: string | null) => void
   onDontTag: () => void
@@ -63,8 +63,8 @@ export function GoalWizardModal({
   const assistCandidates = onFieldPlayers.filter((p) => p.id !== scorerId)
   const scorer = scorerId ? onFieldPlayers.find((p) => p.id === scorerId) : null
   const teamLabel = team === 'us' ? 'Our Goal' : 'Opponent Goal'
-  const asksForAssist = shotType !== 'PK'
-  const typeSteps = asksForAssist ? 3 : 2
+  const asksForAssist = shotType !== 'PK' && shotType !== 'Own Goal'
+  const typeSteps = shotType === 'Own Goal' ? 1 : asksForAssist ? 3 : 2
   const totalSteps = includesCornerStep ? typeSteps + 1 : typeSteps
   const stepNumber =
     step === 'corner'
@@ -92,7 +92,7 @@ export function GoalWizardModal({
     step === 'corner'
       ? `${teamLabel}: from a corner`
       : step === 'type'
-        ? `${teamLabel}: shot type`
+        ? `${teamLabel}: goal type`
         : `${teamLabel}: ${heading}`
 
   return (
@@ -167,7 +167,7 @@ export function GoalWizardModal({
 
         {step === 'type' ? (
           <div className="flex flex-col gap-3 px-4 pb-4">
-            {SHOT_TYPES.map((type) => (
+            {GOAL_TYPES.map((type) => (
               <button
                 key={type}
                 type="button"
