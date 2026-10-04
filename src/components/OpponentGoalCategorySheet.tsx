@@ -51,7 +51,7 @@ export function OpponentGoalCategorySheet({
               How scored?
             </h2>
             <p className="mt-1 text-sm font-bold text-muted-foreground">
-              One tap logs the goal.
+              One tap logs the goal. Close still logs it.
             </p>
           </div>
           <button

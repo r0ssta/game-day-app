@@ -33,7 +33,11 @@ import { teamsForSelector } from '@/lib/team-context'
 import { formatTeamDisplayName } from '@/lib/age-groups'
 import { resolveTeamAgeGroup } from '@/lib/season-roster'
 import type { ReportingTab } from '@/components/reporting/ReportingTabBar'
-import type { GoalWizardStep, GoalWizardTeam } from '@/components/GoalWizardModal'
+import {
+  GoalWizardModal,
+  type GoalWizardStep,
+  type GoalWizardTeam,
+} from '@/components/GoalWizardModal'
 import type {
   ShotSaveTagKind,
   ShotSaveTagSide,
@@ -125,6 +129,7 @@ import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
 import { assertMatchActionOk, type OpponentGoalCategory, type ShotType } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { liveEventDedupeKey, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
+import { goalWizardCloseCommit } from '@/lib/goal-wizard-close'
 import {
   rebuildPkRoundsFromEvents,
   shouldAutoEnterPenaltyShootoutAfterExtraTime,
@@ -181,9 +186,6 @@ const PlatformAdminScreen = lazyWithChunkReload(() =>
 )
 const PenaltyShootoutScreen = lazyWithChunkReload(() =>
   import('@/components/PenaltyShootoutScreen').then((m) => ({ default: m.PenaltyShootoutScreen })),
-)
-const GoalWizardModal = lazyWithChunkReload(() =>
-  import('@/components/GoalWizardModal').then((m) => ({ default: m.GoalWizardModal })),
 )
 const ShotSaveTagSheet = lazyWithChunkReload(() =>
   import('@/components/ShotSaveTagSheet').then((m) => ({ default: m.ShotSaveTagSheet })),
@@ -2277,11 +2279,6 @@ export function CoachDashboard() {
     setOpponentGoalSheetOpen(true)
   }, [seconds, halfLengthMinutes, cornerPromptDue, openGoalWizard])
 
-  const closeOpponentGoalSheet = useCallback(() => {
-    setOpponentGoalSheetOpen(false)
-    setGoalFromCorner(null)
-  }, [])
-
   const handleConfirmCard = useCallback(
     (playerId: string, kind: 'yellow' | 'red') => {
       if (!matchId) return
@@ -2949,32 +2946,55 @@ export function CoachDashboard() {
   }, [])
 
   const handleDontTagGoal = useCallback(() => {
-    if (goalWizardStep === 'corner') {
+    if (goalWizardTeam === 'opponent') {
       closeGoalWizard()
+      commitOpponentGoal(null, goalWizardStep === 'corner' ? null : goalFromCorner)
       return
     }
-    if (goalWizardStep === 'type') {
-      commitOurGoal(null, null, null, goalFromCorner)
+    if (goalWizardStep === 'type' || goalWizardStep === 'corner') {
+      commitOurGoal(null, null, null, goalWizardStep === 'corner' ? null : goalFromCorner)
       return
     }
     commitOurGoal(null, null, goalShotType, goalFromCorner)
-  }, [goalWizardStep, goalShotType, goalFromCorner, commitOurGoal, closeGoalWizard])
+  }, [
+    goalWizardTeam,
+    goalWizardStep,
+    goalShotType,
+    goalFromCorner,
+    commitOurGoal,
+    commitOpponentGoal,
+    closeGoalWizard,
+  ])
 
   const closeGoalWizardFromSheet = useCallback(() => {
-    if (goalWizardStep === 'corner') {
+    const commit = goalWizardCloseCommit({
+      team: goalWizardTeam,
+      step: goalWizardStep,
+      shotType: goalShotType,
+      scorerId: goalScorerId,
+      fromCorner: goalFromCorner,
+    })
+    if (commit.kind === 'opponent') {
       closeGoalWizard()
+      commitOpponentGoal(null, commit.fromCorner)
       return
     }
-    if (goalWizardStep === 'scorer') {
-      commitOurGoal(null, null, goalShotType, goalFromCorner)
-      return
-    }
-    if (goalWizardStep === 'assist' && goalScorerId) {
-      commitOurGoal(goalScorerId, null, goalShotType, goalFromCorner)
-      return
-    }
-    closeGoalWizard()
-  }, [goalWizardStep, goalShotType, goalScorerId, goalFromCorner, commitOurGoal, closeGoalWizard])
+    commitOurGoal(
+      commit.scorerId,
+      commit.assistPlayerId,
+      commit.shotType,
+      commit.fromCorner,
+    )
+  }, [
+    goalWizardTeam,
+    goalWizardStep,
+    goalShotType,
+    goalScorerId,
+    goalFromCorner,
+    commitOurGoal,
+    commitOpponentGoal,
+    closeGoalWizard,
+  ])
 
   const handleOpponentGoalCategory = useCallback(
     (category?: OpponentGoalCategory | null) => {
@@ -3850,23 +3870,21 @@ export function CoachDashboard() {
       ) : null}
 
       {goalWizardOpen ? (
-        <ModalSuspense>
-          <GoalWizardModal
-            open={goalWizardOpen}
-            team={goalWizardTeam}
-            step={goalWizardStep}
-            includesCornerStep={goalWizardStep === 'corner' || goalFromCorner !== null}
-            shotType={goalShotType}
-            players={players}
-            scorerId={goalScorerId}
-            onSelectCorner={handleSelectCorner}
-            onSelectType={handleSelectGoalType}
-            onSelectScorer={handleSelectGoalScorer}
-            onSelectAssist={handleCompleteGoal}
-            onDontTag={handleDontTagGoal}
-            onClose={closeGoalWizardFromSheet}
-          />
-        </ModalSuspense>
+        <GoalWizardModal
+          open={goalWizardOpen}
+          team={goalWizardTeam}
+          step={goalWizardStep}
+          includesCornerStep={goalWizardStep === 'corner' || goalFromCorner !== null}
+          shotType={goalShotType}
+          players={players}
+          scorerId={goalScorerId}
+          onSelectCorner={handleSelectCorner}
+          onSelectType={handleSelectGoalType}
+          onSelectScorer={handleSelectGoalScorer}
+          onSelectAssist={handleCompleteGoal}
+          onDontTag={handleDontTagGoal}
+          onClose={closeGoalWizardFromSheet}
+        />
       ) : null}
 
       {opponentGoalSheetOpen ? (
@@ -3874,7 +3892,7 @@ export function CoachDashboard() {
           open={opponentGoalSheetOpen}
           onSelect={handleOpponentGoalCategory}
           onSkip={() => handleOpponentGoalCategory(null)}
-          onClose={closeOpponentGoalSheet}
+          onClose={() => handleOpponentGoalCategory(null)}
         />
       ) : null}
 
