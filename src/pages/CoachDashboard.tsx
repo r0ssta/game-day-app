@@ -128,7 +128,7 @@ import {
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
 import { assertMatchActionOk, type OpponentGoalCategory, type ShotType } from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
-import { liveEventDedupeKey, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
+import { liveEventDedupeKey, SERVER_LIVE_EVENT_DEDUPE_MS, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
 import { goalWizardCloseCommit } from '@/lib/goal-wizard-close'
 import {
   rebuildPkRoundsFromEvents,
@@ -2515,7 +2515,7 @@ export function CoachDashboard() {
   const commitOpponentGoal = useCallback(
     (category?: OpponentGoalCategory | null, fromCorner?: boolean | null) => {
       if (!matchId) return
-      if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'away']))) {
+      if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'away']), Date.now(), SERVER_LIVE_EVENT_DEDUPE_MS)) {
         setToast('Already recorded')
         return
       }
@@ -2827,7 +2827,7 @@ export function CoachDashboard() {
       const scorer = scorerId ? players.find((p) => p.id === scorerId) : null
       if (scorerId && !scorer) return
       if (assistPlayerId && assistPlayerId === scorerId) return
-      if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'home']))) {
+      if (!shouldAcceptLiveEvent(liveEventDedupeKey(['goal', matchId, 'home']), Date.now(), SERVER_LIVE_EVENT_DEDUPE_MS)) {
         setToast('Already recorded')
         closeGoalWizard()
         return
