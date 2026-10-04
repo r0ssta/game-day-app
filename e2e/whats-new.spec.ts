@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { CHANGELOG, previewChangelog } from '../src/data/changelog'
 import {
   skipUnlessStaffE2e,
   staffBrowserAuthPayload,
@@ -24,6 +25,9 @@ test.describe('coach whats new', () => {
       return
     }
 
+    const preview = previewChangelog()
+    const older = CHANGELOG.slice(preview.length)
+
     await injectStaffSession(page)
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Staff Login' })).toHaveCount(0)
@@ -33,23 +37,22 @@ test.describe('coach whats new', () => {
     await unread.click()
 
     await expect(page.getByRole('heading', { name: /what.?s new/i })).toBeVisible()
-    await expect(page.getByText('Change who’s in during the game')).toBeVisible()
-    await expect(page.getByText('Scheduling and full game time')).toBeVisible()
-    await expect(page.getByText('Smoother game days')).toBeVisible()
-    await expect(page.getByText(/bring them onto the bench/i)).toBeVisible()
-    await expect(page.getByText(/Opponent names stay put/i)).toBeVisible()
+    for (const release of preview) {
+      await expect(page.getByText(release.title, { exact: true })).toBeVisible()
+      const firstFeature = release.features[0]
+      if (firstFeature) await expect(page.getByText(firstFeature)).toBeVisible()
+    }
     await expect(page.getByRole('link', { name: /see all updates/i })).toBeVisible()
-    await expect(page.getByText('Recaps you can trust')).toHaveCount(0)
-    await expect(page.getByText('Clearer sideline')).toHaveCount(0)
-    await expect(page.getByText('Faster live match')).toHaveCount(0)
+    for (const release of older.slice(0, 3)) {
+      await expect(page.getByText(release.title, { exact: true })).toHaveCount(0)
+    }
 
     await page.getByRole('link', { name: /see all updates/i }).click()
     await expect(page).toHaveURL(/\/changelog\/?$/)
     await expect(page.getByRole('heading', { name: /what.?s new/i })).toBeVisible()
-    await expect(page.getByText('Recaps you can trust')).toBeVisible()
-    await expect(page.getByText('Clearer sideline')).toBeVisible()
-    await expect(page.getByText('Faster live match')).toBeVisible()
-    await expect(page.getByText('Parent Hub recaps')).toBeVisible()
+    for (const release of older.slice(0, 4)) {
+      await expect(page.getByText(release.title, { exact: true })).toBeVisible()
+    }
 
     await page.getByRole('button', { name: 'Back to home' }).click()
     await expect(page.getByRole('button', { name: /^what's new$/i })).toBeVisible()
