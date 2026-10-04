@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth.js'
 import { requireMatchAccess } from '../match-access.js'
-import { LogGoalInputSchema, parseShotType } from '../match-action-schemas.js'
+import { LogGoalInputSchema, isOwnGoalType, parseGoalType } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import { buildGoalPush } from '../push-copy.js'
 import { queueTeamWebPush } from '../send-web-push.js'
@@ -42,10 +42,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const eventType = input.ourGoal ? 'goal' : 'opponent_goal'
     const pairedShotType = input.ourGoal ? 'shot_home' : 'shot_away'
-    const ourShotType = input.ourGoal ? parseShotType(input.eventNotes) : null
-    const isPk = input.ourGoal ? ourShotType === 'PK' || input.isPk : input.isPk
-    const scorerId = input.ourGoal ? (input.scorerId ?? null) : null
+    const ourGoalType = input.ourGoal ? parseGoalType(input.eventNotes) : null
+    const ownGoal = isOwnGoalType(input.eventNotes)
+    const isPk = input.ourGoal ? ourGoalType === 'PK' || input.isPk : input.isPk
+    const scorerId = input.ourGoal && !ownGoal ? (input.scorerId ?? null) : null
     const plusMinusDelta: 1 | -1 = input.ourGoal ? 1 : -1
+    const pairAutoShot = input.pairAutoShot !== false && !ownGoal
 
     if (
       await isDuplicateLiveEvent(auth.supabase, {
@@ -79,21 +81,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           player_id: scorerId,
           event_type: eventType,
           timestamp: input.timestamp,
-          event_notes: input.ourGoal ? ourShotType : (input.eventNotes ?? null),
+          event_notes: input.ourGoal ? ourGoalType : (input.eventNotes ?? null),
           formation: input.formation,
           assist_player_id:
-            input.ourGoal && scorerId && !isPk ? (input.assistPlayerId ?? null) : null,
+            input.ourGoal && scorerId && !isPk && !ownGoal ? (input.assistPlayerId ?? null) : null,
           is_pk: isPk,
           from_corner: input.fromCorner === true ? true : input.fromCorner === false ? false : null,
         },
       ]
-      if (input.pairAutoShot) {
+      if (pairAutoShot) {
         events.push({
           match_id: input.matchId,
           player_id: scorerId,
           event_type: pairedShotType,
           timestamp: input.timestamp,
-          event_notes: ourShotType,
+          event_notes: ourGoalType,
           formation: input.formation,
           is_pk: false,
         })

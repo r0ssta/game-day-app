@@ -2,7 +2,7 @@
  * Self-contained push copy for Vercel Node (no Vite `@/` aliases).
  */
 
-import { parseOpponentGoalCategory, parseShotType } from './match-action-schemas.js'
+import { parseOpponentGoalCategory, parseGoalType } from './match-action-schemas.js'
 
 export function buildGoalPush(input: {
   teamName: string
@@ -27,7 +27,7 @@ export function buildGoalPush(input: {
       body: `${input.opponent || 'Opponent'}${howBit} · ${score}`,
     }
   }
-  const shotType = parseShotType(input.eventNotes) ?? (input.isPk ? 'PK' : null)
+  const shotType = parseGoalType(input.eventNotes) ?? (input.isPk ? 'PK' : null)
   const who = input.scorerLabel?.trim() || input.teamName
   const detail = [shotType, cornerBit, input.assistLabel ? `assist ${input.assistLabel}` : null]
     .filter(Boolean)

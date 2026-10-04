@@ -7,7 +7,7 @@ import {
   parseTacticalPositionNote,
 } from '@/lib/match-event-notes'
 import { goalIdsFromCorners } from '@/lib/corner-goals'
-import { parseOpponentGoalCategory, parseShotType } from '@/schemas/match-actions'
+import { parseOpponentGoalCategory, parseGoalType, parseShotType } from '@/schemas/match-actions'
 import { supabase } from '@/supabaseClient'
 import { ENABLE_PARENT_HUB } from '@/lib/feature-flags'
 import {
@@ -1094,7 +1094,7 @@ export function formatParentEventLine(
   } else {
     switch (event.eventType) {
       case 'goal': {
-        const shotType = parseShotType(event.eventNotes) ?? (event.isPk ? 'PK' : null)
+        const shotType = parseGoalType(event.eventNotes) ?? (event.isPk ? 'PK' : null)
         const who = event.playerName?.trim() || teamLabel
         const typeBit = shotType ? ` · ${shotType}` : ''
         const assist = event.assistPlayerName ? ` · Assist by ${event.assistPlayerName}` : ''

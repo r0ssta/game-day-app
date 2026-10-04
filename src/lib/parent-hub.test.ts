@@ -179,6 +179,32 @@ describe('formatParentEventLine', () => {
     ).toBe(`1H 2' GOAL · Ada · Short-range · Assist by Bess${clock}`)
   })
 
+  it('labels an own goal without crediting a scorer', () => {
+    expect(
+      formatParentEventLine(
+        event({
+          id: 'og',
+          eventType: 'goal',
+          eventNotes: 'Own Goal',
+          playerName: null,
+        }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' GOAL · U11 Blitz · Own Goal${clock}`)
+    expect(
+      formatParentEventLine(
+        event({
+          id: 'og-them',
+          eventType: 'opponent_goal',
+          eventNotes: 'Own Goal',
+        }),
+        'Rivals',
+        names,
+      ),
+    ).toBe(`1H 2' Rivals Goal · Own Goal${clock}`)
+  })
+
   it('renders a PK attempt on the live feed', () => {
     expect(
       formatParentEventLine(

@@ -3,7 +3,7 @@
  * Keep free of `window` / DOM / Supabase / Vite env.
  */
 
-import { parseOpponentGoalCategory, parseShotType } from '@/schemas/match-actions'
+import { parseOpponentGoalCategory, parseGoalType } from '@/schemas/match-actions'
 import { formatPeriodLong, type TotalPeriods } from './match-periods'
 
 type NamedPlayer = {
@@ -91,7 +91,7 @@ export function buildGoalPush(input: {
       body: `${input.opponent || 'Opponent'}${howBit} · ${score}`,
     }
   }
-  const shotType = parseShotType(input.eventNotes) ?? (input.isPk ? 'PK' : null)
+  const shotType = parseGoalType(input.eventNotes) ?? (input.isPk ? 'PK' : null)
   const who = input.scorerLabel?.trim() || input.teamName
   const detail = [shotType, cornerBit, input.assistLabel ? `assist ${input.assistLabel}` : null]
     .filter(Boolean)

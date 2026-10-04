@@ -68,4 +68,28 @@ describe('buildGoalPush', () => {
     })
     expect(push.body).toBe('Rivals · Caught on the Counter · 0–1')
   })
+
+  it('labels our own-goal tag without a scorer', () => {
+    const push = buildGoalPush({
+      teamName: 'Velocity',
+      opponent: 'Rivals',
+      homeScore: 1,
+      awayScore: 0,
+      ourGoal: true,
+      eventNotes: 'Own Goal',
+    })
+    expect(push.body).toBe('Velocity · Own Goal · 1–0 vs Rivals')
+  })
+
+  it('labels a conceded own goal', () => {
+    const push = buildGoalPush({
+      teamName: 'Velocity',
+      opponent: 'Rivals',
+      homeScore: 0,
+      awayScore: 1,
+      ourGoal: false,
+      eventNotes: 'Own Goal',
+    })
+    expect(push.body).toBe('Rivals · Own Goal · 0–1')
+  })
 })
