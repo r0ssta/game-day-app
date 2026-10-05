@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampHalfLengthMinutes,
+  earlyPeriodStopPrompt,
   elapsedFromHalfStart,
   elapsedInHalf,
   formatAddedTime,
   formatMatchClockParts,
+  needsEarlyPeriodStopConfirmation,
   elapsedFromPeriodAnchor,
   halfStartTimeFromRemaining,
   parsePeriodStartTimeMs,
@@ -22,6 +24,43 @@ import {
 } from './match-clock'
 
 describe('match-clock', () => {
+  it('asks again before ending a period with more than a minute left', () => {
+    expect(needsEarlyPeriodStopConfirmation(61)).toBe(true)
+    expect(needsEarlyPeriodStopConfirmation(12 * 60)).toBe(true)
+    expect(needsEarlyPeriodStopConfirmation(60)).toBe(false)
+    expect(needsEarlyPeriodStopConfirmation(1)).toBe(false)
+    expect(needsEarlyPeriodStopConfirmation(0)).toBe(false)
+    expect(needsEarlyPeriodStopConfirmation(-30)).toBe(false)
+  })
+
+  it('explains an early half stop and an early full-time whistle', () => {
+    expect(
+      earlyPeriodStopPrompt({
+        remainingSeconds: 12 * 60 + 40,
+        periodLabel: '1st Half',
+        endsMatch: false,
+      }),
+    ).toEqual({
+      title: 'Stop the 1st half early?',
+      description: '12:40 is still left. This ends the half and notifies parents.',
+      confirmLabel: 'Stop early',
+    })
+    expect(
+      earlyPeriodStopPrompt({
+        remainingSeconds: 8 * 60,
+        periodLabel: '2nd Half',
+        endsMatch: true,
+      }).title,
+    ).toBe('End the game early?')
+    expect(
+      earlyPeriodStopPrompt({
+        remainingSeconds: 90,
+        periodLabel: 'Period 2',
+        endsMatch: false,
+      }).title,
+    ).toBe('Stop period 2 early?')
+  })
+
   it('never persists a negative clock_seconds value', () => {
     expect(persistableClockSeconds(-12)).toBe(0)
     expect(persistableClockSeconds(0)).toBe(0)

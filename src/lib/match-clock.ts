@@ -16,6 +16,48 @@ export function isHalfExpired(remainingSeconds: number): boolean {
   return remainingSeconds <= 0
 }
 
+/**
+ * Ask again before ending a period while more than a minute of scheduled time
+ * remains. The final minute, 0:00, and added time are normal whistles.
+ */
+export const EARLY_PERIOD_STOP_REMAINING_SECONDS = 60
+
+export function needsEarlyPeriodStopConfirmation(remainingSeconds: number): boolean {
+  return (
+    Number.isFinite(remainingSeconds) &&
+    remainingSeconds > EARLY_PERIOD_STOP_REMAINING_SECONDS
+  )
+}
+
+/** Sentence fragment for the period still on the clock, e.g. "the 1st half". */
+export function earlyStopPeriodPhrase(periodLabel: string): string {
+  const label = periodLabel.trim()
+  if (/^(period|extra time)\b/i.test(label)) return label.toLowerCase()
+  return `the ${label.toLowerCase()}`
+}
+
+export function earlyPeriodStopPrompt(input: {
+  remainingSeconds: number
+  periodLabel: string
+  endsMatch: boolean
+}): { title: string; description: string; confirmLabel: string } {
+  const left = formatClock(input.remainingSeconds)
+  const period = earlyStopPeriodPhrase(input.periodLabel)
+  const noun = /^period\b/i.test(input.periodLabel) ? 'period' : 'half'
+  if (input.endsMatch) {
+    return {
+      title: 'End the game early?',
+      description: `${left} is still left in ${period}. This ends the match and notifies parents.`,
+      confirmLabel: 'End game early',
+    }
+  }
+  return {
+    title: `Stop ${period} early?`,
+    description: `${left} is still left. This ends the ${noun} and notifies parents.`,
+    confirmLabel: 'Stop early',
+  }
+}
+
 export function isInAddedTime(remainingSeconds: number): boolean {
   return remainingSeconds < 0
 }

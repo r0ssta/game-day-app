@@ -101,8 +101,10 @@ import {
 } from '@/lib/corner-goals'
 import {
   elapsedInHalf,
+  earlyPeriodStopPrompt,
   formatClock,
   halfDurationSeconds,
+  needsEarlyPeriodStopConfirmation,
   persistableClockSeconds,
   resolvePeriodKickoffRemaining,
   type QaSpeedMultiplier,
@@ -198,6 +200,9 @@ const DeleteMatchConfirmModal = lazyWithChunkReload(() =>
 )
 const EndMatchTimingModal = lazyWithChunkReload(() =>
   import('@/components/EndMatchTimingModal').then((m) => ({ default: m.EndMatchTimingModal })),
+)
+const EarlyPeriodStopModal = lazyWithChunkReload(() =>
+  import('@/components/EarlyPeriodStopModal').then((m) => ({ default: m.EarlyPeriodStopModal })),
 )
 const TiedGameModal = lazyWithChunkReload(() =>
   import('@/components/TiedGameModal').then((m) => ({ default: m.TiedGameModal })),
@@ -526,6 +531,9 @@ export function CoachDashboard() {
   const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
   const [liveDeleting, setLiveDeleting] = useState(false)
   const [endTimingOpen, setEndTimingOpen] = useState(false)
+  const [earlyStopIntent, setEarlyStopIntent] = useState<'period' | 'game' | 'extra_time' | null>(
+    null,
+  )
   const [tiedGameOpen, setTiedGameOpen] = useState(false)
   const [endingMatch, setEndingMatch] = useState(false)
   const [pkInitialRounds, setPkInitialRounds] = useState<PkRoundState[] | undefined>(undefined)
@@ -1635,6 +1643,38 @@ export function CoachDashboard() {
     setToast,
     runOptimisticSync,
   ])
+
+  const requestEndPeriod = useCallback(() => {
+    if (needsEarlyPeriodStopConfirmation(seconds)) {
+      setEarlyStopIntent('period')
+      return
+    }
+    void handleEnterHalftime()
+  }, [seconds, handleEnterHalftime])
+
+  const requestEndGame = useCallback(() => {
+    if (needsEarlyPeriodStopConfirmation(seconds)) {
+      setEarlyStopIntent('game')
+      return
+    }
+    handleEndGame()
+  }, [seconds, handleEndGame])
+
+  const requestEndExtraTime = useCallback(() => {
+    if (needsEarlyPeriodStopConfirmation(seconds)) {
+      setEarlyStopIntent('extra_time')
+      return
+    }
+    handleEndExtraTime()
+  }, [seconds, handleEndExtraTime])
+
+  const confirmEarlyPeriodStop = useCallback(() => {
+    const intent = earlyStopIntent
+    setEarlyStopIntent(null)
+    if (intent === 'period') void handleEnterHalftime()
+    else if (intent === 'game') handleEndGame()
+    else if (intent === 'extra_time') handleEndExtraTime()
+  }, [earlyStopIntent, handleEnterHalftime, handleEndGame, handleEndExtraTime])
 
   const handleBeginSecondHalf = useCallback(async () => {
     if (!canBeginSecondHalf) return
@@ -3843,7 +3883,7 @@ export function CoachDashboard() {
         ) : periodClockStarted && extraTimeHalf ? (
           <button
             type="button"
-            onClick={handleEndExtraTime}
+            onClick={requestEndExtraTime}
             className="w-full min-h-14 touch-manipulation rounded-2xl bg-orange-600 py-5 font-display text-2xl font-black uppercase tracking-wider text-white shadow-xl shadow-orange-600/40 transition-transform active:scale-[0.98] active:brightness-95"
           >
             {endExtraTimeButtonLabel(extraTimeHalf)}
@@ -3852,8 +3892,8 @@ export function CoachDashboard() {
           <EndPeriodButton
             currentPeriod={currentPeriod}
             totalPeriods={totalPeriods}
-            onEndPeriod={() => void handleEnterHalftime()}
-            onEndGame={handleEndGame}
+            onEndPeriod={requestEndPeriod}
+            onEndGame={requestEndGame}
           />
         ) : null}
         {canDeleteMatches ? (
@@ -3985,6 +4025,26 @@ export function CoachDashboard() {
             }}
             onEndedOnTime={() => void handleConfirmEndGameTiming(true)}
             onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
+          />
+        </ModalSuspense>
+      ) : null}
+
+      {earlyStopIntent ? (
+        <ModalSuspense>
+          <EarlyPeriodStopModal
+            open
+            {...earlyPeriodStopPrompt({
+              remainingSeconds: seconds,
+              periodLabel:
+                earlyStopIntent === 'extra_time'
+                  ? extraTimePeriodLabel(extraTimeHalf ?? 1)
+                  : formatPeriodLong(currentPeriod, totalPeriods),
+              endsMatch:
+                earlyStopIntent === 'game' ||
+                (earlyStopIntent === 'extra_time' && extraTimeHalf === 2),
+            })}
+            onCancel={() => setEarlyStopIntent(null)}
+            onConfirm={confirmEarlyPeriodStop}
           />
         </ModalSuspense>
       ) : null}

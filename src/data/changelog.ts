@@ -11,6 +11,14 @@ export type ChangelogRelease = {
 /** Newest release first. `version` is compared to `last_seen_version`. */
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: '2026.10.05',
+    date: 'October 5, 2026',
+    title: 'Confirm an early whistle',
+    features: [
+      'Ending a half with more than a minute still on the clock asks you to confirm before the update goes out',
+    ],
+  },
+  {
     version: '2026.10.04',
     date: 'October 4, 2026',
     title: 'Own goals and Goal taps',
