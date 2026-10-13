@@ -16,6 +16,8 @@ import {
   legacyImpactScoreToRating,
   type PlayerRating,
 } from '@/lib/player-rating'
+import { includeInMatchRecord } from '@/lib/match-availability'
+import { allocateSecondsByRole } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import {
   computeLineupCombinationAnalytics,
@@ -74,8 +76,19 @@ export type PlayerMatchLog = {
 export type PlayerSeasonStats = {
   playerId: string
   matchesPlayed: number
+  /** Cumulative seconds on the pitch. Named for the original minutes field. */
   totalMinutes: number
   averageMinutesPerMatch: number
+  firstHalfStarts: number
+  secondHalfStarts: number
+  firstHalfSeconds: number
+  secondHalfSeconds: number
+  averageFirstHalfSeconds: number
+  averageSecondHalfSeconds: number
+  fieldSeconds: number
+  gkSeconds: number
+  fieldPercent: number | null
+  gkPercent: number | null
   goals: number
   assists: number
   shots: number
@@ -159,12 +172,65 @@ export function formatSeasonRecordSummary(record: SeasonRecord): string {
   return parts.join(' | ')
 }
 
+/** Games the player was in. Absences and pre-game injuries stay out of the averages. */
+export function countsAsGamePlayed(stat: {
+  attending: boolean
+  total_seconds_played?: number | null
+}): boolean {
+  return includeInMatchRecord({
+    attending: stat.attending,
+    totalSecondsPlayed: stat.total_seconds_played ?? 0,
+  })
+}
+
+export function roleSplitPercents(
+  fieldSeconds: number,
+  gkSeconds: number,
+): { fieldPercent: number | null; gkPercent: number | null } {
+  const field = Math.max(0, fieldSeconds)
+  const gk = Math.max(0, gkSeconds)
+  const total = field + gk
+  if (total <= 0) return { fieldPercent: null, gkPercent: null }
+  const fieldPercent = Math.round((field / total) * 100)
+  return { fieldPercent, gkPercent: 100 - fieldPercent }
+}
+
+export function formatRoleSplit(
+  fieldPercent: number | null,
+  gkPercent: number | null,
+): string {
+  if (fieldPercent == null || gkPercent == null) return '—'
+  if (fieldPercent === 100) return 'Field 100%'
+  if (gkPercent === 100) return 'GK 100%'
+  return `Field ${fieldPercent}% · GK ${gkPercent}%`
+}
+
+export function refreshPlayingTimeAverages(entry: PlayerSeasonStats): void {
+  const games = entry.matchesPlayed
+  entry.averageMinutesPerMatch = games > 0 ? Math.round(entry.totalMinutes / games) : 0
+  entry.averageFirstHalfSeconds = games > 0 ? Math.round(entry.firstHalfSeconds / games) : 0
+  entry.averageSecondHalfSeconds = games > 0 ? Math.round(entry.secondHalfSeconds / games) : 0
+  const split = roleSplitPercents(entry.fieldSeconds, entry.gkSeconds)
+  entry.fieldPercent = split.fieldPercent
+  entry.gkPercent = split.gkPercent
+}
+
 export function emptyPlayerSeasonStats(playerId: string): PlayerSeasonStats {
   return {
     playerId,
     matchesPlayed: 0,
     totalMinutes: 0,
     averageMinutesPerMatch: 0,
+    firstHalfStarts: 0,
+    secondHalfStarts: 0,
+    firstHalfSeconds: 0,
+    secondHalfSeconds: 0,
+    averageFirstHalfSeconds: 0,
+    averageSecondHalfSeconds: 0,
+    fieldSeconds: 0,
+    gkSeconds: 0,
+    fieldPercent: null,
+    gkPercent: null,
     goals: 0,
     assists: 0,
     shots: 0,
@@ -299,7 +365,7 @@ export async function loadSeasonReport(
       }
 
       for (const stat of stats) {
-        if (!stat.attending && (stat.total_seconds_played ?? 0) <= 0) continue
+        if (!countsAsGamePlayed(stat)) continue
 
         const entry = playerStats.get(stat.player_id)
         if (!entry) continue
@@ -307,6 +373,16 @@ export async function loadSeasonReport(
         const player = matchPlayers.find((p) => p.id === stat.player_id)
         const recap = eventStats.get(stat.player_id)
         const minutes = recap?.totalSeconds ?? stat.total_seconds_played ?? 0
+        let fieldSeconds = recap?.fieldSeconds ?? 0
+        let gkSeconds = recap?.gkSeconds ?? 0
+        if (fieldSeconds + gkSeconds === 0 && minutes > 0) {
+          const allocated = allocateSecondsByRole(
+            minutes,
+            player?.matchPosition ?? stat.match_position,
+          )
+          fieldSeconds = allocated.fieldSecondsPlayed
+          gkSeconds = allocated.gkSecondsPlayed
+        }
         const goals = recap?.goals ?? 0
         const assists = recap?.assists ?? 0
         const shots = recap?.shots ?? 0
@@ -332,6 +408,12 @@ export async function loadSeasonReport(
 
         entry.matchesPlayed += 1
         entry.totalMinutes += minutes
+        entry.firstHalfSeconds += recap?.firstHalfSeconds ?? 0
+        entry.secondHalfSeconds += recap?.secondHalfSeconds ?? 0
+        entry.fieldSeconds += fieldSeconds
+        entry.gkSeconds += gkSeconds
+        if (stat.is_first_half_starter) entry.firstHalfStarts += 1
+        if (stat.is_second_half_starter) entry.secondHalfStarts += 1
         entry.goals += goals
         entry.assists += assists
         entry.shots += shots
@@ -411,8 +493,7 @@ export async function loadSeasonReport(
   )
 
   for (const entry of playerStats.values()) {
-    entry.averageMinutesPerMatch =
-      entry.matchesPlayed > 0 ? Math.round(entry.totalMinutes / entry.matchesPlayed) : 0
+    refreshPlayingTimeAverages(entry)
 
     const posMap = positionCounts.get(entry.playerId) ?? new Map()
     const [primary, secondary] = topPositions(posMap)

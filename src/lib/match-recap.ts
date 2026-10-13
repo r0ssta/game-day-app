@@ -30,6 +30,10 @@ import type { MatchPlayer, RosterPlayer } from '@/types/match'
 export type PlayerRecapStats = {
   playerId: string
   totalSeconds: number
+  /** Seconds in the opening period. */
+  firstHalfSeconds: number
+  /** Seconds in the second period. Later periods stay in `totalSeconds` only. */
+  secondHalfSeconds: number
   fieldSeconds: number
   gkSeconds: number
   positions: string[]
@@ -259,37 +263,40 @@ export function aggregatePlayerRecaps(
     if (whistleAbs != null) recoveredWhistleAbs.set(periodIndex, whistleAbs)
   }
 
-  const stats = new Map<
-    string,
-    {
-      totalSeconds: number
-      fieldSeconds: number
-      gkSeconds: number
-      goals: number
-      assists: number
-      shots: number
-      shotsByType: ShotTypeCounts
-      saves: number
-      yellowCards: number
-      redCards: number
-    }
-  >()
+  type RecapBucket = {
+    totalSeconds: number
+    firstHalfSeconds: number
+    secondHalfSeconds: number
+    fieldSeconds: number
+    gkSeconds: number
+    goals: number
+    assists: number
+    shots: number
+    shotsByType: ShotTypeCounts
+    saves: number
+    yellowCards: number
+    redCards: number
+  }
+
+  const emptyBucket = (): RecapBucket => ({
+    totalSeconds: 0,
+    firstHalfSeconds: 0,
+    secondHalfSeconds: 0,
+    fieldSeconds: 0,
+    gkSeconds: 0,
+    goals: 0,
+    assists: 0,
+    shots: 0,
+    shotsByType: {},
+    saves: 0,
+    yellowCards: 0,
+    redCards: 0,
+  })
+
+  const stats = new Map<string, RecapBucket>()
 
   const ensure = (playerId: string) => {
-    if (!stats.has(playerId)) {
-      stats.set(playerId, {
-        totalSeconds: 0,
-        fieldSeconds: 0,
-        gkSeconds: 0,
-        goals: 0,
-        assists: 0,
-        shots: 0,
-        shotsByType: {},
-        saves: 0,
-        yellowCards: 0,
-        redCards: 0,
-      })
-    }
+    if (!stats.has(playerId)) stats.set(playerId, emptyBucket())
     return stats.get(playerId)!
   }
 
@@ -309,28 +316,31 @@ export function aggregatePlayerRecaps(
     null
 
   const addStintSeconds = (
-    row: { totalSeconds: number; fieldSeconds: number; gkSeconds: number },
+    row: RecapBucket,
     start: number,
     end: number,
     position: string | null | undefined,
+    periodIndex: number,
   ) => {
     const seconds = Math.max(0, end - start)
     if (seconds <= 0) return
     row.totalSeconds += seconds
+    if (periodIndex <= 0) row.firstHalfSeconds += seconds
+    else if (periodIndex === 1) row.secondHalfSeconds += seconds
     if (isGoalkeeperPosition(position)) row.gkSeconds += seconds
     else row.fieldSeconds += seconds
   }
 
-  const closeOpenStintsAt = (end: number) => {
+  const closeOpenStintsAt = (end: number, periodIndex: number) => {
     for (const [playerId, open] of openStints) {
-      addStintSeconds(ensure(playerId), open.start, end, open.position)
+      addStintSeconds(ensure(playerId), open.start, end, open.position, periodIndex)
     }
     openStints.clear()
   }
 
   for (const event of timeline) {
     if (event.periodIndex > currentPeriodIndex) {
-      closeOpenStintsAt(lastAbsTimestamp)
+      closeOpenStintsAt(lastAbsTimestamp, currentPeriodIndex)
       currentPeriodIndex = event.periodIndex
     }
     lastAbsTimestamp = event.absTimestamp
@@ -368,7 +378,7 @@ export function aggregatePlayerRecaps(
       case 'position_change': {
         const open = openStints.get(event.player_id)
         if (open) {
-          addStintSeconds(row, open.start, event.absTimestamp, open.position)
+          addStintSeconds(row, open.start, event.absTimestamp, open.position, event.periodIndex)
         }
         openStints.set(event.player_id, {
           start: event.absTimestamp,
@@ -384,7 +394,7 @@ export function aggregatePlayerRecaps(
             const recovered = recoveredWhistleAbs.get(event.periodIndex)
             if (recovered != null) end = Math.max(end, recovered)
           }
-          addStintSeconds(row, open.start, end, open.position)
+          addStintSeconds(row, open.start, end, open.position, event.periodIndex)
           openStints.delete(event.player_id)
         }
         break
@@ -414,22 +424,13 @@ export function aggregatePlayerRecaps(
 
   const result = new Map<string, PlayerRecapStats>()
   for (const playerId of playerIds) {
-    const row = stats.get(playerId) ?? {
-      totalSeconds: 0,
-      fieldSeconds: 0,
-      gkSeconds: 0,
-      goals: 0,
-      assists: 0,
-      shots: 0,
-      shotsByType: {},
-      saves: 0,
-      yellowCards: 0,
-      redCards: 0,
-    }
+    const row = stats.get(playerId) ?? emptyBucket()
     const fallbackPosition = playersById?.get(playerId)?.matchPosition
     result.set(playerId, {
       playerId,
       totalSeconds: row.totalSeconds,
+      firstHalfSeconds: row.firstHalfSeconds,
+      secondHalfSeconds: row.secondHalfSeconds,
       fieldSeconds: row.fieldSeconds,
       gkSeconds: row.gkSeconds,
       positions: computePlayerPositionsFromTimeline(playerId, timeline, fallbackPosition),

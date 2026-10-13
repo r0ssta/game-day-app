@@ -12,6 +12,7 @@ import {
   formatPlayerSeasonHeader,
   formatPositionBreakdownDetail,
   formatPositionBreakdownLine,
+  formatRoleSplit,
   type PlayerSeasonStats,
 } from '@/lib/season-reporting'
 import { fetchPlayerSeasonRatingTrend } from '@/lib/supabase-api'
@@ -265,6 +266,65 @@ export function PlayerSeasonProfileView({
                 {stats.secondaryPositionPlayed !== '—'
                   ? ` · ${stats.secondaryPositionPlayed}`
                   : ''}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h2 className="font-display text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Playing Time
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Averages use games played. Missed games stay out of the math.
+          </p>
+          <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                1st Half Starts
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-foreground">
+                {stats.firstHalfStarts}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                2nd Half Starts
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-foreground">
+                {stats.secondHalfStarts}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Avg · 1st Half
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-foreground">
+                {formatRecapMinutes(stats.averageFirstHalfSeconds)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Avg · 2nd Half
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-foreground">
+                {formatRecapMinutes(stats.averageSecondHalfSeconds)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Total Avg
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-foreground">
+                {header.avgMinutesLabel}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                GK vs Field
+              </dt>
+              <dd className="mt-0.5 font-bold tabular-nums text-foreground">
+                {formatRoleSplit(stats.fieldPercent, stats.gkPercent)}
               </dd>
             </div>
           </dl>

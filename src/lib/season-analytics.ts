@@ -22,8 +22,14 @@ export type PlayingTimeEntry = {
   jersey: number | null
   totalMinutes: number
   averageMinutesPerMatch: number
+  averageFirstHalfSeconds: number
+  averageSecondHalfSeconds: number
+  firstHalfStarts: number
+  secondHalfStarts: number
   matchesPlayed: number
   minutesSharePercent: number
+  fieldPercent: number | null
+  gkPercent: number | null
 }
 
 export type PlayingTimeAnalytics = {
@@ -166,8 +172,14 @@ export function buildPlayingTimeAnalytics(
         jersey: player.number,
         totalMinutes: stats.totalMinutes,
         averageMinutesPerMatch: stats.averageMinutesPerMatch,
+        averageFirstHalfSeconds: stats.averageFirstHalfSeconds,
+        averageSecondHalfSeconds: stats.averageSecondHalfSeconds,
+        firstHalfStarts: stats.firstHalfStarts,
+        secondHalfStarts: stats.secondHalfStarts,
         matchesPlayed: stats.matchesPlayed,
         minutesSharePercent: 0,
+        fieldPercent: stats.fieldPercent,
+        gkPercent: stats.gkPercent,
       }
     })
     .filter((entry) => entry.matchesPlayed > 0)

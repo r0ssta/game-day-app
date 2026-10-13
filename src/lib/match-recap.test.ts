@@ -288,6 +288,55 @@ describe('aggregatePlayerRecaps', () => {
     )
 
     expect(stats.get('p1')?.totalSeconds).toBe(period * 3)
+    expect(stats.get('p1')?.firstHalfSeconds).toBe(period)
+    expect(stats.get('p1')?.secondHalfSeconds).toBe(period)
+  })
+
+  it('splits a two-half match into first-half and second-half playing time', () => {
+    const half = 25 * 60
+    const stats = aggregatePlayerRecaps(
+      [
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|ST',
+          created_at: '2026-09-06T16:00:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: half,
+          event_notes: 'period_end',
+          created_at: '2026-09-06T16:25:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_in',
+          timestamp: 0,
+          event_notes: 'starting_lineup|CM',
+          created_at: '2026-09-06T16:30:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: 600,
+          created_at: '2026-09-06T16:40:00.000Z',
+          player_id: 'p1',
+        }),
+        event({
+          event_type: 'sub_out',
+          timestamp: half,
+          event_notes: 'period_end',
+          created_at: '2026-09-06T16:55:00.000Z',
+          player_id: 'p2',
+        }),
+      ],
+      half,
+    )
+
+    expect(stats.get('p1')?.firstHalfSeconds).toBe(half)
+    expect(stats.get('p1')?.secondHalfSeconds).toBe(600)
+    expect(stats.get('p1')?.totalSeconds).toBe(half + 600)
   })
 
   it('does not add a full period when the clock is rewound mid-period', () => {
@@ -519,6 +568,8 @@ describe('resolveRecapRoleSeconds', () => {
         {
           playerId: 'p1',
           totalSeconds: 1500,
+          firstHalfSeconds: 1500,
+          secondHalfSeconds: 0,
           fieldSeconds: 600,
           gkSeconds: 900,
           positions: ['ST', 'GK'],
@@ -547,6 +598,8 @@ describe('resolveRecapRoleSeconds', () => {
         {
           playerId: 'p1',
           totalSeconds: 1500,
+          firstHalfSeconds: 1500,
+          secondHalfSeconds: 0,
           fieldSeconds: 1500,
           gkSeconds: 0,
           positions: ['ST', 'GK'],
@@ -587,6 +640,8 @@ describe('buildRecapRows', () => {
           {
             playerId: 'p1',
             totalSeconds: 1500,
+            firstHalfSeconds: 900,
+            secondHalfSeconds: 600,
             fieldSeconds: 1500,
             gkSeconds: 0,
             positions: ['GK'],
