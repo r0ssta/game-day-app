@@ -2,6 +2,7 @@ import {
   getFormationById,
   getDefaultFormationId,
   isFormationValidForFormat,
+  normalizeSlotLabel,
   reconcileSlotAssignments,
   resolveSlotLabel,
   slotAssignmentsFromMatchPositions,
@@ -25,7 +26,7 @@ export function parseSlotLabelOverrides(raw: unknown): Record<string, string> {
   const result: Record<string, string> = {}
   for (const [slotId, label] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof label !== 'string') continue
-    const trimmed = label.trim().toUpperCase()
+    const trimmed = normalizeSlotLabel(label)
     if (trimmed) result[slotId] = trimmed
   }
   return result

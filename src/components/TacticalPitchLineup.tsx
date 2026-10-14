@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Pencil, Users } from 'lucide-react'
 import { PlayingTimeBar } from '@/components/PlayingTimeBar'
 import {
@@ -10,11 +10,15 @@ import {
   getDefaultFormationId,
   getFormationById,
   getFormationsForFormat,
+  normalizeSlotLabel,
   reconcileSlotAssignments,
   remapFormationSlotAssignments,
   resolveSlotLabel,
   type FormationRole,
+  type FormationSlot,
 } from '@/lib/formations'
+import { formationSlotsForSave } from '@/lib/custom-formations'
+import { useTeamFormations } from '@/hooks/useTeamFormations'
 import { hasSlotAssignments } from '@/lib/lineup'
 import type { TeamFormat } from '@/lib/team-format'
 import {
@@ -88,6 +92,8 @@ type TacticalPitchLineupProps = {
   /** Keep parent slot assignments in sync when the coach leaves and returns to setup. */
   onSlotAssignmentsChange?: (assignments: Record<string, string | null>) => void
   teamFormat?: TeamFormat
+  /** When set, coaches can name and save the current shape for this team. */
+  teamId?: string | null
   /**
    * When false, bench/absent lists grow naturally so a parent page can be the only scroller.
    * Default true keeps inner list scroll for filled-height shells.
@@ -258,11 +264,28 @@ export function TacticalPitchLineup({
   onSlotLabelOverridesChange,
   onSlotAssignmentsChange,
   teamFormat,
+  teamId,
   constrainLists = true,
 }: TacticalPitchLineupProps) {
+  const {
+    formations: savedFormations,
+    ready: formationsReady,
+    saving: savingFormation,
+    save,
+    remove,
+  } = useTeamFormations(teamId)
+  const formatForList = teamFormat ?? '9v9'
+  const customFormations = useMemo(
+    () => savedFormations.filter((formation) => formation.format === formatForList),
+    [formatForList, savedFormations],
+  )
+  const builtInFormations = useMemo(
+    () => getFormationsForFormat(formatForList),
+    [formatForList],
+  )
   const availableFormations = useMemo(
-    () => (teamFormat ? getFormationsForFormat(teamFormat) : getFormationsForFormat('9v9')),
-    [teamFormat],
+    () => [...builtInFormations, ...customFormations],
+    [builtInFormations, customFormations],
   )
   const defaultFormationId = teamFormat ? getDefaultFormationId(teamFormat) : initialFormationId
   const [internalFormationId, setInternalFormationId] = useState(defaultFormationId)
@@ -283,7 +306,15 @@ export function TacticalPitchLineup({
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
-  const formation = getFormationById(formationId, teamFormat)
+  const formation = getFormationById(formationId, teamFormat, customFormations)
+  const selectedCustom = customFormations.find((entry) => entry.id === formationId) ?? null
+  const pitchSlotsRef = useRef<FormationSlot[]>(formation.slots)
+  const [formationName, setFormationName] = useState('')
+  const [formationError, setFormationError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setFormationName(selectedCustom?.label ?? '')
+  }, [selectedCustom?.id, selectedCustom?.label])
 
   const assignedPlayerIds = useMemo(() => {
     const ids = new Set<string>()
@@ -322,10 +353,11 @@ export function TacticalPitchLineup({
 
   useEffect(() => {
     if (!teamFormat) return
+    if (teamId && !formationsReady) return
     if (!availableFormations.some((entry) => entry.id === formationId)) {
       setFormationId(getDefaultFormationId(teamFormat))
     }
-  }, [availableFormations, formationId, setFormationId, teamFormat])
+  }, [availableFormations, formationId, formationsReady, setFormationId, teamFormat, teamId])
 
   const publishAssignments = useCallback(
     (next: Record<string, string | null>) => {
@@ -534,7 +566,8 @@ export function TacticalPitchLineup({
   }
 
   const handleSlotLabelChange = (slotId: string, label: string) => {
-    const normalized = label.trim().toUpperCase()
+    const normalized = normalizeSlotLabel(label)
+    if (!normalized) return
     setSlotLabelOverrides((prev) => {
       const next = { ...prev, [slotId]: normalized }
       publishLabelOverrides(next)
@@ -551,7 +584,9 @@ export function TacticalPitchLineup({
     if (nextId === formationId) return
     if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
 
-    const nextFormation = getFormationById(nextId, teamFormat)
+    const nextFormation = getFormationById(nextId, teamFormat, customFormations)
+    const selectingCustom = customFormations.some((entry) => entry.id === nextId)
+    const labelSource = selectingCustom ? {} : slotLabelOverrides
     const remap = remapFormationSlotAssignments(
       slotAssignments,
       nextFormation,
@@ -561,7 +596,7 @@ export function TacticalPitchLineup({
         position: p.primaryPosition,
       })),
       {
-        mapSlotToPosition: (slot) => resolveSlotLabel(slot, slotLabelOverrides),
+        mapSlotToPosition: (slot) => resolveSlotLabel(slot, labelSource),
       },
     )
 
@@ -574,7 +609,7 @@ export function TacticalPitchLineup({
       if (!playerId) continue
       const slot = nextFormation.slots.find((s) => s.id === slotId)
       if (!slot) continue
-      onAssignStarter(playerId, slot.role, resolveSlotLabel(slot, slotLabelOverrides))
+      onAssignStarter(playerId, slot.role, resolveSlotLabel(slot, labelSource))
     }
 
     setFormationId(nextId)
@@ -582,6 +617,10 @@ export function TacticalPitchLineup({
     publishAssignments(remap.slotAssignments)
     // Drop overrides for slots that no longer exist on the new formation.
     setSlotLabelOverrides((prev) => {
+      if (selectingCustom) {
+        publishLabelOverrides({})
+        return {}
+      }
       const next: Record<string, string> = {}
       for (const slot of nextFormation.slots) {
         if (prev[slot.id]) next[slot.id] = prev[slot.id]
@@ -635,18 +674,106 @@ export function TacticalPitchLineup({
           onChange={(e) => handleFormationChange(e.target.value)}
           className="min-h-11 w-full touch-manipulation rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
         >
-          {availableFormations.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.label}
-            </option>
-          ))}
+          <optgroup label="Standard">
+            {builtInFormations.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label}
+              </option>
+            ))}
+          </optgroup>
+          {customFormations.length > 0 ? (
+            <optgroup label="Saved">
+              {customFormations.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
         </select>
+        {teamId ? (
+          <form
+            className="mt-2 flex flex-wrap items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!teamFormat) return
+              setFormationError(null)
+              const name = formationName.trim()
+              if (!name) {
+                setFormationError('Name the formation first.')
+                return
+              }
+              const named = customFormations.find(
+                (entry) => entry.label.toLowerCase() === name.toLowerCase(),
+              )
+              const id = selectedCustom?.id ?? named?.id
+              void save({
+                id,
+                name,
+                format: teamFormat,
+                slots: formationSlotsForSave(pitchSlotsRef.current, slotLabelOverrides),
+              })
+                .then((saved) => {
+                  setFormationId(saved.id)
+                  setSlotLabelOverrides({})
+                  publishLabelOverrides({})
+                })
+                .catch((err: unknown) => {
+                  const message =
+                    err instanceof Error
+                      ? err.message
+                      : err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+                        ? err.message
+                        : 'Could not save formation'
+                  setFormationError(
+                    message.toLowerCase().includes('duplicate') || message.toLowerCase().includes('unique')
+                      ? 'This team already has a formation with that name.'
+                      : message,
+                  )
+                })
+            }}
+          >
+            <input
+              value={formationName}
+              onChange={(event) => setFormationName(event.target.value)}
+              maxLength={40}
+              placeholder="Name this formation"
+              aria-label="Formation name"
+              className="min-h-11 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm font-semibold text-foreground"
+            />
+            <button
+              type="submit"
+              disabled={savingFormation || !formationName.trim()}
+              className="min-h-11 shrink-0 rounded-lg bg-neon px-3 text-xs font-black uppercase tracking-wide text-neon-foreground disabled:opacity-40"
+            >
+              {savingFormation ? 'Saving…' : 'Save'}
+            </button>
+            {selectedCustom ? (
+              <button
+                type="button"
+                disabled={savingFormation}
+                onClick={() => {
+                  if (!window.confirm(`Delete ${selectedCustom.label}?`)) return
+                  setFormationError(null)
+                  void remove(selectedCustom.id)
+                    .then(() => setFormationId(getDefaultFormationId(teamFormat ?? '9v9')))
+                    .catch((err: unknown) => {
+                      setFormationError(err instanceof Error ? err.message : 'Could not delete formation')
+                    })
+                }}
+                className="min-h-11 shrink-0 rounded-lg bg-secondary px-3 text-xs font-black uppercase tracking-wide text-foreground disabled:opacity-40"
+              >
+                Delete
+              </button>
+            ) : null}
+          </form>
+        ) : null}
+        {formationError ? <p className="mt-1 text-xs font-semibold text-danger">{formationError}</p> : null}
       </div>
 
       <p className="shrink-0 text-xs text-muted-foreground">
-        Pick a base formation, then drag players (or empty slots) on the pitch to fine-tune their
-        positions. Drag from the bench to fill a slot, or tap to assign / remove. Tap the position
-        chip under a slot (pencil) to rename it.
+        Pick a shape, drag the dots, and rename a position from the pencil chip — codes like CDM
+        or a name like Winger. Save stores that shape for this team.
       </p>
 
       <FormationPitch
@@ -659,6 +786,9 @@ export function TacticalPitchLineup({
         onAssignPlayer={assignPlayerToSlot}
         onSlotTap={handleSlotClick}
         onSlotLabelChange={handleSlotLabelChange}
+        onSlotsChange={(slots) => {
+          pitchSlotsRef.current = slots
+        }}
         enableDragDrop
         className={constrainLists ? PITCH_BENCH_LAYOUT : PITCH_BENCH_LAYOUT_FLOW}
       >

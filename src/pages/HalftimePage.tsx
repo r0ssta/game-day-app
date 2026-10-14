@@ -201,6 +201,7 @@ export function HalftimePage({
           starters={secondHalfStarters}
           maxFieldPlayers={maxFieldPlayers}
           teamFormat={activeTeamFormat}
+          teamId={teamId}
           onAssignStarter={onAssignSecondHalfStarter}
           onRemoveStarter={onRemoveSecondHalfStarter}
           onSetAttending={

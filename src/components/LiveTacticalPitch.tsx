@@ -21,6 +21,7 @@ import {
   type FormationRemapResult,
   type FormationSlot,
 } from '@/lib/formations'
+import { useTeamFormations } from '@/hooks/useTeamFormations'
 import { hasSlotAssignments } from '@/lib/lineup'
 import type { TeamFormat } from '@/lib/team-format'
 import {
@@ -73,6 +74,7 @@ type LiveTacticalPitchProps = {
   /** Ready-to-start: user slot edits beat scheduled hydrates until the clock starts. */
   lineupDraftIsSourceOfTruth?: boolean
   teamFormat?: TeamFormat
+  teamId?: string | null
 }
 
 export type LiveTacticalPitchHandle = {
@@ -306,12 +308,19 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       onSlotAssignmentsChange,
       lineupDraftIsSourceOfTruth = false,
       teamFormat,
+      teamId,
     },
     ref,
   ) {
+    const { formations: savedFormations } = useTeamFormations(teamId)
+    const formatForList = teamFormat ?? '9v9'
+    const customFormations = useMemo(
+      () => savedFormations.filter((formation) => formation.format === formatForList),
+      [formatForList, savedFormations],
+    )
     const availableFormations = useMemo(
-      () => (teamFormat ? getFormationsForFormat(teamFormat) : getFormationsForFormat('9v9')),
-      [teamFormat],
+      () => [...getFormationsForFormat(formatForList), ...customFormations],
+      [customFormations, formatForList],
     )
     const [slotAssignments, setSlotAssignments] = useState<Record<string, string | null>>({})
     const [slotLabelOverrides, setSlotLabelOverrides] = useState<Record<string, string>>({})
@@ -335,7 +344,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
     const [lineupDraftLocked, setLineupDraftLocked] = useState(false)
     const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    const formation = getFormationById(formationId, teamFormat)
+    const formation = getFormationById(formationId, teamFormat, customFormations)
     const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
     const slotById = useMemo(() => new Map(formation.slots.map((s) => [s.id, s])), [formation.slots])
 
@@ -698,7 +707,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       if (nextId === formationId) return
       if (teamFormat && !availableFormations.some((entry) => entry.id === nextId)) return
 
-      const nextFormation = getFormationById(nextId, teamFormat)
+      const nextFormation = getFormationById(nextId, teamFormat, customFormations)
       const onFieldIds = lineupDraftLocked
         ? occupiedSlotPlayerIds
         : new Set(onFieldPlayers.map((p) => p.id))
@@ -722,6 +731,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
       onFormationSwitch(nextId, remap)
       applySlotDraft(remap.slotAssignments)
       setSlotLabelOverrides((prev) => {
+        if (customFormations.some((entry) => entry.id === nextId)) return {}
         const next: Record<string, string> = {}
         for (const slot of nextFormation.slots) {
           if (prev[slot.id]) next[slot.id] = prev[slot.id]
@@ -765,11 +775,24 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           aria-label="Formation"
           className="min-h-11 w-full touch-manipulation rounded-lg border border-border bg-card px-3 py-3 text-sm font-bold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
         >
-          {availableFormations.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.label}
-            </option>
-          ))}
+          <optgroup label="Standard">
+            {availableFormations
+              .filter((formationOption) => !customFormations.some((entry) => entry.id === formationOption.id))
+              .map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+          </optgroup>
+          {customFormations.length > 0 ? (
+            <optgroup label="Saved">
+              {customFormations.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
         </select>
 
         <p className="text-sm text-muted-foreground">

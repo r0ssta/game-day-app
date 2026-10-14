@@ -3853,6 +3853,7 @@ export function CoachDashboard() {
           halfLengthMinutes={halfLengthMinutes}
           maxFieldPlayers={maxFieldPlayers}
           teamFormat={activeTeamFormat}
+          teamId={activeTeamId}
           initialSlotAssignments={
             currentPeriod > 1 ? secondHalfSlotAssignments : firstHalfSlotAssignments
           }

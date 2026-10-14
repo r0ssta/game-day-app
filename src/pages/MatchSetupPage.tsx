@@ -461,6 +461,7 @@ export function MatchSetupPage({
                     starters={setupLineup.startFirstHalf}
                     maxFieldPlayers={maxFieldPlayers}
                     teamFormat={activeTeamFormat}
+                    teamId={activeTeamId}
                     onAssignStarter={(playerId, _role: FormationRole, tacticalPosition) => {
                       onSetStartFirstHalf(playerId, true)
                       onSetMatchPosition(playerId, tacticalPosition)

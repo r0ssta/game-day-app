@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTeamFormations } from '@/hooks/useTeamFormations'
 import {
   createDefaultSetupLineup,
   ensureHalftimeStarters,
@@ -281,6 +282,7 @@ export function useGameDayApp() {
   const [halftimePitchKey, setHalftimePitchKey] = useState(0)
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(routeTeamId)
+  useTeamFormations(selectedTeamId)
   const [unknownRouteTeamId, setUnknownRouteTeamId] = useState<string | null>(null)
   const [unknownRouteMatchId, setUnknownRouteMatchId] = useState<string | null>(null)
   const [fallbackTeamId, setFallbackTeamId] = useState<string | null>(null)

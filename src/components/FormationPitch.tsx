@@ -65,6 +65,8 @@ type FormationPitchProps = {
    * Default true (setup / halftime).
    */
   enableDragDrop?: boolean
+  /** Current slot coordinates, including any drag on this pitch. */
+  onSlotsChange?: (slots: FormationSlot[]) => void
   /**
    * Content rendered beside/under the pitch, inside the DnD context when enabled.
    * Use this for custom bench UIs (attendance, edit, impact, etc.).
@@ -101,6 +103,7 @@ function SlotLabelSheet({
   onSelect: (label: string) => void
   onClose: () => void
 }) {
+  const [customName, setCustomName] = useState(currentLabel)
   return (
     <div className={MODAL_OVERLAY} onClick={onClose} role="presentation">
       <div
@@ -128,6 +131,31 @@ function SlotLabelSheet({
             <X className="size-5" />
           </button>
         </div>
+        <form
+          className="flex shrink-0 gap-2 border-b border-border px-4 py-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const next = customName.trim()
+            if (!next) return
+            onSelect(next)
+            onClose()
+          }}
+        >
+          <input
+            value={customName}
+            onChange={(event) => setCustomName(event.target.value)}
+            maxLength={18}
+            placeholder="Winger"
+            aria-label="Custom position name"
+            className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm font-bold text-foreground"
+          />
+          <button
+            type="submit"
+            className="min-h-11 shrink-0 rounded-xl bg-neon px-4 text-xs font-black uppercase tracking-wide text-neon-foreground active:scale-[0.98]"
+          >
+            Use name
+          </button>
+        </form>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {TACTICAL_SLOT_LABELS.map((label) => (
@@ -312,7 +340,14 @@ function PitchSlotVisual({
                   <GripVertical className="size-3" strokeWidth={2.5} aria-hidden />
                 </span>
               ) : null}
-              <span className="text-[10px] font-black uppercase">{label}</span>
+              <span
+                className={cn(
+                  'max-w-[4.5rem] truncate text-[10px] font-black',
+                  label.length <= 4 && 'uppercase',
+                )}
+              >
+                {label}
+              </span>
             </div>
           )}
         </button>
@@ -335,12 +370,13 @@ function PitchSlotVisual({
             }}
             className={cn(
               chromePositionClass,
-              'z-20 flex min-h-11 min-w-[4.5rem] touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-white/50 bg-black/80 px-3 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg active:scale-95',
+              'z-20 flex min-h-11 max-w-[7rem] touch-manipulation items-center justify-center gap-1.5 rounded-xl border-2 border-white/50 bg-black/80 px-3 py-2 text-xs font-black tracking-wide text-white shadow-lg active:scale-95',
+              label.length <= 4 && 'uppercase',
             )}
             aria-label={`Change position label (${label})`}
           >
             <Pencil className="size-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
-            <span>{label}</span>
+            <span className="truncate">{label}</span>
           </button>
         ) : player && !occupiedExtra ? (
           <span
@@ -455,6 +491,7 @@ export function FormationPitch({
   onSlotLabelChange,
   renderOccupiedExtra,
   enableDragDrop = true,
+  onSlotsChange,
   children,
   className,
 }: FormationPitchProps) {
@@ -473,6 +510,10 @@ export function FormationPitch({
     setPitchSlots(cloneFormationSlots(formation.slots))
     setLabelEditorSlotId(null)
   }, [formation.id, slotSignature]) // eslint-disable-line react-hooks/exhaustive-deps -- template identity only
+
+  useEffect(() => {
+    onSlotsChange?.(pitchSlots)
+  }, [onSlotsChange, pitchSlots])
 
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const activeDragPlayer = activeDragPlayerId ? playerById.get(activeDragPlayerId) ?? null : null

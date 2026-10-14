@@ -817,6 +817,7 @@ function TeamLineupsTab({
             starters={starters}
             maxFieldPlayers={maxFieldPlayers}
             teamFormat={activeTeamFormat}
+            teamId={activeTeamId}
             initialSlotAssignments={initialSlotAssignments}
             initialSlotLabelOverrides={initialSlotLabelOverrides}
             assignmentsResetKey={assignmentsKey}

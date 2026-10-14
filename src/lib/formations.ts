@@ -277,14 +277,24 @@ export function slotToTacticalPosition(slot: FormationSlot): string {
   return tacticalPositionFromGenericSlot(slot)
 }
 
+/** Keep tactical codes uppercase. Custom names such as Winger keep the coach's text. */
+export function normalizeSlotLabel(raw: string): string {
+  const trimmed = raw.trim().replace(/\s+/g, ' ').slice(0, 18)
+  if (!trimmed) return ''
+  const upper = trimmed.toUpperCase()
+  if ((TACTICAL_SLOT_LABELS as readonly string[]).includes(upper)) return upper
+  return trimmed
+}
+
 export function resolveSlotLabel(
   slot: FormationSlot,
   overrides?: Record<string, string> | null,
 ): string {
-  const override = overrides?.[slot.id]?.trim()
-  if (override) return override.toUpperCase()
-  const label = slot.label.trim().toUpperCase()
-  if (label && !GENERIC_SLOT_LABELS.has(label)) return label
+  const override = normalizeSlotLabel(overrides?.[slot.id] ?? '')
+  if (override) return override
+  const label = slot.label.trim()
+  const normalized = normalizeSlotLabel(label)
+  if (normalized && !GENERIC_SLOT_LABELS.has(normalized.toUpperCase())) return normalized
   return slotToTacticalPosition(slot)
 }
 
@@ -356,6 +366,34 @@ export function slotAssignmentsFromMatchPositions(
   return assignments
 }
 
+let activeCustomFormations: Formation[] = []
+let customFormationsReady = false
+
+/** Loaded saved shapes for the active team. Formation lookup uses this list. */
+export function setActiveCustomFormations(formations: Formation[], ready: boolean): void {
+  activeCustomFormations = formations
+  customFormationsReady = ready
+}
+
+export function getActiveCustomFormations(format?: TeamFormat): Formation[] {
+  if (!format) return activeCustomFormations
+  return activeCustomFormations.filter((formation) => formation.format === format)
+}
+
+function lookupCustomFormation(
+  id: string,
+  format?: TeamFormat,
+  extra: Formation[] = [],
+): Formation | undefined {
+  return [...extra, ...activeCustomFormations].find(
+    (formation) => formation.id === id && (!format || formation.format === format),
+  )
+}
+
+export function isCustomFormationId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+}
+
 export function getFormationsForFormat(format: TeamFormat): Formation[] {
   return FORMATIONS.filter((formation) => formation.format === format)
 }
@@ -365,6 +403,7 @@ export function getDefaultFormationId(format: TeamFormat = DEFAULT_TEAM_FORMAT):
 }
 
 export function isFormationValidForFormat(formationId: string, format: TeamFormat): boolean {
+  if (lookupCustomFormation(formationId, format)) return true
   const formation = FORMATIONS.find((entry) => entry.id === formationId)
   return formation?.format === format
 }
@@ -375,10 +414,17 @@ export function resolveFormationIdForFormat(
   format: TeamFormat,
 ): string {
   if (formationId && isFormationValidForFormat(formationId, format)) return formationId
+  if (formationId && !customFormationsReady && isCustomFormationId(formationId)) return formationId
   return getDefaultFormationId(format)
 }
 
-export function getFormationById(id: string, format?: TeamFormat): Formation {
+export function getFormationById(
+  id: string,
+  format?: TeamFormat,
+  extra: Formation[] = [],
+): Formation {
+  const custom = lookupCustomFormation(id, format, extra)
+  if (custom) return custom
   const found = FORMATIONS.find((formation) => formation.id === id)
   if (found && (!format || found.format === format)) return found
   if (format) return getFormationsForFormat(format)[0] ?? FORMATIONS[0]

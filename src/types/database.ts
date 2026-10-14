@@ -273,6 +273,16 @@ export type DbLineupPreset = {
   updated_at: string
 }
 
+export type DbTeamFormation = {
+  id: string
+  team_id: string
+  name: string
+  format: '7v7' | '9v9' | '11v11'
+  slots: unknown
+  created_at: string
+  updated_at: string
+}
+
 export type DbTacticBoard = {
   id: string
   team_id: string
@@ -554,6 +564,15 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<DbLineupPreset>
+      }
+      team_formations: {
+        Row: DbTeamFormation
+        Insert: Omit<DbTeamFormation, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<DbTeamFormation>
       }
       tactic_boards: {
         Row: DbTacticBoard
