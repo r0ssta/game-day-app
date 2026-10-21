@@ -13,6 +13,8 @@ export type DbTeam = {
   primary_coach_name?: string
   /** false = archived; keep history, hide from selectors */
   active_status: boolean
+  /** Share of completed-match minutes. Saturday board flags players under this. */
+  minutes_target_ratio?: number
   created_at: string
 }
 
@@ -682,6 +684,10 @@ export type Database = {
       }
       get_parent_hub_by_slug: {
         Args: { p_slug: string; p_include_test?: boolean }
+        Returns: Json
+      }
+      get_parent_recaps: {
+        Args: { p_team_id: string; p_include_test?: boolean }
         Returns: Json
       }
       get_parent_live_events: {

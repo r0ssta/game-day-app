@@ -153,10 +153,19 @@ create table if not exists public.match_stats (
 
 create index if not exists idx_players_team_id on public.players (team_id);
 create index if not exists idx_matches_status on public.matches (status);
+create index if not exists idx_matches_team_id on public.matches (team_id);
+create index if not exists idx_matches_team_status_date
+  on public.matches (team_id, status, match_date);
+create index if not exists idx_matches_season_team_date
+  on public.matches (season_id, team_id, match_date);
 create unique index if not exists idx_matches_stat_tracker_token
   on public.matches (stat_tracker_token)
   where stat_tracker_token is not null;
 create index if not exists idx_match_events_match_id on public.match_events (match_id);
+create index if not exists idx_match_events_match_created
+  on public.match_events (match_id, created_at);
+create index if not exists idx_match_events_match_created
+  on public.match_events (match_id, created_at);
 create index if not exists match_events_live_dedupe_idx
   on public.match_events (match_id, event_type, created_at desc);
 create index if not exists match_events_position_micro_shift_idx

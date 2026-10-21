@@ -336,6 +336,27 @@ function normalizeParentHubPayload(data: unknown): ParentHubPayload {
   }
 }
 
+export async function fetchParentRecaps(
+  teamId: string,
+  options?: { includeTest?: boolean },
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase.rpc('get_parent_recaps', {
+    p_team_id: teamId,
+    p_include_test: Boolean(options?.includeTest),
+  })
+  if (error) throw error
+  const rows = Array.isArray(data) ? data : []
+  const recaps = new Map<string, string>()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    const record = row as { id?: unknown; parent_facing_recap?: unknown }
+    const id = typeof record.id === 'string' ? record.id : ''
+    const recap = typeof record.parent_facing_recap === 'string' ? record.parent_facing_recap.trim() : ''
+    if (id && recap) recaps.set(id, recap)
+  }
+  return recaps
+}
+
 export async function fetchParentHub(
   route: ParentHubRoute,
   options?: { includeTest?: boolean },

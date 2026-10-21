@@ -26,9 +26,10 @@ import {
 } from '@/lib/lineup-analytics'
 import {
   fetchCompletedMatchesByTeamId,
-  fetchMatchEvents,
-  fetchMatchReviews,
-  fetchMatchStatsByMatchId,
+  fetchMatchEventsByMatchIds,
+  fetchMatchReviewsByMatchIds,
+  fetchMatchStatsByMatchIds,
+  groupRowsByMatchId,
   rebuildMatchPlayers,
 } from '@/lib/supabase-api'
 import { matchResultBucket } from '@/lib/penalty-kicks'
@@ -318,6 +319,15 @@ export async function loadSeasonReport(
   }
 
   const lineupChunks: LineupCombinationAnalytics[] = []
+  const matchIds = matches.map((match) => match.id)
+  const [allEvents, allStats, allReviews] = await Promise.all([
+    fetchMatchEventsByMatchIds(matchIds),
+    fetchMatchStatsByMatchIds(matchIds),
+    fetchMatchReviewsByMatchIds(matchIds),
+  ])
+  const eventsByMatch = groupRowsByMatchId(allEvents)
+  const statsByMatch = groupRowsByMatchId(allStats)
+  const reviewsByMatch = groupRowsByMatchId(allReviews)
 
   await Promise.all(
     matches.map(async (match) => {
@@ -327,11 +337,9 @@ export async function loadSeasonReport(
         resolveMatchLocationType(match),
       )
 
-      const [events, stats, reviews] = await Promise.all([
-        fetchMatchEvents(match.id),
-        fetchMatchStatsByMatchId(match.id),
-        fetchMatchReviews(match.id).catch(() => []),
-      ])
+      const events = eventsByMatch.get(match.id) ?? []
+      const stats = statsByMatch.get(match.id) ?? []
+      const reviews = reviewsByMatch.get(match.id) ?? []
 
       const matchPlayers = rebuildMatchPlayers(roster, stats)
       const playersById = new Map(matchPlayers.map((player) => [player.id, player]))

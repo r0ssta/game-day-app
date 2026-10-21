@@ -10,9 +10,10 @@ import {
   type PlayerMicroStats,
 } from '@/lib/stat-tracker'
 import {
-  fetchMatchEvents,
-  fetchMatchStatsByMatchId,
+  fetchMatchEventsByMatchIds,
+  fetchMatchStatsByMatchIds,
   fetchPlayerMatchAppearances,
+  groupRowsByMatchId,
   fetchPlayersByIds,
   fetchSeasonRosterHistoryForPlayer,
   fetchTeamsByIds,
@@ -198,12 +199,19 @@ export async function loadPlayerDevelopmentReport(input: {
     byMatch.set(appearance.match.id, appearance)
   }
 
+  const appearancesByMatch = [...byMatch.values()]
+  const reportMatchIds = appearancesByMatch.map(({ match }) => match.id)
+  const [allEvents, allStatsRows] = await Promise.all([
+    fetchMatchEventsByMatchIds(reportMatchIds),
+    fetchMatchStatsByMatchIds(reportMatchIds),
+  ])
+  const eventsByMatch = groupRowsByMatchId(allEvents)
+  const statsByMatch = groupRowsByMatchId(allStatsRows)
+
   await Promise.all(
-    [...byMatch.values()].map(async ({ match, stat }) => {
-      const [events, allStats] = await Promise.all([
-        fetchMatchEvents(match.id),
-        fetchMatchStatsByMatchId(match.id),
-      ])
+    appearancesByMatch.map(async ({ match, stat }) => {
+      const events = eventsByMatch.get(match.id) ?? []
+      const allStats = statsByMatch.get(match.id) ?? []
       const eventStats = aggregatePlayerRecaps(events, match.half_length * 60)
       const microByPlayer = aggregateMicroStats(events)
       const firstHalfStarterIds = allStats

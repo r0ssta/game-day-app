@@ -77,6 +77,8 @@
     "supabase-platform-admin-club-access-migration.sql",
     "supabase-match-availability-migration.sql",
     "supabase-tactic-boards-migration.sql",
-    "supabase-team-formations-migration.sql"
+    "supabase-team-formations-migration.sql",
+    "supabase-parent-hub-club-season-migration.sql",
+    "supabase-match-list-indexes-migration.sql"
   ]
 }

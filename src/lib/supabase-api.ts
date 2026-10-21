@@ -1068,6 +1068,9 @@ export async function createMatchRecord(input: {
   subIntervalSeconds?: number | null
   gkPlaysFullHalf?: boolean
   opponentStrength?: OpponentStrength | null
+  placeName?: string | null
+  placeDetails?: string | null
+  arrivalNote?: string | null
 }): Promise<DbMatch> {
   const coachName = input.coachName.trim() || null
   const matchDate = input.matchDate.trim() || null
@@ -1116,7 +1119,6 @@ export async function createMatchRecord(input: {
     period: '1st',
   }
 
-  // Try fullest payload first; retry with fewer optional columns when schema is behind.
   const optionalKeys = [
     'match_date',
     'match_time',
@@ -1134,36 +1136,26 @@ export async function createMatchRecord(input: {
     'total_periods',
     'current_period',
     'period',
+    'opponent_strength',
+    'place_name',
+    'place_details',
+    'arrival_note',
   ] as const
-  const payloadAttempts: Array<Record<string, unknown>> = []
 
-  for (let mask = (1 << optionalKeys.length) - 1; mask >= 0; mask--) {
-    const extras: Record<string, unknown> = {}
-    for (let i = 0; i < optionalKeys.length; i++) {
-      if (mask & (1 << i)) {
-        const key = optionalKeys[i]
-        extras[key] = optionalFields[key]
-      }
-    }
-    payloadAttempts.push({ ...minimalPayload, ...extras })
-  }
-
-  payloadAttempts.sort(
-    (a, b) => countOptionalFields(b, optionalKeys) - countOptionalFields(a, optionalKeys),
-  )
-
-  if (payloadAttempts[0]) {
-    payloadAttempts[0] = {
-      ...payloadAttempts[0],
-      opponent_strength: input.opponentStrength ?? null,
-    }
+  let remaining: Record<string, unknown> = {
+    ...minimalPayload,
+    ...optionalFields,
+    opponent_strength: input.opponentStrength ?? null,
+    place_name: input.placeName ?? null,
+    place_details: input.placeDetails ?? null,
+    arrival_note: input.arrivalNote ?? null,
   }
 
   let lastError: unknown = null
-  for (const payload of payloadAttempts) {
+  for (;;) {
     const { data, error } = await supabase
       .from('matches')
-      .insert(payload as Database['public']['Tables']['matches']['Insert'])
+      .insert(remaining as Database['public']['Tables']['matches']['Insert'])
       .select()
       .single()
     if (!error) {
@@ -1191,17 +1183,15 @@ export async function createMatchRecord(input: {
     }
     lastError = error
     if (!isMissingColumnError(error)) break
+    const message = formatSupabaseError(error).toLowerCase()
+    const toDrop = optionalKeys.filter((key) => key in remaining && message.includes(key))
+    if (toDrop.length === 0) break
+    remaining = { ...remaining }
+    for (const key of toDrop) delete remaining[key]
   }
 
   if (lastError) throw lastError
   throw new Error('Failed to create match record')
-}
-
-function countOptionalFields(
-  payload: Record<string, unknown>,
-  keys: readonly string[],
-): number {
-  return keys.filter((key) => key in payload).length
 }
 
 /**
@@ -1965,6 +1955,68 @@ export async function fetchMatchReviews(matchId: string): Promise<DbMatchReview[
     return []
   }
   throw error
+}
+
+const MATCH_ID_CHUNK = 100
+const MATCH_ROW_PAGE = 1000
+
+async function selectRowsByMatchIds<T extends { match_id: string }>(
+  table: 'match_events' | 'match_stats' | 'match_reviews',
+  matchIds: string[],
+  orderColumn: 'created_at' | 'id',
+): Promise<T[]> {
+  if (matchIds.length === 0) return []
+  const rows: T[] = []
+  for (let offset = 0; offset < matchIds.length; offset += MATCH_ID_CHUNK) {
+    const ids = matchIds.slice(offset, offset + MATCH_ID_CHUNK)
+    let from = 0
+    for (;;) {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .in('match_id', ids)
+        .order('match_id', { ascending: true })
+        .order(orderColumn, { ascending: true })
+        .range(from, from + MATCH_ROW_PAGE - 1)
+      if (error) throw error
+      const page = (data ?? []) as unknown as T[]
+      rows.push(...page)
+      if (page.length < MATCH_ROW_PAGE) break
+      from += MATCH_ROW_PAGE
+    }
+  }
+  return rows
+}
+
+export function groupRowsByMatchId<T extends { match_id: string }>(rows: T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>()
+  for (const row of rows) {
+    const bucket = grouped.get(row.match_id)
+    if (bucket) bucket.push(row)
+    else grouped.set(row.match_id, [row])
+  }
+  return grouped
+}
+
+export async function fetchMatchEventsByMatchIds(matchIds: string[]): Promise<DbMatchEvent[]> {
+  return selectRowsByMatchIds<DbMatchEvent>('match_events', matchIds, 'created_at')
+}
+
+export async function fetchMatchStatsByMatchIds(matchIds: string[]): Promise<DbMatchStat[]> {
+  return selectRowsByMatchIds<DbMatchStat>('match_stats', matchIds, 'id')
+}
+
+export async function fetchMatchReviewsByMatchIds(matchIds: string[]): Promise<DbMatchReview[]> {
+  try {
+    const rows = await selectRowsByMatchIds<DbMatchReview>('match_reviews', matchIds, 'id')
+    return parseDbRows(MatchReviewSchema, rows, 'matchReviews')
+  } catch (error) {
+    if (isOptionalTableError(error as { code?: string; message?: string })) {
+      console.warn('[fetchMatchReviewsByMatchIds] match_reviews unavailable:', formatSupabaseError(error))
+      return []
+    }
+    throw error
+  }
 }
 
 type MatchReviewJoinRow = {

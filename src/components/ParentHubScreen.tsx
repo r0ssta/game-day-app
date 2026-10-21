@@ -13,6 +13,7 @@ import { formatPlayerFullName } from '@/lib/player-names'
 import {
   buildParentTimelineRows,
   fetchParentHub,
+  fetchParentRecaps,
   fetchParentLiveEvents,
   isParentHubFinishedMatch,
   isParentHubStaffPreviewRequest,
@@ -534,6 +535,19 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tab, setTab] = useState<TabId>('live')
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
+  const recapsRef = useRef<Map<string, string>>(new Map())
+
+  const applyRecaps = useCallback((payload: ParentHubPayload): ParentHubPayload => {
+    if (recapsRef.current.size === 0) return payload
+    return {
+      ...payload,
+      matches: payload.matches.map((match) => {
+        const recap = recapsRef.current.get(match.id)
+        return recap != null ? { ...match, parent_facing_recap: recap } : match
+      }),
+    }
+  }, [])
+
 
   // Point at the dynamic team manifest as soon as we know the slug (Vite stand-in for layout.tsx).
   useEffect(() => {
@@ -557,7 +571,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
   const staffPreviewRequested = isParentHubStaffPreviewRequest()
 
   const reload = useCallback(async () => {
-    const payload = await fetchParentHub(route, { includeTest: staffPreviewRequested })
+    const payload = applyRecaps(await fetchParentHub(route, { includeTest: staffPreviewRequested }))
     setHub((prev) => (prev && JSON.stringify(prev) === JSON.stringify(payload) ? prev : payload))
     // Canonicalize legacy UUID / query links to /hub/:slug once resolved.
     if (payload.teamSlug) {
@@ -568,7 +582,23 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
         window.history.replaceState(null, '', next)
       }
     }
-  }, [route, staffPreviewRequested])
+  }, [route, staffPreviewRequested, applyRecaps])
+
+  useEffect(() => {
+    if (!hub?.teamId) return
+    if (tab !== 'recaps' && !selectedMatchId) return
+    let cancelled = false
+    void fetchParentRecaps(hub.teamId, { includeTest: staffPreviewRequested })
+      .then((recaps) => {
+        if (cancelled) return
+        recapsRef.current = recaps
+        setHub((prev) => (prev ? applyRecaps(prev) : prev))
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [hub?.teamId, tab, selectedMatchId, staffPreviewRequested, applyRecaps])
 
   useEffect(() => {
     let cancelled = false
