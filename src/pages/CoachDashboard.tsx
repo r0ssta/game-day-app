@@ -110,6 +110,7 @@ import {
   type QaSpeedMultiplier,
 } from '@/lib/match-clock'
 import { useMatchClock } from '@/hooks/useMatchClock'
+import { MatchClockProvider, useMatchClockSeconds } from '@/lib/match-clock-store'
 import type { RosterProfilePosition } from '@/lib/positions'
 import { applyPlusMinusDelta } from '@/lib/plus-minus'
 import { buildStatTrackerUrl } from '@/lib/stat-tracker'
@@ -219,6 +220,11 @@ function menuTacticPhase(appMode: string): TacticBoardPhase {
   return 'pregame'
 }
 
+function LiveClockValue({ children }: { children: (seconds: number) => ReactNode }) {
+  const seconds = useMatchClockSeconds()
+  return children(seconds)
+}
+
 export function CoachDashboard() {
   const {
     canAccessClubAdmin,
@@ -279,7 +285,7 @@ export function CoachDashboard() {
     setHomeCorners,
     awayCorners,
     setAwayCorners,
-    seconds,
+    matchClockStore,
     setSeconds,
     period,
     currentPeriod,
@@ -411,6 +417,9 @@ export function CoachDashboard() {
     openingScheduledEditId,
     deleteMatch,
   } = useGameDayApp()
+
+  const matchClockRef = useRef(matchClockStore)
+  matchClockRef.current = matchClockStore
 
   const otherStaff = useMatchPresence(isActiveStaffMatchScreen(appMode) ? matchId : null)
 
@@ -762,7 +771,6 @@ export function CoachDashboard() {
   const halftimeAssignmentsRef = useRef<Record<string, string | null> | null>(null)
   const halftimeLabelOverridesRef = useRef<Record<string, string> | null>(null)
 
-  const clockSyncRef = useRef(seconds)
   const endWhistleSecondsRef = useRef<number | null>(null)
   const lastCornerElapsedRef = useRef<{
     period: number
@@ -805,10 +813,6 @@ export function CoachDashboard() {
       cancelled = true
     }
   }, [matchId, periodClockStarted, currentPeriod, homeCorners, awayCorners])
-
-  useEffect(() => {
-    clockSyncRef.current = seconds
-  }, [seconds])
 
   useEffect(() => {
     if (!activeTeamId) {
@@ -982,7 +986,7 @@ export function CoachDashboard() {
     const id = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
       if (isPending()) return
-      persistMatchClock(matchId, clockSyncRef.current)
+      persistMatchClock(matchId, matchClockRef.current.get())
     }, 5000)
     return () => clearInterval(id)
   }, [appMode, matchId, running, periodClockStarted, persistMatchClock, isPending])
@@ -1294,7 +1298,7 @@ export function CoachDashboard() {
   }, [matchId, handleDeleteMatch])
 
   const handleEndGame = useCallback(() => {
-    endWhistleSecondsRef.current = seconds
+    endWhistleSecondsRef.current = matchClockRef.current.get()
     releaseLocalClock()
     if (
       shouldAutoEnterPenaltyShootoutAfterExtraTime({
@@ -1304,7 +1308,7 @@ export function CoachDashboard() {
       })
     ) {
       setEndingMatch(true)
-      void finishGame(seconds, undefined, { enterPenaltyShootout: true })
+      void finishGame(matchClockRef.current.get(), undefined, { enterPenaltyShootout: true })
         .then(() => {
           setToast('Still tied after extra time — starting penalty shootout')
         })
@@ -1335,7 +1339,6 @@ export function CoachDashboard() {
     matchIsTournamentKnockout,
     matchGoesToPks,
     finishGame,
-    seconds,
   ])
 
   const handleConfirmEndGameTiming = useCallback(
@@ -1343,7 +1346,7 @@ export function CoachDashboard() {
       setEndingMatch(true)
       try {
         const enterPks = false
-        const clockSeconds = endWhistleSecondsRef.current ?? seconds
+        const clockSeconds = endWhistleSecondsRef.current ?? matchClockRef.current.get()
         await finishGame(clockSeconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
         setEndTimingOpen(false)
         setToast(
@@ -1357,13 +1360,13 @@ export function CoachDashboard() {
         setEndingMatch(false)
       }
     },
-    [seconds, finishGame],
+    [finishGame],
   )
 
   const handleTiedGamePenaltyShootout = useCallback(async () => {
     setEndingMatch(true)
     try {
-      const clockSeconds = endWhistleSecondsRef.current ?? seconds
+      const clockSeconds = endWhistleSecondsRef.current ?? matchClockRef.current.get()
       await finishGame(clockSeconds, undefined, { enterPenaltyShootout: true })
       setTiedGameOpen(false)
       setToast('Tied regulation — starting penalty shootout')
@@ -1372,13 +1375,13 @@ export function CoachDashboard() {
     } finally {
       setEndingMatch(false)
     }
-  }, [finishGame, seconds])
+  }, [finishGame])
 
   const handleTiedGameExtraTime = useCallback(
     async (halfMinutes: number) => {
       setEndingMatch(true)
       try {
-        const clockSeconds = endWhistleSecondsRef.current ?? seconds
+        const clockSeconds = endWhistleSecondsRef.current ?? matchClockRef.current.get()
         await finishGame(clockSeconds, undefined, {
           enterExtraTime: true,
           extraTimeHalfMinutes: halfMinutes,
@@ -1391,14 +1394,14 @@ export function CoachDashboard() {
         setEndingMatch(false)
       }
     },
-    [finishGame, seconds],
+    [finishGame],
   )
 
   const extraTimeHalf = extraTimeHalfFromStatus(matchStatus)
 
   const handleStartExtraTime = useCallback(() => {
-    const kickoffSeconds = resolvePeriodKickoffRemaining(seconds, halfLengthMinutes)
-    if (kickoffSeconds !== seconds) setSeconds(kickoffSeconds)
+    const kickoffSeconds = resolvePeriodKickoffRemaining(matchClockRef.current.get(), halfLengthMinutes)
+    if (kickoffSeconds !== matchClockRef.current.get()) setSeconds(kickoffSeconds)
     const stamped = stampAllOnField(players, kickoffSeconds)
     setPlayers(stamped)
     setPeriodClockStarted(true)
@@ -1430,7 +1433,6 @@ export function CoachDashboard() {
     }
   }, [
     players,
-    seconds,
     halfLengthMinutes,
     matchId,
     extraTimeHalf,
@@ -1448,7 +1450,7 @@ export function CoachDashboard() {
     releaseLocalClock()
     if (extraTimeHalf === 1) {
       setEndingMatch(true)
-      void finishGame(seconds, undefined, {
+      void finishGame(matchClockRef.current.get(), undefined, {
         advanceExtraTime: true,
         extraTimeHalfMinutes: halfLengthMinutes,
       })
@@ -1466,7 +1468,6 @@ export function CoachDashboard() {
     extraTimeHalf,
     releaseLocalClock,
     finishGame,
-    seconds,
     halfLengthMinutes,
     handleEndGame,
   ])
@@ -1484,8 +1485,8 @@ export function CoachDashboard() {
             activeTeamFormat,
           )
         : players
-    const kickoffSeconds = resolvePeriodKickoffRemaining(seconds, halfLengthMinutes)
-    if (kickoffSeconds !== seconds) setSeconds(kickoffSeconds)
+    const kickoffSeconds = resolvePeriodKickoffRemaining(matchClockRef.current.get(), halfLengthMinutes)
+    if (kickoffSeconds !== matchClockRef.current.get()) setSeconds(kickoffSeconds)
     const stamped = freezeFirstHalfStarters(stampAllOnField(kickoffPlayers, kickoffSeconds))
     setPlayers(stamped)
     setFirstHalfStarterIds(
@@ -1547,7 +1548,6 @@ export function CoachDashboard() {
       setToast(underwayToast)
     }
   }, [
-    seconds,
     matchId,
     setSeconds,
     setPlayers,
@@ -1581,7 +1581,7 @@ export function CoachDashboard() {
     const endedPeriod = currentPeriod
     const endedFormation = activeFormation
 
-    const nextPlayers = await enterIntermission(seconds, slotAssignments, slotLabelOverrides)
+    const nextPlayers = await enterIntermission(matchClockRef.current.get(), slotAssignments, slotLabelOverrides)
     const onFieldPlayers = onFieldBefore.map((playerId) => {
       const player = nextPlayers.find((p) => p.id === playerId)
       return {
@@ -1599,7 +1599,7 @@ export function CoachDashboard() {
               kind: 'end',
               period: endedPeriod,
               totalPeriods,
-              clockSeconds: seconds,
+              clockSeconds: matchClockRef.current.get(),
               halfLengthMinutes,
               formation: endedFormation,
               teamName: matchTeamName.trim() || 'Home',
@@ -1626,7 +1626,6 @@ export function CoachDashboard() {
       `${formatPeriodLong(endedPeriod, totalPeriods)} ended — set ${formatPeriodLong(next, totalPeriods)} lineup`,
     )
   }, [
-    seconds,
     matchId,
     enterIntermission,
     releaseLocalClock,
@@ -1645,28 +1644,28 @@ export function CoachDashboard() {
   ])
 
   const requestEndPeriod = useCallback(() => {
-    if (needsEarlyPeriodStopConfirmation(seconds)) {
+    if (needsEarlyPeriodStopConfirmation(matchClockRef.current.get())) {
       setEarlyStopIntent('period')
       return
     }
     void handleEnterHalftime()
-  }, [seconds, handleEnterHalftime])
+  }, [handleEnterHalftime])
 
   const requestEndGame = useCallback(() => {
-    if (needsEarlyPeriodStopConfirmation(seconds)) {
+    if (needsEarlyPeriodStopConfirmation(matchClockRef.current.get())) {
       setEarlyStopIntent('game')
       return
     }
     handleEndGame()
-  }, [seconds, handleEndGame])
+  }, [handleEndGame])
 
   const requestEndExtraTime = useCallback(() => {
-    if (needsEarlyPeriodStopConfirmation(seconds)) {
+    if (needsEarlyPeriodStopConfirmation(matchClockRef.current.get())) {
       setEarlyStopIntent('extra_time')
       return
     }
     handleEndExtraTime()
-  }, [seconds, handleEndExtraTime])
+  }, [handleEndExtraTime])
 
   const confirmEarlyPeriodStop = useCallback(() => {
     const intent = earlyStopIntent
@@ -1867,7 +1866,7 @@ export function CoachDashboard() {
   const handleLiveFormationSwitch = useCallback(
     (nextFormationId: string, remap: FormationRemapResult) => {
       if (!matchId) return
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const previousFormationId = activeFormation
       const previousLabel = getFormationLabel(activeFormation)
       const nextLabel = getFormationLabel(nextFormationId)
@@ -1882,7 +1881,7 @@ export function CoachDashboard() {
           return update ? { ...player, matchPosition: update.position } : player
         })
         for (const playerId of remap.overflowPlayerIds) {
-          nextPlayers = applySubOut(nextPlayers, playerId, seconds)
+          nextPlayers = applySubOut(nextPlayers, playerId, matchClockRef.current.get())
         }
         setPlayers(nextPlayers)
       }
@@ -1932,7 +1931,6 @@ export function CoachDashboard() {
     },
     [
       matchId,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       players,
@@ -1947,7 +1945,7 @@ export function CoachDashboard() {
   const handleLiveReassignPosition = useCallback(
     (updates: PositionReassignUpdate[]) => {
       if (!matchId || updates.length === 0) return
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const previousPlayers = players
 
       const nextPlayers = players.map((player) => {
@@ -1998,7 +1996,6 @@ export function CoachDashboard() {
     },
     [
       matchId,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       players,
@@ -2075,11 +2072,11 @@ export function CoachDashboard() {
       const onFieldCount = players.filter((p) => p.attending && p.isOnField).length
       if (onFieldCount >= maxFieldPlayers) return
 
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const previousPlayers = players
 
-      const next = applySubIn(players, benchId, seconds).map((p) =>
+      const next = applySubIn(players, benchId, matchClockRef.current.get()).map((p) =>
         p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
       )
       const benchPlayer = next.find((p) => p.id === benchId)
@@ -2124,7 +2121,6 @@ export function CoachDashboard() {
     [
       matchId,
       players,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       maxFieldPlayers,
@@ -2142,11 +2138,11 @@ export function CoachDashboard() {
   const handleLiveSubOut = useCallback(
     (fieldId: string) => {
       if (!matchId) return
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const previousPlayers = players
 
-      const next = applySubOut(players, fieldId, seconds)
+      const next = applySubOut(players, fieldId, matchClockRef.current.get())
       const fieldPlayer = next.find((p) => p.id === fieldId)
       if (!fieldPlayer) return
 
@@ -2188,7 +2184,6 @@ export function CoachDashboard() {
     [
       matchId,
       players,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       periodClockStarted,
@@ -2207,11 +2202,11 @@ export function CoachDashboard() {
       if (!matchId) return
       const bench = players.find((p) => p.id === benchId)
       if (!bench || bench.isSentOff) return
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const previousPlayers = players
 
-      const next = applySubstitution(players, benchId, fieldId, seconds).map((p) =>
+      const next = applySubstitution(players, benchId, fieldId, matchClockRef.current.get()).map((p) =>
         p.id === benchId ? { ...p, matchPosition: tacticalPosition } : p,
       )
       const benchPlayer = next.find((p) => p.id === benchId)
@@ -2261,7 +2256,6 @@ export function CoachDashboard() {
     [
       matchId,
       players,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       periodClockStarted,
@@ -2297,7 +2291,7 @@ export function CoachDashboard() {
 
   const openGoalWizard = useCallback(
     (team: GoalWizardTeam = 'us') => {
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const ask = cornerPromptDue(team === 'us' ? 'home' : 'away', eventTimestamp)
       setGoalWizardTeam(team)
       setGoalShotType(null)
@@ -2306,18 +2300,18 @@ export function CoachDashboard() {
       setGoalWizardStep(ask ? 'corner' : 'type')
       setGoalWizardOpen(true)
     },
-    [seconds, halfLengthMinutes, cornerPromptDue],
+    [halfLengthMinutes, cornerPromptDue],
   )
 
   const openOpponentGoal = useCallback(() => {
-    const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+    const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
     if (cornerPromptDue('away', eventTimestamp)) {
       openGoalWizard('opponent')
       return
     }
     setGoalFromCorner(null)
     setOpponentGoalSheetOpen(true)
-  }, [seconds, halfLengthMinutes, cornerPromptDue, openGoalWizard])
+  }, [halfLengthMinutes, cornerPromptDue, openGoalWizard])
 
   const handleConfirmCard = useCallback(
     (playerId: string, kind: 'yellow' | 'red') => {
@@ -2336,7 +2330,7 @@ export function CoachDashboard() {
 
       const sidelineMap = buildSidelineNameMap(players.filter((p) => p.attending))
       const label = formatPlayerLabel(player, sidelineMap)
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
 
       const isSecondYellow = kind === 'yellow' && player.yellowCardCount >= 1
       if (isSecondYellow) {
@@ -2367,7 +2361,7 @@ export function CoachDashboard() {
 
       if (issueRed) {
         if (wasOnField) {
-          nextPlayers = applySubOut(nextPlayers, playerId, seconds).map((p) =>
+          nextPlayers = applySubOut(nextPlayers, playerId, matchClockRef.current.get()).map((p) =>
             p.id === playerId ? { ...p, isSentOff: true } : p,
           )
         } else {
@@ -2419,7 +2413,6 @@ export function CoachDashboard() {
     [
       matchId,
       players,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       setPlayers,
@@ -2449,7 +2442,7 @@ export function CoachDashboard() {
         return
       }
       const eventTimestamp =
-        options?.timestamp ?? elapsedInHalf(seconds, halfLengthMinutes)
+        options?.timestamp ?? elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       if (side === 'home') {
         setHomeShots((n) => n + 1)
       } else {
@@ -2507,7 +2500,6 @@ export function CoachDashboard() {
     [
       matchId,
       periodClockStarted,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       players,
@@ -2560,7 +2552,7 @@ export function CoachDashboard() {
         return
       }
 
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const opponentLabel = matchOpponent.trim() || 'Opponent'
       const onFieldPlayerIds = players
         .filter((p) => p.attending && p.isOnField)
@@ -2630,7 +2622,6 @@ export function CoachDashboard() {
     },
     [
       matchId,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       matchOpponent,
@@ -2652,7 +2643,7 @@ export function CoachDashboard() {
   const commitTeamCorner = useCallback(
     (side: 'home' | 'away') => {
       if (!matchId || !periodClockStarted) return
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const corners = lastCornerElapsedRef.current
       if (corners.period !== currentPeriod) {
         corners.period = currentPeriod
@@ -2694,7 +2685,6 @@ export function CoachDashboard() {
     [
       matchId,
       periodClockStarted,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       setHomeCorners,
@@ -2711,7 +2701,7 @@ export function CoachDashboard() {
       tag?: { shotType: ShotType | null; playerId: string | null },
     ) => {
       if (!matchId || !periodClockStarted) return
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const shotType = tag?.shotType ?? null
       const gk = side === 'home' ? findActiveOnFieldGoalkeeper(players) : null
       const shooter =
@@ -2782,7 +2772,6 @@ export function CoachDashboard() {
     [
       matchId,
       periodClockStarted,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       players,
@@ -2877,7 +2866,7 @@ export function CoachDashboard() {
         return
       }
 
-      const eventTimestamp = elapsedInHalf(seconds, halfLengthMinutes)
+      const eventTimestamp = elapsedInHalf(matchClockRef.current.get(), halfLengthMinutes)
       const assistPlayer =
         scorer && !isPk && !ownGoal && assistPlayerId
           ? players.find((p) => p.id === assistPlayerId)
@@ -2955,7 +2944,6 @@ export function CoachDashboard() {
     [
       matchId,
       players,
-      seconds,
       halfLengthMinutes,
       activeFormation,
       setHomeScore,
@@ -3662,7 +3650,7 @@ export function CoachDashboard() {
         <HalftimePage
           teamName={matchTeamName}
           opponent={matchOpponent}
-          seconds={seconds}
+          seconds={matchClockRef.current.get()}
           halfLengthMinutes={halfLengthMinutes}
           endedPeriod={currentPeriod}
           nextPeriod={Math.min(totalPeriods, currentPeriod + 1)}
@@ -3789,7 +3777,6 @@ export function CoachDashboard() {
         awaySaves={awaySaves}
         homeCorners={homeCorners}
         awayCorners={awayCorners}
-        seconds={seconds}
         period={period}
         currentPeriod={currentPeriod}
         totalPeriods={totalPeriods}
@@ -3849,7 +3836,6 @@ export function CoachDashboard() {
           formationId={activeFormation}
           onFormationSwitch={handleLiveFormationSwitch}
           players={players}
-          clockSeconds={seconds}
           halfLengthMinutes={halfLengthMinutes}
           maxFieldPlayers={maxFieldPlayers}
           teamFormat={activeTeamFormat}
@@ -3999,54 +3985,66 @@ export function CoachDashboard() {
 
       {adjustSettingsOpen ? (
         <ModalSuspense>
-          <AdjustMatchSettingsSheet
-            open={adjustSettingsOpen}
-            halfLengthMinutes={halfLengthMinutes}
-            remainingSeconds={seconds}
-            periodClockStarted={periodClockStarted}
-            currentPeriod={currentPeriod}
-            totalPeriods={totalPeriods}
-            busy={adjustSettingsBusy}
-            onSave={(next) => void handleSaveHalfLength(next)}
-            onClose={() => {
-              if (!adjustSettingsBusy) setAdjustSettingsOpen(false)
-            }}
-          />
+          <LiveClockValue>
+            {(remainingSeconds) => (
+              <AdjustMatchSettingsSheet
+                open={adjustSettingsOpen}
+                halfLengthMinutes={halfLengthMinutes}
+                remainingSeconds={remainingSeconds}
+                periodClockStarted={periodClockStarted}
+                currentPeriod={currentPeriod}
+                totalPeriods={totalPeriods}
+                busy={adjustSettingsBusy}
+                onSave={(next) => void handleSaveHalfLength(next)}
+                onClose={() => {
+                  if (!adjustSettingsBusy) setAdjustSettingsOpen(false)
+                }}
+              />
+            )}
+          </LiveClockValue>
         </ModalSuspense>
       ) : null}
 
       {endTimingOpen ? (
         <ModalSuspense>
-          <EndMatchTimingModal
-            open={endTimingOpen}
-            remainingSeconds={seconds}
-            busy={endingMatch}
-            onCancel={() => {
-              if (!endingMatch) setEndTimingOpen(false)
-            }}
-            onEndedOnTime={() => void handleConfirmEndGameTiming(true)}
-            onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
-          />
+          <LiveClockValue>
+            {(remainingSeconds) => (
+              <EndMatchTimingModal
+                open={endTimingOpen}
+                remainingSeconds={remainingSeconds}
+                busy={endingMatch}
+                onCancel={() => {
+                  if (!endingMatch) setEndTimingOpen(false)
+                }}
+                onEndedOnTime={() => void handleConfirmEndGameTiming(true)}
+                onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
+              />
+            )}
+          </LiveClockValue>
         </ModalSuspense>
       ) : null}
 
       {earlyStopIntent ? (
         <ModalSuspense>
-          <EarlyPeriodStopModal
-            open
-            {...earlyPeriodStopPrompt({
-              remainingSeconds: seconds,
-              periodLabel:
-                earlyStopIntent === 'extra_time'
-                  ? extraTimePeriodLabel(extraTimeHalf ?? 1)
-                  : formatPeriodLong(currentPeriod, totalPeriods),
-              endsMatch:
-                earlyStopIntent === 'game' ||
-                (earlyStopIntent === 'extra_time' && extraTimeHalf === 2),
-            })}
-            onCancel={() => setEarlyStopIntent(null)}
-            onConfirm={confirmEarlyPeriodStop}
-          />
+          <LiveClockValue>
+            {(remainingSeconds) => (
+              <EarlyPeriodStopModal
+                open
+                {...earlyPeriodStopPrompt({
+                  remainingSeconds,
+                  periodLabel:
+                    earlyStopIntent === 'extra_time'
+                      ? extraTimePeriodLabel(extraTimeHalf ?? 1)
+                      : formatPeriodLong(currentPeriod, totalPeriods),
+                  endsMatch:
+                    earlyStopIntent === 'game' ||
+                    (earlyStopIntent === 'extra_time' && extraTimeHalf === 2),
+                })}
+                onCancel={() => setEarlyStopIntent(null)}
+                onConfirm={confirmEarlyPeriodStop}
+              />
+            )}
+          </LiveClockValue>
         </ModalSuspense>
       ) : null}
     </main>
@@ -4055,6 +4053,7 @@ export function CoachDashboard() {
   }
 
   return (
+    <MatchClockProvider store={matchClockStore}>
     <CoachAppLayout
       navOpen={navOpen}
       onOpenChange={setNavOpen}
@@ -4098,5 +4097,6 @@ export function CoachDashboard() {
         />
       ) : null}
     </CoachAppLayout>
+    </MatchClockProvider>
   )
 }

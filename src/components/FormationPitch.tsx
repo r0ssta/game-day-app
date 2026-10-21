@@ -21,6 +21,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Pencil, X } from 'lucide-react'
 import { SoccerPitchSurface } from '@/components/SoccerPitchSurface'
+import { LivePlayingTimeLabel } from '@/components/LivePlayingTimeLabel'
+import { useLiveSubCue } from '@/hooks/useLiveSubCue'
 import {
   TACTICAL_SLOT_LABELS,
   resolveSlotLabel,
@@ -29,6 +31,7 @@ import {
 } from '@/lib/formations'
 import { MODAL_OVERLAY } from '@/lib/layout'
 import { cn } from '@/lib/utils'
+import type { MatchPlayer } from '@/types/match'
 
 export type FormationPitchPlayer = {
   id: string
@@ -42,6 +45,14 @@ export type FormationPitchPlayer = {
   showYellowCard?: boolean
   /** Soft cue that the player is due for a sub (long continuous stint). */
   needsSubCue?: boolean
+  /**
+   * Live match clock source. When set, the minutes label and sub cue subscribe
+   * to the clock instead of using minutesLabel / needsSubCue.
+   */
+  liveClock?: {
+    player: MatchPlayer
+    halfLengthSeconds: number
+  }
   /** Intermission cue: player was not in the 1st-half starting XI. */
   didNotStartFirstHalf?: boolean
 }
@@ -183,6 +194,153 @@ function SlotLabelSheet({
   )
 }
 
+function slotBadgeClass(needsSubCue: boolean, selected: boolean, dropHighlight: boolean | undefined, didNotStart: boolean | undefined) {
+  return cn(
+    'relative flex h-[4.75rem] w-[5.25rem] flex-col items-center justify-center rounded-2xl border-2 px-1 py-1 shadow-lg',
+    needsSubCue
+      ? 'border-amber-500 bg-amber-300 text-slate-900 ring-2 ring-amber-400/45'
+      : 'bg-neon text-neon-foreground',
+    !needsSubCue && (selected ? 'border-white ring-2 ring-white/80' : 'border-neon-foreground/30'),
+    needsSubCue && selected && 'ring-4 ring-white/70',
+    didNotStart && !needsSubCue && 'ring-2 ring-amber-300 ring-offset-1 ring-offset-transparent',
+    dropHighlight && 'ring-2 ring-athletic',
+  )
+}
+
+function SlotPlayerBadge({
+  player,
+  selected,
+  dropHighlight,
+  allowSlotReposition,
+}: {
+  player: FormationPitchPlayer
+  selected: boolean
+  dropHighlight?: boolean
+  allowSlotReposition: boolean
+}) {
+  if (player.liveClock) {
+    return (
+      <LiveSlotPlayerBadge
+        player={player}
+        selected={selected}
+        dropHighlight={dropHighlight}
+        allowSlotReposition={allowSlotReposition}
+        liveClock={player.liveClock}
+      />
+    )
+  }
+  return (
+    <SlotPlayerBadgeBody
+      player={player}
+      selected={selected}
+      dropHighlight={dropHighlight}
+      allowSlotReposition={allowSlotReposition}
+      needsSubCue={Boolean(player.needsSubCue)}
+      minutes={
+        player.minutesLabel ? (
+          <span
+            className={cn(
+              'mt-0.5 max-w-full text-center font-display font-black tabular-nums leading-none tracking-tight',
+              player.minutesLabel.length > 4 ? 'text-[11px]' : 'text-xl',
+              player.needsSubCue && 'text-amber-950',
+            )}
+            title={
+              player.needsSubCue
+                ? `${player.minutesLabel} played — consider a sub`
+                : `${player.minutesLabel} played`
+            }
+            aria-label={`${player.minutesLabel} played`}
+          >
+            {player.minutesLabel}
+          </span>
+        ) : null
+      }
+    />
+  )
+}
+
+function LiveSlotPlayerBadge({
+  player,
+  selected,
+  dropHighlight,
+  allowSlotReposition,
+  liveClock,
+}: {
+  player: FormationPitchPlayer
+  selected: boolean
+  dropHighlight?: boolean
+  allowSlotReposition: boolean
+  liveClock: NonNullable<FormationPitchPlayer['liveClock']>
+}) {
+  const needsSubCue = useLiveSubCue(liveClock.player, liveClock.halfLengthSeconds)
+  return (
+    <SlotPlayerBadgeBody
+      player={player}
+      selected={selected}
+      dropHighlight={dropHighlight}
+      allowSlotReposition={allowSlotReposition}
+      needsSubCue={needsSubCue}
+      minutes={
+        <LivePlayingTimeLabel
+          player={liveClock.player}
+          periodStartRemaining={liveClock.halfLengthSeconds}
+          emphasize={needsSubCue}
+          className="mt-0.5 max-w-full text-center text-xl tracking-tight"
+        />
+      }
+    />
+  )
+}
+
+function SlotPlayerBadgeBody({
+  player,
+  selected,
+  dropHighlight,
+  allowSlotReposition,
+  needsSubCue,
+  minutes,
+}: {
+  player: FormationPitchPlayer
+  selected: boolean
+  dropHighlight?: boolean
+  allowSlotReposition: boolean
+  needsSubCue: boolean
+  minutes: ReactNode
+}) {
+  return (
+    <div className={slotBadgeClass(needsSubCue, selected, dropHighlight, player.didNotStartFirstHalf)}>
+      {player.showYellowCard ? (
+        <span
+          className="absolute -right-0.5 -top-0.5 size-3 rounded-[2px] border border-black/20 bg-amber-400 shadow"
+          title="Yellow card"
+          aria-label="Yellow card"
+        />
+      ) : null}
+      {player.didNotStartFirstHalf ? (
+        <span
+          className="absolute -right-1 bottom-0 z-10 rounded border border-amber-700/40 bg-amber-400 px-0.5 py-px text-[8px] font-black uppercase leading-none tracking-wide text-slate-900 shadow"
+          title="Didn't start 1st half"
+          aria-label="Didn't start 1st half"
+        >
+          NS
+        </span>
+      ) : null}
+      {allowSlotReposition ? (
+        <span className="absolute -left-1 -top-1 flex size-5 items-center justify-center rounded-full border border-white/50 bg-black/60 text-white">
+          <GripVertical className="size-3" strokeWidth={2.5} aria-hidden />
+        </span>
+      ) : null}
+      <span className="max-w-full truncate text-sm font-bold leading-none">
+        {player.shortName ?? player.name}
+      </span>
+      {minutes}
+      <span className="mt-0.5 text-[9px] font-semibold leading-none tabular-nums opacity-60">
+        {formatJersey(player.number)}
+      </span>
+    </div>
+  )
+}
+
 function PitchSlotVisual({
   slot,
   label,
@@ -266,68 +424,12 @@ function PitchSlotVisual({
           {...(allowSlotReposition ? (repositionAttributes ?? {}) : {})}
         >
           {player ? (
-            <div
-              className={cn(
-                'relative flex h-[4.75rem] w-[5.25rem] flex-col items-center justify-center rounded-2xl border-2 px-1 py-1 shadow-lg',
-                player.needsSubCue
-                  ? 'border-amber-500 bg-amber-300 text-slate-900 ring-2 ring-amber-400/45'
-                  : 'bg-neon text-neon-foreground',
-                !player.needsSubCue &&
-                  (selected ? 'border-white ring-2 ring-white/80' : 'border-neon-foreground/30'),
-                player.needsSubCue && selected && 'ring-4 ring-white/70',
-                player.didNotStartFirstHalf &&
-                  !player.needsSubCue &&
-                  'ring-2 ring-amber-300 ring-offset-1 ring-offset-transparent',
-                dropHighlight && 'ring-2 ring-athletic',
-              )}
-            >
-              {player.showYellowCard ? (
-                <span
-                  className="absolute -right-0.5 -top-0.5 size-3 rounded-[2px] border border-black/20 bg-amber-400 shadow"
-                  title="Yellow card"
-                  aria-label="Yellow card"
-                />
-              ) : null}
-              {player.didNotStartFirstHalf ? (
-                <span
-                  className="absolute -right-1 bottom-0 z-10 rounded border border-amber-700/40 bg-amber-400 px-0.5 py-px text-[8px] font-black uppercase leading-none tracking-wide text-slate-900 shadow"
-                  title="Didn't start 1st half"
-                  aria-label="Didn't start 1st half"
-                >
-                  NS
-                </span>
-              ) : null}
-              {allowSlotReposition ? (
-                <span className="absolute -left-1 -top-1 flex size-5 items-center justify-center rounded-full border border-white/50 bg-black/60 text-white">
-                  <GripVertical className="size-3" strokeWidth={2.5} aria-hidden />
-                </span>
-              ) : null}
-              <span className="max-w-full truncate text-sm font-bold leading-none">
-                {player.shortName ?? player.name}
-              </span>
-              {player.minutesLabel ? (
-                <span
-                  className={cn(
-                    'mt-0.5 max-w-full text-center font-display font-black tabular-nums leading-none tracking-tight',
-                    player.minutesLabel && player.minutesLabel.length > 4
-                      ? 'text-[11px]'
-                      : 'text-xl',
-                    player.needsSubCue && 'text-amber-950',
-                  )}
-                  title={
-                    player.needsSubCue
-                      ? `${player.minutesLabel} played — consider a sub`
-                      : `${player.minutesLabel} played`
-                  }
-                  aria-label={`${player.minutesLabel} played`}
-                >
-                  {player.minutesLabel}
-                </span>
-              ) : null}
-              <span className="mt-0.5 text-[9px] font-semibold leading-none tabular-nums opacity-60">
-                {formatJersey(player.number)}
-              </span>
-            </div>
+            <SlotPlayerBadge
+              player={player}
+              selected={selected}
+              dropHighlight={dropHighlight}
+              allowSlotReposition={allowSlotReposition}
+            />
           ) : (
             <div
               className={cn(
@@ -518,12 +620,6 @@ export function FormationPitch({
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const activeDragPlayer = activeDragPlayerId ? playerById.get(activeDragPlayerId) ?? null : null
 
-  const sensors = useSensors(
-    // Distance keeps short taps for assign/remove; longer press-drag moves the slot/player.
-    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 160, tolerance: 10 } }),
-  )
-
   const handleDragStart = (event: DragStartEvent) => {
     const type = event.active.data.current?.type as DragType | undefined
     if (type === 'player') {
@@ -654,8 +750,39 @@ export function FormationPitch({
   }
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DragFormationFrame
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      activeDragPlayer={activeDragPlayer}
+      labelSheet={labelSheet}
+    >
       {content}
+    </DragFormationFrame>
+  )
+}
+
+function DragFormationFrame({
+  children,
+  labelSheet,
+  onDragStart,
+  onDragEnd,
+  activeDragPlayer,
+}: {
+  children: ReactNode
+  labelSheet: ReactNode
+  onDragStart: (event: DragStartEvent) => void
+  onDragEnd: (event: DragEndEvent) => void
+  activeDragPlayer: FormationPitchPlayer | null
+}) {
+  const sensors = useSensors(
+    // Distance keeps short taps for assign/remove; longer press-drag moves the slot/player.
+    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 160, tolerance: 10 } }),
+  )
+
+  return (
+    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      {children}
       <DragOverlay>
         {activeDragPlayer ? (
           <div className="flex items-center gap-2 rounded-xl border-2 border-neon bg-card px-3 py-2 shadow-xl">

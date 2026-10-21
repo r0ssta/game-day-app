@@ -51,7 +51,18 @@ export function useLiveMatchSync(input: {
     }
 
     hydrate()
-    const pollId = window.setInterval(hydrate, POLL_MS)
+    let pollId = 0
+    const stopPoll = () => {
+      if (!pollId) return
+      window.clearInterval(pollId)
+      pollId = 0
+    }
+    const startPoll = () => {
+      if (pollId) return
+      pollId = window.setInterval(hydrate, POLL_MS)
+    }
+    // Realtime is the fast path. Poll only while the channel is down.
+    startPoll()
 
     const channel = supabase
       .channel(`staff-live-${matchId}`)
@@ -85,12 +96,17 @@ export function useLiveMatchSync(input: {
         },
         schedule,
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') stopPoll()
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          startPoll()
+        }
+      })
 
     return () => {
       cancelled = true
       window.clearTimeout(debounceId)
-      window.clearInterval(pollId)
+      stopPoll()
       void supabase.removeChannel(channel)
     }
   }, [input.enabled, input.matchId])

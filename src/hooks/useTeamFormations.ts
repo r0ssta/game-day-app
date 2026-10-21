@@ -10,6 +10,9 @@ type Listener = (formations: Formation[], ready: boolean) => void
 const listeners = new Set<Listener>()
 let publishedFormations: Formation[] = []
 let publishedReady = false
+let loadedTeamId: string | null = null
+let inflightTeamId: string | null = null
+let formationRequestId = 0
 
 function publish(formations: Formation[], ready: boolean) {
   publishedFormations = formations
@@ -50,7 +53,16 @@ export function useTeamFormations(teamId: string | null | undefined) {
 
   useEffect(() => {
     if (!teamId) return
-    let cancelled = false
+    if (loadedTeamId === teamId && publishedReady) {
+      setFormations(publishedFormations)
+      setReady(true)
+      return
+    }
+    if (inflightTeamId === teamId) return
+
+    const requestId = ++formationRequestId
+    inflightTeamId = teamId
+    loadedTeamId = null
     publish([], false)
     void supabase
       .from('team_formations')
@@ -58,17 +70,16 @@ export function useTeamFormations(teamId: string | null | undefined) {
       .eq('team_id', teamId)
       .order('name', { ascending: true })
       .then(({ data, error }) => {
-        if (cancelled) return
+        if (requestId !== formationRequestId) return
+        inflightTeamId = null
         if (error) {
           console.warn('[useTeamFormations]', error.message)
           publish([], true)
           return
         }
+        loadedTeamId = teamId
         publish(rowsToFormations(data ?? []), true)
       })
-    return () => {
-      cancelled = true
-    }
   }, [teamId])
 
   const save = useCallback(
@@ -96,6 +107,7 @@ export function useTeamFormations(teamId: string | null | undefined) {
           (a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }),
         )
         publish(next, true)
+        loadedTeamId = teamId
         return saved
       } finally {
         setSaving(false)

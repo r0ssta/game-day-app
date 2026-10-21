@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Radio, ScrollText } from 'lucide-react'
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { EnableAlertsButton } from '@/components/EnableAlertsButton'
@@ -7,6 +7,7 @@ import { Spinner } from '@/components/Spinner'
 import { formatTeamDisplayName } from '@/lib/age-groups'
 import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-schedule'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
+import { isMatchClockHeartbeatUpdate } from '@/lib/live-match-snapshot'
 import { isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
@@ -123,6 +124,16 @@ function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
   )
 }
 
+function sameParentLiveEvents(prev: ParentLiveEvent[], next: ParentLiveEvent[]) {
+  if (prev.length !== next.length) return false
+  for (let index = 0; index < prev.length; index += 1) {
+    const left = prev[index]
+    const right = next[index]
+    if (!left || !right || left.id !== right.id || left.createdAt !== right.createdAt) return false
+  }
+  return true
+}
+
 function LiveTab({
   hub,
   matches,
@@ -148,15 +159,17 @@ function LiveTab({
   }, [liveMatch, matches])
 
   const streamMatch = liveMatch ?? (liveMatchState && isLiveMatchStatus(liveMatchState.status) ? liveMatchState : null)
+  const streamMatchId = streamMatch?.id ?? null
+  const streamIncludeTest = Boolean(streamMatch?.isTest || hub.staffPreview)
 
   useEffect(() => {
-    if (!streamMatch) {
+    if (!streamMatchId) {
       setEvents([])
       return
     }
     let cancelled = false
-    const matchId = streamMatch.id
-    const includeTest = Boolean(streamMatch.isTest || hub.staffPreview)
+    const matchId = streamMatchId
+    const includeTest = streamIncludeTest
 
     const loadEvents = async () => {
       try {
@@ -164,7 +177,7 @@ function LiveTab({
           includeTest,
         })
         if (!cancelled) {
-          setEvents(rows)
+          setEvents((prev) => (sameParentLiveEvents(prev, rows) ? prev : rows))
         }
       } catch (err) {
         console.warn('[ParentHub] live events hydrate failed', err)
@@ -172,25 +185,48 @@ function LiveTab({
     }
 
     void loadEvents()
-    // Poll as a backup when Realtime is blocked (RLS / network) so the timeline still moves.
-    const pollId = window.setInterval(() => {
-      void loadEvents()
-    }, 8_000)
 
     return () => {
       cancelled = true
-      window.clearInterval(pollId)
     }
-  }, [streamMatch?.id, streamMatch?.isTest, hub.staffPreview])
+  }, [streamMatchId, streamIncludeTest])
+
+  const playersRef = useRef(hub.players)
+  playersRef.current = hub.players
+  const playerSignature = hub.players
+    .map((player) => `${player.id}:${player.number ?? ''}:${player.firstName}:${player.lastName}`)
+    .join('|')
 
   useEffect(() => {
-    if (!streamMatch) return
-    const matchId = streamMatch.id
+    if (!streamMatchId) return
+    const matchId = streamMatchId
+    const includeTest = streamIncludeTest
+    let pollId = 0
+
+    const stopPoll = () => {
+      if (!pollId) return
+      window.clearInterval(pollId)
+      pollId = 0
+    }
+
+    const startPoll = () => {
+      if (pollId) return
+      pollId = window.setInterval(() => {
+        void fetchParentLiveEvents(matchId, { includeTest })
+          .then((rows) => {
+            setEvents((prev) => (sameParentLiveEvents(prev, rows) ? prev : rows))
+          })
+          .catch(() => undefined)
+      }, 8_000)
+    }
+
+    // Realtime is the fast path. Poll the event log only while the channel is down.
+    startPoll()
 
     const applyMatchRow = (row: Record<string, unknown>) => {
       setLiveMatchState((prev) => {
         if (!prev) return prev
-        return {
+        const next = {
           ...prev,
           status: typeof row.status === 'string' ? (row.status as ParentHubMatch['status']) : prev.status,
           home_score: typeof row.home_score === 'number' ? row.home_score : prev.home_score,
@@ -211,6 +247,21 @@ function LiveTab({
           clock_seconds:
             typeof row.clock_seconds === 'number' ? row.clock_seconds : prev.clock_seconds,
         }
+        if (
+          next.status === prev.status &&
+          next.home_score === prev.home_score &&
+          next.away_score === prev.away_score &&
+          next.home_pk_score === prev.home_pk_score &&
+          next.away_pk_score === prev.away_pk_score &&
+          next.pk_winner_is_us === prev.pk_winner_is_us &&
+          next.period === prev.period &&
+          next.current_period === prev.current_period &&
+          next.period_clock_started === prev.period_clock_started &&
+          next.clock_seconds === prev.clock_seconds
+        ) {
+          return prev
+        }
+        return next
       })
     }
 
@@ -253,8 +304,8 @@ function LiveTab({
             return
           }
 
-          const player = hub.players.find((p) => p.id === row.player_id)
-          const assist = hub.players.find((p) => p.id === row.assist_player_id)
+          const player = playersRef.current.find((p) => p.id === row.player_id)
+          const assist = playersRef.current.find((p) => p.id === row.assist_player_id)
           const nextEvent: ParentLiveEvent = {
             id: row.id,
             matchId: row.match_id,
@@ -300,15 +351,24 @@ function LiveTab({
           filter: `id=eq.${matchId}`,
         },
         (payload) => {
-          applyMatchRow(payload.new as Record<string, unknown>)
+          const nextRow = payload.new as Record<string, unknown>
+          const previousRow = payload.old as Record<string, unknown>
+          if (isMatchClockHeartbeatUpdate(nextRow, previousRow)) return
+          applyMatchRow(nextRow)
         },
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') stopPoll()
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          startPoll()
+        }
+      })
 
     return () => {
+      stopPoll()
       void supabase.removeChannel(channel)
     }
-  }, [streamMatch?.id, hub.players])
+  }, [streamMatchId, streamIncludeTest, playerSignature])
 
   const teamBoxScore = useMemo(
     () =>
@@ -498,7 +558,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
 
   const reload = useCallback(async () => {
     const payload = await fetchParentHub(route, { includeTest: staffPreviewRequested })
-    setHub(payload)
+    setHub((prev) => (prev && JSON.stringify(prev) === JSON.stringify(payload) ? prev : payload))
     // Canonicalize legacy UUID / query links to /hub/:slug once resolved.
     if (payload.teamSlug) {
       const canonical = `/hub/${encodeURIComponent(payload.teamSlug)}`

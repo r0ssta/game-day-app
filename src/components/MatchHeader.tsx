@@ -1,6 +1,7 @@
 import { Goal, Loader2, Lock, Share2, Shield, SquareAsterisk } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
 import { StaffPresenceCluster } from '@/components/StaffPresenceCluster'
+import { useMatchClockSeconds } from '@/lib/match-clock-store'
 import type { MatchPresenceMember } from '@/lib/match-presence'
 import { cn } from '@/lib/utils'
 import {
@@ -97,6 +98,80 @@ function MatchClockFace({
   )
 }
 
+function MatchClockReadout({
+  halfLengthMinutes,
+  running,
+  periodClockStarted,
+  periodBadge,
+  periodReadyLabel,
+  wakeLockActive,
+  syncPending,
+  onAdjustMatchSettings,
+}: {
+  halfLengthMinutes: number
+  running: boolean
+  periodClockStarted: boolean
+  periodBadge: string
+  periodReadyLabel: string
+  wakeLockActive: boolean
+  syncPending: boolean
+  onAdjustMatchSettings?: () => void
+}) {
+  const seconds = useMatchClockSeconds()
+  const regulationElapsed = periodClockStarted && isHalfExpired(seconds)
+  const inAddedTime = periodClockStarted && isInAddedTime(seconds)
+  const waitingToStart = !periodClockStarted
+  const clockParts = formatMatchClockParts(seconds)
+  const halfReference = formatClock(halfDurationSeconds(halfLengthMinutes))
+  const status = clockStatusLabel({
+    waitingToStart,
+    inAddedTime,
+    regulationElapsed,
+    periodReadyLabel,
+    halfReference,
+  })
+
+  const face = (
+    <MatchClockFace
+      running={running}
+      inAddedTime={inAddedTime}
+      regulationElapsed={regulationElapsed}
+      waitingToStart={waitingToStart}
+      clockParts={clockParts}
+      periodBadge={periodBadge}
+      wakeLockActive={wakeLockActive}
+      syncPending={syncPending}
+    />
+  )
+
+  if (onAdjustMatchSettings) {
+    return (
+      <button
+        type="button"
+        onClick={onAdjustMatchSettings}
+        aria-label="Adjust match settings"
+        className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-0.5 touch-manipulation active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon/40"
+      >
+        {face}
+        <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+          {status}
+          <span className="mx-1 text-border">·</span>
+          Tap to adjust
+        </span>
+      </button>
+    )
+  }
+
+  return (
+    <>
+      {face}
+      <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+        {status}
+      </span>
+    </>
+  )
+}
+
 export type MatchHeaderProps = {
   teamName: string
   coachName: string
@@ -109,7 +184,6 @@ export type MatchHeaderProps = {
   awaySaves?: number
   homeCorners?: number
   awayCorners?: number
-  seconds: number
   period: MatchPeriod
   currentPeriod: number
   totalPeriods: TotalPeriods
@@ -154,7 +228,6 @@ export function MatchHeader({
   awaySaves = 0,
   homeCorners = 0,
   awayCorners = 0,
-  seconds,
   period: _period,
   currentPeriod,
   totalPeriods,
@@ -181,12 +254,7 @@ export function MatchHeader({
 }: MatchHeaderProps) {
   const homeLabel = teamName.trim() || 'Home'
   const awayName = opponent.trim() || 'Opponent'
-  const halfReference = formatClock(halfDurationSeconds(halfLengthMinutes))
   const coachLine = coachName.trim() ? `Coach: ${coachName.trim()}` : null
-  const regulationElapsed = periodClockStarted && isHalfExpired(seconds)
-  const inAddedTime = periodClockStarted && isInAddedTime(seconds)
-  const waitingToStart = !periodClockStarted
-  const clockParts = formatMatchClockParts(seconds)
   const showGoalActions = Boolean(periodClockStarted && onLogGoal && onOpponentGoal)
   const showShotSaveActions = Boolean(
     periodClockStarted && onLogShot && onLogSave && onLogCorner,
@@ -249,58 +317,16 @@ export function MatchHeader({
           </div>
 
           <div className="flex shrink-0 flex-col items-center gap-0.5">
-            {onAdjustMatchSettings ? (
-              <button
-                type="button"
-                onClick={onAdjustMatchSettings}
-                aria-label="Adjust match settings"
-                className="flex flex-col items-center gap-0.5 rounded-xl px-1 py-0.5 touch-manipulation active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon/40"
-              >
-                <MatchClockFace
-                  running={running}
-                  inAddedTime={inAddedTime}
-                  regulationElapsed={regulationElapsed}
-                  waitingToStart={waitingToStart}
-                  clockParts={clockParts}
-                  periodBadge={periodBadge}
-                  wakeLockActive={wakeLockActive}
-                  syncPending={syncPending}
-                />
-                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                  {clockStatusLabel({
-                    waitingToStart,
-                    inAddedTime,
-                    regulationElapsed,
-                    periodReadyLabel,
-                    halfReference,
-                  })}
-                  <span className="mx-1 text-border">·</span>
-                  Tap to adjust
-                </span>
-              </button>
-            ) : (
-              <>
-                <MatchClockFace
-                  running={running}
-                  inAddedTime={inAddedTime}
-                  regulationElapsed={regulationElapsed}
-                  waitingToStart={waitingToStart}
-                  clockParts={clockParts}
-                  periodBadge={periodBadge}
-                  wakeLockActive={wakeLockActive}
-                  syncPending={syncPending}
-                />
-                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                  {clockStatusLabel({
-                    waitingToStart,
-                    inAddedTime,
-                    regulationElapsed,
-                    periodReadyLabel,
-                    halfReference,
-                  })}
-                </span>
-              </>
-            )}
+            <MatchClockReadout
+              halfLengthMinutes={halfLengthMinutes}
+              running={running}
+              periodClockStarted={periodClockStarted}
+              periodBadge={periodBadge}
+              periodReadyLabel={periodReadyLabel}
+              wakeLockActive={wakeLockActive}
+              syncPending={syncPending}
+              onAdjustMatchSettings={onAdjustMatchSettings}
+            />
           </div>
 
           <div className="min-w-0 flex-1 text-center">

@@ -33,6 +33,7 @@ import {
   planHalfLengthOverride,
   resolveLiveMatchClock,
 } from '@/lib/match-clock'
+import { createMatchClockStore } from '@/lib/match-clock-store'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
 import type { SubFrequency } from '@/lib/sub-rotation'
 import {
@@ -207,6 +208,10 @@ function asContextRecord(raw: unknown): Record<string, unknown> {
   return {}
 }
 
+function setIfChanged<T>(setValue: (update: (prev: T) => T) => void, next: T) {
+  setValue((prev) => (Object.is(prev, next) ? prev : next))
+}
+
 export function useGameDayApp() {
   const { teamId: routeTeamId, matchId: routeMatchId } = useParams()
   const { currentClubId, currentClubName, accessLoading } = useAuth()
@@ -237,7 +242,7 @@ export function useGameDayApp() {
   const [awaySaves, setAwaySaves] = useState(0)
   const [homeCorners, setHomeCorners] = useState(0)
   const [awayCorners, setAwayCorners] = useState(0)
-  const [seconds, setSeconds] = useState(0)
+  const matchClockStore = useRef(createMatchClockStore(0)).current
   const [period, setPeriod] = useState<MatchPeriod>('1st')
   const [currentPeriod, setCurrentPeriod] = useState(1)
   const [totalPeriods, setTotalPeriods] = useState<TotalPeriods>(DEFAULT_TOTAL_PERIODS)
@@ -358,10 +363,14 @@ export function useGameDayApp() {
     appMode,
     players,
     masterRoster,
-    seconds,
+    seconds: matchClockStore.get(),
     periodClockStarted,
     running,
   })
+  const setSeconds = useCallback((next: number) => {
+    matchClockStore.set(next)
+    liveStateRef.current.seconds = next
+  }, [matchClockStore])
   const setupCoachPrefillRef = useRef<{ appMode: AppMode; teamId: string | null }>({
     appMode: 'home',
     teamId: null,
@@ -393,7 +402,7 @@ export function useGameDayApp() {
     appMode,
     players,
     masterRoster,
-    seconds,
+    seconds: matchClockStore.get(),
     periodClockStarted: localClockOwnedRef.current || periodClockStarted,
     running: localClockOwnedRef.current || running,
   }
@@ -691,17 +700,17 @@ export function useGameDayApp() {
         if (slice === 'scores') {
           const { match, shotSaveTotals, players: remotePlayers } = snapshot
           const latest = liveStateRef.current
-          setHomeScore(match.home_score)
-          setAwayScore(match.away_score)
-          setHomeShots(shotSaveTotals.homeShots)
-          setAwayShots(shotSaveTotals.awayShots)
-          setHomeSaves(shotSaveTotals.homeSaves)
-          setAwaySaves(shotSaveTotals.awaySaves)
-          setHomeCorners(shotSaveTotals.homeCorners)
-          setAwayCorners(shotSaveTotals.awayCorners)
-          setHomePkScore(match.home_pk_score ?? 0)
-          setAwayPkScore(match.away_pk_score ?? 0)
-          setPkWinnerIsUs(match.pk_winner_is_us ?? null)
+          setIfChanged(setHomeScore, match.home_score)
+          setIfChanged(setAwayScore, match.away_score)
+          setIfChanged(setHomeShots, shotSaveTotals.homeShots)
+          setIfChanged(setAwayShots, shotSaveTotals.awayShots)
+          setIfChanged(setHomeSaves, shotSaveTotals.homeSaves)
+          setIfChanged(setAwaySaves, shotSaveTotals.awaySaves)
+          setIfChanged(setHomeCorners, shotSaveTotals.homeCorners)
+          setIfChanged(setAwayCorners, shotSaveTotals.awayCorners)
+          setIfChanged(setHomePkScore, match.home_pk_score ?? 0)
+          setIfChanged(setAwayPkScore, match.away_pk_score ?? 0)
+          setIfChanged(setPkWinnerIsUs, match.pk_winner_is_us ?? null)
           const mergedPlayers = mergeRemotePlayerOverlays(latest.players, remotePlayers)
           if (mergedPlayers !== latest.players) {
             setPlayers(mergedPlayers)
@@ -750,17 +759,17 @@ export function useGameDayApp() {
         }
 
         setMatchStatus(match.status)
-        setHomeScore(match.home_score)
-        setAwayScore(match.away_score)
-        setHomeShots(shotSaveTotals.homeShots)
-        setAwayShots(shotSaveTotals.awayShots)
-        setHomeSaves(shotSaveTotals.homeSaves)
-        setAwaySaves(shotSaveTotals.awaySaves)
-        setHomeCorners(shotSaveTotals.homeCorners)
-        setAwayCorners(shotSaveTotals.awayCorners)
-        setHomePkScore(match.home_pk_score ?? 0)
-        setAwayPkScore(match.away_pk_score ?? 0)
-        setPkWinnerIsUs(match.pk_winner_is_us ?? null)
+        setIfChanged(setHomeScore, match.home_score)
+        setIfChanged(setAwayScore, match.away_score)
+        setIfChanged(setHomeShots, shotSaveTotals.homeShots)
+        setIfChanged(setAwayShots, shotSaveTotals.awayShots)
+        setIfChanged(setHomeSaves, shotSaveTotals.homeSaves)
+        setIfChanged(setAwaySaves, shotSaveTotals.awaySaves)
+        setIfChanged(setHomeCorners, shotSaveTotals.homeCorners)
+        setIfChanged(setAwayCorners, shotSaveTotals.awayCorners)
+        setIfChanged(setHomePkScore, match.home_pk_score ?? 0)
+        setIfChanged(setAwayPkScore, match.away_pk_score ?? 0)
+        setIfChanged(setPkWinnerIsUs, match.pk_winner_is_us ?? null)
         setPkGkPlayerId(match.pk_gk_player_id ?? null)
         setMatchGoesToPks(Boolean(match.goes_to_pks))
         setMatchIsTournamentKnockout(Boolean(match.is_tournament_knockout))
@@ -3185,7 +3194,7 @@ export function useGameDayApp() {
     setHomeCorners,
     awayCorners,
     setAwayCorners,
-    seconds,
+    matchClockStore,
     setSeconds,
     period,
     setPeriod,

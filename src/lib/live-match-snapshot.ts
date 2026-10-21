@@ -6,6 +6,7 @@ import { isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
 import { shouldResumePenaltyShootout } from '@/lib/penalty-kicks'
 import { parseQualitativeContext } from '@/lib/qualitative-context'
 import { poolPlayerToGuestRoster } from '@/lib/season-roster'
+import { publishLiveMatchEvents } from '@/lib/live-match-events'
 import {
   fetchMatchById,
   fetchMatchEvents,
@@ -296,6 +297,7 @@ export async function fetchLiveMatchSnapshot(
     fetchMatchEvents(matchId),
   ])
   if (!match) return null
+  publishLiveMatchEvents(matchId, events)
 
   const rosterIds = new Set(roster.map((player) => player.id))
   const missingIds = stats

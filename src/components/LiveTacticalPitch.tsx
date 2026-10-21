@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { Users, X } from 'lucide-react'
 import { FormationPitch } from '@/components/FormationPitch'
+import { LivePlayingTimeLabel } from '@/components/LivePlayingTimeLabel'
 import { MarkPlayerOutSheet } from '@/components/MarkPlayerOutSheet'
 import { absenceReasonLabel } from '@/lib/match-availability'
 import {
@@ -29,7 +30,6 @@ import {
   formatPlayerLabel,
   getSidelineName,
 } from '@/lib/player-names'
-import { formatPlayingTimeClock, getLiveSecondsPlayed, needsSubRotationCue } from '@/lib/play-time'
 import { cn } from '@/lib/utils'
 import { PITCH_BENCH_LAYOUT_FLOW, PITCH_BENCH_SIDEBAR_FLOW } from '@/lib/layout'
 import type { AbsenceReason, Impact, MatchPlayer } from '@/types/match'
@@ -52,7 +52,6 @@ export type PositionReassignUpdate = {
 
 type LiveTacticalPitchProps = {
   players: MatchPlayer[]
-  clockSeconds: number
   /** Half length in minutes — used for the long-stint sub cue. */
   halfLengthMinutes: number
   maxFieldPlayers: number
@@ -131,19 +130,16 @@ function ImpactToggleGroup({
 function BenchPlayerRow({
   player,
   displayName,
-  clockSeconds,
   onTap,
   onSetImpact,
   actionLabel,
 }: {
   player: MatchPlayer
   displayName: string
-  clockSeconds: number
   onTap?: () => void
   onSetImpact?: (impact: Impact) => void
   actionLabel?: string
 }) {
-  const liveSeconds = getLiveSecondsPlayed(player, clockSeconds)
   const interactive = Boolean(onTap)
 
   const body = (
@@ -160,9 +156,10 @@ function BenchPlayerRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="truncate text-base font-bold text-foreground">{displayName}</span>
-          <span className="font-display text-xl font-black tabular-nums leading-none text-blue-400">
-            {formatPlayingTimeClock(liveSeconds)}
-          </span>
+          <LivePlayingTimeLabel
+            player={player}
+            className="text-xl text-blue-400"
+          />
         </div>
         {actionLabel ? (
           <span className="text-[10px] font-bold uppercase tracking-wide text-athletic">
@@ -203,7 +200,6 @@ function SubstituteSheet({
   title,
   benchPlayers,
   sidelineNameMap,
-  clockSeconds,
   onPickBench,
   onRemove,
   onClose,
@@ -211,7 +207,6 @@ function SubstituteSheet({
   title: string
   benchPlayers: MatchPlayer[]
   sidelineNameMap: Map<string, string>
-  clockSeconds: number
   onPickBench: (benchPlayerId: string) => void
   onRemove?: () => void
   onClose: () => void
@@ -273,7 +268,6 @@ function SubstituteSheet({
                     key={player.id}
                     player={player}
                     displayName={getSidelineName(player, sidelineNameMap)}
-                    clockSeconds={clockSeconds}
                     onTap={() => onPickBench(player.id)}
                     actionLabel={onRemove ? 'Swap in' : 'Insert'}
                   />
@@ -291,7 +285,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
   function LiveTacticalPitch(
     {
       players,
-      clockSeconds,
       halfLengthMinutes,
       maxFieldPlayers,
       periodKey,
@@ -391,13 +384,10 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
           name: getSidelineName(p, sidelineNameMap),
           shortName: getSidelineName(p, sidelineNameMap),
           number: p.number,
-          minutesLabel: formatPlayingTimeClock(
-            getLiveSecondsPlayed(p, clockSeconds, halfLengthSeconds),
-          ),
           showYellowCard: p.yellowCardCount === 1 && !p.isSentOff,
-          needsSubCue: needsSubRotationCue(p, clockSeconds, halfLengthSeconds),
+          liveClock: { player: p, halfLengthSeconds },
         })),
-      [players, sidelineNameMap, clockSeconds, halfLengthSeconds],
+      [players, sidelineNameMap, halfLengthSeconds],
     )
 
     useEffect(() => {
@@ -875,7 +865,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                       key={player.id}
                       player={player}
                       displayName={getSidelineName(player, sidelineNameMap)}
-                      clockSeconds={clockSeconds}
                       onTap={
                         selection
                           ? () => handleBenchTapWhileSelected(player.id)
@@ -907,7 +896,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                   {outPlayers.map((player) => {
                     const reason = absenceReasonLabel(player.absenceReason)
                     const displayName = getSidelineName(player, sidelineNameMap)
-                    const liveSeconds = getLiveSecondsPlayed(player, clockSeconds)
                     return (
                       <li key={player.id}>
                         <div className="flex min-h-[52px] w-full items-center gap-3 rounded-xl border-2 border-dashed border-border bg-card/70 px-3 py-3">
@@ -919,9 +907,10 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                               <span className="truncate text-base font-bold text-foreground">
                                 {displayName}
                               </span>
-                              <span className="font-display text-xl font-black tabular-nums leading-none text-muted-foreground">
-                                {formatPlayingTimeClock(liveSeconds)}
-                              </span>
+                              <LivePlayingTimeLabel
+                                player={player}
+                                className="text-xl text-muted-foreground"
+                              />
                             </div>
                             {reason ? (
                               <span className="text-[10px] font-bold uppercase tracking-wide text-danger">
@@ -965,7 +954,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
                       key={player.id}
                       player={player}
                       displayName={getSidelineName(player, sidelineNameMap)}
-                      clockSeconds={clockSeconds}
                     />
                   ))}
                 </ul>
@@ -1000,7 +988,6 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
             title={sheetTitle}
             benchPlayers={benchPlayers}
             sidelineNameMap={sidelineNameMap}
-            clockSeconds={clockSeconds}
             onPickBench={handlePickBench}
             onRemove={sheet.mode === 'substitute' ? handleRemovePlayer : undefined}
             onClose={closeSheet}
