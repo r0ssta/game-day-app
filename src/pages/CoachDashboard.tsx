@@ -58,7 +58,7 @@ import {
 } from '@/lib/app-routes'
 import { useMatchPresence } from '@/hooks/useMatchPresence'
 import { useWakeLock, WAKE_LOCK_BLOCKED_TOAST } from '@/hooks/useWakeLock'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth, useAuthHealth } from '@/contexts/AuthContext'
 import { isActiveStaffMatchScreen } from '@/lib/live-match-snapshot'
 import { formatAppRoleLabel } from '@/lib/staff-roles'
 import type { FormationRemapResult } from '@/lib/formations'
@@ -225,7 +225,33 @@ function LiveClockValue({ children }: { children: (seconds: number) => ReactNode
   return children(seconds)
 }
 
+function AuthReconnectNotice({
+  onFailedRef,
+}: {
+  onFailedRef: { current: (message: string) => void }
+}) {
+  const authHealth = useAuthHealth()
+  useEffect(() => {
+    if (authHealth === 'failed') onFailedRef.current(AUTH_RECONNECT_TOAST)
+  }, [authHealth, onFailedRef])
+  return null
+}
+
 export function CoachDashboard() {
+  const onAuthFailedRef = useRef<(message: string) => void>(() => {})
+  return (
+    <>
+      <AuthReconnectNotice onFailedRef={onAuthFailedRef} />
+      <CoachDashboardScreen onAuthFailedRef={onAuthFailedRef} />
+    </>
+  )
+}
+
+function CoachDashboardScreen({
+  onAuthFailedRef,
+}: {
+  onAuthFailedRef: { current: (message: string) => void }
+}) {
   const {
     canAccessClubAdmin,
     canAccessPlatformAdmin,
@@ -235,7 +261,6 @@ export function CoachDashboard() {
     role,
     user,
     signOut,
-    authHealth,
     currentClubId,
     currentClubName,
     clubMemberships,
@@ -456,6 +481,7 @@ export function CoachDashboard() {
     }
     setToastState({ message, tone: tone ?? inferToastTone(message) })
   }, [])
+  onAuthFailedRef.current = setToast
   const [adjustSettingsOpen, setAdjustSettingsOpen] = useState(false)
   const [adjustSettingsBusy, setAdjustSettingsBusy] = useState(false)
   const { syncPending, isPending, run: runSync } = useOptimisticSync()
@@ -476,9 +502,6 @@ export function CoachDashboard() {
     },
     [holdLiveRemoteMerge, releaseLiveRemoteMerge, runSync],
   )
-  useEffect(() => {
-    if (authHealth === 'failed') setToast(AUTH_RECONNECT_TOAST)
-  }, [authHealth])
   useEffect(() => {
     if (appMode !== 'penalty_shootout' || !matchId) {
       setPkInitialRounds(undefined)

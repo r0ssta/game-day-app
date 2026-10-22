@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -44,8 +45,9 @@ export type ClubMembership = {
   appRole: AppRole
 }
 
+export type AuthHealth = 'ok' | 'reconnecting' | 'failed'
+
 type AuthContextValue = {
-  session: Session | null
   user: User | null
   /** App-level role for the current club (director | coach | pending). */
   role: AppRole | null
@@ -77,11 +79,18 @@ type AuthContextValue = {
   verifyLoginOtp: (email: string, token: string) => Promise<void>
   signOut: () => Promise<void>
   refreshRole: () => Promise<void>
-  /** Foreground session refresh: ok, in flight, or refresh failed. */
-  authHealth: 'ok' | 'reconnecting' | 'failed'
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+const AuthSessionContext = createContext<Session | null | undefined>(undefined)
+const AuthHealthContext = createContext<AuthHealth | undefined>(undefined)
+
+/** Token refresh hands us a new user object. Keep the previous one when the coach identity is unchanged. */
+function sameSignedInUser(prev: User | null, next: User | null): boolean {
+  if (prev === next) return true
+  if (!prev || !next) return false
+  return prev.id === next.id && prev.email === next.email
+}
 
 /** Never leave coaches stuck on the splash — unblock after this many ms. */
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 4_000
@@ -195,7 +204,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [teamMemberships, setTeamMemberships] = useState<TeamMembership[]>([])
   const [sessionLoading, setSessionLoading] = useState(true)
   const [accessLoading, setAccessLoading] = useState(false)
-  const [authHealth, setAuthHealth] = useState<'ok' | 'reconnecting' | 'failed'>('ok')
+  const [authHealth, setAuthHealth] = useState<AuthHealth>('ok')
+  const sessionRef = useRef(session)
+  sessionRef.current = session
 
   const applyClubSelection = useCallback(
     (
@@ -285,7 +296,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession)
-      setUser(nextSession?.user ?? null)
+      setUser((current) => {
+        const nextUser = nextSession?.user ?? null
+        return sameSignedInUser(current, nextUser) ? current : nextUser
+      })
       if (event === 'SIGNED_OUT') {
         setAuthHealth('ok')
       } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
@@ -305,16 +319,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (sessionLoading) return
 
     const refreshOnForeground = () => {
+      const current = sessionRef.current
       if (document.visibilityState !== 'visible') return
-      if (!session) return
-      if (session.user?.id) {
+      if (!current) return
+      if (current.user?.id) {
         noteStaffAppPresence({
-          userId: session.user.id,
-          email: session.user.email,
+          userId: current.user.id,
+          email: current.user.email,
           clubId: currentClubId,
         })
       }
-      if (!sessionNeedsRefresh(session.expires_at)) {
+      if (!sessionNeedsRefresh(current.expires_at)) {
         setAuthHealth('ok')
         return
       }
@@ -334,7 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', refreshOnForeground)
       window.removeEventListener('pageshow', onPageShow)
     }
-  }, [currentClubId, session, sessionLoading])
+  }, [currentClubId, sessionLoading])
 
   useEffect(() => {
     if (sessionLoading) return
@@ -463,7 +478,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      session,
       user,
       role,
       appRole: role,
@@ -476,7 +490,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       teamMemberships,
       loading: sessionLoading,
       accessLoading,
-      isAuthenticated: Boolean(session?.user),
+      isAuthenticated: Boolean(user),
       isActiveStaff: isActiveStaffUser(role, isPlatformAdmin),
       canAccessClubAdmin: canAccessClubAdmin(role),
       canAccessPlatformAdmin: canAccessPlatformAdmin(isPlatformAdmin),
@@ -489,10 +503,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyLoginOtp,
       signOut,
       refreshRole,
-      authHealth,
     }),
     [
-      session,
       user,
       role,
       currentClubId,
@@ -512,11 +524,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyLoginOtp,
       signOut,
       refreshRole,
-      authHealth,
     ],
   )
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthSessionContext.Provider value={session}>
+      <AuthHealthContext.Provider value={authHealth}>
+        <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+      </AuthHealthContext.Provider>
+    </AuthSessionContext.Provider>
+  )
 }
 
 export function useAuth() {
@@ -525,4 +542,20 @@ export function useAuth() {
     throw new Error('useAuth must be used within AuthProvider')
   }
   return context
+}
+
+export function useAuthSession(): Session | null {
+  const session = useContext(AuthSessionContext)
+  if (session === undefined) {
+    throw new Error('useAuthSession must be used within AuthProvider')
+  }
+  return session
+}
+
+export function useAuthHealth(): AuthHealth {
+  const authHealth = useContext(AuthHealthContext)
+  if (authHealth === undefined) {
+    throw new Error('useAuthHealth must be used within AuthProvider')
+  }
+  return authHealth
 }
