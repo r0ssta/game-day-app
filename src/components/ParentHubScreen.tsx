@@ -204,25 +204,18 @@ function LiveTab({
     const includeTest = streamIncludeTest
     let pollId = 0
 
-    const stopPoll = () => {
-      if (!pollId) return
-      window.clearInterval(pollId)
-      pollId = 0
+    const reconcileEvents = () => {
+      void fetchParentLiveEvents(matchId, { includeTest })
+        .then((rows) => {
+          setEvents((prev) => (sameParentLiveEvents(prev, rows) ? prev : rows))
+        })
+        .catch(() => undefined)
     }
 
-    const startPoll = () => {
-      if (pollId) return
-      pollId = window.setInterval(() => {
-        void fetchParentLiveEvents(matchId, { includeTest })
-          .then((rows) => {
-            setEvents((prev) => (sameParentLiveEvents(prev, rows) ? prev : rows))
-          })
-          .catch(() => undefined)
-      }, 8_000)
-    }
-
-    // Realtime is the fast path. Poll the event log only while the channel is down.
-    startPoll()
+    // Realtime is the fast path. Keep a security-definer RPC poll as the
+    // backup: subscribe success does not guarantee RLS-filtered events arrive
+    // (especially when a staff session shadows the public anon policies).
+    pollId = window.setInterval(reconcileEvents, 8_000)
 
     const applyMatchRow = (row: Record<string, unknown>) => {
       setLiveMatchState((prev) => {
@@ -293,6 +286,7 @@ function LiveTab({
             timestamp: number
             event_notes: string | null
             is_pk: boolean | null
+            from_corner?: boolean | null
             assist_player_id: string | null
             created_at: string
           }
@@ -319,6 +313,7 @@ function LiveTab({
             timestamp: row.timestamp,
             eventNotes: row.event_notes,
             isPk: row.is_pk,
+            fromCorner: row.from_corner ?? null,
             assistPlayerId: row.assist_player_id,
             assistPlayerName: assist
               ? formatPlayerFullName(assist.firstName, assist.lastName)
@@ -356,17 +351,15 @@ function LiveTab({
           const previousRow = payload.old as Record<string, unknown>
           if (isMatchClockHeartbeatUpdate(nextRow, previousRow)) return
           applyMatchRow(nextRow)
+          // Score/status changes are a good cue to re-hydrate the timeline in
+          // case event Realtime was filtered even though the match row arrived.
+          reconcileEvents()
         },
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') stopPoll()
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          startPoll()
-        }
-      })
+      .subscribe()
 
     return () => {
-      stopPoll()
+      if (pollId) window.clearInterval(pollId)
       void supabase.removeChannel(channel)
     }
   }, [streamMatchId, streamIncludeTest, playerSignature])
@@ -570,19 +563,27 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
 
   const staffPreviewRequested = isParentHubStaffPreviewRequest()
 
-  const reload = useCallback(async () => {
-    const payload = applyRecaps(await fetchParentHub(route, { includeTest: staffPreviewRequested }))
-    setHub((prev) => (prev && JSON.stringify(prev) === JSON.stringify(payload) ? prev : payload))
-    // Canonicalize legacy UUID / query links to /hub/:slug once resolved.
-    if (payload.teamSlug) {
-      const canonical = `/hub/${encodeURIComponent(payload.teamSlug)}`
-      const next = staffPreviewRequested ? `${canonical}?preview=1` : canonical
-      const current = `${window.location.pathname}${window.location.search}`
-      if (current !== next) {
-        window.history.replaceState(null, '', next)
+  const reload = useCallback(
+    async (options?: { bypassCache?: boolean }) => {
+      const payload = applyRecaps(
+        await fetchParentHub(route, {
+          includeTest: staffPreviewRequested,
+          bypassCache: options?.bypassCache,
+        }),
+      )
+      setHub((prev) => (prev && JSON.stringify(prev) === JSON.stringify(payload) ? prev : payload))
+      // Canonicalize legacy UUID / query links to /hub/:slug once resolved.
+      if (payload.teamSlug) {
+        const canonical = `/hub/${encodeURIComponent(payload.teamSlug)}`
+        const next = staffPreviewRequested ? `${canonical}?preview=1` : canonical
+        const current = `${window.location.pathname}${window.location.search}`
+        if (current !== next) {
+          window.history.replaceState(null, '', next)
+        }
       }
-    }
-  }, [route, staffPreviewRequested, applyRecaps])
+    },
+    [route, staffPreviewRequested, applyRecaps],
+  )
 
   useEffect(() => {
     if (!hub?.teamId) return
@@ -614,12 +615,12 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
     }
   }, [reload])
 
-  // Soft refresh while viewing Live so schedule flips when a match goes active.
+  // Soft refresh while viewing Live so schedule/score flips without waiting on CDN.
   useEffect(() => {
     if (tab !== 'live') return
     const id = window.setInterval(() => {
-      void reload().catch(() => undefined)
-    }, 30_000)
+      void reload({ bypassCache: true }).catch(() => undefined)
+    }, 15_000)
     return () => window.clearInterval(id)
   }, [tab, reload])
 

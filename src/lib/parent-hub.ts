@@ -359,24 +359,27 @@ export async function fetchParentRecaps(
 
 export async function fetchParentHub(
   route: ParentHubRoute,
-  options?: { includeTest?: boolean },
+  options?: { includeTest?: boolean; bypassCache?: boolean },
 ): Promise<ParentHubPayload> {
   const includeTest = Boolean(options?.includeTest)
-
   // Never use the cached public /api/hub for staff preview — that response is
-  // shared with parents and must stay free of testing matches.
-  if (includeTest) {
+  // shared with parents and must stay free of testing matches. Soft live
+  // refreshes also skip the CDN so kickoff / score flips are not stuck behind
+  // s-maxage.
+  const useRpc = includeTest || Boolean(options?.bypassCache)
+
+  if (useRpc) {
     if (route.kind === 'slug') {
       const { data, error } = await supabase.rpc('get_parent_hub_by_slug', {
         p_slug: route.slug,
-        p_include_test: true,
+        ...(includeTest ? { p_include_test: true } : {}),
       })
       if (error) throw error
       return normalizeParentHubPayload(data)
     }
     const { data, error } = await supabase.rpc('get_parent_hub', {
       p_team_id: route.teamId,
-      p_include_test: true,
+      ...(includeTest ? { p_include_test: true } : {}),
     })
     if (error) throw error
     return normalizeParentHubPayload(data)
