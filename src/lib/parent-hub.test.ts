@@ -12,6 +12,7 @@ import {
   isParentTimelineHighlight,
   mergeParentHubLiveMatch,
   parentLiveEventsFromMatchEvents,
+  selectParentGoalTimelineRows,
   type ParentHubMatch,
   type ParentLiveEvent,
 } from './parent-hub'
@@ -375,6 +376,38 @@ describe('buildParentTimelineRows', () => {
     expect(isParentTimelineHighlight(lineup)).toBe(true)
     expect(isParentTimelineHighlight(goal)).toBe(true)
     expect(isParentTimelineHighlight(ended)).toBe(true)
+  })
+
+  it('selects goal rows oldest-first for the recap scorers list', () => {
+    const rows = buildParentTimelineRows([
+      event({
+        id: 'shot',
+        eventType: 'shot_home',
+        timestamp: 80,
+        createdAt: '2026-09-02T18:01:00.000Z',
+      }),
+      event({
+        id: 'g2',
+        eventType: 'goal',
+        timestamp: 200,
+        playerName: 'Bess',
+        createdAt: '2026-09-02T18:05:00.000Z',
+      }),
+      event({
+        id: 'og',
+        eventType: 'opponent_goal',
+        timestamp: 150,
+        createdAt: '2026-09-02T18:03:00.000Z',
+      }),
+      event({
+        id: 'g1',
+        eventType: 'goal',
+        timestamp: 90,
+        playerName: 'Ada',
+        createdAt: '2026-09-02T18:02:00.000Z',
+      }),
+    ])
+    expect(selectParentGoalTimelineRows(rows).map((row) => row.id)).toEqual(['g1', 'og', 'g2'])
   })
 })
 

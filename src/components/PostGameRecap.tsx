@@ -74,7 +74,7 @@ import {
   ParentMatchRecapView,
   RecapPerspectiveTabs,
 } from '@/components/ParentMatchRecapView'
-import { LiveGameFeed } from '@/components/ParentTimelineList'
+import { GoalScorersFeed, LiveGameFeed } from '@/components/ParentTimelineList'
 import { ENABLE_POSITIONAL_RECAP_RATINGS } from '@/lib/feature-flags'
 import {
   PLAYER_RATINGS,
@@ -889,6 +889,46 @@ export function PostGameRecap({
           </p>
         ) : null}
 
+        <section className="rounded-xl border border-border bg-card p-4">
+          <label
+            htmlFor="parent-facing-recap"
+            className="mb-2 block font-display text-sm font-bold uppercase tracking-wide text-foreground"
+          >
+            Game Summary
+          </label>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Summary shared with families via email or the parent hub. Edit anytime after saving.
+          </p>
+          <textarea
+            id="parent-facing-recap"
+            value={parentFacingRecap}
+            onChange={(e) => setParentFacingRecap(e.target.value)}
+            readOnly={readOnly}
+            rows={4}
+            placeholder="Optional recap text for parents (also editable in Generate Parent Recap Email)"
+            className={cn(
+              'w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
+              readOnly && 'cursor-default bg-secondary/30',
+            )}
+          />
+        </section>
+
+        {coachBoxScore.hasStats || coachBoxScore.playedLengthLabel ? (
+          <section className="rounded-xl border border-athletic/40 bg-athletic/5 p-4">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
+              Box Score
+            </h2>
+            <ParentTeamBoxScore model={coachBoxScore} teamName={teamName} opponent={opponent} />
+          </section>
+        ) : null}
+
+        <GoalScorersFeed
+          rows={coachFeed}
+          opponent={opponent}
+          teamName={teamName}
+          totalPeriods={matchRecord?.total_periods}
+        />
+
         <section className="rounded-xl border border-neon/30 bg-neon/5 p-4">
           <label
             htmlFor="internal-coach-notes"
@@ -913,50 +953,10 @@ export function PostGameRecap({
           />
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-4">
-          <label
-            htmlFor="parent-facing-recap"
-            className="mb-2 block font-display text-sm font-bold uppercase tracking-wide text-foreground"
-          >
-            Parent-Facing Recap
-          </label>
-          <p className="mb-3 text-xs text-muted-foreground">
-            Summary shared with families via email or the parent hub. Edit anytime after saving.
-          </p>
-          <textarea
-            id="parent-facing-recap"
-            value={parentFacingRecap}
-            onChange={(e) => setParentFacingRecap(e.target.value)}
-            readOnly={readOnly}
-            rows={4}
-            placeholder="Optional recap text for parents (also editable in Generate Parent Recap Email)"
-            className={cn(
-              'w-full resize-y rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30',
-              readOnly && 'cursor-default bg-secondary/30',
-            )}
-          />
-        </section>
-
         <QualitativeContextFields
           value={qualitativeContext}
           onChange={setQualitativeContext}
           readOnly={readOnly}
-        />
-
-        {coachBoxScore.hasStats || coachBoxScore.playedLengthLabel ? (
-          <section className="rounded-xl border border-athletic/40 bg-athletic/5 p-4">
-            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">
-              Box Score
-            </h2>
-            <ParentTeamBoxScore model={coachBoxScore} teamName={teamName} opponent={opponent} />
-          </section>
-        ) : null}
-
-        <LiveGameFeed
-          rows={coachFeed}
-          opponent={opponent}
-          teamName={teamName}
-          totalPeriods={matchRecord?.total_periods}
         />
 
         {disciplineSummaries.length > 0 ? (
@@ -1142,6 +1142,13 @@ export function PostGameRecap({
             })}
           </ul>
         </section>
+
+        <LiveGameFeed
+          rows={coachFeed}
+          opponent={opponent}
+          teamName={teamName}
+          totalPeriods={matchRecord?.total_periods}
+        />
         </>
         ) : null}
 

@@ -20,7 +20,7 @@ import {
 } from '@/lib/parent-match-stats'
 import { formatPlayerStatPeriodLabel } from '@/lib/match-periods'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
-import { LiveGameFeed } from '@/components/ParentTimelineList'
+import { GoalScorersFeed, LiveGameFeed } from '@/components/ParentTimelineList'
 import { cn } from '@/lib/utils'
 
 function formatJersey(number: number | null): string {
@@ -234,6 +234,26 @@ export function ParentMatchRecapView({
         <ParentTeamBoxScore model={teamBoxScore} teamName={teamName} opponent={opponent} />
       </div>
 
+      {recap.trim() ? (
+        <section>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Game summary
+          </h2>
+          <div className="rounded-xl border border-border bg-card px-4 py-4">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+              {recap.trim()}
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      <GoalScorersFeed
+        rows={timeline}
+        opponent={opponent}
+        teamName={teamName}
+        totalPeriods={totalPeriods}
+      />
+
       <section>
         <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
           Player stats
@@ -257,19 +277,6 @@ export function ParentMatchRecapView({
           </ul>
         )}
       </section>
-
-      {recap.trim() ? (
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Coach recap
-          </h2>
-          <div className="rounded-xl border border-border bg-card px-4 py-4">
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-              {recap.trim()}
-            </p>
-          </div>
-        </section>
-      ) : null}
 
       <LiveGameFeed
         rows={timeline}

@@ -1,6 +1,7 @@
 import {
   formatParentTimelineRowCopy,
   isParentTimelineHighlight,
+  selectParentGoalTimelineRows,
   type ParentTimelineRow,
 } from '@/lib/parent-hub'
 import { cn } from '@/lib/utils'
@@ -35,6 +36,35 @@ export function LiveGameFeed({
           totalPeriods={totalPeriods}
         />
       )}
+    </section>
+  )
+}
+
+export function GoalScorersFeed({
+  rows,
+  opponent,
+  teamName,
+  totalPeriods,
+}: {
+  rows: ParentTimelineRow[]
+  opponent: string
+  teamName: string
+  totalPeriods?: number | null
+}) {
+  const goalRows = selectParentGoalTimelineRows(rows)
+  if (goalRows.length === 0) return null
+
+  return (
+    <section>
+      <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+        Goal scorers
+      </h2>
+      <ParentTimelineList
+        rows={goalRows}
+        opponent={opponent}
+        teamName={teamName}
+        totalPeriods={totalPeriods}
+      />
     </section>
   )
 }

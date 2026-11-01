@@ -1242,6 +1242,20 @@ export function isParentTimelineHighlight(row: ParentTimelineRow): boolean {
   return false
 }
 
+/** Goals only, oldest first — for the recap “Goal scorers” summary. */
+export function selectParentGoalTimelineRows(
+  rows: ParentTimelineRow[],
+): Array<Extract<ParentTimelineRow, { kind: 'event' }>> {
+  return rows
+    .filter(
+      (row): row is Extract<ParentTimelineRow, { kind: 'event' }> =>
+        row.kind === 'event' &&
+        (row.event.eventType === 'goal' || row.event.eventType === 'opponent_goal'),
+    )
+    .slice()
+    .sort((a, b) => a.sortAt.localeCompare(b.sortAt) || a.id.localeCompare(b.id))
+}
+
 /** Event types shown on the public Parent Hub live timeline. */
 export const PARENT_HUB_LIVE_EVENT_TYPES = [
   'goal',
