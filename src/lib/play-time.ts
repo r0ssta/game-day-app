@@ -177,6 +177,25 @@ export function stampAllOnField(players: MatchPlayer[], remainingSeconds: number
 }
 
 /**
+ * A mid-period length change moves the countdown by `remainingDeltaSeconds`
+ * without changing elapsed time. Open stints store that countdown, so each
+ * anchor has to move by the same amount or on-field minutes jump.
+ */
+export function shiftOpenStintAnchors(
+  players: MatchPlayer[],
+  remainingDeltaSeconds: number,
+): MatchPlayer[] {
+  if (!Number.isFinite(remainingDeltaSeconds) || remainingDeltaSeconds === 0) return players
+  let changed = false
+  const next = players.map((player) => {
+    if (player.subbedInAt == null) return player
+    changed = true
+    return { ...player, subbedInAt: player.subbedInAt + remainingDeltaSeconds }
+  })
+  return changed ? next : players
+}
+
+/**
  * Apply 2nd-half starter selections from intermission setup.
  * Does not start a new stint — kickoff must `stampAllOnField` after this.
  * First-half totals are left untouched; pass `periodEndRemaining` to bank any

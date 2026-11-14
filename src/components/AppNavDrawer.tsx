@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   Activity,
   BarChart3,
+  CalendarDays,
   ClipboardList,
   History,
   Globe,
@@ -33,6 +34,7 @@ export type AppNavSection =
   | 'recaps'
   | 'roster'
   | 'club_admin'
+  | 'saturday'
   | 'platform_admin'
   | 'system_activity'
 
@@ -134,6 +136,13 @@ export function buildAppNavItems(input: {
 
   if (input.showClubAdmin) {
     items.push({
+      id: 'saturday',
+      label: 'Saturday board',
+      description: 'Live scores, open recaps, and minutes',
+      icon: CalendarDays,
+      active: input.activeSection === 'saturday',
+    })
+    items.push({
       id: 'club_admin',
       label: 'Club Admin',
       description: 'Roles, team assignments, and access',
@@ -173,6 +182,7 @@ export function resolveActiveNavSection(appMode: string, reportingTab?: string):
   if (appMode === 'recap_history' || appMode === 'recap') return 'recaps'
   if (appMode === 'team') return 'roster'
   if (appMode === 'club_admin') return 'club_admin'
+  if (appMode === 'saturday') return 'saturday'
   if (appMode === 'platform_admin') return 'platform_admin'
   if (appMode === 'reporting') return 'recaps'
   return null

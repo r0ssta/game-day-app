@@ -1,3 +1,5 @@
+import type { PlayerSafety } from '@/lib/player-safety'
+
 export type Impact = 'neutral' | 'positive' | 'negative'
 
 /** Why a player left the match after being marked in. */
@@ -12,6 +14,7 @@ export type AppMode =
   | 'recap_history'
   | 'impact'
   | 'club_admin'
+  | 'saturday'
   | 'platform_admin'
   | 'match'
   | 'halftime'
@@ -40,6 +43,8 @@ export type RosterPlayer = {
   /** True when attending this match as a guest (not on the team's season roster). */
   isGuest: boolean
   activeStatus: boolean
+  /** Coach-only. Absent on older in-memory rows. */
+  safety?: PlayerSafety | null
 }
 
 /** Active match lineup entry — single source of truth lives in the master players array */

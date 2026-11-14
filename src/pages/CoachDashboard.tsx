@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { CheckCircle2, AlertCircle } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { HomeScreen } from '@/components/HomeScreen'
+import { SaturdayBoardScreen } from '@/components/SaturdayBoardScreen'
 import { SidelineStatsPanel } from '@/components/SidelineStatsPanel'
 import { SubCountdownTimer } from '@/components/SubCountdownTimer'
 import {
@@ -373,6 +374,13 @@ function CoachDashboardScreen({
     setMatchDate,
     matchTime,
     setMatchTime,
+    placeName,
+    setPlaceName,
+    placeDetails,
+    setPlaceDetails,
+    arrivalNote,
+    setArrivalNote,
+    setFixtureStatus,
     setupLineup,
     matchPositions,
     matchFormations,
@@ -710,6 +718,16 @@ function CoachDashboardScreen({
           }
           leaveImpactPath()
           setAppMode('team')
+          break
+        case 'saturday':
+          if (!canAccessClubAdmin) {
+            setToast('The Saturday board is available to Directors')
+            leaveImpactPath()
+            setAppMode('home')
+            break
+          }
+          leaveImpactPath()
+          setAppMode('saturday')
           break
         case 'club_admin':
           if (!canAccessClubAdmin) {
@@ -1168,6 +1186,9 @@ function CoachDashboardScreen({
       totalPeriods: matchTotalPeriods as 2 | 3,
       matchDate,
       matchTime,
+      placeName,
+      placeDetails,
+      arrivalNote,
       attendingPlayers,
       absentPlayers,
       firstHalfStarterIds: getFirstHalfStarterIds(resolvedLineup),
@@ -1205,6 +1226,9 @@ function CoachDashboardScreen({
     halfLengthMinutes,
     matchDate,
     matchTime,
+    placeName,
+    placeDetails,
+    arrivalNote,
     gkPlaysFullHalf,
   ])
 
@@ -3380,6 +3404,20 @@ function CoachDashboardScreen({
     )
   }
 
+  if (appMode === 'saturday') {
+    if (!canAccessClubAdmin) {
+      return null
+    }
+
+    return (
+      <SaturdayBoardScreen
+        teams={teams}
+        seasonId={activeSeason?.id ?? null}
+        onBackToHome={() => setAppMode('home')}
+      />
+    )
+  }
+
   if (appMode === 'club_admin') {
     if (!canAccessClubAdmin) {
       return null
@@ -3472,6 +3510,20 @@ function CoachDashboardScreen({
           onMatchTimeChange={setMatchTime}
           locationType={locationType}
           onLocationTypeChange={setLocationType}
+          placeName={placeName}
+          onPlaceNameChange={setPlaceName}
+          placeDetails={placeDetails}
+          onPlaceDetailsChange={setPlaceDetails}
+          arrivalNote={arrivalNote}
+          onArrivalNoteChange={setArrivalNote}
+          fixtureMatchId={editingScheduledMatchId}
+          fixtureStatus={
+            scheduledMatches.find((match) => match.id === editingScheduledMatchId)?.status ?? null
+          }
+          onFixtureStatus={async (status) => {
+            if (!editingScheduledMatchId) return
+            await setFixtureStatus(editingScheduledMatchId, status)
+          }}
           tournamentGame={tournamentGame}
           onTournamentGameChange={(value) => {
             setTournamentGame(value)

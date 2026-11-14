@@ -118,6 +118,26 @@ export function buildCardPush(input: {
   return { title: 'Yellow card', body: `${input.playerLabel} booked.` }
 }
 
+export function buildScheduleChangePush(input: {
+  teamName: string
+  opponent: string
+  status: 'postponed' | 'cancelled'
+  whenLabel?: string | null
+}): { title: string; body: string } {
+  const opponent = input.opponent.trim() || 'Opponent'
+  const when = input.whenLabel?.trim()
+  if (input.status === 'cancelled') {
+    return {
+      title: `${input.teamName} · Cancelled`,
+      body: when ? `vs ${opponent} on ${when} is cancelled.` : `vs ${opponent} is cancelled.`,
+    }
+  }
+  return {
+    title: `${input.teamName} · Postponed`,
+    body: when ? `vs ${opponent} (${when}) is postponed.` : `vs ${opponent} is postponed.`,
+  }
+}
+
 export function buildFullTimePush(input: {
   teamName: string
   opponent: string

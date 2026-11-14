@@ -23,6 +23,8 @@ import { getDefaultFormationId, isFormationValidForFormat } from '@/lib/formatio
 import { getMaxFieldPlayers } from '@/lib/lineup'
 import { formatPlayerFullName, buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
 import { JERSEY_INPUT_PROPS, parseJerseyNumber } from '@/lib/jersey-number'
+import { emptyPlayerSafety, type PlayerSafety } from '@/lib/player-safety'
+import { PlayerSafetyCard, PlayerSafetyFields } from '@/components/PlayerSafetyCard'
 import {
   teamFormatLabel,
   type TeamFormat,
@@ -96,6 +98,7 @@ type TeamManagementScreenProps = {
       isGuest: boolean
       primaryPosition?: string
       secondaryPosition?: string
+      safety?: PlayerSafety
     },
   ) => Promise<unknown>
   onSetPlayerActive: (id: string, active: boolean) => Promise<void>
@@ -162,6 +165,7 @@ function TeamRosterTab({
     isGuest: false,
     primaryPosition: DEFAULT_PRIMARY_POSITION as RosterProfilePosition,
     secondaryPosition: DEFAULT_SECONDARY_POSITION as RosterProfilePosition,
+    safety: emptyPlayerSafety(),
   })
 
   const activePlayers = teamRoster.filter((p) => p.activeStatus)
@@ -219,6 +223,7 @@ function TeamRosterTab({
       isGuest: player.isGuest,
       primaryPosition: player.primaryPosition as RosterProfilePosition,
       secondaryPosition: player.secondaryPosition as RosterProfilePosition,
+      safety: player.safety ?? emptyPlayerSafety(),
     })
   }
 
@@ -245,6 +250,7 @@ function TeamRosterTab({
         isGuest: editDraft.isGuest,
         primaryPosition: editDraft.primaryPosition,
         secondaryPosition: editDraft.secondaryPosition,
+        safety: editDraft.safety,
       })
       onToast(`Updated ${formatPlayerFullName(trimmedFirst, trimmedLast)}`)
       setEditId(null)
@@ -294,6 +300,10 @@ function TeamRosterTab({
             onPrimaryChange={(value) => setEditDraft((d) => ({ ...d, primaryPosition: value }))}
             onSecondaryChange={(value) => setEditDraft((d) => ({ ...d, secondaryPosition: value }))}
           />
+          <PlayerSafetyFields
+            safety={editDraft.safety}
+            onChange={(safety: PlayerSafety) => setEditDraft((draft) => ({ ...draft, safety }))}
+          />
           <div className="flex gap-2">
             <button
               type="button"
@@ -341,6 +351,11 @@ function TeamRosterTab({
               Guest
             </span>
           )}
+          {player.safety ? (
+            <div className="mt-2">
+              <PlayerSafetyCard safety={player.safety} />
+            </div>
+          ) : null}
         </div>
         <div className="flex shrink-0 gap-1">
           <button

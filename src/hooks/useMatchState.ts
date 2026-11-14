@@ -13,6 +13,7 @@ import {
   applySecondHalfLineup,
   applySlotAssignmentPositions,
   finalizeAllOnField,
+  shiftOpenStintAnchors,
   stampAllOnField,
   stampOnFieldAtClock,
 } from '@/lib/play-time'
@@ -73,6 +74,7 @@ import {
   syncMatchRecord,
   syncMatchStats,
   updateMatchHalfLength,
+  upsertMatchStats,
 } from '@/lib/supabase-api'
 import type { DbLineupPreset, DbMatch } from '@/types/database'
 import type {
@@ -470,22 +472,51 @@ export function useMatchState() {
       if (planned.nextMinutes === previousMinutes) return planned.nextMinutes
 
       const previousRemaining = liveStateRef.current.seconds
+      const previousPlayers = liveStateRef.current.players
+      const shiftedPlayers = shiftOpenStintAnchors(
+        previousPlayers,
+        planned.nextRemaining - previousRemaining,
+      )
       halfLengthWriteEchoRef.current = { at: Date.now(), minutes: planned.nextMinutes }
       setHalfLengthMinutes(planned.nextMinutes)
       setSeconds(planned.nextRemaining)
+      liveStateRef.current.seconds = planned.nextRemaining
+      if (shiftedPlayers !== previousPlayers) {
+        liveStateRef.current.players = shiftedPlayers
+        setPlayers(shiftedPlayers)
+      }
       localWriteGenRef.current += 1
 
       const targetMatchId = matchIdRef.current
       if (!targetMatchId) return planned.nextMinutes
 
+      let clockWritten = false
       try {
         await updateMatchHalfLength(targetMatchId, planned.nextMinutes, planned.nextRemaining)
         persistMatchClock(targetMatchId, planned.nextRemaining)
+        clockWritten = true
+        if (shiftedPlayers !== previousPlayers) {
+          await upsertMatchStats(
+            targetMatchId,
+            shiftedPlayers.filter((player, index) => player !== previousPlayers[index]),
+          )
+        }
         return planned.nextMinutes
       } catch (err) {
         halfLengthWriteEchoRef.current = null
         setHalfLengthMinutes(previousMinutes)
         setSeconds(previousRemaining)
+        liveStateRef.current.seconds = previousRemaining
+        if (shiftedPlayers !== previousPlayers) {
+          liveStateRef.current.players = previousPlayers
+          setPlayers(previousPlayers)
+        }
+        if (clockWritten) {
+          void updateMatchHalfLength(targetMatchId, previousMinutes, previousRemaining).catch(
+            (revertErr) => console.warn('[half-length] could not restore previous length', revertErr),
+          )
+          persistMatchClock(targetMatchId, previousRemaining)
+        }
         throw err
       }
     },

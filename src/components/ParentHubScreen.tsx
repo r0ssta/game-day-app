@@ -10,10 +10,12 @@ import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { isMatchClockHeartbeatUpdate } from '@/lib/live-match-snapshot'
 import { isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
 import { formatPlayerFullName } from '@/lib/player-names'
+import { calendarWebcalUrl } from '@/lib/team-calendar'
 import {
   buildParentTimelineRows,
   fetchParentHub,
   fetchParentRecaps,
+  submitParentRsvp,
   fetchParentLiveEvents,
   isParentHubFinishedMatch,
   isParentHubStaffPreviewRequest,
@@ -80,7 +82,138 @@ function formatCountdown(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
+function ArrivalCard({ match }: { match: ParentHubMatch }) {
+  const place = match.place_name?.trim()
+  const details = match.place_details?.trim()
+  const arrival = match.arrival_note?.trim()
+  const venue = match.location_type === 'away' ? 'Away' : 'Home'
+  if (!place && !details && !arrival) {
+    return (
+      <p className="text-sm font-semibold text-muted-foreground">{venue}</p>
+    )
+  }
+  return (
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Arrival</p>
+      <p className="mt-1 font-semibold text-foreground">
+        {venue}
+        {place ? ` · ${place}` : ''}
+      </p>
+      {details ? <p className="mt-1 text-sm text-muted-foreground">{details}</p> : null}
+      {arrival ? <p className="mt-1 text-sm font-semibold text-foreground">{arrival}</p> : null}
+    </div>
+  )
+}
+
+function ParentRsvp({
+  slug,
+  match,
+  players,
+  onSaved,
+}: {
+  slug: string
+  match: ParentHubMatch
+  players: ParentHubPayload['players']
+  onSaved: (playerId: string, response: 'in' | 'out' | 'maybe') => void
+}) {
+  const storageKey = `gameday-hub-player:${slug}`
+  const [playerId, setPlayerId] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) ?? ''
+    } catch {
+      return ''
+    }
+  })
+  const [pending, setPending] = useState<'in' | 'out' | 'maybe' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const current = match.rsvps?.find((row) => row.playerId === playerId)?.response ?? null
+
+  if (players.length === 0) return null
+
+  const choosePlayer = (nextId: string) => {
+    setPlayerId(nextId)
+    setError(null)
+    try {
+      if (nextId) localStorage.setItem(storageKey, nextId)
+      else localStorage.removeItem(storageKey)
+    } catch {
+      // Ignore private-mode storage failures.
+    }
+  }
+
+  const send = async (response: 'in' | 'out' | 'maybe') => {
+    if (!playerId) {
+      setError('Choose your player first.')
+      return
+    }
+    setPending(response)
+    setError(null)
+    try {
+      await submitParentRsvp({ slug, matchId: match.id, playerId, response })
+      onSaved(playerId, response)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save availability')
+    } finally {
+      setPending(null)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        Can you make it?
+      </p>
+      <label className="mt-2 block text-xs font-bold uppercase tracking-wide text-muted-foreground" htmlFor={`rsvp-player-${match.id}`}>
+        Player
+        <select
+          id={`rsvp-player-${match.id}`}
+          value={playerId}
+          onChange={(event) => choosePlayer(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground"
+        >
+          <option value="">Choose a player</option>
+          {players.map((player) => (
+            <option key={player.id} value={player.id}>
+              {player.number != null ? `#${player.number} ` : ''}
+              {formatPlayerFullName(player.firstName, player.lastName)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {(['in', 'out', 'maybe'] as const).map((response) => (
+          <button
+            key={response}
+            type="button"
+            disabled={pending != null}
+            onClick={() => void send(response)}
+            className={cn(
+              'min-h-11 rounded-lg border-2 text-xs font-black uppercase tracking-wide',
+              current === response
+                ? 'border-neon bg-neon text-neon-foreground'
+                : 'border-border bg-secondary text-foreground',
+            )}
+          >
+            {pending === response ? '…' : response}
+          </button>
+        ))}
+      </div>
+      {error ? <p className="mt-2 text-sm font-semibold text-danger">{error}</p> : null}
+    </div>
+  )
+}
+
+function ScheduledKickoffCard({
+  match,
+  slug,
+  players,
+  onRsvp,
+}: {
+  match: ParentHubMatch
+  slug: string
+  players: ParentHubPayload['players']
+  onRsvp: (playerId: string, response: 'in' | 'out' | 'maybe') => void
+}) {
   const when = formatMatchDisplayDateTime(match)
   const kickoff = kickoffDate(match)
   const [now, setNow] = useState(() => Date.now())
@@ -112,6 +245,8 @@ function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
           Until kickoff
         </p>
       </div>
+      <ArrivalCard match={match} />
+      <ParentRsvp slug={slug} match={match} players={players} onSaved={onRsvp} />
 
       <div>
         <h3 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -138,9 +273,11 @@ function sameParentLiveEvents(prev: ParentLiveEvent[], next: ParentLiveEvent[]) 
 function LiveTab({
   hub,
   matches,
+  onRsvp,
 }: {
   hub: ParentHubPayload
   matches: ParentHubMatch[]
+  onRsvp: (matchId: string, playerId: string, response: 'in' | 'out' | 'maybe') => void
 }) {
   const liveMatch = useMemo(() => {
     const live = matches.filter((m) => isLiveMatchStatus(m.status))
@@ -152,6 +289,13 @@ function LiveTab({
       .sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b))
     return upcoming[0] ?? null
   }, [matches])
+  const disrupted = useMemo(
+    () =>
+      matches
+        .filter((match) => match.status === 'postponed' || match.status === 'cancelled')
+        .sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b)),
+    [matches],
+  )
   const [events, setEvents] = useState<ParentLiveEvent[]>([])
   const [liveMatchState, setLiveMatchState] = useState<ParentHubMatch | null>(liveMatch)
 
@@ -374,11 +518,41 @@ function LiveTab({
   )
 
   if (!streamMatch || !liveMatchState || !isLiveMatchStatus(liveMatchState.status)) {
-    if (nextScheduled) return <ScheduledKickoffCard match={nextScheduled} />
     return (
-      <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        No live match right now. Check Recaps for finished games.
-      </p>
+      <div className="space-y-4">
+        {nextScheduled ? (
+          <ScheduledKickoffCard
+            match={nextScheduled}
+            slug={hub.teamSlug}
+            players={hub.players}
+            onRsvp={(playerId, response) => onRsvp(nextScheduled.id, playerId, response)}
+          />
+        ) : null}
+        {disrupted.map((match) => (
+          <div key={match.id} className="space-y-3 rounded-xl border border-border bg-card px-4 py-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-danger">
+              {match.status === 'cancelled' ? 'Cancelled' : 'Postponed'}
+            </p>
+            <p className="font-display text-2xl font-bold uppercase text-foreground">
+              vs {match.opponent || 'Opponent'}
+            </p>
+            <ArrivalCard match={match} />
+            {match.status === 'postponed' ? (
+              <ParentRsvp
+                slug={hub.teamSlug}
+                match={match}
+                players={hub.players}
+                onSaved={(playerId, response) => onRsvp(match.id, playerId, response)}
+              />
+            ) : null}
+          </div>
+        ))}
+        {!nextScheduled && disrupted.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+            No live match right now. Check Recaps for finished games.
+          </p>
+        ) : null}
+      </div>
     )
   }
 
@@ -541,7 +715,6 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
     }
   }, [])
 
-
   // Point at the dynamic team manifest as soon as we know the slug (Vite stand-in for layout.tsx).
   useEffect(() => {
     if (route.kind === 'slug') {
@@ -654,7 +827,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             <h1 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
               {teamLabel}
             </h1>
-            <p className="text-sm text-muted-foreground">Live scores · match recaps</p>
+            <p className="text-sm text-muted-foreground">Live scores · availability · recaps</p>
           </div>
           {staffPreviewRequested ? (
             <p className="rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-100">
@@ -664,6 +837,14 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
             </p>
           ) : null}
           {hub ? <EnableAlertsButton teamId={hub.teamId} players={hub.players} /> : null}
+          {hub?.teamSlug ? (
+            <a
+              href={calendarWebcalUrl(window.location.origin, hub.teamSlug)}
+              className="inline-flex min-h-11 items-center text-sm font-bold text-neon"
+            >
+              Add schedule to calendar
+            </a>
+          ) : null}
         </div>
       </header>
 
@@ -686,7 +867,23 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
               />
             </Suspense>
           ) : tab === 'live' ? (
-            <LiveTab hub={hub} matches={hub.matches} />
+            <LiveTab
+              hub={hub}
+              matches={hub.matches}
+              onRsvp={(matchId, playerId, response) => {
+                setHub((current) => {
+                  if (!current) return current
+                  return {
+                    ...current,
+                    matches: current.matches.map((match) => {
+                      if (match.id !== matchId) return match
+                      const rsvps = (match.rsvps ?? []).filter((row) => row.playerId !== playerId)
+                      return { ...match, rsvps: [...rsvps, { playerId, response }] }
+                    }),
+                  }
+                })
+              }}
+            />
           ) : (
             <RecapsTab matches={hub.matches} onSelectMatch={handleSelectFinishedMatch} />
           )}

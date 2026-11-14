@@ -9,9 +9,13 @@ type Handler = (req: VercelRequest, res: VercelResponse) => Promise<unknown>
 const MATCH_API_MODULE = '/api/match.ts'
 const SEND_WEB_PUSH_MODULE = '/api/send-web-push.ts'
 const HUB_API_MODULE = '/api/hub.ts'
+const CALENDAR_API_MODULE = '/api/calendar.ts'
+const RSVP_API_MODULE = '/api/rsvp.ts'
 
 function routeModule(pathname: string): string | null {
   if (pathname === '/api/send-web-push') return SEND_WEB_PUSH_MODULE
+  if (pathname === '/api/rsvp') return RSVP_API_MODULE
+  if (pathname === '/api/calendar' || pathname.startsWith('/api/calendar/')) return CALENDAR_API_MODULE
   if (pathname === '/api/hub' || pathname.startsWith('/api/hub/')) return HUB_API_MODULE
   if (pathname === '/api/match' || pathname.startsWith('/api/match/')) {
     return MATCH_API_MODULE
@@ -22,6 +26,12 @@ function routeModule(pathname: string): string | null {
 function hubSlugFromPath(pathname: string): string | undefined {
   if (!pathname.startsWith('/api/hub/')) return undefined
   const slug = pathname.slice('/api/hub/'.length).split('/')[0]
+  return slug || undefined
+}
+
+function calendarSlugFromPath(pathname: string): string | undefined {
+  if (!pathname.startsWith('/api/calendar/')) return undefined
+  const slug = pathname.slice('/api/calendar/'.length).split('/')[0]
   return slug || undefined
 }
 
@@ -172,6 +182,8 @@ export function matchApiPlugin(mode = 'development'): Plugin {
       if (action && !query.action) query.action = action
       const hubSlug = hubSlugFromPath(pathname)
       if (hubSlug && !query.slug) query.slug = hubSlug
+      const calendarSlug = calendarSlugFromPath(pathname)
+      if (calendarSlug && !query.slug) query.slug = calendarSlug
       const vercelReq = Object.assign(req, {
         query,
         body,

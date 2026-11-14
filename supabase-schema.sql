@@ -15,6 +15,9 @@ create table if not exists public.teams (
   primary_coach_name text not null default '',
   age_group text,
   active_status boolean not null default true,
+  /** Share of completed-match minutes a player should reach. Saturday board flags anyone under this. */
+  minutes_target_ratio numeric not null default 0.5
+    check (minutes_target_ratio > 0 and minutes_target_ratio <= 1),
   created_at timestamptz not null default now(),
   constraint teams_slug_unique unique (slug),
   constraint teams_brand_color_hex_check check (brand_color ~* '^#[0-9a-f]{6}$')
@@ -75,6 +78,8 @@ create table if not exists public.matches (
   period text not null default '1st' check (period in ('1st', '2nd', '3rd')),
   status text not null default 'scheduled' check (status in (
     'scheduled',
+    'postponed',
+    'cancelled',
     'live',
     'extra_time_first_half',
     'extra_time_second_half',
@@ -82,6 +87,9 @@ create table if not exists public.matches (
     'pending_review',
     'final'
   )),
+  place_name text,
+  place_details text,
+  arrival_note text,
   period_clock_started boolean not null default false,
   internal_coach_notes text,
   parent_facing_recap text,
@@ -147,6 +155,27 @@ create table if not exists public.match_stats (
   unique (match_id, player_id)
 );
 
+-- Parent In / Out / Maybe. Parents write through set_parent_match_rsvp; staff read here.
+create table if not exists public.match_rsvps (
+  id uuid primary key default gen_random_uuid(),
+  match_id uuid not null references public.matches (id) on delete cascade,
+  player_id uuid not null references public.players (id) on delete cascade,
+  response text not null check (response in ('in', 'out', 'maybe')),
+  updated_at timestamptz not null default now(),
+  unique (match_id, player_id)
+);
+
+-- Coach-only sideline safety. Kept off players so the anon stat-tracker select cannot read it.
+create table if not exists public.player_safety (
+  player_id uuid primary key references public.players (id) on delete cascade,
+  emergency_contact_name text,
+  emergency_contact_phone text,
+  allergies text,
+  medical_notes text,
+  unavailable_until date,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------------------
 -- Indexes
 -- ---------------------------------------------------------------------------
@@ -164,8 +193,6 @@ create unique index if not exists idx_matches_stat_tracker_token
 create index if not exists idx_match_events_match_id on public.match_events (match_id);
 create index if not exists idx_match_events_match_created
   on public.match_events (match_id, created_at);
-create index if not exists idx_match_events_match_created
-  on public.match_events (match_id, created_at);
 create index if not exists match_events_live_dedupe_idx
   on public.match_events (match_id, event_type, created_at desc);
 create index if not exists match_events_position_micro_shift_idx
@@ -173,6 +200,7 @@ create index if not exists match_events_position_micro_shift_idx
   where event_type = 'position_change';
 create index if not exists idx_match_events_assist_player_id on public.match_events (assist_player_id);
 create index if not exists idx_match_stats_match_id on public.match_stats (match_id);
+create index if not exists idx_match_rsvps_player_id on public.match_rsvps (player_id);
 
 create table if not exists public.match_reviews (
   id uuid primary key default gen_random_uuid(),
@@ -2381,3 +2409,4 @@ notify pgrst, 'reload schema';
 -- Super-admin audit log lives in supabase-system-admin-audit-log-migration.sql.
 -- Club directors creating teams: supabase-teams-director-create-migration.sql.
 -- Platform/system admins opening any club: supabase-platform-admin-club-access-migration.sql.
+-- Parent RSVP, postpone/cancel, arrival notes, safety cards: supabase-gameday-backlog-migration.sql.

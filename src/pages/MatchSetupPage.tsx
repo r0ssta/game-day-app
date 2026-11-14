@@ -1,4 +1,4 @@
-import { useMemo, useState, type MutableRefObject, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { Share2 } from 'lucide-react'
 import { ScreenHeader } from '@/components/AppNavigation'
 import { AddPlayerToRoster } from '@/components/AddPlayerToRoster'
@@ -8,6 +8,8 @@ import { SubbingAssistantPanel } from '@/components/SubbingAssistantPanel'
 import { TacticBoardEntry } from '@/components/TacticBoard'
 import { TacticalPitchLineup } from '@/components/TacticalPitchLineup'
 import { ENABLE_SUB_ASSISTANT } from '@/lib/feature-flags'
+import { isUnavailableOn } from '@/lib/player-safety'
+import { supabase } from '@/supabaseClient'
 import { APP_CONTAINER, APP_SHELL } from '@/lib/layout'
 import { getMaxFieldPlayers } from '@/lib/lineup'
 import { periodLengthOptions } from '@/lib/match-periods'
@@ -51,6 +53,15 @@ export type MatchSetupPageProps = {
   onMatchTimeChange: (value: string) => void
   locationType: LocationType
   onLocationTypeChange: (value: LocationType) => void
+  placeName: string
+  onPlaceNameChange: (value: string) => void
+  placeDetails: string
+  onPlaceDetailsChange: (value: string) => void
+  arrivalNote: string
+  onArrivalNoteChange: (value: string) => void
+  fixtureMatchId: string | null
+  fixtureStatus: string | null
+  onFixtureStatus: (status: 'scheduled' | 'postponed' | 'cancelled') => Promise<void>
   tournamentGame: boolean
   onTournamentGameChange: (value: boolean) => void
   isTestMatch: boolean
@@ -123,6 +134,15 @@ export function MatchSetupPage({
   onMatchTimeChange,
   locationType,
   onLocationTypeChange,
+  placeName,
+  onPlaceNameChange,
+  placeDetails,
+  onPlaceDetailsChange,
+  arrivalNote,
+  onArrivalNoteChange,
+  fixtureMatchId,
+  fixtureStatus,
+  onFixtureStatus,
   tournamentGame,
   onTournamentGameChange,
   isTestMatch,
@@ -173,7 +193,56 @@ export function MatchSetupPage({
   loadAgeGroupPool,
 }: MatchSetupPageProps) {
   const [selectedPresetId, setSelectedPresetId] = useState('')
+  const [rsvpByPlayer, setRsvpByPlayer] = useState<Record<string, 'in' | 'out' | 'maybe'>>({})
+  const [statusBusy, setStatusBusy] = useState(false)
+  const appliedRsvpMatch = useRef<string | null>(null)
   const maxFieldPlayers = getMaxFieldPlayers(activeTeamFormat)
+
+  useEffect(() => {
+    if (!fixtureMatchId) {
+      setRsvpByPlayer({})
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from('match_rsvps')
+      .select('player_id, response')
+      .eq('match_id', fixtureMatchId)
+      .then(({ data }) => {
+        if (cancelled) return
+        const next: Record<string, 'in' | 'out' | 'maybe'> = {}
+        for (const row of data ?? []) {
+          if (row.response === 'in' || row.response === 'out' || row.response === 'maybe') {
+            next[row.player_id] = row.response
+          }
+        }
+        setRsvpByPlayer(next)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fixtureMatchId])
+
+  useEffect(() => {
+    if (!fixtureMatchId) return
+    const key = `${fixtureMatchId}:${Object.keys(rsvpByPlayer).length}`
+    if (appliedRsvpMatch.current === key) return
+    if (Object.keys(rsvpByPlayer).length === 0) return
+    appliedRsvpMatch.current = key
+    for (const [playerId, response] of Object.entries(rsvpByPlayer)) {
+      const coming = response !== 'out'
+      onSetAttending(playerId, coming)
+      if (!coming) onSetStartFirstHalf(playerId, false)
+    }
+  }, [fixtureMatchId, onSetAttending, onSetStartFirstHalf, rsvpByPlayer])
+
+  useEffect(() => {
+    for (const player of masterRoster) {
+      if (!isUnavailableOn(player.safety?.unavailableUntil, matchDate)) continue
+      if (setupLineup.attending[player.id] !== false) onSetAttending(player.id, false)
+      if (setupLineup.startFirstHalf[player.id]) onSetStartFirstHalf(player.id, false)
+    }
+  }, [masterRoster, matchDate, onSetAttending, onSetStartFirstHalf, setupLineup])
 
   const attendingRoster = useMemo(
     () => masterRoster.filter((player) => setupLineup.attending[player.id]),
@@ -316,6 +385,72 @@ export function MatchSetupPage({
 
             <HomeAwayToggle value={locationType} onChange={onLocationTypeChange} />
 
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-widest text-muted-foreground" htmlFor="place-name">
+                Field
+              </label>
+              <input
+                id="place-name"
+                value={placeName}
+                onChange={(event) => onPlaceNameChange(event.target.value)}
+                placeholder="Field 4"
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+              <input
+                value={placeDetails}
+                onChange={(event) => onPlaceDetailsChange(event.target.value)}
+                placeholder="Parking or pin"
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+              <input
+                value={arrivalNote}
+                onChange={(event) => onArrivalNoteChange(event.target.value)}
+                placeholder="Arrive 40 minutes early"
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-base font-semibold text-foreground focus:border-neon focus:outline-none focus:ring-2 focus:ring-neon/30"
+              />
+            </div>
+
+            {fixtureMatchId ? (
+              <div className="flex gap-2">
+                {fixtureStatus === 'postponed' ? (
+                  <button
+                    type="button"
+                    disabled={statusBusy}
+                    onClick={() => {
+                      setStatusBusy(true)
+                      void onFixtureStatus('scheduled').finally(() => setStatusBusy(false))
+                    }}
+                    className="min-h-11 flex-1 rounded-xl border-2 border-border bg-card text-xs font-black uppercase tracking-wide"
+                  >
+                    Restore
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={statusBusy}
+                    onClick={() => {
+                      setStatusBusy(true)
+                      void onFixtureStatus('postponed').finally(() => setStatusBusy(false))
+                    }}
+                    className="min-h-11 flex-1 rounded-xl border-2 border-border bg-card text-xs font-black uppercase tracking-wide"
+                  >
+                    Postpone
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={statusBusy}
+                  onClick={() => {
+                    setStatusBusy(true)
+                    void onFixtureStatus('cancelled').finally(() => setStatusBusy(false))
+                  }}
+                  className="min-h-11 flex-1 rounded-xl border-2 border-danger/50 text-xs font-black uppercase tracking-wide text-danger"
+                >
+                  Cancel match
+                </button>
+              </div>
+            ) : null}
+
             {masterRoster.length > 0 ? (
               <div
                 aria-label="Attendance tracker"
@@ -331,7 +466,9 @@ export function MatchSetupPage({
                 </div>
                 <ul className="space-y-2">
                   {masterRoster.map((player) => {
-                    const isAttending = setupLineup.attending[player.id] !== false
+                    const heldOut = isUnavailableOn(player.safety?.unavailableUntil, matchDate)
+                    const isAttending = !heldOut && setupLineup.attending[player.id] !== false
+                    const rsvp = rsvpByPlayer[player.id]
                     return (
                       <li
                         key={player.id}
@@ -342,12 +479,24 @@ export function MatchSetupPage({
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
                           {formatPlayerFullName(player.firstName, player.lastName)}
+                          {heldOut ? (
+                            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide text-danger">
+                              Out until {player.safety?.unavailableUntil}
+                            </span>
+                          ) : rsvp ? (
+                            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Parent {rsvp}
+                            </span>
+                          ) : null}
                         </span>
                         <div className="flex shrink-0 gap-1">
                           <button
                             type="button"
                             aria-pressed={isAttending}
-                            onClick={() => onSetAttending(player.id, true)}
+                            disabled={heldOut}
+                            onClick={() => {
+                              if (!heldOut) onSetAttending(player.id, true)
+                            }}
                             className={cn(
                               'min-h-10 touch-manipulation rounded-lg border-2 px-3 text-[10px] font-bold uppercase tracking-wide',
                               isAttending

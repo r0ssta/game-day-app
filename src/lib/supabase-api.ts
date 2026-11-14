@@ -15,6 +15,7 @@ import {
 } from '@/lib/positions'
 import { supabase } from '@/supabaseClient'
 import { parseAbsenceReason } from '@/lib/match-availability'
+import type { PlayerSafety } from '@/lib/player-safety'
 import { allocateSecondsByRole, createMatchPlayer } from '@/lib/play-time'
 import { computeMatchPlusMinus } from '@/lib/plus-minus'
 import { getMatchSortTimestamp, matchDateTimeIso, formatMatchDisplayDateTime } from '@/lib/match-schedule'
@@ -268,6 +269,58 @@ export function scoreToImpact(score: number): Impact {
   return 'neutral'
 }
 
+function blankToNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? ''
+  return trimmed.length > 0 ? trimmed : null
+}
+
+export async function fetchPlayerSafetyMap(
+  playerIds: string[],
+): Promise<Map<string, PlayerSafety>> {
+  const unique = [...new Set(playerIds.filter(Boolean))]
+  const map = new Map<string, PlayerSafety>()
+  if (unique.length === 0) return map
+  const { data, error } = await supabase
+    .from('player_safety')
+    .select(
+      'player_id, emergency_contact_name, emergency_contact_phone, allergies, medical_notes, unavailable_until',
+    )
+    .in('player_id', unique)
+  if (error) {
+    if (isMissingRelationError(error)) return map
+    throw error
+  }
+  for (const row of data ?? []) {
+    map.set(row.player_id, {
+      emergencyContactName: row.emergency_contact_name ?? '',
+      emergencyContactPhone: row.emergency_contact_phone ?? '',
+      allergies: row.allergies ?? '',
+      medicalNotes: row.medical_notes ?? '',
+      unavailableUntil: row.unavailable_until,
+    })
+  }
+  return map
+}
+
+export async function upsertPlayerSafety(
+  playerId: string,
+  safety: PlayerSafety,
+): Promise<void> {
+  const { error } = await supabase.from('player_safety').upsert(
+    {
+      player_id: playerId,
+      emergency_contact_name: blankToNull(safety.emergencyContactName),
+      emergency_contact_phone: blankToNull(safety.emergencyContactPhone),
+      allergies: blankToNull(safety.allergies),
+      medical_notes: blankToNull(safety.medicalNotes),
+      unavailable_until: safety.unavailableUntil?.slice(0, 10) || null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'player_id' },
+  )
+  if (error && !isMissingRelationError(error)) throw error
+}
+
 export function dbPlayerToRoster(
   player: DbPlayer,
   options?: {
@@ -292,6 +345,7 @@ export function dbPlayerToRoster(
     ageGroup: player.age_group ?? null,
     isGuest: options?.isGuest ?? false,
     activeStatus: player.active_status,
+    safety: null,
   }
 }
 
@@ -1258,7 +1312,7 @@ export async function fetchScheduledMatchesByTeamId(teamId: string): Promise<DbM
     .from('matches')
     .select('*')
     .eq('team_id', teamId)
-    .eq('status', 'scheduled')
+    .in('status', ['scheduled', 'postponed'])
     .order('date', { ascending: true })
   if (error) throw error
   return parseDbRows(MatchSchema, data, 'scheduledMatches').sort(
@@ -1484,6 +1538,9 @@ export async function updateMatchRecord(
       | 'sub_interval_seconds'
       | 'gk_plays_full_half'
       | 'opponent_strength'
+      | 'place_name'
+      | 'place_details'
+      | 'arrival_note'
     >
   >,
 ) {
@@ -1505,6 +1562,9 @@ export async function updateMatchRecord(
     'coach_name',
     'sub_interval_seconds',
     'gk_plays_full_half',
+    'place_name',
+    'place_details',
+    'arrival_note',
     'period_start_time',
     'accumulated_seconds_before_pause',
     'opponent_strength',

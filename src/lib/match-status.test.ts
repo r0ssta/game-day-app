@@ -13,6 +13,8 @@ describe('match-status', () => {
     expect(isLiveMatchStatus('extra_time_second_half')).toBe(true)
     expect(isLiveMatchStatus('penalty_shootout')).toBe(true)
     expect(isLiveMatchStatus('pending_review')).toBe(false)
+    expect(isLiveMatchStatus('postponed')).toBe(false)
+    expect(isLiveMatchStatus('cancelled')).toBe(false)
     expect(isExtraTimeStatus(MATCH_STATUS.extraTimeFirstHalf)).toBe(true)
   })
 

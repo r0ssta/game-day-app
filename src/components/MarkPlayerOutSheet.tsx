@@ -1,4 +1,6 @@
 import { X } from 'lucide-react'
+import { PlayerSafetyCard } from '@/components/PlayerSafetyCard'
+import type { PlayerSafety } from '@/lib/player-safety'
 import type { AbsenceReason } from '@/types/match'
 
 const REASONS: Array<{ reason: AbsenceReason | null; label: string; detail: string }> = [
@@ -9,10 +11,12 @@ const REASONS: Array<{ reason: AbsenceReason | null; label: string; detail: stri
 
 export function MarkPlayerOutSheet({
   playerName,
+  safety,
   onChoose,
   onClose,
 }: {
   playerName: string
+  safety?: PlayerSafety | null
   onChoose: (reason: AbsenceReason | null) => void
   onClose: () => void
 }) {
@@ -46,6 +50,11 @@ export function MarkPlayerOutSheet({
             <X className="size-5" />
           </button>
         </div>
+        {safety ? (
+          <div className="mb-3">
+            <PlayerSafetyCard safety={safety} />
+          </div>
+        ) : null}
         <div className="space-y-2">
           {REASONS.map((option) => (
             <button

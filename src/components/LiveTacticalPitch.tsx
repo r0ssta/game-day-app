@@ -975,6 +975,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
               },
               sidelineNameMap,
             )}
+            safety={playerById.get(markOutPlayerId)?.safety}
             onChoose={(reason) => {
               onMarkOut(markOutPlayerId, reason)
               setMarkOutPlayerId(null)

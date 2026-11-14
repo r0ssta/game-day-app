@@ -46,6 +46,8 @@ export const PlayerSchema: z.ZodType<DbPlayer> = z
 
 const MatchStatusSchema = z.enum([
   'scheduled',
+  'postponed',
+  'cancelled',
   'live',
   'extra_time_first_half',
   'extra_time_second_half',
@@ -73,6 +75,9 @@ export const MatchSchema: z.ZodType<DbMatch> = z
     current_period: z.number().optional(),
     location: z.string().catch(''),
     location_type: z.string().nullable().optional().catch(null),
+    place_name: z.string().nullable().optional().catch(null),
+    place_details: z.string().nullable().optional().catch(null),
+    arrival_note: z.string().nullable().optional().catch(null),
     tournament_game: z.boolean().catch(false),
     is_test: z.boolean().catch(false),
     goes_to_pks: z.boolean().catch(false),
@@ -139,6 +144,18 @@ const ParentHubMatchSchema = z
     match_time: z.string().nullable().catch(null),
     date: isoTimestamp.catch(''),
     location_type: z.string().nullable().catch(null),
+    place_name: z.string().nullable().optional().catch(null),
+    place_details: z.string().nullable().optional().catch(null),
+    arrival_note: z.string().nullable().optional().catch(null),
+    rsvps: z
+      .array(
+        z.object({
+          playerId: z.string().min(1),
+          response: z.enum(['in', 'out', 'maybe']),
+        }),
+      )
+      .optional()
+      .catch([]),
     home_score: z.number().catch(0),
     away_score: z.number().catch(0),
     home_pk_score: z.number().catch(0),

@@ -219,6 +219,7 @@ export function HalftimePage({
               const player = players.find((entry) => entry.id === markOutPlayerId)
               return player ? formatPlayerFullName(player.firstName, player.lastName) : 'Player'
             })()}
+            safety={players.find((entry) => entry.id === markOutPlayerId)?.safety}
             onChoose={(reason) => {
               onMarkOut(markOutPlayerId, reason)
               setMarkOutPlayerId(null)

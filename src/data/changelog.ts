@@ -11,6 +11,19 @@ export type ChangelogRelease = {
 /** Newest release first. `version` is compared to `last_seen_version`. */
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: '2026.10.21',
+    date: 'October 21, 2026',
+    title: 'Saturday morning, still in the app',
+    features: [
+      'Parents tap In, Out, or Maybe on the hub before you set the lineup',
+      'Postpone or cancel a match and families get a push, plus field, parking, and arrival notes',
+      'Subscribe to the team calendar from the hub',
+      'Coach-only safety card and an unavailable-until date that keeps a player off the lineup',
+      'Directors get a Saturday board: scores, open recaps, and players under the minutes line',
+      'Stat tracker, subbing assistant, and positional recap ratings are on',
+    ],
+  },
+  {
     version: '2026.10.05',
     date: 'October 5, 2026',
     title: 'Confirm an early whistle',
