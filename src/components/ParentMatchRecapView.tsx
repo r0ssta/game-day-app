@@ -19,6 +19,7 @@ import {
   type ParentMatchPlayerStat,
 } from '@/lib/parent-match-stats'
 import { formatPlayerStatPeriodLabel } from '@/lib/match-periods'
+import { GoalScoreboard } from '@/components/GoalScoreboard'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import { LiveGameFeed } from '@/components/ParentTimelineList'
 import { cn } from '@/lib/utils'
@@ -166,6 +167,11 @@ export type ParentMatchRecapViewProps = {
   heading?: string
   /** Hide per-player minutes / pitch time. Parent Hub always passes true. */
   hidePlayingTime?: boolean
+  /**
+   * Scorers sit under this card's score. The coach recap already shows them
+   * under the page header, so that screen turns this off.
+   */
+  showGoalScorers?: boolean
 }
 
 export function ParentMatchRecapView({
@@ -186,6 +192,7 @@ export function ParentMatchRecapView({
   recap = '',
   heading = 'Final',
   hidePlayingTime = false,
+  showGoalScorers = true,
 }: ParentMatchRecapViewProps) {
   const playerStats = useMemo(
     () => buildParentMatchPlayerStats(events, matchId, halfLengthMinutes, players),
@@ -228,7 +235,17 @@ export function ParentMatchRecapView({
           <p className="mt-1 text-sm font-semibold text-muted-foreground">{when}</p>
         ) : null}
         <p className="mt-3 font-mono text-3xl font-black tabular-nums text-foreground">{score}</p>
-        <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        {showGoalScorers ? (
+          <GoalScoreboard
+            events={events}
+            players={players}
+            periodLengthMinutes={halfLengthMinutes}
+            totalPeriods={totalPeriods}
+            teamName={teamName}
+            opponent={opponent}
+          />
+        ) : null}
+        <p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           Overall
         </p>
         <ParentTeamBoxScore model={teamBoxScore} teamName={teamName} opponent={opponent} />
