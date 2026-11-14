@@ -52,6 +52,7 @@ import {
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
 import { formatPlayerShots } from '@/lib/shot-reporting'
 import { MatchDetailsEditor, type MatchDetailsSaved } from '@/components/MatchDetailsEditor'
+import { GoalScoreboard } from '@/components/GoalScoreboard'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import {
   formatOpponentPrefix,
@@ -755,6 +756,14 @@ export function PostGameRecap({
                 {formatVenueLabel(locationType)}
               </span>
             </p>
+            <GoalScoreboard
+              events={hubEvents}
+              players={hubPlayers}
+              periodLengthMinutes={resolvePeriodLengthMinutes(matchRecord, halfLengthMinutes)}
+              totalPeriods={matchRecord?.total_periods}
+              teamName={teamName}
+              opponent={opponent}
+            />
             {coachName.trim() ? (
               <p className="mt-1 text-xs font-semibold text-muted-foreground">
                 Head Coach: {coachName.trim()}
@@ -853,6 +862,7 @@ export function PostGameRecap({
               recap={parentFacingRecap}
               heading="Live game feed"
               hidePlayingTime
+              showGoalScorers={false}
             />
           </div>
         ) : null}
