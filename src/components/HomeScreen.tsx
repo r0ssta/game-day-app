@@ -170,9 +170,6 @@ export function HomeScreen({
                     >
                       <p className="font-display text-lg font-bold uppercase text-foreground">
                         vs {match.opponent || 'Opponent'}
-                        {match.status === 'postponed' ? (
-                          <span className="ml-2 text-xs font-bold tracking-widest text-danger">Postponed</span>
-                        ) : null}
                       </p>
                       <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
                         {when.dateLabel} · {when.timeLabel} · {formatVenueLabel(locationType)}

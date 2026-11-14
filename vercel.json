@@ -20,10 +20,6 @@
       "destination": "/api/hub?slug=:slug"
     },
     {
-      "source": "/api/calendar/:slug",
-      "destination": "/api/calendar?slug=:slug"
-    },
-    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

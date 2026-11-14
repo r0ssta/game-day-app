@@ -2,8 +2,6 @@
  * Match lifecycle statuses.
  *
  * - scheduled: preloaded fixture (no live clock / parent push yet)
- * - postponed: still on the books, kickoff moved or waiting on a field
- * - cancelled: will not be played
  * - live: in-progress regulation
  * - extra_time_first_half / extra_time_second_half: tournament extra time
  * - penalty_shootout: live PK shootout after regulation or extra time
@@ -12,8 +10,6 @@
  */
 export type MatchStatus =
   | 'scheduled'
-  | 'postponed'
-  | 'cancelled'
   | 'live'
   | 'extra_time_first_half'
   | 'extra_time_second_half'
@@ -23,8 +19,6 @@ export type MatchStatus =
 
 export const MATCH_STATUS = {
   scheduled: 'scheduled',
-  postponed: 'postponed',
-  cancelled: 'cancelled',
   live: 'live',
   extraTimeFirstHalf: 'extra_time_first_half',
   extraTimeSecondHalf: 'extra_time_second_half',
@@ -61,15 +55,6 @@ export function extraTimeHalfFromStatus(
 
 export function isScheduledMatchStatus(status: string | null | undefined): boolean {
   return status === MATCH_STATUS.scheduled
-}
-
-/** Fixture parents can still RSVP, and coaches can still edit before kickoff. */
-export function isOpenFixtureStatus(status: string | null | undefined): boolean {
-  return status === MATCH_STATUS.scheduled || status === MATCH_STATUS.postponed
-}
-
-export function isCancelledMatchStatus(status: string | null | undefined): boolean {
-  return status === MATCH_STATUS.cancelled
 }
 
 export function isFinalMatchStatus(status: string | null | undefined): boolean {

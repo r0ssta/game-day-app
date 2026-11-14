@@ -142,19 +142,7 @@ export type DbMatch = {
   /** Elapsed seconds banked before the last pause. */
   accumulated_seconds_before_pause?: number
   period: '1st' | '2nd' | '3rd'
-  status:
-    | 'scheduled'
-    | 'postponed'
-    | 'cancelled'
-    | 'live'
-    | 'extra_time_first_half'
-    | 'extra_time_second_half'
-    | 'penalty_shootout'
-    | 'pending_review'
-    | 'final'
-  place_name?: string | null
-  place_details?: string | null
-  arrival_note?: string | null
+  status: 'scheduled' | 'live' | 'extra_time_first_half' | 'extra_time_second_half' | 'penalty_shootout' | 'pending_review' | 'final'
   period_clock_started: boolean
   /** Staff-only post-game notes — not for parent emails. */
   internal_coach_notes: string | null
@@ -588,54 +576,6 @@ export type Database = {
         }
         Update: Partial<DbTeamFormation>
       }
-      match_rsvps: {
-        Row: {
-          id: string
-          match_id: string
-          player_id: string
-          response: 'in' | 'out' | 'maybe'
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          match_id: string
-          player_id: string
-          response: 'in' | 'out' | 'maybe'
-          updated_at?: string
-        }
-        Update: {
-          response?: 'in' | 'out' | 'maybe'
-          updated_at?: string
-        }
-      }
-      player_safety: {
-        Row: {
-          player_id: string
-          emergency_contact_name: string | null
-          emergency_contact_phone: string | null
-          allergies: string | null
-          medical_notes: string | null
-          unavailable_until: string | null
-          updated_at: string
-        }
-        Insert: {
-          player_id: string
-          emergency_contact_name?: string | null
-          emergency_contact_phone?: string | null
-          allergies?: string | null
-          medical_notes?: string | null
-          unavailable_until?: string | null
-          updated_at?: string
-        }
-        Update: {
-          emergency_contact_name?: string | null
-          emergency_contact_phone?: string | null
-          allergies?: string | null
-          medical_notes?: string | null
-          unavailable_until?: string | null
-          updated_at?: string
-        }
-      }
       tactic_boards: {
         Row: DbTacticBoard
         Insert: Omit<DbTacticBoard, 'id' | 'created_at'> & {
@@ -748,19 +688,6 @@ export type Database = {
       }
       get_parent_recaps: {
         Args: { p_team_id: string; p_include_test?: boolean }
-        Returns: Json
-      }
-      set_parent_match_rsvp: {
-        Args: {
-          p_slug: string
-          p_match_id: string
-          p_player_id: string
-          p_response: string
-        }
-        Returns: Json
-      }
-      get_team_schedule: {
-        Args: { p_slug: string }
         Returns: Json
       }
       get_parent_live_events: {

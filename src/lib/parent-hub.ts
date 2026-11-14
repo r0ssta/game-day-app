@@ -61,8 +61,6 @@ export type ParentHubMatch = {
   opponent: string
   status:
     | 'scheduled'
-    | 'postponed'
-    | 'cancelled'
     | 'live'
     | 'extra_time_first_half'
     | 'extra_time_second_half'
@@ -73,10 +71,6 @@ export type ParentHubMatch = {
   match_time: string | null
   date: string
   location_type: string | null
-  place_name?: string | null
-  place_details?: string | null
-  arrival_note?: string | null
-  rsvps?: Array<{ playerId: string; response: 'in' | 'out' | 'maybe' }>
   home_score: number
   away_score: number
   home_pk_score: number
@@ -339,23 +333,6 @@ function normalizeParentHubPayload(data: unknown): ParentHubPayload {
         : [],
     })),
     staffPreview: Boolean(parsed.staffPreview),
-  }
-}
-
-export async function submitParentRsvp(input: {
-  slug: string
-  matchId: string
-  playerId: string
-  response: 'in' | 'out' | 'maybe'
-}): Promise<void> {
-  const response = await fetch('/api/rsvp', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error || 'Could not save availability')
   }
 }
 
@@ -737,7 +714,6 @@ export type WebPushEventType =
   | 'card'
   | 'full_time'
   | 'substitution'
-  | 'schedule_change'
 
 /** Fire-and-forget coach → parent push via `/api/send-web-push`. Never throws into the live UI. */
 export function notifyWebPush(input: {

@@ -12,23 +12,18 @@ import {
   applySecondHalfLineup,
   applySlotAssignmentPositions,
   finalizeAllOnField,
-  shiftOpenStintAnchors,
   stampAllOnField,
   stampOnFieldAtClock,
 } from '@/lib/play-time'
 import {
   defaultMatchDate,
   defaultMatchTime,
-  formatMatchDisplayDateTime,
   getMatchSortTimestamp,
   matchDateTimeIso,
   normalizeMatchTimeForInput,
 } from '@/lib/match-schedule'
 import type { LocationType } from '@/lib/match-location'
 import { resolveMatchLocationType } from '@/lib/match-location'
-import { buildScheduleChangePush } from '@/lib/match-push-copy'
-import { notifyWebPush } from '@/lib/parent-hub'
-import type { PlayerSafety } from '@/lib/player-safety'
 import {
   emptyPeriodClockAnchor,
   initialHalfClock,
@@ -85,7 +80,6 @@ import {
   saveQualitativeContext,
   fetchActiveSeason,
   fetchAgeGroupPoolPlayers,
-  fetchPlayerSafetyMap,
   fetchPlayersByIds,
   fetchCoaches,
   fetchTeamCoachingStaff,
@@ -107,7 +101,6 @@ import {
   syncMatchStats,
   updateMatchHalfLength,
   updateMatchRecord,
-  upsertMatchStats,
   updateLineupPreset,
   updateTeamFormat as updateTeamFormatApi,
   updateTeamAgeGroup as updateTeamAgeGroupApi,
@@ -115,7 +108,6 @@ import {
   updateTeamProfile as updateTeamProfileApi,
   setTeamActiveStatus,
   upsertPlayer,
-  upsertPlayerSafety,
   setPlayerActiveStatus,
   createSeason,
   updateSeason,
@@ -206,17 +198,6 @@ function scheduledPreloadContext(input: {
       : null,
     preloadSlotLabelOverrides:
       labels && Object.keys(labels).length > 0 ? labels : null,
-  }
-}
-
-async function attachSafety(players: RosterPlayer[]): Promise<RosterPlayer[]> {
-  if (players.length === 0) return players
-  try {
-    const safety = await fetchPlayerSafetyMap(players.map((player) => player.id))
-    return players.map((player) => ({ ...player, safety: safety.get(player.id) ?? null }))
-  } catch (err) {
-    console.warn('[roster] safety card load failed', err)
-    return players
   }
 }
 
@@ -352,9 +333,6 @@ export function useGameDayApp() {
   const [isTournamentKnockout, setIsTournamentKnockout] = useState(false)
   const [matchDate, setMatchDate] = useState(defaultMatchDate)
   const [matchTime, setMatchTime] = useState(defaultMatchTime)
-  const [placeName, setPlaceName] = useState('')
-  const [placeDetails, setPlaceDetails] = useState('')
-  const [arrivalNote, setArrivalNote] = useState('')
   const [setupLineup, setSetupLineup] = useState<SetupLineup>({ attending: {}, startFirstHalf: {} })
   const [matchPositions, setMatchPositions] = useState<MatchPositionsConfig>({})
   const [matchFormations, setMatchFormations] = useState<MatchFormations>({
@@ -541,49 +519,22 @@ export function useGameDayApp() {
       if (planned.nextMinutes === previousMinutes) return planned.nextMinutes
 
       const previousRemaining = liveStateRef.current.seconds
-      const previousPlayers = liveStateRef.current.players
-      const shiftedPlayers = shiftOpenStintAnchors(
-        previousPlayers,
-        planned.nextRemaining - previousRemaining,
-      )
       halfLengthWriteEchoRef.current = { at: Date.now(), minutes: planned.nextMinutes }
       setHalfLengthMinutes(planned.nextMinutes)
       setSeconds(planned.nextRemaining)
-      if (shiftedPlayers !== previousPlayers) {
-        liveStateRef.current.players = shiftedPlayers
-        setPlayers(shiftedPlayers)
-      }
       localWriteGenRef.current += 1
 
       const targetMatchId = matchIdRef.current
       if (!targetMatchId) return planned.nextMinutes
 
-      let clockWritten = false
       try {
         await updateMatchHalfLength(targetMatchId, planned.nextMinutes, planned.nextRemaining)
         persistMatchClock(targetMatchId, planned.nextRemaining)
-        clockWritten = true
-        if (shiftedPlayers !== previousPlayers) {
-          await upsertMatchStats(
-            targetMatchId,
-            shiftedPlayers.filter((player, index) => player !== previousPlayers[index]),
-          )
-        }
         return planned.nextMinutes
       } catch (err) {
         halfLengthWriteEchoRef.current = null
         setHalfLengthMinutes(previousMinutes)
         setSeconds(previousRemaining)
-        if (shiftedPlayers !== previousPlayers) {
-          liveStateRef.current.players = previousPlayers
-          setPlayers(previousPlayers)
-        }
-        if (clockWritten) {
-          void updateMatchHalfLength(targetMatchId, previousMinutes, previousRemaining).catch(
-            (revertErr) => console.warn('[half-length] could not restore previous length', revertErr),
-          )
-          persistMatchClock(targetMatchId, previousRemaining)
-        }
         throw err
       }
     },
@@ -1109,7 +1060,7 @@ export function useGameDayApp() {
         const entries = await fetchSeasonRosterPlayers(resolvedSeasonId, teamId)
         if (gen !== rosterLoadGenRef.current) return
         if (routeTeamIdRef.current && routeTeamIdRef.current !== teamId) return
-        applyRoster(await attachSafety(seasonRosterToPlayers(entries, teamId)))
+        applyRoster(seasonRosterToPlayers(entries, teamId))
       } catch (err) {
         const message =
           err && typeof err === 'object' && 'message' in err
@@ -1185,7 +1136,7 @@ export function useGameDayApp() {
           if (seasonIdForRoster) {
             const entries = await fetchSeasonRosterPlayers(seasonIdForRoster, boot.selectedTeamId)
             if (!cancelled) {
-              applyRoster(await attachSafety(seasonRosterToPlayers(entries, boot.selectedTeamId)))
+              applyRoster(seasonRosterToPlayers(entries, boot.selectedTeamId))
             }
           } else if (!cancelled) {
             applyRoster([])
@@ -1335,7 +1286,7 @@ export function useGameDayApp() {
       const entries = await fetchSeasonRosterPlayers(activeSeason.id, selectedTeamId, {
         includeInactive: true,
       })
-      setTeamRoster(await attachSafety(seasonRosterToPlayers(entries, selectedTeamId)))
+      setTeamRoster(seasonRosterToPlayers(entries, selectedTeamId))
     } finally {
       setRosterLoading(false)
     }
@@ -1437,9 +1388,6 @@ export function useGameDayApp() {
     preserveSetupCoachRef.current = null
     setEditingScheduledMatchId(null)
     setOpeningScheduledEditId(null)
-    setPlaceName('')
-    setPlaceDetails('')
-    setArrivalNote('')
     setSetupSlotAssignments(undefined)
     setSetupSlotLabelOverrides(undefined)
     setSetupPitchKey((key) => key + 1)
@@ -1452,8 +1400,8 @@ export function useGameDayApp() {
         const bundle = await fetchMatchBundleById(matchId)
         if (!bundle) throw new Error('Could not load the scheduled match')
         const { match, team, stats } = bundle
-        if (match.status !== 'scheduled' && match.status !== 'postponed') {
-          throw new Error('That match is no longer open for editing')
+        if (match.status !== 'scheduled') {
+          throw new Error('That match is no longer scheduled')
         }
 
         const seasonIdForRoster = match.season_id ?? activeSeason?.id ?? null
@@ -1462,7 +1410,7 @@ export function useGameDayApp() {
               includeInactive: true,
             })
           : []
-        const roster = await attachSafety(seasonRosterToPlayers(entries, match.team_id))
+        const roster = seasonRosterToPlayers(entries, match.team_id)
         const rosterIds = new Set(roster.map((player) => player.id))
         const missingIds = stats
           .map((row) => row.player_id)
@@ -1550,9 +1498,6 @@ export function useGameDayApp() {
         applyMatchPeriodState(match)
         setMatchDate(match.match_date ?? match.date.slice(0, 10))
         setMatchTime(normalizeMatchTimeForInput(match.match_time))
-        setPlaceName(match.place_name ?? '')
-        setPlaceDetails(match.place_details ?? '')
-        setArrivalNote(match.arrival_note ?? '')
         setGkPlaysFullHalf(match.gk_plays_full_half !== false)
         setSetupSubIntervalMinutes(
           typeof match.sub_interval_seconds === 'number' && match.sub_interval_seconds > 0
@@ -1962,7 +1907,6 @@ export function useGameDayApp() {
         primaryPosition?: string
         secondaryPosition?: string
         ageGroup?: AgeGroup
-        safety?: PlayerSafety
       },
     ) => {
       const existing = masterRoster.find((p) => p.id === id) ?? teamRoster.find((p) => p.id === id)
@@ -1985,13 +1929,11 @@ export function useGameDayApp() {
         primaryPosition: updates.primaryPosition ?? existing.primaryPosition,
         secondaryPosition: updates.secondaryPosition ?? existing.secondaryPosition,
       })
-      if (updates.safety) await upsertPlayerSafety(id, updates.safety)
       const rosterPlayer = dbPlayerToRoster(updated, {
         teamId: selectedTeamId ?? existing.teamId,
         jersey,
         isGuest: existing.isGuest,
       })
-      rosterPlayer.safety = updates.safety ?? existing.safety ?? null
       setMasterRoster((prev) =>
         prev
           .map((p) => (p.id === id ? rosterPlayer : p))
@@ -2062,9 +2004,6 @@ export function useGameDayApp() {
       gkPlaysFullHalf?: boolean
       slotAssignments?: Record<string, string | null> | null
       slotLabelOverrides?: Record<string, string> | null
-      placeName?: string | null
-      placeDetails?: string | null
-      arrivalNote?: string | null
     }) => {
       const existing = await fetchActiveMatch(input.teamId)
       if (existing) {
@@ -2108,9 +2047,6 @@ export function useGameDayApp() {
           matchTime: input.matchTime,
           subIntervalSeconds: input.subIntervalSeconds ?? null,
           gkPlaysFullHalf: input.gkPlaysFullHalf ?? true,
-          placeName: input.placeName,
-          placeDetails: input.placeDetails,
-          arrivalNote: input.arrivalNote,
           status: 'live',
         })
         createdMatchId = match.id
@@ -2245,9 +2181,6 @@ export function useGameDayApp() {
       navigateHome?: boolean
       slotAssignments?: Record<string, string | null> | null
       slotLabelOverrides?: Record<string, string> | null
-      placeName?: string | null
-      placeDetails?: string | null
-      arrivalNote?: string | null
     }) => {
       const goesToPks = Boolean(input.tournamentGame && input.goesToPks)
       const isTournamentKnockout = input.tournamentGame
@@ -2288,9 +2221,6 @@ export function useGameDayApp() {
           coach_name: input.coachName.trim() || null,
           sub_interval_seconds: input.subIntervalSeconds ?? null,
           gk_plays_full_half: input.gkPlaysFullHalf ?? true,
-          place_name: input.placeName?.trim() || null,
-          place_details: input.placeDetails?.trim() || null,
-          arrival_note: input.arrivalNote?.trim() || null,
         })
         await replaceMatchStats(
           input.existingMatchId,
@@ -2332,9 +2262,6 @@ export function useGameDayApp() {
                     coach_name: input.coachName.trim() || row.coach_name,
                     sub_interval_seconds: input.subIntervalSeconds ?? null,
                     gk_plays_full_half: input.gkPlaysFullHalf ?? true,
-                    place_name: input.placeName?.trim() || null,
-                    place_details: input.placeDetails?.trim() || null,
-                    arrival_note: input.arrivalNote?.trim() || null,
                   }
                 : row,
             )
@@ -2367,9 +2294,6 @@ export function useGameDayApp() {
           matchTime: input.matchTime,
           subIntervalSeconds: input.subIntervalSeconds ?? null,
           gkPlaysFullHalf: input.gkPlaysFullHalf ?? true,
-          placeName: input.placeName,
-          placeDetails: input.placeDetails,
-          arrivalNote: input.arrivalNote,
           status: 'scheduled',
         })
         createdMatchId = match.id
@@ -2438,7 +2362,7 @@ export function useGameDayApp() {
             includeInactive: true,
           })
         : []
-      let roster = seasonRosterToPlayers(entries, match.team_id)
+      const roster = seasonRosterToPlayers(entries, match.team_id)
       const rosterIds = new Set(roster.map((p) => p.id))
       const missingIds = stats
         .map((s) => s.player_id)
@@ -2449,7 +2373,6 @@ export function useGameDayApp() {
           roster.push(poolPlayerToGuestRoster(guest, match.team_id))
         }
       }
-      roster = await attachSafety(roster)
 
       const matchPlayers = rebuildMatchPlayers(roster, stats)
       const rawContext =
@@ -2927,50 +2850,10 @@ export function useGameDayApp() {
     })
     setMatchDate(defaultMatchDate())
     setMatchTime(defaultMatchTime())
-    setPlaceName('')
-    setPlaceDetails('')
-    setArrivalNote('')
     setMatchId(null)
     setSessionMatchTeamId(null)
     setMatchStatus(null)
   }, [activeTeamFormat, clearPeriodClock, releaseLocalClock])
-
-  const setFixtureStatus = useCallback(
-    async (targetMatchId: string, status: 'scheduled' | 'postponed' | 'cancelled') => {
-      const known =
-        scheduledMatches.find((match) => match.id === targetMatchId) ??
-        (await fetchMatchById(targetMatchId))
-      await updateMatchRecord(targetMatchId, { status })
-      setScheduledMatches((prev) => {
-        if (status === 'cancelled') return prev.filter((match) => match.id !== targetMatchId)
-        return prev.map((match) => (match.id === targetMatchId ? { ...match, status } : match))
-      })
-      if (known && !known.is_test && status !== 'scheduled') {
-        const team = teams.find((entry) => entry.id === known.team_id)
-        const when = formatMatchDisplayDateTime(known)
-        const copy = buildScheduleChangePush({
-          teamName: team?.name?.trim() || 'Game Day',
-          opponent: known.opponent,
-          status,
-          whenLabel: when.dateLabel,
-        })
-        notifyWebPush({
-          eventType: 'schedule_change',
-          title: copy.title,
-          body: copy.body,
-          teamId: known.team_id,
-          teamSlug: team?.slug,
-          isTest: false,
-        })
-      }
-      if (status === 'cancelled') {
-        editingScheduledMatchIdRef.current = null
-        setEditingScheduledMatchId(null)
-        setAppMode('home')
-      }
-    },
-    [scheduledMatches, teams],
-  )
 
   const returnToHome = useCallback(() => {
     const teamId = routeTeamIdRef.current ?? selectedTeamId
@@ -3009,7 +2892,7 @@ export function useGameDayApp() {
     const entries = seasonId
       ? await fetchSeasonRosterPlayers(seasonId, match.team_id, { includeInactive: true })
       : []
-    let roster = seasonRosterToPlayers(entries, match.team_id)
+    const roster = seasonRosterToPlayers(entries, match.team_id)
     const rosterIds = new Set(roster.map((p) => p.id))
     const missingIds = stats.map((s) => s.player_id).filter((id) => id && !rosterIds.has(id))
     if (missingIds.length > 0) {
@@ -3018,7 +2901,6 @@ export function useGameDayApp() {
         roster.push(poolPlayerToGuestRoster(guest, match.team_id))
       }
     }
-    roster = await attachSafety(roster)
     const matchPlayers = rebuildMatchPlayers(roster, stats).filter((player) =>
       player.attending || player.totalSecondsPlayed > 0,
     )
@@ -3438,13 +3320,6 @@ export function useGameDayApp() {
     setMatchDate,
     matchTime,
     setMatchTime,
-    placeName,
-    setPlaceName,
-    placeDetails,
-    setPlaceDetails,
-    arrivalNote,
-    setArrivalNote,
-    setFixtureStatus,
     setupLineup,
     matchPositions,
     matchFormations,

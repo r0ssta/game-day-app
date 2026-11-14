@@ -26,7 +26,6 @@ import {
   deleteMatchRecord,
   fetchAgeGroupPoolPlayers,
   fetchLineupPresetsByTeamId,
-  fetchPlayerSafetyMap,
   fetchPlayersByIds,
   fetchScheduledMatchesByTeamId,
   fetchSeasonRosterPlayers,
@@ -43,9 +42,7 @@ import {
   updateTeamFormat as updateTeamFormatApi,
   updateTeamProfile as updateTeamProfileApi,
   upsertPlayer,
-  upsertPlayerSafety,
 } from '@/lib/supabase-api'
-import type { PlayerSafety } from '@/lib/player-safety'
 import { COACH_APP_PATH, coachTeamPath, navigateApp } from '@/lib/app-routes'
 import { useParams } from '@/hooks/useCoachParams'
 import {
@@ -57,17 +54,6 @@ import { normalizeTeamFormat, type TeamFormat } from '@/lib/team-format'
 import { buildFormationJson, validatePresetFormation } from '@/lib/lineup-presets'
 import type { DbLineupPreset, DbMatch, DbSeason, DbTeam } from '@/types/database'
 import type { AppMode, RosterPlayer } from '@/types/match'
-
-async function attachSafety(players: RosterPlayer[]): Promise<RosterPlayer[]> {
-  if (players.length === 0) return players
-  try {
-    const safety = await fetchPlayerSafetyMap(players.map((player) => player.id))
-    return players.map((player) => ({ ...player, safety: safety.get(player.id) ?? null }))
-  } catch (err) {
-    console.warn('[roster] safety card load failed', err)
-    return players
-  }
-}
 
 export type UseRosterOptions = {
   appMode: AppMode
@@ -125,8 +111,7 @@ export function useRoster({
         const entries = await fetchSeasonRosterPlayers(resolvedSeasonId, teamId)
         if (gen !== rosterLoadGenRef.current) return
         if (routeTeamIdRef.current && routeTeamIdRef.current !== teamId) return
-        const roster = seasonRosterToPlayers(entries, teamId)
-        applyRoster(await attachSafety(roster))
+        applyRoster(seasonRosterToPlayers(entries, teamId))
       } catch (err) {
         const message =
           err && typeof err === 'object' && 'message' in err
@@ -199,7 +184,7 @@ export function useRoster({
       const entries = await fetchSeasonRosterPlayers(activeSeason.id, selectedTeamId, {
         includeInactive: true,
       })
-      setTeamRoster(await attachSafety(seasonRosterToPlayers(entries, selectedTeamId)))
+      setTeamRoster(seasonRosterToPlayers(entries, selectedTeamId))
     } finally {
       setRosterLoading(false)
     }
@@ -470,7 +455,6 @@ export function useRoster({
         primaryPosition?: string
         secondaryPosition?: string
         ageGroup?: AgeGroup
-        safety?: PlayerSafety
       },
     ) => {
       const existing = masterRoster.find((p) => p.id === id) ?? teamRoster.find((p) => p.id === id)
@@ -489,15 +473,11 @@ export function useRoster({
         primaryPosition: updates.primaryPosition ?? existing.primaryPosition,
         secondaryPosition: updates.secondaryPosition ?? existing.secondaryPosition,
       })
-      if (updates.safety) {
-        await upsertPlayerSafety(id, updates.safety)
-      }
       const rosterPlayer = dbPlayerToRoster(updated, {
         teamId: selectedTeamId ?? existing.teamId,
         jersey: updates.jersey,
         isGuest: existing.isGuest,
       })
-      rosterPlayer.safety = updates.safety ?? existing.safety ?? null
       setMasterRoster((prev) =>
         prev
           .map((p) => (p.id === id ? rosterPlayer : p))
