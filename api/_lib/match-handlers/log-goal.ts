@@ -4,7 +4,7 @@ import { requireMatchAccess } from '../match-access.js'
 import { LogGoalInputSchema, isOwnGoalType, parseGoalType } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
 import { buildGoalPush } from '../push-copy.js'
-import { queueTeamWebPush } from '../send-web-push.js'
+import { goalPushTag, queueTeamWebPush } from '../send-web-push.js'
 import { isDuplicateLiveEvent } from '../live-event-dedupe.js'
 import { type MatchEventInsert, runMatchWrites } from '../match-writes.js'
 
@@ -125,12 +125,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : '/'
 
     if (!access.match.is_test) {
-      queueTeamWebPush(auth.supabase, {
+      await queueTeamWebPush(auth.supabase, {
         teamId: access.match.team_id,
         title: push.title,
         body: push.body,
         url: hubPath,
-        tag: `vvfc-goal-${input.matchId}`,
+        tag: goalPushTag({
+          matchId: input.matchId,
+          ourGoal: input.ourGoal,
+          homeScore: nextHome,
+          awayScore: nextAway,
+          timestamp: input.timestamp,
+        }),
         eventType: 'goal',
       })
     }

@@ -147,7 +147,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           homeScore: input.homeScore,
           awayScore: input.awayScore,
         })
-        queueTeamWebPush(auth.supabase, {
+        await queueTeamWebPush(auth.supabase, {
           teamId: access.match.team_id,
           title: push.title,
           body: push.body,
@@ -278,7 +278,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               totalPeriods: input.totalPeriods,
               starterLabels,
             })
-      queueTeamWebPush(auth.supabase, {
+      await queueTeamWebPush(auth.supabase, {
         teamId: access.match.team_id,
         title: push.title,
         body: push.body,

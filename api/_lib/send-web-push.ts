@@ -43,6 +43,29 @@ type SubscriptionRow = {
   auth: string
 }
 
+/**
+ * Live match alerts. `urgency: high` maps to APNs priority 10 so iOS does not
+ * delay or drop them. No `topic` — APNs collapses notifications that share one.
+ * `timeout` caps a dead endpoint so the match handler can still return.
+ */
+export const LIVE_PUSH_OPTIONS = {
+  TTL: 60 * 60,
+  urgency: 'high' as const,
+  timeout: 5_000,
+}
+
+/** One tag per goal so a later score does not replace the previous alert. */
+export function goalPushTag(input: {
+  matchId: string
+  ourGoal: boolean
+  homeScore: number
+  awayScore: number
+  timestamp: number
+}): string {
+  const side = input.ourGoal ? 'us' : 'them'
+  return `vvfc-goal-${input.matchId}-${side}-${input.homeScore}-${input.awayScore}-${input.timestamp}`
+}
+
 function configureVapid() {
   const { publicKey, privateKey, subject } = requireVapidConfig()
   webpush.setVapidDetails(subject, publicKey, privateKey)
@@ -109,33 +132,35 @@ export async function sendTeamWebPush(
     tag: input.tag ?? 'vvfc-match',
   } satisfies WebPushPayload)
 
-  let sent = 0
-  let failed = 0
-  const goneIds: string[] = []
-
-  for (const row of subscriptions) {
-    try {
-      await webpush.sendNotification(
-        {
-          endpoint: row.endpoint,
-          keys: { p256dh: row.p256dh, auth: row.auth },
-        },
-        payload,
-        { TTL: 60 * 60 },
-      )
-      sent += 1
-    } catch (err) {
-      failed += 1
-      const statusCode =
-        err && typeof err === 'object' && 'statusCode' in err
-          ? Number((err as { statusCode?: number }).statusCode)
-          : 0
-      if (statusCode === 404 || statusCode === 410) {
-        goneIds.push(row.id)
+  const outcomes = await Promise.all(
+    subscriptions.map(async (row) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: row.endpoint,
+            keys: { p256dh: row.p256dh, auth: row.auth },
+          },
+          payload,
+          LIVE_PUSH_OPTIONS,
+        )
+        return { sent: true, goneId: null as string | null }
+      } catch (err) {
+        const statusCode =
+          err && typeof err === 'object' && 'statusCode' in err
+            ? Number((err as { statusCode?: number }).statusCode)
+            : 0
+        console.error('[sendTeamWebPush] send failed', row.endpoint.slice(0, 48), err)
+        return {
+          sent: false,
+          goneId: statusCode === 404 || statusCode === 410 ? row.id : null,
+        }
       }
-      console.error('[sendTeamWebPush] send failed', row.endpoint.slice(0, 48), err)
-    }
-  }
+    }),
+  )
+
+  const sent = outcomes.filter((outcome) => outcome.sent).length
+  const failed = outcomes.length - sent
+  const goneIds = outcomes.flatMap((outcome) => (outcome.goneId ? [outcome.goneId] : []))
 
   if (goneIds.length > 0) {
     const { error: deleteError } = await supabase
@@ -157,9 +182,17 @@ export async function sendTeamWebPush(
   }
 }
 
-/** Fire-and-forget wrapper — never throws to the match write path. */
-export function queueTeamWebPush(supabase: SupabaseClient, input: SendWebPushInput): void {
-  void sendTeamWebPush(supabase, input).catch((err) => {
-    void reportApiError('[queueTeamWebPush]', err, { eventType: input.eventType })
-  })
+/**
+ * Awaited by match handlers so the serverless invocation stays alive until the
+ * push leaves. Never throws — a delivery failure must not fail the match write.
+ */
+export async function queueTeamWebPush(
+  supabase: SupabaseClient,
+  input: SendWebPushInput,
+): Promise<void> {
+  try {
+    await sendTeamWebPush(supabase, input)
+  } catch (err) {
+    await reportApiError('[queueTeamWebPush]', err, { eventType: input.eventType })
+  }
 }

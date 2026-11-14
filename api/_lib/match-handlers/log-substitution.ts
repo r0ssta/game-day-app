@@ -97,21 +97,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         totalPeriods: input.totalPeriods,
       }
 
+      const pushes: Promise<void>[] = []
+
       if (doOut && input.fieldPlayerId && input.fieldPlayerLabel) {
         const push = buildSubstitutionPush({
           playerLabel: input.fieldPlayerLabel,
           direction: 'OFF',
           ...periodOpts,
         })
-        queueTeamWebPush(auth.supabase, {
-          teamId: access.match.team_id,
-          title: push.title,
-          body: push.body,
-          url: hubPath,
-          tag: `vvfc-sub-${input.matchId}-${input.fieldPlayerId}`,
-          eventType: 'substitution',
-          playerId: input.fieldPlayerId,
-        })
+        pushes.push(
+          queueTeamWebPush(auth.supabase, {
+            teamId: access.match.team_id,
+            title: push.title,
+            body: push.body,
+            url: hubPath,
+            tag: `vvfc-sub-${input.matchId}-${input.fieldPlayerId}`,
+            eventType: 'substitution',
+            playerId: input.fieldPlayerId,
+          }),
+        )
       }
 
       if (doIn && input.benchPlayerId && input.benchPlayerLabel) {
@@ -120,16 +124,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           direction: 'ON',
           ...periodOpts,
         })
-        queueTeamWebPush(auth.supabase, {
-          teamId: access.match.team_id,
-          title: push.title,
-          body: push.body,
-          url: hubPath,
-          tag: `vvfc-sub-${input.matchId}-${input.benchPlayerId}`,
-          eventType: 'substitution',
-          playerId: input.benchPlayerId,
-        })
+        pushes.push(
+          queueTeamWebPush(auth.supabase, {
+            teamId: access.match.team_id,
+            title: push.title,
+            body: push.body,
+            url: hubPath,
+            tag: `vvfc-sub-${input.matchId}-${input.benchPlayerId}`,
+            eventType: 'substitution',
+            playerId: input.benchPlayerId,
+          }),
+        )
       }
+
+      await Promise.all(pushes)
     }
 
     return res.status(200).json({ ok: true, kind: input.kind })

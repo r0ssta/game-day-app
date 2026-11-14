@@ -230,7 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const hubPath = input.teamSlug
         ? `/hub/${encodeURIComponent(input.teamSlug)}`
         : '/'
-      queueTeamWebPush(auth.supabase, {
+      await queueTeamWebPush(auth.supabase, {
         teamId: access.match.team_id,
         title: push.title,
         body: push.body,
