@@ -58,17 +58,33 @@ type ClubParentHubScreenProps = {
 
 type TabId = 'scoreboard' | 'teams'
 
+function isFinishedStatus(status: string): boolean {
+  return status === 'final' || status === 'pending_review' || isCompletedResultStatus(status)
+}
+
 function statusBadge(status: string): { label: string; className: string } {
   if (isLiveMatchStatus(status)) {
     return { label: 'Live', className: 'bg-neon/20 text-neon' }
   }
-  if (isCompletedResultStatus(status) || isParentHubFinishedMatch(status)) {
+  if (isFinishedStatus(status)) {
     return { label: 'Final', className: 'bg-secondary text-muted-foreground' }
   }
   if (status === 'postponed') {
     return { label: 'Postponed', className: 'bg-amber-500/20 text-amber-100' }
   }
   return { label: 'Sched', className: 'bg-secondary text-muted-foreground' }
+}
+
+function scheduleFields(match: {
+  matchDate: string | null
+  matchTime: string | null
+  date: string | null
+}) {
+  return {
+    match_date: match.matchDate,
+    match_time: match.matchTime,
+    date: match.date ?? '',
+  }
 }
 
 function ScoreboardRow({
@@ -78,11 +94,7 @@ function ScoreboardRow({
   match: ParentClubScoreboardMatch
   onOpen: () => void
 }) {
-  const when = formatMatchDisplayDateTime({
-    match_date: match.matchDate,
-    match_time: match.matchTime,
-    date: match.date,
-  })
+  const when = formatMatchDisplayDateTime(scheduleFields(match))
   const badge = statusBadge(match.status)
   const score = formatMatchResultScore({
     home_score: match.homeScore,
@@ -122,9 +134,7 @@ function ScoreboardRow({
         <p className="truncate text-sm text-muted-foreground">vs {match.opponent || 'Opponent'}</p>
       </div>
       <span className="shrink-0 font-mono text-lg font-black tabular-nums text-foreground">
-        {isLiveMatchStatus(match.status) || isParentHubFinishedMatch(match.status)
-          ? score
-          : '—'}
+        {isLiveMatchStatus(match.status) || isFinishedStatus(match.status) ? score : '—'}
       </span>
     </button>
   )
@@ -194,7 +204,7 @@ function TeamDetailView({
   onBack: () => void
   onOpenMatch: (match: ParentHubMatch) => void
 }) {
-  const teamLabel = clubTeamDisplayName(detail)
+  const teamLabel = clubTeamDisplayName({ name: detail.teamName, ageGroup: detail.ageGroup })
   const finished = detail.matches.filter((match) => isParentHubFinishedMatch(match.status))
 
   return (
@@ -453,7 +463,7 @@ export function ClubParentHubScreen({
   const openScoreboardMatch = (row: ParentClubScoreboardMatch) => {
     const match = scoreboardMatchToParentHubMatch(row)
     const teamLabel = clubTeamDisplayName({ name: row.teamName, ageGroup: row.ageGroup })
-    if (isLiveMatchStatus(row.status) || isParentHubFinishedMatch(row.status)) {
+    if (isLiveMatchStatus(row.status) || isFinishedStatus(row.status)) {
       setSelectedMatch({ match, teamLabel, players: [] })
       return
     }
@@ -547,7 +557,10 @@ export function ClubParentHubScreen({
                 onOpenMatch={(match) => {
                   setSelectedMatch({
                     match,
-                    teamLabel: clubTeamDisplayName(teamDetail),
+                    teamLabel: clubTeamDisplayName({
+                      name: teamDetail.teamName,
+                      ageGroup: teamDetail.ageGroup,
+                    }),
                     players: teamDetail.players,
                   })
                 }}
@@ -622,16 +635,8 @@ export function ClubParentHubScreen({
                       const bLive = isLiveMatchStatus(b.status) ? 0 : 1
                       if (aLive !== bLive) return aLive - bLive
                       return (
-                        getMatchSortTimestamp({
-                          match_date: a.matchDate,
-                          match_time: a.matchTime,
-                          date: a.date,
-                        }) -
-                        getMatchSortTimestamp({
-                          match_date: b.matchDate,
-                          match_time: b.matchTime,
-                          date: b.date,
-                        })
+                        getMatchSortTimestamp(scheduleFields(a)) -
+                        getMatchSortTimestamp(scheduleFields(b))
                       )
                     })
                     .map((match) => (
