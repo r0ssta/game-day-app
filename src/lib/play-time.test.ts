@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MatchPlayer } from '@/types/match'
+import { remainingAfterHalfLengthChange } from './match-clock'
 import {
   applyKickoffSlotLineup,
   applySecondHalfLineup,
@@ -12,6 +13,7 @@ import {
   getLiveSecondsPlayed,
   getRoleSecondsAsOf,
   getSecondsPlayedAsOf,
+  shiftOpenStintAnchors,
   stampAllOnField,
 } from './play-time'
 
@@ -249,5 +251,35 @@ describe('play-time', () => {
       1800,
     )
     expect(live).toEqual({ fieldSeconds: 0, gkSeconds: 600, totalSeconds: 600 })
+  })
+
+  it('keeps on-field minutes when the half length changes', () => {
+    const beforeRemaining = 20 * 60
+    const afterRemaining = remainingAfterHalfLengthChange(beforeRemaining, 30, 35)
+    const onField = player({
+      id: FIELD,
+      isOnField: true,
+      subbedInAt: 30 * 60,
+      totalSecondsPlayed: 120,
+    })
+    const alreadyOff = player({
+      id: BENCH,
+      isOnField: false,
+      subbedInAt: null,
+      totalSecondsPlayed: 400,
+    })
+    const playedBefore = getLiveSecondsPlayed(onField, beforeRemaining)
+
+    const shifted = shiftOpenStintAnchors(
+      [onField, alreadyOff],
+      afterRemaining - beforeRemaining,
+    )
+    const stillOn = shifted.find((row) => row.id === FIELD)
+
+    expect(playedBefore).toBe(120 + 10 * 60)
+    expect(getLiveSecondsPlayed(stillOn!, afterRemaining)).toBe(playedBefore)
+    expect(stillOn?.subbedInAt).toBe(35 * 60)
+    expect(shifted.find((row) => row.id === BENCH)).toBe(alreadyOff)
+    expect(shiftOpenStintAnchors([onField], 0)).toEqual([onField])
   })
 })
