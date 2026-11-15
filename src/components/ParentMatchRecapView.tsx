@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import {
@@ -19,6 +18,7 @@ import {
   type ParentMatchPlayerStat,
 } from '@/lib/parent-match-stats'
 import { formatPlayerStatPeriodLabel } from '@/lib/match-periods'
+import { MatchScoreboard } from '@/components/MatchScoreboard'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import { LiveGameFeed } from '@/components/ParentTimelineList'
 import { cn } from '@/lib/utils'
@@ -166,6 +166,8 @@ export type ParentMatchRecapViewProps = {
   heading?: string
   /** Hide per-player minutes / pitch time. Parent Hub always passes true. */
   hidePlayingTime?: boolean
+  /** Turn off when a parent page already shows the scoreboard above this view. */
+  showScoreboard?: boolean
 }
 
 export function ParentMatchRecapView({
@@ -186,6 +188,7 @@ export function ParentMatchRecapView({
   recap = '',
   heading = 'Final',
   hidePlayingTime = false,
+  showScoreboard = true,
 }: ParentMatchRecapViewProps) {
   const playerStats = useMemo(
     () => buildParentMatchPlayerStats(events, matchId, halfLengthMinutes, players),
@@ -203,36 +206,44 @@ export function ParentMatchRecapView({
       }),
     [events, halfLengthMinutes, totalPeriods],
   )
-  const score = formatMatchResultScore({
-    home_score: homeScore,
-    away_score: awayScore,
-    home_pk_score: homePkScore,
-    away_pk_score: awayPkScore,
-    pk_winner_is_us: pkWinnerIsUs,
-  })
   const when =
     dateLabel || timeLabel
       ? [dateLabel, timeLabel].filter(Boolean).join(' · ')
       : null
+  const scoreboardMeta = [heading, when].filter(Boolean).join(' · ')
+  const showBoxScore = teamBoxScore.hasStats || Boolean(teamBoxScore.playedLengthLabel)
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-card px-4 py-4">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          {heading}
-        </p>
-        <p className="mt-1 font-display text-2xl font-bold uppercase text-foreground">
-          vs {opponent || 'Opponent'}
-        </p>
-        {when ? (
-          <p className="mt-1 text-sm font-semibold text-muted-foreground">{when}</p>
-        ) : null}
-        <p className="mt-3 font-mono text-3xl font-black tabular-nums text-foreground">{score}</p>
-        <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          Overall
-        </p>
-        <ParentTeamBoxScore model={teamBoxScore} teamName={teamName} opponent={opponent} />
-      </div>
+      {showScoreboard || showBoxScore ? (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          {showScoreboard ? (
+            <MatchScoreboard
+              framed={false}
+              teamName={teamName}
+              opponent={opponent}
+              homeScore={homeScore}
+              awayScore={awayScore}
+              homePkScore={homePkScore}
+              awayPkScore={awayPkScore}
+              pkWinnerIsUs={pkWinnerIsUs}
+              events={events}
+              totalPeriods={totalPeriods}
+              meta={scoreboardMeta}
+            />
+          ) : null}
+          {showBoxScore ? (
+            <div className={cn('px-4 pb-4', showScoreboard ? null : 'pt-4')}>
+              <ParentTeamBoxScore
+                model={teamBoxScore}
+                teamName={teamName}
+                opponent={opponent}
+                leadingDivider={showScoreboard}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <section>
         <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">

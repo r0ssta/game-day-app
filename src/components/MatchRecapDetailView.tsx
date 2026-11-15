@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Mail } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
+import { MatchScoreboard } from '@/components/MatchScoreboard'
 import { PlayingTimeBar, PlayingTimeLegend } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal, playersFromRoster } from '@/components/ParentRecapEmailModal'
 import { loadHistoricalRecapRows, type PlayerRecapReview } from '@/lib/match-recap'
@@ -12,6 +13,7 @@ import {
   parseQualitativeContext,
 } from '@/lib/qualitative-context'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
+import { parentLiveEventsFromMatchEvents } from '@/lib/parent-hub'
 import { fetchMatchEvents, resolveMatchCoachName } from '@/lib/supabase-api'
 import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import {
@@ -21,7 +23,6 @@ import {
 } from '@/lib/match-location'
 import { cn } from '@/lib/utils'
 import { APP_CONTAINER, APP_SHELL, TOUCH_ICON_BUTTON } from '@/lib/layout'
-import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import type { DbMatch, DbMatchEvent } from '@/types/database'
 import type { RosterPlayer } from '@/types/match'
 import type { PlayerRating } from '@/lib/player-rating'
@@ -76,6 +77,10 @@ export function MatchRecapDetailView({
   const qualitativeContext = parseQualitativeContext(matchState.qualitative_context)
   const qualitativeLines = formatQualitativeContextSummary(qualitativeContext)
   const maxPlayingSeconds = maxPlayingTimeSeconds(rows)
+  const scoreboardEvents = useMemo(
+    () => parentLiveEventsFromMatchEvents(events, roster),
+    [events, roster],
+  )
 
   useEffect(() => {
     setMatchState(match)
@@ -141,61 +146,67 @@ export function MatchRecapDetailView({
     <>
     <main className={`${APP_SHELL} pb-10 md:pb-12`}>
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
-        <header className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="Back to match history"
-              className={`${TOUCH_ICON_BUTTON} mt-1 bg-secondary`}
-            >
-              <ArrowLeft className="size-5" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-foreground">
+        <header className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to match history"
+                className={`${TOUCH_ICON_BUTTON} mt-1 bg-secondary`}
+              >
+                <ArrowLeft className="size-5" />
+              </button>
+              <h1 className="min-w-0 pt-1 font-display text-2xl font-bold uppercase tracking-wide text-foreground">
                 Match Recap
               </h1>
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>
-                  {teamName} {formatMatchResultScore(matchState)}{' '}
-                  {formatOpponentPrefix(locationType)} {opponentLabel}
-                </span>
-                <span
-                  className={cn(
-                    'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
-                    locationType === 'home'
-                      ? 'bg-neon/15 text-neon'
-                      : 'bg-secondary text-muted-foreground',
-                  )}
-                >
-                  {formatVenueLabel(locationType)}
-                </span>
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {matchState.home_score > 0 ? (
-                  <button
-                    type="button"
-                    disabled={removingGoal !== null}
-                    onClick={() => void handleRemoveGoal('home')}
-                    className="min-h-9 touch-manipulation rounded-lg border border-neon/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98] disabled:opacity-50"
-                  >
-                    Undo our goal
-                  </button>
-                ) : null}
-                {matchState.away_score > 0 ? (
-                  <button
-                    type="button"
-                    disabled={removingGoal !== null}
-                    onClick={() => void handleRemoveGoal('away')}
-                    className="min-h-9 touch-manipulation rounded-lg border border-border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98] disabled:opacity-50"
-                  >
-                    Undo opponent goal
-                  </button>
-                ) : null}
-              </div>
             </div>
+            {onHome ? <BackToHomeButton onClick={onHome} /> : null}
           </div>
-          {onHome ? <BackToHomeButton onClick={onHome} /> : null}
+          <MatchScoreboard
+            teamName={teamName}
+            opponent={opponentLabel}
+            homeScore={matchState.home_score}
+            awayScore={matchState.away_score}
+            homePkScore={matchState.home_pk_score}
+            awayPkScore={matchState.away_pk_score}
+            pkWinnerIsUs={matchState.pk_winner_is_us}
+            events={scoreboardEvents}
+            totalPeriods={matchState.total_periods}
+            meta={[dateLabel, timeLabel].filter(Boolean).join(' · ')}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
+                locationType === 'home'
+                  ? 'bg-neon/15 text-neon'
+                  : 'bg-secondary text-muted-foreground',
+              )}
+            >
+              {formatVenueLabel(locationType)}
+            </span>
+            {matchState.home_score > 0 ? (
+              <button
+                type="button"
+                disabled={removingGoal !== null}
+                onClick={() => void handleRemoveGoal('home')}
+                className="min-h-9 touch-manipulation rounded-lg border border-neon/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98] disabled:opacity-50"
+              >
+                Undo our goal
+              </button>
+            ) : null}
+            {matchState.away_score > 0 ? (
+              <button
+                type="button"
+                disabled={removingGoal !== null}
+                onClick={() => void handleRemoveGoal('away')}
+                className="min-h-9 touch-manipulation rounded-lg border border-border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98] disabled:opacity-50"
+              >
+                Undo opponent goal
+              </button>
+            ) : null}
+          </div>
         </header>
 
         <button

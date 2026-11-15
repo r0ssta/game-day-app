@@ -67,10 +67,13 @@ export function ParentTeamBoxScore({
   model,
   teamName,
   opponent,
+  leadingDivider = true,
 }: {
   model: ParentTeamBoxScoreModel
   teamName: string
   opponent: string
+  /** Top rule that separates the table from a score header above it. */
+  leadingDivider?: boolean
 }) {
   if (!model.hasStats && !model.playedLengthLabel) return null
 
@@ -80,7 +83,12 @@ export function ParentTeamBoxScore({
   const buckets = [...model.periods, model.total]
 
   return (
-    <div className="mt-4 space-y-3 border-t border-border/70 pt-4">
+    <div
+      className={cn(
+        'space-y-3',
+        leadingDivider && 'mt-4 border-t border-border/70 pt-4',
+      )}
+    >
       <ParentMatchLengthRow
         setupLengthTitle={model.setupLengthTitle}
         setupLengthLabel={model.setupLengthLabel}

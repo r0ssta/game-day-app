@@ -52,6 +52,7 @@ import {
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
 import { formatPlayerShots } from '@/lib/shot-reporting'
 import { MatchDetailsEditor, type MatchDetailsSaved } from '@/components/MatchDetailsEditor'
+import { MatchScoreboard } from '@/components/MatchScoreboard'
 import { ParentTeamBoxScore } from '@/components/ParentTeamBoxScore'
 import {
   formatOpponentPrefix,
@@ -729,21 +730,38 @@ export function PostGameRecap({
       className={`${APP_SHELL} pb-[calc(14rem+env(safe-area-inset-bottom))] md:pb-[calc(15rem+env(safe-area-inset-bottom))]`}
     >
       <div className={`${APP_CONTAINER} space-y-5 pt-6 md:space-y-6 md:pt-8`}>
-        <header className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 text-center">
-            <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
-              Post-Game Recap
-            </h1>
-            {isCompletedMatch ? (
-              <p className="mt-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                {readOnly ? 'Saved report — tap Edit to update' : 'Editing saved report'}
-              </p>
-            ) : null}
-            <p className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
-              <span>
-                {teamName} {scoreLabel} {formatOpponentPrefix(locationType)}{' '}
-                {opponent.trim() || 'Opponent'}
-              </span>
+        <header className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 text-center">
+              <h1 className="font-display text-3xl font-black uppercase tracking-wide text-foreground">
+                Post-Game Recap
+              </h1>
+              {isCompletedMatch ? (
+                <p className="mt-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  {readOnly ? 'Saved report — tap Edit to update' : 'Editing saved report'}
+                </p>
+              ) : null}
+            </div>
+            {onHome ? <BackToHomeButton onClick={() => void handleExit()} /> : null}
+          </div>
+          <MatchScoreboard
+            teamName={teamName}
+            opponent={opponent}
+            homeScore={homeScore}
+            awayScore={awayScore}
+            homePkScore={homePkScore}
+            awayPkScore={awayPkScore}
+            pkWinnerIsUs={pkWinnerIsUs}
+            events={hubEvents}
+            totalPeriods={matchRecord?.total_periods}
+            meta={
+              hubWhen
+                ? [hubWhen.dateLabel, hubWhen.timeLabel].filter(Boolean).join(' · ')
+                : null
+            }
+          />
+          <div className="text-center">
+            <p className="flex flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
               <span
                 className={cn(
                   'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
@@ -788,7 +806,6 @@ export function PostGameRecap({
               </p>
             ) : null}
           </div>
-          {onHome ? <BackToHomeButton onClick={() => void handleExit()} /> : null}
         </header>
 
         <MatchDetailsEditor
@@ -853,6 +870,7 @@ export function PostGameRecap({
               recap={parentFacingRecap}
               heading="Live game feed"
               hidePlayingTime
+              showScoreboard={false}
             />
           </div>
         ) : null}
