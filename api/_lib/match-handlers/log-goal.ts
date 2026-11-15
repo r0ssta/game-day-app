@@ -127,6 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!access.match.is_test) {
       await queueTeamWebPush(auth.supabase, {
         teamId: access.match.team_id,
+        matchId: input.matchId,
         title: push.title,
         body: push.body,
         url: hubPath,

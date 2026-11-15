@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Radio, Users } from 'lucide-react
 import { ClubBrandMark } from '@/components/ClubBrandMark'
 import { InstallPrompt } from '@/components/InstallPrompt'
 import { IosPushReminderBanner } from '@/components/IosPushReminderBanner'
+import { ParentAlertBell } from '@/components/ParentAlertBell'
 import { Spinner } from '@/components/Spinner'
 import { LiveGameFeed } from '@/components/ParentTimelineList'
 import { lazyWithChunkReload } from '@/lib/lazy-import'
@@ -15,6 +16,11 @@ import {
   buildParentTimelineRows,
   fetchParentLiveEvents,
   isParentHubFinishedMatch,
+  listParentWebPushFollows,
+  subscribeParentMatchAlerts,
+  subscribeParentTeamAlerts,
+  unsubscribeParentMatchAlerts,
+  unsubscribeParentTeamAlerts,
   type ParentHubMatch,
   type ParentLiveEvent,
 } from '@/lib/parent-hub'
@@ -90,9 +96,17 @@ function scheduleFields(match: {
 function ScoreboardRow({
   match,
   onOpen,
+  alertActive,
+  coveredByTeam,
+  onToggleAlert,
+  onNeedsInstall,
 }: {
   match: ParentClubScoreboardMatch
   onOpen: () => void
+  alertActive: boolean
+  coveredByTeam: boolean
+  onToggleAlert: () => void | Promise<void>
+  onNeedsInstall: () => void
 }) {
   const when = formatMatchDisplayDateTime(scheduleFields(match))
   const badge = statusBadge(match.status)
@@ -106,37 +120,49 @@ function ScoreboardRow({
   const teamLabel = clubTeamDisplayName({ name: match.teamName, ageGroup: match.ageGroup })
   const venue =
     match.locationType === 'away' ? 'Away' : match.locationType === 'home' ? 'Home' : null
+  const showBell = !isFinishedStatus(match.status) && match.status !== 'cancelled'
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full min-h-14 touch-manipulation items-center gap-3 rounded-xl border border-border bg-card px-3 py-3 text-left active:scale-[0.99]"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-              badge.className,
-            )}
-          >
-            {badge.label}
-          </span>
-          <span className="truncate text-[11px] font-semibold text-muted-foreground">
-            {when.dateLabel} · {when.timeLabel}
-            {venue ? ` · ${venue}` : ''}
-          </span>
+    <div className="flex items-stretch gap-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-h-14 min-w-0 flex-1 touch-manipulation items-center gap-3 rounded-xl border border-border bg-card px-3 py-3 text-left active:scale-[0.99]"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                badge.className,
+              )}
+            >
+              {badge.label}
+            </span>
+            <span className="truncate text-[11px] font-semibold text-muted-foreground">
+              {when.dateLabel} · {when.timeLabel}
+              {venue ? ` · ${venue}` : ''}
+            </span>
+          </div>
+          <p className="mt-1 truncate font-display text-base font-bold uppercase tracking-wide text-foreground">
+            {teamLabel}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">vs {match.opponent || 'Opponent'}</p>
         </div>
-        <p className="mt-1 truncate font-display text-base font-bold uppercase tracking-wide text-foreground">
-          {teamLabel}
-        </p>
-        <p className="truncate text-sm text-muted-foreground">vs {match.opponent || 'Opponent'}</p>
-      </div>
-      <span className="shrink-0 font-mono text-lg font-black tabular-nums text-foreground">
-        {isLiveMatchStatus(match.status) || isFinishedStatus(match.status) ? score : '—'}
-      </span>
-    </button>
+        <span className="shrink-0 font-mono text-lg font-black tabular-nums text-foreground">
+          {isLiveMatchStatus(match.status) || isFinishedStatus(match.status) ? score : '—'}
+        </span>
+      </button>
+      {showBell ? (
+        <ParentAlertBell
+          active={alertActive}
+          coveredByTeam={coveredByTeam}
+          label={`${teamLabel} vs ${match.opponent || 'Opponent'}`}
+          onToggle={onToggleAlert}
+          onNeedsInstall={onNeedsInstall}
+        />
+      ) : null}
+    </div>
   )
 }
 
@@ -199,10 +225,16 @@ function TeamDetailView({
   detail,
   onBack,
   onOpenMatch,
+  teamAlertActive,
+  onToggleTeamAlert,
+  onNeedsInstall,
 }: {
   detail: ParentClubTeamPayload
   onBack: () => void
   onOpenMatch: (match: ParentHubMatch) => void
+  teamAlertActive: boolean
+  onToggleTeamAlert: () => void | Promise<void>
+  onNeedsInstall: () => void
 }) {
   const teamLabel = clubTeamDisplayName({ name: detail.teamName, ageGroup: detail.ageGroup })
   const finished = detail.matches.filter((match) => isParentHubFinishedMatch(match.status))
@@ -218,16 +250,24 @@ function TeamDetailView({
         Teams
       </button>
 
-      <div>
-        <h2 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
-          {teamLabel}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {detail.seasonName ?? 'Season'} · {recordLabel(detail)}
-          {detail.matchesPlayed > 0
-            ? ` · GF ${detail.goalsFor} GA ${detail.goalsAgainst}`
-            : ''}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-3xl font-bold uppercase tracking-wide text-foreground">
+            {teamLabel}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {detail.seasonName ?? 'Season'} · {recordLabel(detail)}
+            {detail.matchesPlayed > 0
+              ? ` · GF ${detail.goalsFor} GA ${detail.goalsAgainst}`
+              : ''}
+          </p>
+        </div>
+        <ParentAlertBell
+          active={teamAlertActive}
+          label={teamLabel}
+          onToggle={onToggleTeamAlert}
+          onNeedsInstall={onNeedsInstall}
+        />
       </div>
 
       {detail.coaches.length > 0 ? (
@@ -333,6 +373,71 @@ export function ClubParentHubScreen({
     teamLabel: string
     players: ParentClubTeamPayload['players']
   } | null>(null)
+  const [followedTeamIds, setFollowedTeamIds] = useState<Set<string>>(() => new Set())
+  const [followedMatchIds, setFollowedMatchIds] = useState<Set<string>>(() => new Set())
+  const [showInstallHint, setShowInstallHint] = useState(false)
+
+  const refreshFollows = useCallback(async () => {
+    try {
+      const follows = await listParentWebPushFollows()
+      setFollowedTeamIds(new Set(follows.teamIds))
+      setFollowedMatchIds(new Set(follows.matchIds))
+    } catch {
+      // Device may not have push yet — leave follows empty.
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshFollows()
+  }, [refreshFollows])
+
+  const handleNeedsInstall = useCallback(() => {
+    setShowInstallHint(true)
+  }, [])
+
+  const toggleTeamAlert = useCallback(
+    async (teamId: string) => {
+      try {
+        if (followedTeamIds.has(teamId)) {
+          await unsubscribeParentTeamAlerts(teamId)
+          setFollowedTeamIds((prev) => {
+            const next = new Set(prev)
+            next.delete(teamId)
+            return next
+          })
+          return
+        }
+        await subscribeParentTeamAlerts({ teamId })
+        setFollowedTeamIds((prev) => new Set(prev).add(teamId))
+        await refreshFollows()
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : 'Could not update team alerts')
+      }
+    },
+    [followedTeamIds, refreshFollows],
+  )
+
+  const toggleMatchAlert = useCallback(
+    async (matchId: string) => {
+      try {
+        if (followedMatchIds.has(matchId)) {
+          await unsubscribeParentMatchAlerts(matchId)
+          setFollowedMatchIds((prev) => {
+            const next = new Set(prev)
+            next.delete(matchId)
+            return next
+          })
+          return
+        }
+        await subscribeParentMatchAlerts(matchId)
+        setFollowedMatchIds((prev) => new Set(prev).add(matchId))
+        await refreshFollows()
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : 'Could not update game alerts')
+      }
+    },
+    [followedMatchIds, refreshFollows],
+  )
 
   const currentWeekend = useMemo(() => weekendWindow(new Date()), [])
 
@@ -516,6 +621,18 @@ export function ClubParentHubScreen({
             ) : null}
           </div>
           <IosPushReminderBanner />
+          {showInstallHint ? (
+            <p className="rounded-xl border border-neon/40 bg-neon/10 px-3 py-2 text-sm font-semibold text-foreground">
+              Add this hub to your Home Screen, then tap the bell again to enable alerts.
+              <button
+                type="button"
+                className="ml-2 text-neon underline"
+                onClick={() => setShowInstallHint(false)}
+              >
+                Dismiss
+              </button>
+            </p>
+          ) : null}
         </div>
       </header>
 
@@ -549,6 +666,9 @@ export function ClubParentHubScreen({
             ) : (
               <TeamDetailView
                 detail={teamDetail}
+                teamAlertActive={followedTeamIds.has(teamDetail.teamId)}
+                onToggleTeamAlert={() => toggleTeamAlert(teamDetail.teamId)}
+                onNeedsInstall={handleNeedsInstall}
                 onBack={() => {
                   setSelectedTeamSlug(null)
                   setTeamDetail(null)
@@ -615,6 +735,10 @@ export function ClubParentHubScreen({
                       key={`live-${match.id}`}
                       match={match}
                       onOpen={() => openScoreboardMatch(match)}
+                      alertActive={followedMatchIds.has(match.id)}
+                      coveredByTeam={followedTeamIds.has(match.teamId)}
+                      onToggleAlert={() => toggleMatchAlert(match.id)}
+                      onNeedsInstall={handleNeedsInstall}
                     />
                   ))}
                 </section>
@@ -644,6 +768,10 @@ export function ClubParentHubScreen({
                         key={match.id}
                         match={match}
                         onOpen={() => openScoreboardMatch(match)}
+                        alertActive={followedMatchIds.has(match.id)}
+                        coveredByTeam={followedTeamIds.has(match.teamId)}
+                        onToggleAlert={() => toggleMatchAlert(match.id)}
+                        onNeedsInstall={handleNeedsInstall}
                       />
                     ))
                 )}
@@ -660,27 +788,34 @@ export function ClubParentHubScreen({
                 </p>
               ) : (
                 hub.teams.map((team) => (
-                  <button
-                    key={team.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedTeamSlug(team.slug)
-                      setTab('teams')
-                    }}
-                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3 text-left active:scale-[0.99]"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-display text-lg font-bold uppercase tracking-wide text-foreground">
-                        {clubTeamDisplayName(team)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {team.matchesPlayed > 0
-                          ? `${recordLabel(team)} · GF ${team.goalsFor} GA ${team.goalsAgainst}`
-                          : 'No games yet'}
-                      </p>
-                    </div>
-                    <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
-                  </button>
+                  <div key={team.id} className="flex items-stretch gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedTeamSlug(team.slug)
+                        setTab('teams')
+                      }}
+                      className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3 text-left active:scale-[0.99]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-display text-lg font-bold uppercase tracking-wide text-foreground">
+                          {clubTeamDisplayName(team)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {team.matchesPlayed > 0
+                            ? `${recordLabel(team)} · GF ${team.goalsFor} GA ${team.goalsAgainst}`
+                            : 'No games yet'}
+                        </p>
+                      </div>
+                      <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+                    </button>
+                    <ParentAlertBell
+                      active={followedTeamIds.has(team.id)}
+                      label={clubTeamDisplayName(team)}
+                      onToggle={() => toggleTeamAlert(team.id)}
+                      onNeedsInstall={handleNeedsInstall}
+                    />
+                  </div>
                 ))
               )}
             </div>

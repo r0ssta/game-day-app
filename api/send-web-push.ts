@@ -7,6 +7,7 @@ import { reportApiError } from './_lib/sentry.js'
 
 type SendBody = {
   teamId?: string
+  matchId?: string | null
   title?: string
   body?: string
   url?: string
@@ -55,6 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const result = await sendTeamWebPush(auth.supabase, {
       teamId,
+      matchId: input.matchId,
       title: input.title,
       body,
       url: input.url,

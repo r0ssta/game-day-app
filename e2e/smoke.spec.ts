@@ -4,7 +4,7 @@ const HUB_SLUG = 'blitz'
 const HUB_PATH = `/hub/${HUB_SLUG}`
 
 test.describe('smoke', () => {
-  test('Parent Hub /hub/blitz renders team UI without uncaught errors', async ({ page }) => {
+  test('Parent Hub /hub/blitz opens club hub focused on Blitz', async ({ page }) => {
     const pageErrors: Error[] = []
     page.on('pageerror', (error) => {
       pageErrors.push(error)
@@ -14,18 +14,18 @@ test.describe('smoke', () => {
     expect(response, 'navigation response').toBeTruthy()
     expect(response!.ok(), `expected OK status, got ${response!.status()}`).toBeTruthy()
 
-    // Core shell: team title + bottom tab bar (Live / Recaps).
+    // Legacy team slug resolves into the club Parent Hub, focused on that team.
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Live$/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Recaps$/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Schedule$/i })).toHaveCount(0)
-
-    // Hub finished loading team data (not stuck on error / perpetual loading).
+    await expect(page.getByRole('heading', { name: /blitz/i })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText('Loading club…')).toHaveCount(0)
     await expect(page.getByText('Loading team…')).toHaveCount(0)
     await expect(page.locator('p.text-danger')).toHaveCount(0)
 
-    const title = (await page.getByRole('heading', { level: 1 }).innerText()).trim()
-    expect(title.toLowerCase()).toContain('blitz')
+    // Back to club tabs: Scoreboard / Teams (replaces Live / Recaps).
+    await page.getByRole('button', { name: /^Teams$/i }).first().click()
+    await expect(page.getByRole('button', { name: /^Scoreboard$/i })).toBeVisible()
+    await expect(page.getByRole('navigation').getByRole('button', { name: /^Teams$/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Schedule$/i })).toHaveCount(0)
 
     expect(pageErrors, `uncaught page errors: ${pageErrors.map((e) => e.message).join('; ')}`).toEqual(
       [],

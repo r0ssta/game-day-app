@@ -108,6 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         pushes.push(
           queueTeamWebPush(auth.supabase, {
             teamId: access.match.team_id,
+            matchId: input.matchId,
             title: push.title,
             body: push.body,
             url: hubPath,
@@ -127,6 +128,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         pushes.push(
           queueTeamWebPush(auth.supabase, {
             teamId: access.match.team_id,
+            matchId: input.matchId,
             title: push.title,
             body: push.body,
             url: hubPath,

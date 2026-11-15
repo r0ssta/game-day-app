@@ -17,6 +17,8 @@ export type WebPushPayload = {
 
 export type SendWebPushInput = {
   teamId: string
+  /** When set, also notify devices that followed this single match. */
+  matchId?: string | null
   title?: string
   body: string
   url?: string
@@ -84,20 +86,19 @@ export async function sendTeamWebPush(
   configureVapid()
 
   const teamId = input.teamId.trim()
+  const matchId = input.matchId?.trim() || null
   const title = input.title?.trim() || 'Virginia Velocity'
   const body = input.body.trim()
   const playerId = input.playerId?.trim() || null
 
-  let query = supabase
-    .from('web_push_subscriptions')
-    .select('id, endpoint, p256dh, auth')
-    .eq('team_id', teamId)
-
-  if (playerId) {
-    query = query.eq('target_player_id', playerId)
-  }
-
-  const { data: rows, error: queryError } = await query
+  const { data: rows, error: queryError } = await supabase.rpc(
+    'get_web_push_recipients_for_alert',
+    {
+      p_team_id: teamId,
+      p_match_id: matchId,
+      p_target_player_id: playerId,
+    },
+  )
   if (queryError) {
     console.error('[sendTeamWebPush] query', queryError)
     throw new Error('Failed to load subscriptions')
