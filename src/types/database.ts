@@ -686,6 +686,26 @@ export type Database = {
         Args: { p_slug: string; p_include_test?: boolean }
         Returns: Json
       }
+      resolve_parent_hub_slug: {
+        Args: { p_slug: string }
+        Returns: Json
+      }
+      get_parent_club_hub: {
+        Args: {
+          p_club_slug: string
+          p_season_id?: string | null
+          p_weekend_start?: string | null
+        }
+        Returns: Json
+      }
+      get_parent_club_team: {
+        Args: {
+          p_club_slug: string
+          p_team_slug: string
+          p_season_id?: string | null
+        }
+        Returns: Json
+      }
       get_parent_recaps: {
         Args: { p_team_id: string; p_include_test?: boolean }
         Returns: Json

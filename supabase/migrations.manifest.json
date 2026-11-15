@@ -80,6 +80,7 @@
     "supabase-team-formations-migration.sql",
     "supabase-parent-hub-club-season-migration.sql",
     "supabase-match-list-indexes-migration.sql",
-    "supabase-parent-hub-realtime-auth-migration.sql"
+    "supabase-parent-hub-realtime-auth-migration.sql",
+    "supabase-parent-club-hub-migration.sql"
   ]
 }

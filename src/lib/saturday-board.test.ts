@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatWeekendLabel,
   matchBelongsOnSaturdayBoard,
   playersUnderMinutesTarget,
+  shiftWeekend,
   weekendWindow,
 } from './saturday-board'
 
@@ -15,6 +17,23 @@ describe('saturday board', () => {
       start: '2026-10-24',
       end: '2026-10-25',
     })
+  })
+
+  it('shifts weekends with weekOffset and shiftWeekend', () => {
+    expect(weekendWindow(new Date(2026, 9, 21, 15, 0, 0), -1)).toEqual({
+      start: '2026-10-17',
+      end: '2026-10-18',
+    })
+    expect(shiftWeekend({ start: '2026-10-24', end: '2026-10-25' }, 1)).toEqual({
+      start: '2026-10-31',
+      end: '2026-11-01',
+    })
+  })
+
+  it('formats a weekend label', () => {
+    expect(formatWeekendLabel({ start: '2026-11-14', end: '2026-11-15' })).toMatch(
+      /Sat.*Nov.*14.*Sun.*Nov.*15/,
+    )
   })
 
   it('keeps a live midweek match on the board', () => {

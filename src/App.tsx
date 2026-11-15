@@ -33,8 +33,8 @@ const ChangelogPage = lazyWithChunkReload(() =>
 const SuperAdminActivityScreen = lazyWithChunkReload(() =>
   import('@/pages/SuperAdminActivityScreen').then((m) => ({ default: m.SuperAdminActivityScreen })),
 )
-const ParentHubScreen = lazyWithChunkReload(() =>
-  import('@/components/ParentHubScreen').then((m) => ({ default: m.ParentHubScreen })),
+const ParentHubGate = lazyWithChunkReload(() =>
+  import('@/components/ParentHubGate').then((m) => ({ default: m.ParentHubGate })),
 )
 const StatTrackerScreen = lazyWithChunkReload(() =>
   import('@/components/StatTrackerScreen').then((m) => ({ default: m.StatTrackerScreen })),
@@ -152,7 +152,7 @@ export default function App() {
           className="min-h-dvh bg-background"
         >
           <ScreenSuspense>
-            <ParentHubScreen route={parentHubRoute} />
+            <ParentHubGate route={parentHubRoute} />
           </ScreenSuspense>
         </ErrorBoundary>
       ) : landingRoute ? (
