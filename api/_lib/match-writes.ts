@@ -136,11 +136,16 @@ export class MatchWriteSession {
         patch: data as Record<string, unknown>,
       })
     }
-    const { error: updateError } = await this.supabase
+    const { data: updated, error: updateError } = await this.supabase
       .from('match_events')
       .update(patch)
       .eq('id', eventId)
+      .select('id')
+      .maybeSingle()
     if (updateError) throw updateError
+    if (!updated) {
+      throw new Error('Event update blocked or not found')
+    }
   }
 
   async deleteEvents(eventIds: string[]): Promise<void> {

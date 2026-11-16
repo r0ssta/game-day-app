@@ -271,6 +271,8 @@ export async function apiUpdateGoal(
     eventId: string
     scorerId: string | null
     assistPlayerId: string | null
+    timestamp: number
+    updatedPairedShot?: boolean
   }>
 > {
   return postMatchAction('/api/match/update-goal', input)

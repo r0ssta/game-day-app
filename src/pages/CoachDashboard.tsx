@@ -3768,6 +3768,7 @@ function CoachDashboardScreen({
           pkWinnerIsUs={pkWinnerIsUs}
           halfLengthMinutes={halfLengthMinutes}
           players={players}
+          teamSlug={activeTeamSlug}
           isCompletedMatch={matchStatus === 'final'}
           openInEditMode={
             matchStatus === 'final' &&
@@ -4037,6 +4038,7 @@ function CoachDashboardScreen({
             players={players}
             teamName={matchTeamName}
             opponent={matchOpponent}
+            teamSlug={activeTeamSlug}
             onRemoved={(result) => {
               applyRemovedGoal(result)
               setModifyGoalsSide(null)

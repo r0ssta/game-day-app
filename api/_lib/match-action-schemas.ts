@@ -510,22 +510,39 @@ export const RemoveGoalInputSchema = z.object({
   matchId: z.string().uuid(),
   eventId: z.string().uuid(),
   reason: RemoveGoalReasonSchema,
+  /** Optional Parent Hub CDN purge tag. */
+  teamSlug: z.string().nullable().optional(),
 })
 
 export type RemoveGoalInput = z.infer<typeof RemoveGoalInputSchema>
 
 /**
- * Correct scorer / assist on an our-goal event.
- * Opponent goals and own goals cannot be retagged this way.
+ * Correct scorer / assist and/or minute on a regulation goal.
+ * Credits apply only to our non-own-goal events; timestamp can be set on any goal.
+ * Omit a field to leave it unchanged (`null` clears scorer/assist).
  */
 export const UpdateGoalInputSchema = z
   .object({
     matchId: z.string().uuid(),
     eventId: z.string().uuid(),
-    scorerId: z.string().uuid().nullable(),
-    assistPlayerId: z.string().uuid().nullable(),
+    scorerId: z.string().uuid().nullable().optional(),
+    assistPlayerId: z.string().uuid().nullable().optional(),
+    /** Elapsed seconds into the period when the goal was scored. */
+    timestamp: z.number().int().nonnegative().optional(),
+    /** Optional Parent Hub CDN purge tag. */
+    teamSlug: z.string().nullable().optional(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.scorerId === undefined &&
+      value.assistPlayerId === undefined &&
+      value.timestamp === undefined
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Provide scorerId, assistPlayerId, and/or timestamp',
+      })
+    }
     if (
       value.scorerId &&
       value.assistPlayerId &&

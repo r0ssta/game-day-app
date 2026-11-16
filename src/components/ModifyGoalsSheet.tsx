@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Pencil, Trash2, X } from 'lucide-react'
+import { ChevronLeft, Clock, Minus, Pencil, Plus, Trash2, X } from 'lucide-react'
 import {
   formatGoalMinuteMark,
   goalEventsForSide,
+  goalMinuteFromTimestamp,
   REMOVE_GOAL_REASON_LABELS,
+  timestampFromGoalMinute,
   type ModifyGoalRow,
   type ModifyGoalSide,
 } from '@/lib/modify-goals'
@@ -11,7 +13,7 @@ import { buildSidelineNameMap, getSidelineName } from '@/lib/player-names'
 import { removeGoalForMatch } from '@/lib/remove-goal'
 import { fetchMatchEvents } from '@/lib/supabase-api'
 import { formatMatchWriteError } from '@/lib/match-api'
-import { updateGoalCreditsForMatch } from '@/lib/update-goal'
+import { updateGoalForMatch } from '@/lib/update-goal'
 import { MODAL_OVERLAY, MODAL_PANEL, TOUCH_ICON_BUTTON } from '@/lib/layout'
 import { cn } from '@/lib/utils'
 import type { RemoveGoalReason } from '@/schemas/match-actions'
@@ -27,7 +29,13 @@ export type ModifyGoalsPlayer = {
   matchPosition?: string
 }
 
-type SheetView = 'list' | 'actions' | 'remove-reason' | 'edit-scorer' | 'edit-assist'
+type SheetView =
+  | 'list'
+  | 'actions'
+  | 'remove-reason'
+  | 'edit-scorer'
+  | 'edit-assist'
+  | 'edit-minute'
 
 type ModifyGoalsSheetProps = {
   open: boolean
@@ -36,6 +44,7 @@ type ModifyGoalsSheetProps = {
   players: ModifyGoalsPlayer[]
   teamName: string
   opponent: string
+  teamSlug?: string | null
   busy?: boolean
   onRemoved: (result: {
     homeScore: number
@@ -72,6 +81,7 @@ export function ModifyGoalsSheet({
   players,
   teamName,
   opponent,
+  teamSlug = null,
   busy = false,
   onRemoved,
   onUpdated,
@@ -84,6 +94,7 @@ export function ModifyGoalsSheet({
   const [events, setEvents] = useState<DbMatchEvent[]>([])
   const [selected, setSelected] = useState<ModifyGoalRow | null>(null)
   const [draftScorerId, setDraftScorerId] = useState<string | null>(null)
+  const [draftMinute, setDraftMinute] = useState(0)
 
   const onToastRef = useRef(onToast)
   const onCloseRef = useRef(onClose)
@@ -102,6 +113,7 @@ export function ModifyGoalsSheet({
     setView('list')
     setSelected(null)
     setDraftScorerId(null)
+    setDraftMinute(0)
     setSaving(false)
     let cancelled = false
     setLoading(true)
@@ -132,7 +144,11 @@ export function ModifyGoalsSheet({
       else if (view === 'actions') {
         setSelected(null)
         setView('list')
-      } else if (view === 'remove-reason' || view === 'edit-scorer') {
+      } else if (
+        view === 'remove-reason' ||
+        view === 'edit-scorer' ||
+        view === 'edit-minute'
+      ) {
         setView('actions')
       } else if (view === 'edit-assist') {
         setView('edit-scorer')
@@ -154,7 +170,9 @@ export function ModifyGoalsSheet({
           ? 'Remove Goal'
           : view === 'edit-scorer'
             ? 'Who scored?'
-            : 'Who assisted?'
+            : view === 'edit-assist'
+              ? 'Who assisted?'
+              : 'Minute scored'
 
   const goBack = () => {
     if (saving || busy) return
@@ -162,7 +180,11 @@ export function ModifyGoalsSheet({
     else if (view === 'actions') {
       setSelected(null)
       setView('list')
-    } else if (view === 'remove-reason' || view === 'edit-scorer') {
+    } else if (
+      view === 'remove-reason' ||
+      view === 'edit-scorer' ||
+      view === 'edit-minute'
+    ) {
       setView('actions')
     } else if (view === 'edit-assist') {
       setView('edit-scorer')
@@ -178,7 +200,7 @@ export function ModifyGoalsSheet({
     if (!selected || saving) return
     setSaving(true)
     try {
-      const result = await removeGoalForMatch(matchId, selected.id, reason)
+      const result = await removeGoalForMatch(matchId, selected.id, reason, teamSlug)
       onRemoved(result)
       onToast(
         reason === 'accident'
@@ -194,17 +216,49 @@ export function ModifyGoalsSheet({
     }
   }
 
-  const finishEdit = async (scorerId: string | null, assistPlayerId: string | null) => {
+  const finishCreditsEdit = async (scorerId: string | null, assistPlayerId: string | null) => {
     if (!selected || saving) return
     setSaving(true)
     try {
-      await updateGoalCreditsForMatch(matchId, selected.id, scorerId, assistPlayerId)
+      await updateGoalForMatch({
+        matchId,
+        eventId: selected.id,
+        scorerId,
+        assistPlayerId,
+        teamSlug,
+      })
       onUpdated()
       onToast('Updated goal credits')
       onClose()
     } catch (err) {
-      console.error('[ModifyGoalsSheet] update', err)
+      console.error('[ModifyGoalsSheet] update credits', err)
       onToast(formatMatchWriteError(err, 'Could not update goal — try again'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const finishMinuteEdit = async () => {
+    if (!selected || saving) return
+    const nextTimestamp = timestampFromGoalMinute(draftMinute)
+    if (nextTimestamp === selected.timestamp) {
+      setView('actions')
+      return
+    }
+    setSaving(true)
+    try {
+      await updateGoalForMatch({
+        matchId,
+        eventId: selected.id,
+        timestamp: nextTimestamp,
+        teamSlug,
+      })
+      onUpdated()
+      onToast(`Updated goal minute to ${draftMinute}'`)
+      onClose()
+    } catch (err) {
+      console.error('[ModifyGoalsSheet] update minute', err)
+      onToast(formatMatchWriteError(err, 'Could not update minute — try again'))
     } finally {
       setSaving(false)
     }
@@ -251,7 +305,7 @@ export function ModifyGoalsSheet({
               </h2>
               {view === 'list' ? (
                 <p className="mt-1 text-sm font-semibold text-muted-foreground">
-                  Remove a goal or fix scorer / assist
+                  Remove a goal, fix scorer / assist, or change the minute
                 </p>
               ) : null}
             </div>
@@ -310,7 +364,11 @@ export function ModifyGoalsSheet({
                           </span>
                           <span className="block truncate text-xs font-semibold text-muted-foreground">
                             {formatGoalMinuteMark(goal.timestamp)}
-                            {assist ? ` · Assist: ${assist}` : goal.canEditCredits ? ' · Unassisted' : ''}
+                            {assist
+                              ? ` · Assist: ${assist}`
+                              : goal.canEditCredits
+                                ? ' · Unassisted'
+                                : ''}
                             {goal.eventNotes && !goal.isOwnGoal && !goal.isPk
                               ? ` · ${goal.eventNotes}`
                               : ''}
@@ -360,6 +418,19 @@ export function ModifyGoalsSheet({
               <button
                 type="button"
                 disabled={locked}
+                onClick={() => {
+                  setDraftMinute(goalMinuteFromTimestamp(selected.timestamp))
+                  setView('edit-minute')
+                }}
+                className="flex min-h-14 touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-border bg-card px-4 font-display text-lg font-black uppercase tracking-wide text-foreground active:scale-[0.98] disabled:opacity-50"
+              >
+                <Clock className="size-5" strokeWidth={2.5} />
+                Change minute
+              </button>
+
+              <button
+                type="button"
+                disabled={locked}
                 onClick={() => setView('remove-reason')}
                 className="flex min-h-14 touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-danger/40 bg-danger/10 px-4 font-display text-lg font-black uppercase tracking-wide text-danger active:scale-[0.98] disabled:opacity-50"
               >
@@ -388,6 +459,62 @@ export function ModifyGoalsSheet({
             </div>
           ) : null}
 
+          {!loading && view === 'edit-minute' ? (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm font-semibold text-muted-foreground">
+                Minute on the period clock when this goal was scored.
+              </p>
+              <div className="flex items-center justify-center gap-4">
+                <button
+                  type="button"
+                  disabled={locked || draftMinute <= 0}
+                  aria-label="Decrease minute"
+                  onClick={() => setDraftMinute((value) => Math.max(0, value - 1))}
+                  className={`${TOUCH_ICON_BUTTON} border-2 border-border bg-card text-foreground disabled:opacity-40`}
+                >
+                  <Minus className="size-6" strokeWidth={3} />
+                </button>
+                <label className="flex flex-col items-center gap-1">
+                  <span className="sr-only">Minute</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={120}
+                    disabled={locked}
+                    value={draftMinute}
+                    onChange={(event) => {
+                      const raw = Number(event.target.value)
+                      if (!Number.isFinite(raw)) return
+                      setDraftMinute(Math.max(0, Math.min(120, Math.floor(raw))))
+                    }}
+                    className="w-24 rounded-xl border-2 border-border bg-card px-3 py-3 text-center font-display text-3xl font-black tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon/40"
+                  />
+                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    minute
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  disabled={locked || draftMinute >= 120}
+                  aria-label="Increase minute"
+                  onClick={() => setDraftMinute((value) => Math.min(120, value + 1))}
+                  className={`${TOUCH_ICON_BUTTON} border-2 border-border bg-card text-foreground disabled:opacity-40`}
+                >
+                  <Plus className="size-6" strokeWidth={3} />
+                </button>
+              </div>
+              <button
+                type="button"
+                disabled={locked}
+                onClick={() => void finishMinuteEdit()}
+                className="flex min-h-14 touch-manipulation items-center justify-center rounded-xl bg-neon px-4 font-display text-lg font-black uppercase tracking-wide text-neon-foreground active:scale-[0.98] disabled:opacity-50"
+              >
+                Save minute
+              </button>
+            </div>
+          ) : null}
+
           {!loading && (view === 'edit-scorer' || view === 'edit-assist') ? (
             <div className="flex flex-col gap-3">
               <button
@@ -395,9 +522,9 @@ export function ModifyGoalsSheet({
                 disabled={locked}
                 onClick={() => {
                   if (view === 'edit-scorer') {
-                    void finishEdit(null, null)
+                    void finishCreditsEdit(null, null)
                   } else {
-                    void finishEdit(draftScorerId, null)
+                    void finishCreditsEdit(draftScorerId, null)
                   }
                 }}
                 className="min-h-11 w-full touch-manipulation rounded-xl border-2 border-dashed border-border bg-transparent py-4 font-display text-lg font-black uppercase tracking-wide text-muted-foreground transition-transform active:scale-[0.98] disabled:opacity-50"
@@ -424,12 +551,12 @@ export function ModifyGoalsSheet({
                             if (view === 'edit-scorer') {
                               setDraftScorerId(player.id)
                               if (selected?.isPk) {
-                                void finishEdit(player.id, null)
+                                void finishCreditsEdit(player.id, null)
                               } else {
                                 setView('edit-assist')
                               }
                             } else {
-                              void finishEdit(draftScorerId, player.id)
+                              void finishCreditsEdit(draftScorerId, player.id)
                             }
                           }}
                           className="flex min-h-11 w-full touch-manipulation items-center gap-4 rounded-xl border-2 border-border bg-card px-4 py-4 text-left transition-transform active:scale-[0.98] active:bg-secondary disabled:opacity-50"

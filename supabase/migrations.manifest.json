@@ -82,6 +82,7 @@
     "supabase-match-list-indexes-migration.sql",
     "supabase-parent-hub-realtime-auth-migration.sql",
     "supabase-parent-club-hub-migration.sql",
-    "supabase-parent-multi-push-migration.sql"
+    "supabase-parent-multi-push-migration.sql",
+    "supabase-match-events-update-staff-migration.sql"
   ]
 }

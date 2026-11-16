@@ -147,6 +147,7 @@ type PostGameRecapProps = {
   pkWinnerIsUs?: boolean | null
   halfLengthMinutes: number
   players: MatchPlayer[]
+  teamSlug?: string | null
   isCompletedMatch?: boolean
   /** When true, open directly in edit mode (saved/final reports). */
   openInEditMode?: boolean
@@ -177,6 +178,7 @@ export function PostGameRecap({
   pkWinnerIsUs = null,
   halfLengthMinutes,
   players,
+  teamSlug = null,
   isCompletedMatch = false,
   openInEditMode = false,
   onFinalize,
@@ -1280,6 +1282,7 @@ export function PostGameRecap({
           players={players}
           teamName={teamName}
           opponent={opponent}
+          teamSlug={teamSlug}
           onRemoved={handleGoalRemoved}
           onUpdated={() => {
             setModifyGoalsSide(null)
