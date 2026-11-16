@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
+import { resolvePeriodLengthMinutes } from '@/lib/match-periods'
 import { fetchParentLiveEvents, type ParentHubMatch, type ParentHubPlayer } from '@/lib/parent-hub'
 import { ParentMatchRecapView } from '@/components/ParentMatchRecapView'
 
@@ -79,7 +80,10 @@ export function ParentFinishedMatchDetail({
           events={rawEvents}
           players={players}
           matchId={match.id}
-          halfLengthMinutes={match.period_length ?? match.half_length}
+          halfLengthMinutes={resolvePeriodLengthMinutes({
+            period_length: match.period_length ?? undefined,
+            half_length: match.half_length,
+          })}
           totalPeriods={match.total_periods}
           opponent={opponent}
           teamName={teamName}

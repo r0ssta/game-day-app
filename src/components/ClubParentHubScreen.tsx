@@ -569,7 +569,28 @@ export function ClubParentHubScreen({
     const match = scoreboardMatchToParentHubMatch(row)
     const teamLabel = clubTeamDisplayName({ name: row.teamName, ageGroup: row.ageGroup })
     if (isLiveMatchStatus(row.status) || isFinishedStatus(row.status)) {
+      // Show the match immediately; hydrate roster so player stats aren't labeled "Player".
       setSelectedMatch({ match, teamLabel, players: [] })
+      void fetchParentClubTeam({
+        clubSlug,
+        teamSlug: row.teamSlug,
+        seasonId: seasonId ?? hub?.seasonId,
+      })
+        .then((detail) => {
+          const fromTeam = detail.matches.find((candidate) => candidate.id === row.id)
+          setSelectedMatch((prev) => {
+            if (!prev || prev.match.id !== row.id) return prev
+            return {
+              match: fromTeam ?? prev.match,
+              teamLabel: clubTeamDisplayName({
+                name: detail.teamName,
+                ageGroup: detail.ageGroup,
+              }),
+              players: detail.players,
+            }
+          })
+        })
+        .catch(() => undefined)
       return
     }
     // Scheduled: jump to team page for context
