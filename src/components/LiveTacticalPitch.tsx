@@ -712,6 +712,7 @@ export const LiveTacticalPitch = forwardRef<LiveTacticalPitchHandle, LiveTactica
         {
           eligiblePlayerIds: onFieldIds,
           mapSlotToPosition: (slot) => resolveSlotLabel(slot, slotLabelOverrides),
+          fromFormation: formation,
         },
       )
 

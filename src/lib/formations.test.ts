@@ -4,7 +4,9 @@ import {
   getDefaultFormationId,
   getFormationById,
   reconcileSlotAssignments,
+  remapFormationSlotAssignments,
   resolveFormationIdForFormat,
+  type Formation,
 } from './formations'
 
 describe('resolveFormationIdForFormat', () => {
@@ -124,5 +126,139 @@ describe('buildAssignmentsFromStarters', () => {
 
     expect(next['mid-c']).toBe('p-rm')
     expect(next['mid-r']).toBe('p-cm')
+  })
+})
+
+function placedLineup(formation: Formation) {
+  const assignments: Record<string, string> = {}
+  const players = formation.slots.map((slot) => {
+    const id = `p-${slot.id}`
+    assignments[slot.id] = id
+    return { id, matchPosition: slot.label, position: slot.label }
+  })
+  return { assignments, players }
+}
+
+/** New slot id → slot id that player came from. */
+function remapFromSlots(fromId: string, toId: string, format: Formation['format']) {
+  const from = getFormationById(fromId, format)
+  const to = getFormationById(toId, format)
+  const { assignments, players } = placedLineup(from)
+  const remap = remapFormationSlotAssignments(assignments, to, players, {
+    fromFormation: from,
+    mapSlotToPosition: (slot) => slot.label,
+  })
+  const fromSlotOfPlayer = new Map(from.slots.map((slot) => [`p-${slot.id}`, slot.id]))
+  const placed: Record<string, string> = {}
+  for (const slot of to.slots) {
+    const playerId = remap.slotAssignments[slot.id]
+    placed[slot.id] = playerId ? (fromSlotOfPlayer.get(playerId) ?? '') : ''
+  }
+  return { placed, remap, from, to }
+}
+
+function sideOf(x: number): 'L' | 'C' | 'R' {
+  if (x <= 40) return 'L'
+  if (x >= 60) return 'R'
+  return 'C'
+}
+
+describe('remapFormationSlotAssignments', () => {
+  it('drops the wingbacks into a back four and keeps everyone on their side', () => {
+    const { placed } = remapFromSlots('3-5-2', '4-4-2', '11v11')
+
+    expect(placed).toEqual({
+      gk: 'gk',
+      'def-lb': 'mid-lwb',
+      'def-lcb': 'def-lcb',
+      'def-rcb': 'def-rcb',
+      'def-rb': 'mid-rwb',
+      'mid-lm': 'mid-lcm',
+      'mid-lcm': 'def-cb',
+      'mid-rcm': 'mid-cdm',
+      'mid-rm': 'mid-rcm',
+      'fwd-ls': 'fwd-ls',
+      'fwd-rs': 'fwd-rs',
+    })
+  })
+
+  it('does not send a player from one wing to the other', () => {
+    const switches: Array<[string, string, Formation['format']]> = [
+      ['3-5-2', '4-4-2', '11v11'],
+      ['4-4-2', '3-5-2', '11v11'],
+      ['4-3-3', '4-4-2', '11v11'],
+      ['4-4-2', '4-3-3', '11v11'],
+      ['4-4-2', '4-5-1', '11v11'],
+      ['4-5-1', '4-3-3', '11v11'],
+      ['2-3-1', '3-2-1', '7v7'],
+      ['3-2-1', '2-3-1', '7v7'],
+      ['3-3-2', '4-3-1', '9v9'],
+      ['4-3-1', '3-3-2', '9v9'],
+      ['3-2-3', '3-3-2', '9v9'],
+    ]
+
+    for (const [fromId, toId, format] of switches) {
+      const { placed, from, to } = remapFromSlots(fromId, toId, format)
+      const fromById = new Map(from.slots.map((slot) => [slot.id, slot]))
+      const toById = new Map(to.slots.map((slot) => [slot.id, slot]))
+
+      expect(Object.values(placed).filter(Boolean)).toHaveLength(to.slots.length)
+
+      for (const [toSlotId, fromSlotId] of Object.entries(placed)) {
+        const before = fromById.get(fromSlotId)
+        const after = toById.get(toSlotId)
+        expect(before, `${fromId} → ${toId}`).toBeTruthy()
+        expect(after, `${fromId} → ${toId}`).toBeTruthy()
+        if (!before || !after) continue
+        if (before.role === 'GK' || after.role === 'GK') {
+          expect(after.role, `${before.label} left goal`).toBe('GK')
+          continue
+        }
+        const beforeSide = sideOf(before.x)
+        const afterSide = sideOf(after.x)
+        expect(
+          beforeSide === 'C' || afterSide === 'C' || beforeSide === afterSide,
+          `${fromId} → ${toId}: ${before.label} (${before.x}) went to ${after.label} (${after.x})`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  it('leaves a shape unchanged when the formation does not change', () => {
+    const { placed, from } = remapFromSlots('4-4-2', '4-4-2', '11v11')
+    for (const slot of from.slots) {
+      expect(placed[slot.id]).toBe(slot.id)
+    }
+  })
+
+  it('names the new spot from where the player moved, including a wingback dropping to fullback', () => {
+    const from = getFormationById('3-5-2', '11v11')
+    const to = getFormationById('4-4-2', '11v11')
+    const { assignments, players } = placedLineup(from)
+    const remap = remapFormationSlotAssignments(assignments, to, players, {
+      fromFormation: from,
+      mapSlotToPosition: (slot) => slot.label,
+    })
+
+    const wingback = remap.positionUpdates.find((update) => update.playerId === 'p-mid-lwb')
+    expect(wingback).toMatchObject({ position: 'LB', previousPosition: 'LWB' })
+    expect(remap.overflowPlayerIds).toEqual([])
+  })
+
+  it('keeps a listed left back on the left when the previous shape is unknown', () => {
+    const next = getFormationById('4-4-2', '11v11')
+    const remap = remapFormationSlotAssignments(
+      { old: 'p-lb', other: 'p-rb', goal: 'p-gk' },
+      next,
+      [
+        { id: 'p-lb', matchPosition: 'LB' },
+        { id: 'p-rb', matchPosition: 'RB' },
+        { id: 'p-gk', matchPosition: 'GK' },
+      ],
+    )
+
+    expect(remap.slotAssignments['def-lb']).toBe('p-lb')
+    expect(remap.slotAssignments['def-rb']).toBe('p-rb')
+    expect(remap.slotAssignments.gk).toBe('p-gk')
   })
 })

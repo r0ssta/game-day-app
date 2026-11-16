@@ -597,6 +597,7 @@ export function TacticalPitchLineup({
       })),
       {
         mapSlotToPosition: (slot) => resolveSlotLabel(slot, labelSource),
+        fromFormation: formation,
       },
     )
 

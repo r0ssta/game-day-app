@@ -523,6 +523,186 @@ export type FormationRemapResult = {
   overflowPlayerIds: string[]
 }
 
+type SlotFamily = 'GK' | 'FB' | 'CB' | 'CM' | 'WM' | 'W' | 'ST'
+
+/**
+ * The job a spot actually is, which is finer than DEF/MID/FWD.
+ * A wingback and a fullback are the same kind of player; a center back is not a left back.
+ */
+function slotFamily(slot: FormationSlot): SlotFamily {
+  const label = slot.label.trim().toUpperCase()
+  if (slot.role === 'GK' || label === 'GK') return 'GK'
+  if (label === 'LB' || label === 'RB' || label === 'LWB' || label === 'RWB') return 'FB'
+  if (label === 'LCB' || label === 'RCB' || label === 'CB' || label === 'SW') return 'CB'
+  if (label === 'CDM' || label === 'CM' || label === 'CAM') return 'CM'
+  if (label === 'LM' || label === 'RM') return 'WM'
+  if (label === 'LW' || label === 'RW') return 'W'
+  if (label === 'ST' || label === 'CF' || label === 'LF' || label === 'RF') return 'ST'
+
+  if (slot.role === 'DEF') return slot.x <= 22 || slot.x >= 78 ? 'FB' : 'CB'
+  if (slot.role === 'FWD') return slot.x <= 32 || slot.x >= 68 ? 'W' : 'ST'
+  return slot.x <= 26 || slot.x >= 74 ? 'WM' : 'CM'
+}
+
+/**
+ * How unnatural it is for that player to take this new job.
+ * Close changes (wingback ↔ fullback, winger ↔ wide mid, spare center back into
+ * the pivot) stay cheap. A center back becoming a striker does not.
+ */
+function familyPenalty(from: SlotFamily, to: SlotFamily): number {
+  if (from === to) return 0
+  if (from === 'GK' || to === 'GK') return 5_000
+
+  const penalty: Partial<Record<SlotFamily, Partial<Record<SlotFamily, number>>>> = {
+    FB: { CB: 14, WM: 26, W: 28 },
+    CB: { FB: 18, CM: 4 },
+    CM: { CB: 12, WM: 6, ST: 22, W: 24 },
+    WM: { FB: 10, CM: 8, W: 6, ST: 14 },
+    W: { WM: 6, ST: 8, CM: 20 },
+    ST: { W: 8, WM: 12, CM: 18 },
+  }
+  return penalty[from]?.[to] ?? 78
+}
+
+/**
+ * Cost of moving someone from the spot they are standing to a slot in the new shape.
+ * Same job and same side are cheap, so a left wingback drops to left back when a
+ * back four appears, and a center back does not end up on the opposite wing.
+ */
+function slotTransitionCost(from: FormationSlot, to: FormationSlot): number {
+  const fromFamily = slotFamily(from)
+  const toFamily = slotFamily(to)
+  if (fromFamily === 'GK' || toFamily === 'GK') {
+    return fromFamily === toFamily ? 0 : 5_000
+  }
+
+  const dx = from.x - to.x
+  const dy = (from.y - to.y) * 1.15
+  const distance = Math.hypot(dx, dy)
+  const crosses = (from.x <= 42 && to.x >= 58) || (from.x >= 58 && to.x <= 42)
+
+  return distance + familyPenalty(fromFamily, toFamily) + (crosses ? 64 : 0)
+}
+
+function roleFromPosition(position: string): FormationRole | null {
+  const pos = normalizePositionToken(position)
+  if (!pos) return null
+  if (playerMatchesFormationRole(pos, 'GK')) return 'GK'
+  if (playerMatchesFormationRole(pos, 'DEF')) return 'DEF'
+  if (playerMatchesFormationRole(pos, 'FWD')) return 'FWD'
+  if (playerMatchesFormationRole(pos, 'MID')) return 'MID'
+  return null
+}
+
+/** Rough spot from a tactical code, used when we don't know where they were standing. */
+function slotFromPosition(position: string): FormationSlot | null {
+  const label = normalizePositionToken(position).replace(/[^A-Z]/g, '')
+  if (!label) return null
+
+  const known: Record<string, { role: FormationRole; x: number; y: number }> = {
+    GK: { role: 'GK', x: 50, y: 86 },
+    LB: { role: 'DEF', x: 16, y: 72 },
+    LCB: { role: 'DEF', x: 34, y: 74 },
+    CB: { role: 'DEF', x: 50, y: 74 },
+    RCB: { role: 'DEF', x: 66, y: 74 },
+    RB: { role: 'DEF', x: 84, y: 72 },
+    LWB: { role: 'MID', x: 14, y: 56 },
+    RWB: { role: 'MID', x: 86, y: 56 },
+    LM: { role: 'MID', x: 18, y: 50 },
+    RM: { role: 'MID', x: 82, y: 50 },
+    CDM: { role: 'MID', x: 50, y: 56 },
+    CM: { role: 'MID', x: 50, y: 50 },
+    CAM: { role: 'MID', x: 50, y: 40 },
+    LW: { role: 'FWD', x: 22, y: 26 },
+    RW: { role: 'FWD', x: 78, y: 26 },
+    LF: { role: 'FWD', x: 38, y: 24 },
+    RF: { role: 'FWD', x: 62, y: 24 },
+    ST: { role: 'FWD', x: 50, y: 22 },
+    CF: { role: 'FWD', x: 50, y: 22 },
+  }
+  const listed = known[label]
+  if (listed) return { id: 'listed', label, ...listed }
+
+  const role = roleFromPosition(label)
+  if (!role) return null
+  let x = 50
+  if (/^(L|LEFT)/.test(label)) x = 28
+  else if (/^(R|RIGHT)/.test(label)) x = 72
+  const y = role === 'GK' ? 86 : role === 'DEF' ? 72 : role === 'FWD' ? 24 : 52
+  return { id: 'listed', role, label, x, y }
+}
+
+function bitCount(mask: number): number {
+  let count = 0
+  let bits = mask
+  while (bits) {
+    count += bits & 1
+    bits >>>= 1
+  }
+  return count
+}
+
+/**
+ * Assign players to unique slots at minimum total cost. Extras stay unmatched
+ * when there are more players than slots — the players who fit worst sit out,
+ * not whoever happens to be last in the list. Formation size is at most 11.
+ */
+function assignMinCost(costs: number[][]): number[] {
+  const playerCount = costs.length
+  const slotOfPlayer = Array<number>(playerCount).fill(-1)
+  if (playerCount === 0) return slotOfPlayer
+
+  const realSlots = costs[0]?.length ?? 0
+  if (realSlots === 0) return slotOfPlayer
+
+  // Dummy seats absorb overflow at no cost, so the search keeps the matching
+  // of real slots that moves everyone else the least.
+  const dummyCount = Math.max(0, playerCount - realSlots)
+  const slotCount = realSlots + dummyCount
+  const limit = 1 << slotCount
+  const bestCost = new Float64Array(limit).fill(Number.POSITIVE_INFINITY)
+  const choice = new Int16Array(limit).fill(-1)
+  bestCost[0] = 0
+
+  const costAt = (player: number, slot: number) => (slot < realSlots ? costs[player][slot] : 0)
+
+  for (let mask = 0; mask < limit; mask++) {
+    const placed = bitCount(mask)
+    if (placed >= playerCount || !Number.isFinite(bestCost[mask])) continue
+    for (let slot = 0; slot < slotCount; slot++) {
+      const bit = 1 << slot
+      if (mask & bit) continue
+      const next = mask | bit
+      const cost = bestCost[mask] + costAt(placed, slot)
+      if (cost < bestCost[next]) {
+        bestCost[next] = cost
+        choice[next] = slot
+      }
+    }
+  }
+
+  const placedCount = Math.min(playerCount, slotCount)
+  let bestMask = 0
+  let winner = Number.POSITIVE_INFINITY
+  for (let mask = 0; mask < limit; mask++) {
+    if (bitCount(mask) !== placedCount) continue
+    if (bestCost[mask] < winner) {
+      winner = bestCost[mask]
+      bestMask = mask
+    }
+  }
+
+  let mask = bestMask
+  for (let index = bitCount(mask) - 1; index >= 0; index--) {
+    const slot = choice[mask]
+    if (slot < 0) break
+    // Dummy seats mean this player does not fit the new shape.
+    slotOfPlayer[index] = slot < realSlots ? slot : -1
+    mask &= ~(1 << slot)
+  }
+  return slotOfPlayer
+}
+
 /** Re-map on-field (or assigned) players onto a new formation shape. */
 export function remapFormationSlotAssignments(
   currentAssignments: Record<string, string | null>,
@@ -532,6 +712,8 @@ export function remapFormationSlotAssignments(
     eligiblePlayerIds?: Set<string>
     mapRoleToPosition?: (role: FormationRole) => string
     mapSlotToPosition?: (slot: FormationSlot) => string
+    /** Shape they are leaving. Spots are matched from these coordinates. */
+    fromFormation?: Formation
   },
 ): FormationRemapResult {
   const mapSlot =
@@ -541,6 +723,7 @@ export function remapFormationSlotAssignments(
     nextFormation.slots.map((slot) => [slot.id, null]),
   )
   const playerById = new Map(players.map((player) => [player.id, player]))
+  const fromSlotById = new Map((options?.fromFormation?.slots ?? []).map((slot) => [slot.id, slot]))
 
   const pool = [
     ...new Set(
@@ -548,44 +731,44 @@ export function remapFormationSlotAssignments(
     ),
   ].filter((playerId) => !options?.eligiblePlayerIds || options.eligiblePlayerIds.has(playerId))
 
-  const used = new Set<string>()
+  const fromSlotByPlayer = new Map<string, FormationSlot>()
+  for (const [slotId, playerId] of Object.entries(currentAssignments)) {
+    if (!playerId || fromSlotByPlayer.has(playerId)) continue
+    const standing = fromSlotById.get(slotId)
+    if (standing) fromSlotByPlayer.set(playerId, standing)
+  }
+
+  const candidates = pool
+    .map((playerId) => {
+      const player = playerById.get(playerId)
+      const listed = (player?.matchPosition ?? player?.position ?? '').trim()
+      const standing = fromSlotByPlayer.get(playerId) ?? slotFromPosition(listed)
+      return { playerId, standing, listed, x: standing?.x ?? 50 }
+    })
+    .sort((a, b) => a.x - b.x || a.playerId.localeCompare(b.playerId))
+
+  const slots = nextFormation.slots
+  const costs = candidates.map((candidate) =>
+    slots.map((slot) => (candidate.standing ? slotTransitionCost(candidate.standing, slot) : 40)),
+  )
+  const slotOfPlayer = assignMinCost(costs)
+
   const positionUpdates: Array<{ playerId: string; position: string; previousPosition?: string }> =
     []
+  const used = new Set<string>()
 
-  const assign = (slot: FormationSlot, playerId: string) => {
-    nextAssignments[slot.id] = playerId
-    used.add(playerId)
-    const player = playerById.get(playerId)
-    const previous = (player?.matchPosition ?? player?.position ?? '').trim()
-    const position = mapSlot(slot)
+  candidates.forEach((candidate, index) => {
+    const slotIndex = slotOfPlayer[index]
+    const slot = slotIndex >= 0 ? slots[slotIndex] : undefined
+    if (!slot || nextAssignments[slot.id]) return
+    nextAssignments[slot.id] = candidate.playerId
+    used.add(candidate.playerId)
     positionUpdates.push({
-      playerId,
-      position,
-      ...(previous ? { previousPosition: previous } : {}),
+      playerId: candidate.playerId,
+      position: mapSlot(slot),
+      ...(candidate.listed ? { previousPosition: candidate.listed } : {}),
     })
-  }
-
-  for (const slot of nextFormation.slots) {
-    let bestId: string | null = null
-    let bestScore = 0
-    for (const playerId of pool) {
-      if (used.has(playerId)) continue
-      const player = playerById.get(playerId)
-      if (!player) continue
-      const score = scorePlayerForSlot(player, slot)
-      if (score > bestScore) {
-        bestScore = score
-        bestId = playerId
-      }
-    }
-    if (bestId && bestScore >= 4) assign(slot, bestId)
-  }
-
-  for (const slot of nextFormation.slots) {
-    if (nextAssignments[slot.id]) continue
-    const fallback = pool.find((playerId) => !used.has(playerId))
-    if (fallback) assign(slot, fallback)
-  }
+  })
 
   const overflowPlayerIds = pool.filter((playerId) => !used.has(playerId))
 
