@@ -427,4 +427,31 @@ describe('buildParentMatchPlayerStats', () => {
     expect(bess.halves[1].started).toBe(true)
     expect(formatParentHalfRole(bess.halves[1])).toBe('Started')
   })
+
+  it('uses live-event names when the roster was not loaded', () => {
+    const rows = buildParentMatchPlayerStats(
+      [
+        event({
+          id: 'lu-ada',
+          eventType: 'sub_in',
+          eventNotes: startingLineupNote('ST'),
+          createdAt: '2026-09-02T18:00:00.000Z',
+        }),
+        event({
+          id: 'end-ada',
+          eventType: 'sub_out',
+          timestamp: 1800,
+          eventNotes: 'period_end',
+          createdAt: '2026-09-02T18:30:00.000Z',
+        }),
+      ],
+      'm1',
+      30,
+      [],
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.name).toBe('Ada')
+    expect(rows[0]?.jersey).toBe(7)
+  })
 })
