@@ -166,6 +166,7 @@ import {
   fetchLiveMatchSnapshot,
   isActiveStaffMatchScreen,
   isStaleKickoffSnapshot,
+  mergeRemoteLivePlayers,
   mergeRemotePlayerOverlays,
   shouldAdoptRemoteClock,
   shouldAdoptRemotePreKickoffLineup,
@@ -740,7 +741,12 @@ export function useGameDayApp() {
           setIfChanged(setHomePkScore, match.home_pk_score ?? 0)
           setIfChanged(setAwayPkScore, match.away_pk_score ?? 0)
           setIfChanged(setPkWinnerIsUs, match.pk_winner_is_us ?? null)
-          const mergedPlayers = mergeRemotePlayerOverlays(latest.players, remotePlayers)
+          const periodLive = latest.periodClockStarted || match.period_clock_started
+          const mergedPlayers = periodLive
+            ? mergeRemoteLivePlayers(latest.players, remotePlayers, {
+                periodStartRemaining: initialHalfClock(match.period_length ?? match.half_length),
+              })
+            : mergeRemotePlayerOverlays(latest.players, remotePlayers)
           if (mergedPlayers !== latest.players) {
             setPlayers(mergedPlayers)
           }
@@ -899,7 +905,12 @@ export function useGameDayApp() {
         if (adoptPreKickoffLineup) {
           let nextPlayers = remotePlayers
           if (result.mode === 'match' && match.period_clock_started) {
-            nextPlayers = stampOnFieldAtClock(remotePlayers, displaySeconds)
+            // Period start, not the current countdown. Stamping "now" showed 0:00
+            // for every on-field player whose open stint was not stored yet.
+            nextPlayers = stampOnFieldAtClock(
+              remotePlayers,
+              initialHalfClock(match.period_length ?? match.half_length),
+            )
           }
           setPlayers(nextPlayers)
         }

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { getLiveSecondsPlayed } from '@/lib/play-time'
 import {
   CLOCK_ADOPT_DRIFT_SECONDS,
   CLOCK_ECHO_MS,
   isMatchClockHeartbeatUpdate,
   isStaleKickoffSnapshot,
+  mergeRemoteLivePlayers,
   mergeRemotePlayerOverlays,
   shouldAdoptRemoteClock,
   shouldAdoptRemotePreKickoffLineup,
@@ -194,6 +196,100 @@ describe('mergeRemotePlayerOverlays', () => {
       isOnField: false,
       absenceReason: 'injured',
     })
+  })
+})
+
+describe('mergeRemoteLivePlayers', () => {
+  const half = 25 * 60
+  const player = (overrides: Partial<MatchPlayer> & { id: string }): MatchPlayer => ({
+    teamId: 't1',
+    number: 7,
+    firstName: 'A',
+    lastName: 'B',
+    position: 'ST',
+    primaryPosition: 'ST',
+    secondaryPosition: 'CM',
+    ageGroup: 'U13',
+    isGuest: false,
+    activeStatus: true,
+    impact: 'neutral',
+    attending: true,
+    isFirstHalfStarter: true,
+    isSecondHalfStarter: false,
+    isOnField: true,
+    matchPosition: 'ST',
+    totalSecondsPlayed: 0,
+    subbedInAt: null,
+    plusMinus: 0,
+    yellowCardCount: 0,
+    isSentOff: false,
+    ...overrides,
+  })
+
+  it('adopts the other coach’s sub and banked minutes', () => {
+    const local = [
+      player({ id: 'p1', isOnField: true, matchPosition: 'ST', subbedInAt: half, totalSecondsPlayed: 0 }),
+      player({ id: 'p2', isOnField: false, matchPosition: 'CM', subbedInAt: null, totalSecondsPlayed: 0 }),
+    ]
+    const remote = [
+      player({
+        id: 'p1',
+        isOnField: false,
+        matchPosition: 'ST',
+        subbedInAt: null,
+        totalSecondsPlayed: 600,
+        fieldSecondsPlayed: 600,
+        gkSecondsPlayed: 0,
+      }),
+      player({
+        id: 'p2',
+        isOnField: true,
+        matchPosition: 'ST',
+        subbedInAt: half - 600,
+        totalSecondsPlayed: 0,
+      }),
+    ]
+
+    const merged = mergeRemoteLivePlayers(local, remote, { periodStartRemaining: half })
+    expect(merged[0]).toMatchObject({ isOnField: false, totalSecondsPlayed: 600, subbedInAt: null })
+    expect(merged[1]).toMatchObject({ isOnField: true, matchPosition: 'ST', subbedInAt: half - 600 })
+    expect(getLiveSecondsPlayed(merged[1]!, half - 700)).toBe(100)
+  })
+
+  it('counts an unstamped on-field player from the period start instead of 0:00', () => {
+    const local = [
+      player({ id: 'p1', isOnField: true, subbedInAt: null, totalSecondsPlayed: 0 }),
+    ]
+    const remote = [
+      player({ id: 'p1', isOnField: true, subbedInAt: null, totalSecondsPlayed: 0 }),
+    ]
+    const merged = mergeRemoteLivePlayers(local, remote, { periodStartRemaining: half })
+    const remaining = half - 8 * 60
+    expect(merged[0]?.subbedInAt).toBe(half)
+    expect(getLiveSecondsPlayed(merged[0]!, remaining)).toBe(8 * 60)
+  })
+
+  it('keeps a local open stint when the snapshot has not stored the anchor yet', () => {
+    const local = [
+      player({ id: 'p1', isOnField: true, subbedInAt: 900, totalSecondsPlayed: 400 }),
+    ]
+    const remote = [
+      player({ id: 'p1', isOnField: true, subbedInAt: null, totalSecondsPlayed: 400 }),
+    ]
+    const merged = mergeRemoteLivePlayers(local, remote, { periodStartRemaining: half })
+    expect(merged).toBe(local)
+    expect(getLiveSecondsPlayed(merged[0]!, 800)).toBe(500)
+  })
+
+  it('adds a player who only exists on the other coach’s snapshot', () => {
+    const local = [player({ id: 'p1', isOnField: true, subbedInAt: half })]
+    const remote = [
+      player({ id: 'p1', isOnField: true, subbedInAt: half }),
+      player({ id: 'guest', isOnField: false, isGuest: true, totalSecondsPlayed: 120 }),
+    ]
+    const merged = mergeRemoteLivePlayers(local, remote, { periodStartRemaining: half })
+    expect(merged.map((row) => row.id)).toEqual(['p1', 'guest'])
+    expect(merged[1]?.totalSecondsPlayed).toBe(120)
   })
 })
 

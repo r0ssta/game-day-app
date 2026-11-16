@@ -3,18 +3,21 @@ import { isMatchClockHeartbeatUpdate } from '@/lib/live-match-snapshot'
 import { supabase } from '@/supabaseClient'
 
 const POLL_MS = 5_000
+/** Realtime is the fast path. This still reconciles a missed event. */
+const HEALTHY_POLL_MS = 15_000
 const DEBOUNCE_MS = 250
 
 type MatchChangeRow = Record<string, unknown>
 
 /**
  * Keep a staff live-match screen in sync with another coach on the same match.
- * Realtime is the fast path; polling covers missed events.
+ * Realtime is the fast path. A slower poll keeps running after subscribe so a
+ * missed change still lands.
  *
  * `matches` UPDATEs that only move `clock_seconds` are ignored so the local
- * countdown does not rewind. Score / event / stats changes hydrate a
- * non-destructive scores slice — callers must not close modals or replace
- * the pitch lineup from that path.
+ * countdown does not rewind. Other changes hydrate the shared match: scores,
+ * and — once the period clock is running — lineup and playing time. Callers
+ * must not restart the clock from that path.
  */
 export function useLiveMatchSync(input: {
   matchId: string | null
@@ -52,17 +55,20 @@ export function useLiveMatchSync(input: {
 
     hydrate()
     let pollId = 0
+    let pollEvery = 0
     const stopPoll = () => {
       if (!pollId) return
       window.clearInterval(pollId)
       pollId = 0
+      pollEvery = 0
     }
-    const startPoll = () => {
-      if (pollId) return
-      pollId = window.setInterval(hydrate, POLL_MS)
+    const startPoll = (every: number) => {
+      if (pollId && pollEvery === every) return
+      stopPoll()
+      pollEvery = every
+      pollId = window.setInterval(hydrate, every)
     }
-    // Realtime is the fast path. Poll only while the channel is down.
-    startPoll()
+    startPoll(POLL_MS)
 
     const channel = supabase
       .channel(`staff-live-${matchId}`)
@@ -97,9 +103,9 @@ export function useLiveMatchSync(input: {
         schedule,
       )
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') stopPoll()
+        if (status === 'SUBSCRIBED') startPoll(HEALTHY_POLL_MS)
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          startPoll()
+          startPoll(POLL_MS)
         }
       })
 

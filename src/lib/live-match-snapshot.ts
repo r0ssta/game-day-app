@@ -1,4 +1,5 @@
 import { applyCardsFromEvents } from '@/lib/match-cards'
+import { allocateSecondsByRole } from '@/lib/play-time'
 import { resolveLiveMatchClock } from '@/lib/match-clock'
 import { resolveCurrentPeriod, resolveTotalPeriods } from '@/lib/match-periods'
 import { aggregateTeamShotSaveTotals, type TeamShotSaveTotals } from '@/lib/match-shot-save'
@@ -85,6 +86,130 @@ export function mergeRemotePlayerOverlays(
     }
   })
   return changed ? next : local
+}
+
+/**
+ * Once the period clock is running, the server lineup and banked minutes are
+ * the shared match. A second coach adopts subs and open-stint anchors from
+ * that snapshot. A missing anchor means "on since this period started" —
+ * stamping it at the current countdown made those players read 0:00.
+ * A local anchor is kept when the snapshot still has null, so a stale read
+ * cannot wipe a stint this device just started.
+ */
+export function mergeRemoteLivePlayers(
+  local: MatchPlayer[],
+  remote: MatchPlayer[],
+  options?: { periodStartRemaining?: number },
+): MatchPlayer[] {
+  if (remote.length === 0) return local
+  const remoteById = new Map(remote.map((player) => [player.id, player]))
+  const seen = new Set<string>()
+  let changed = false
+
+  const next = local.map((player) => {
+    const remotePlayer = remoteById.get(player.id)
+    if (!remotePlayer) return player
+    seen.add(player.id)
+    const merged = applyRemoteLivePlayer(player, remotePlayer, options?.periodStartRemaining)
+    if (merged !== player) changed = true
+    return merged
+  })
+
+  for (const remotePlayer of remote) {
+    if (seen.has(remotePlayer.id)) continue
+    changed = true
+    next.push(anchorOpenStint(remotePlayer, options?.periodStartRemaining))
+  }
+
+  return changed ? next : local
+}
+
+function applyRemoteLivePlayer(
+  local: MatchPlayer,
+  remote: MatchPlayer,
+  periodStartRemaining?: number,
+): MatchPlayer {
+  const keepLocalAnchor =
+    local.isOnField &&
+    remote.isOnField &&
+    remote.subbedInAt == null &&
+    local.subbedInAt != null
+  const banked = bankedSecondsFromRemote(local, remote)
+  const subbedInAt = keepLocalAnchor ? local.subbedInAt : remote.subbedInAt
+  const draft: MatchPlayer = {
+    ...local,
+    isOnField: remote.isOnField,
+    matchPosition: remote.matchPosition,
+    subbedInAt,
+    totalSecondsPlayed: banked.totalSecondsPlayed,
+    fieldSecondsPlayed: banked.fieldSecondsPlayed,
+    gkSecondsPlayed: banked.gkSecondsPlayed,
+    isFirstHalfStarter: remote.isFirstHalfStarter,
+    isSecondHalfStarter: remote.isSecondHalfStarter,
+    attending: remote.attending,
+    absenceReason: remote.absenceReason ?? null,
+    yellowCardCount: remote.yellowCardCount,
+    isSentOff: remote.isSentOff,
+    plusMinus: remote.plusMinus,
+  }
+  const anchored = anchorOpenStint(draft, keepLocalAnchor ? undefined : periodStartRemaining)
+  return livePlayStateEqual(local, anchored) ? local : anchored
+}
+
+function anchorOpenStint(player: MatchPlayer, periodStartRemaining?: number): MatchPlayer {
+  if (!player.isOnField || player.subbedInAt != null || periodStartRemaining == null) return player
+  return { ...player, subbedInAt: periodStartRemaining }
+}
+
+function bankedSecondsFromRemote(
+  local: MatchPlayer,
+  remote: MatchPlayer,
+): Pick<MatchPlayer, 'totalSecondsPlayed' | 'fieldSecondsPlayed' | 'gkSecondsPlayed'> {
+  if (local.totalSecondsPlayed === remote.totalSecondsPlayed) {
+    return {
+      totalSecondsPlayed: local.totalSecondsPlayed,
+      fieldSecondsPlayed: local.fieldSecondsPlayed,
+      gkSecondsPlayed: local.gkSecondsPlayed,
+    }
+  }
+
+  const localField = Math.max(0, local.fieldSecondsPlayed ?? 0)
+  const localGk = Math.max(0, local.gkSecondsPlayed ?? 0)
+  const delta = remote.totalSecondsPlayed - local.totalSecondsPlayed
+  const splitTracked = local.fieldSecondsPlayed != null || local.gkSecondsPlayed != null
+  if (splitTracked && localField + localGk === local.totalSecondsPlayed && delta > 0) {
+    const role = allocateSecondsByRole(delta, remote.matchPosition)
+    return {
+      totalSecondsPlayed: remote.totalSecondsPlayed,
+      fieldSecondsPlayed: localField + role.fieldSecondsPlayed,
+      gkSecondsPlayed: localGk + role.gkSecondsPlayed,
+    }
+  }
+
+  const role = allocateSecondsByRole(remote.totalSecondsPlayed, remote.matchPosition)
+  return {
+    totalSecondsPlayed: remote.totalSecondsPlayed,
+    fieldSecondsPlayed: role.fieldSecondsPlayed,
+    gkSecondsPlayed: role.gkSecondsPlayed,
+  }
+}
+
+function livePlayStateEqual(left: MatchPlayer, right: MatchPlayer): boolean {
+  return (
+    left.isOnField === right.isOnField &&
+    left.matchPosition === right.matchPosition &&
+    left.subbedInAt === right.subbedInAt &&
+    left.totalSecondsPlayed === right.totalSecondsPlayed &&
+    (left.fieldSecondsPlayed ?? null) === (right.fieldSecondsPlayed ?? null) &&
+    (left.gkSecondsPlayed ?? null) === (right.gkSecondsPlayed ?? null) &&
+    left.isFirstHalfStarter === right.isFirstHalfStarter &&
+    left.isSecondHalfStarter === right.isSecondHalfStarter &&
+    left.attending === right.attending &&
+    (left.absenceReason ?? null) === (right.absenceReason ?? null) &&
+    left.yellowCardCount === right.yellowCardCount &&
+    left.isSentOff === right.isSentOff &&
+    left.plusMinus === right.plusMinus
+  )
 }
 
 export type StaffLiveAppMode = Extract<AppMode, 'home' | 'match' | 'halftime' | 'penalty_shootout'>
