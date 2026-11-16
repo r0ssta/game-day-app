@@ -36,15 +36,46 @@ function isoDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-/** Saturday and Sunday of this weekend, or the next one if today is Monday–Friday. */
-export function weekendWindow(today: Date): SaturdayWindow {
+/**
+ * Saturday and Sunday of a weekend.
+ * `weekOffset` shifts by whole weekends (−1 previous, +1 next).
+ * Base rule: this Sat–Sun, or the upcoming weekend when today is Monday–Friday.
+ */
+export function weekendWindow(today: Date, weekOffset = 0): SaturdayWindow {
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0)
   const day = start.getDay()
   if (day === 0) start.setDate(start.getDate() - 1)
   else if (day !== 6) start.setDate(start.getDate() + (6 - day))
+  if (weekOffset !== 0) start.setDate(start.getDate() + weekOffset * 7)
   const end = new Date(start)
   end.setDate(start.getDate() + 1)
   return { start: isoDate(start), end: isoDate(end) }
+}
+
+/** Shift an existing Sat–Sun window by whole weekends. */
+export function shiftWeekend(window: SaturdayWindow, weekOffset: number): SaturdayWindow {
+  const start = new Date(`${window.start}T12:00:00`)
+  start.setDate(start.getDate() + weekOffset * 7)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 1)
+  return { start: isoDate(start), end: isoDate(end) }
+}
+
+/** Parent-facing label, e.g. "Sat Nov 15 – Sun Nov 16". */
+export function formatWeekendLabel(window: SaturdayWindow, timeZone = 'America/New_York'): string {
+  const start = new Date(`${window.start}T12:00:00`)
+  const end = new Date(`${window.end}T12:00:00`)
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+  return `${fmt.format(start)} – ${fmt.format(end)}`
+}
+
+export function isSameWeekend(a: SaturdayWindow, b: SaturdayWindow): boolean {
+  return a.start === b.start && a.end === b.end
 }
 
 export function matchBelongsOnSaturdayBoard(

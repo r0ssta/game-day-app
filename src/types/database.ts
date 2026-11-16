@@ -365,7 +365,8 @@ export type DbWebPushSubscription = {
   endpoint: string
   p256dh: string
   auth: string
-  team_id: string
+  /** Legacy single-team column; junctions are source of truth for follows. */
+  team_id: string | null
   target_player_id: string | null
   user_agent: string | null
   created_at: string
@@ -686,6 +687,26 @@ export type Database = {
         Args: { p_slug: string; p_include_test?: boolean }
         Returns: Json
       }
+      resolve_parent_hub_slug: {
+        Args: { p_slug: string }
+        Returns: Json
+      }
+      get_parent_club_hub: {
+        Args: {
+          p_club_slug: string
+          p_season_id?: string | null
+          p_weekend_start?: string | null
+        }
+        Returns: Json
+      }
+      get_parent_club_team: {
+        Args: {
+          p_club_slug: string
+          p_team_slug: string
+          p_season_id?: string | null
+        }
+        Returns: Json
+      }
       get_parent_recaps: {
         Args: { p_team_id: string; p_include_test?: boolean }
         Returns: Json
@@ -704,6 +725,41 @@ export type Database = {
           p_user_agent?: string | null
         }
         Returns: Json
+      }
+      subscribe_parent_web_push_match: {
+        Args: {
+          p_match_id: string
+          p_endpoint: string
+          p_p256dh: string
+          p_auth: string
+          p_user_agent?: string | null
+        }
+        Returns: Json
+      }
+      unsubscribe_parent_web_push_team: {
+        Args: { p_team_id: string; p_endpoint: string }
+        Returns: Json
+      }
+      unsubscribe_parent_web_push_match: {
+        Args: { p_match_id: string; p_endpoint: string }
+        Returns: Json
+      }
+      list_parent_web_push_follows: {
+        Args: { p_endpoint: string }
+        Returns: Json
+      }
+      get_web_push_recipients_for_alert: {
+        Args: {
+          p_team_id: string
+          p_match_id?: string | null
+          p_target_player_id?: string | null
+        }
+        Returns: Array<{
+          id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+        }>
       }
       live_event_is_duplicate: {
         Args: {

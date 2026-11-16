@@ -706,6 +706,144 @@ export async function subscribeParentWebPush(input: {
   }
 }
 
+async function ensureBrowserPushSubscription(options?: {
+  forceRefresh?: boolean
+}): Promise<{ endpoint: string; p256dh: string; auth: string }> {
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('Push notifications are not supported in this browser.')
+  }
+  if (!VAPID_PUBLIC_KEY) {
+    throw new Error(
+      'Push is not configured on this deployment (missing VAPID public key). Try a hard refresh, or reopen the hub from the shared link.',
+    )
+  }
+
+  const permission = await Notification.requestPermission()
+  if (permission !== 'granted') {
+    throw new Error('Notification permission was not granted.')
+  }
+
+  const registration = await resolveHubPushRegistration()
+  if (!registration) {
+    throw new Error(
+      'Service worker could not be registered. Close the hub fully, reopen it from the Home Screen icon, then try again.',
+    )
+  }
+
+  await navigator.serviceWorker.ready
+
+  let subscription = await registration.pushManager.getSubscription()
+  if (options?.forceRefresh && subscription) {
+    try {
+      await subscription.unsubscribe()
+    } catch {
+      // continue
+    }
+    subscription = null
+  }
+
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
+    })
+  }
+
+  const json = subscription.toJSON()
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error('Push subscription was incomplete.')
+  }
+  return {
+    endpoint: json.endpoint,
+    p256dh: json.keys.p256dh,
+    auth: json.keys.auth,
+  }
+}
+
+export async function listParentWebPushFollows(): Promise<{
+  teamIds: string[]
+  matchIds: string[]
+}> {
+  const registration = await resolveHubPushRegistration()
+  if (!registration) return { teamIds: [], matchIds: [] }
+  const subscription = await registration.pushManager.getSubscription()
+  if (!subscription?.endpoint) return { teamIds: [], matchIds: [] }
+
+  const { data, error } = await supabase.rpc('list_parent_web_push_follows', {
+    p_endpoint: subscription.endpoint,
+  })
+  if (error) throw error
+  const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+  const teamIds = Array.isArray(record.teamIds)
+    ? record.teamIds.filter((id): id is string => typeof id === 'string')
+    : []
+  const matchIds = Array.isArray(record.matchIds)
+    ? record.matchIds.filter((id): id is string => typeof id === 'string')
+    : []
+  return { teamIds, matchIds }
+}
+
+/** One-tap team follow for the club Parent Hub. */
+export async function subscribeParentTeamAlerts(input: {
+  teamId: string
+  targetPlayerId?: string | null
+}): Promise<void> {
+  const keys = await ensureBrowserPushSubscription({ forceRefresh: false })
+  const { data, error } = await supabase.rpc('subscribe_parent_web_push', {
+    p_team_id: input.teamId,
+    p_endpoint: keys.endpoint,
+    p_p256dh: keys.p256dh,
+    p_auth: keys.auth,
+    p_target_player_id: input.targetPlayerId ?? null,
+    p_user_agent: navigator.userAgent,
+  })
+  if (error) throw error
+  if (!data || (typeof data === 'object' && 'ok' in data && !(data as { ok?: boolean }).ok)) {
+    throw new Error('Server did not confirm the team alert subscription.')
+  }
+  setLocalPushEnabled(input.teamId, true)
+}
+
+export async function unsubscribeParentTeamAlerts(teamId: string): Promise<void> {
+  const registration = await resolveHubPushRegistration()
+  if (!registration) return
+  const subscription = await registration.pushManager.getSubscription()
+  if (!subscription?.endpoint) return
+  const { error } = await supabase.rpc('unsubscribe_parent_web_push_team', {
+    p_team_id: teamId,
+    p_endpoint: subscription.endpoint,
+  })
+  if (error) throw error
+  setLocalPushEnabled(teamId, false)
+}
+
+export async function subscribeParentMatchAlerts(matchId: string): Promise<void> {
+  const keys = await ensureBrowserPushSubscription({ forceRefresh: false })
+  const { data, error } = await supabase.rpc('subscribe_parent_web_push_match', {
+    p_match_id: matchId,
+    p_endpoint: keys.endpoint,
+    p_p256dh: keys.p256dh,
+    p_auth: keys.auth,
+    p_user_agent: navigator.userAgent,
+  })
+  if (error) throw error
+  if (!data || (typeof data === 'object' && 'ok' in data && !(data as { ok?: boolean }).ok)) {
+    throw new Error('Server did not confirm the game alert subscription.')
+  }
+}
+
+export async function unsubscribeParentMatchAlerts(matchId: string): Promise<void> {
+  const registration = await resolveHubPushRegistration()
+  if (!registration) return
+  const subscription = await registration.pushManager.getSubscription()
+  if (!subscription?.endpoint) return
+  const { error } = await supabase.rpc('unsubscribe_parent_web_push_match', {
+    p_match_id: matchId,
+    p_endpoint: subscription.endpoint,
+  })
+  if (error) throw error
+}
+
 export type WebPushEventType =
   | 'match_start'
   | 'period_start'
