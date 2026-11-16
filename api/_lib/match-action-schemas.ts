@@ -501,6 +501,46 @@ export const RemoveLastGoalInputSchema = z.object({
 
 export type RemoveLastGoalInput = z.infer<typeof RemoveLastGoalInputSchema>
 
+/** Why a specific goal is being removed from the score. */
+export const RemoveGoalReasonSchema = z.enum(['accident', 'disallowed'])
+export type RemoveGoalReason = z.infer<typeof RemoveGoalReasonSchema>
+
+/** Remove a specific regulation goal (by event id) with a coach reason. */
+export const RemoveGoalInputSchema = z.object({
+  matchId: z.string().uuid(),
+  eventId: z.string().uuid(),
+  reason: RemoveGoalReasonSchema,
+})
+
+export type RemoveGoalInput = z.infer<typeof RemoveGoalInputSchema>
+
+/**
+ * Correct scorer / assist on an our-goal event.
+ * Opponent goals and own goals cannot be retagged this way.
+ */
+export const UpdateGoalInputSchema = z
+  .object({
+    matchId: z.string().uuid(),
+    eventId: z.string().uuid(),
+    scorerId: z.string().uuid().nullable(),
+    assistPlayerId: z.string().uuid().nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.scorerId &&
+      value.assistPlayerId &&
+      value.scorerId === value.assistPlayerId
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'assistPlayerId cannot equal scorerId',
+        path: ['assistPlayerId'],
+      })
+    }
+  })
+
+export type UpdateGoalInput = z.infer<typeof UpdateGoalInputSchema>
+
 /** Bring an out player onto the bench, or mark a benched player out. */
 export const AbsenceReasonSchema = z.enum(['injured', 'left_early'])
 

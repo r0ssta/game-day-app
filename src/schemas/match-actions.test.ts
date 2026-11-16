@@ -15,6 +15,8 @@ import {
   parseShotType,
   LogAvailabilityInputSchema,
   RemoveLastGoalInputSchema,
+  RemoveGoalInputSchema,
+  UpdateGoalInputSchema,
 } from './match-actions'
 
 const VALID_UUID = '00000000-0000-4000-8000-000000000001'
@@ -415,6 +417,38 @@ describe('match action Zod schemas', () => {
       side: 'left',
     })
     expect(bad.success).toBe(false)
+  })
+
+  it('RemoveGoalInputSchema requires event id and a valid reason', () => {
+    const ok = RemoveGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      eventId: VALID_UUID,
+      reason: 'disallowed',
+    })
+    expect(ok.success).toBe(true)
+    const badReason = RemoveGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      eventId: VALID_UUID,
+      reason: 'typo',
+    })
+    expect(badReason.success).toBe(false)
+  })
+
+  it('UpdateGoalInputSchema rejects assist equal to scorer', () => {
+    const ok = UpdateGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      eventId: VALID_UUID,
+      scorerId: VALID_UUID,
+      assistPlayerId: '00000000-0000-4000-8000-000000000002',
+    })
+    expect(ok.success).toBe(true)
+    const same = UpdateGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      eventId: VALID_UUID,
+      scorerId: VALID_UUID,
+      assistPlayerId: VALID_UUID,
+    })
+    expect(same.success).toBe(false)
   })
 
   it('LogAvailabilityInputSchema accepts bring-in and rejects a reason when attending', () => {

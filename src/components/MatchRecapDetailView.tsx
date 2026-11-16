@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Mail } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
+import { ModifyGoalsSheet } from '@/components/ModifyGoalsSheet'
 import { MatchScoreboard } from '@/components/MatchScoreboard'
 import { PlayingTimeBar, PlayingTimeLegend } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal, playersFromRoster } from '@/components/ParentRecapEmailModal'
@@ -15,7 +16,6 @@ import {
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { parentLiveEventsFromMatchEvents } from '@/lib/parent-hub'
 import { fetchMatchEvents, resolveMatchCoachName } from '@/lib/supabase-api'
-import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import {
   formatOpponentPrefix,
   formatVenueLabel,
@@ -68,7 +68,7 @@ export function MatchRecapDetailView({
   const [events, setEvents] = useState<DbMatchEvent[]>([])
   const [parentRecapOpen, setParentRecapOpen] = useState(false)
   const [matchState, setMatchState] = useState(match)
-  const [removingGoal, setRemovingGoal] = useState<'home' | 'away' | null>(null)
+  const [modifyGoalsSide, setModifyGoalsSide] = useState<'home' | 'away' | null>(null)
 
   const { dateLabel, timeLabel } = formatMatchDisplayDateTime(matchState)
   const headCoach = resolveMatchCoachName(matchState, null)
@@ -117,29 +117,11 @@ export function MatchRecapDetailView({
 
   const toast = onToast ?? (() => {})
 
-  const handleRemoveGoal = async (side: 'home' | 'away') => {
-    setRemovingGoal(side)
-    try {
-      const result = await removeLastGoalForMatch(match.id, side)
-      setMatchState((current) => ({
-        ...current,
-        home_score: result.homeScore,
-        away_score: result.awayScore,
-      }))
-      const matchEvents = await fetchMatchEvents(match.id)
-      setEvents(matchEvents)
-      const recapRows = await loadHistoricalRecapRows(match.id, match.half_length, roster)
-      setRows(recapRows)
-      toast(side === 'home' ? 'Removed our goal' : 'Removed opponent goal')
-    } catch (err) {
-      toast(
-        err instanceof Error && err.message === 'No goal to remove'
-          ? 'No goal to remove'
-          : 'Could not remove goal — try again',
-      )
-    } finally {
-      setRemovingGoal(null)
-    }
+  const reloadAfterGoalChange = async () => {
+    const matchEvents = await fetchMatchEvents(match.id)
+    setEvents(matchEvents)
+    const recapRows = await loadHistoricalRecapRows(match.id, match.half_length, roster)
+    setRows(recapRows)
   }
 
   return (
@@ -189,21 +171,19 @@ export function MatchRecapDetailView({
             {matchState.home_score > 0 ? (
               <button
                 type="button"
-                disabled={removingGoal !== null}
-                onClick={() => void handleRemoveGoal('home')}
-                className="min-h-9 touch-manipulation rounded-lg border border-neon/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98] disabled:opacity-50"
+                onClick={() => setModifyGoalsSide('home')}
+                className="min-h-9 touch-manipulation rounded-lg border border-neon/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98]"
               >
-                Undo our goal
+                Edit our goals
               </button>
             ) : null}
             {matchState.away_score > 0 ? (
               <button
                 type="button"
-                disabled={removingGoal !== null}
-                onClick={() => void handleRemoveGoal('away')}
-                className="min-h-9 touch-manipulation rounded-lg border border-border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98] disabled:opacity-50"
+                onClick={() => setModifyGoalsSide('away')}
+                className="min-h-9 touch-manipulation rounded-lg border border-border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
               >
-                Undo opponent goal
+                Edit opponent goals
               </button>
             ) : null}
           </div>
@@ -452,6 +432,32 @@ export function MatchRecapDetailView({
         setMatchState((prev) => ({ ...prev, parent_facing_recap: value || null }))
       }
     />
+
+    {modifyGoalsSide ? (
+      <ModifyGoalsSheet
+        open
+        side={modifyGoalsSide}
+        matchId={match.id}
+        players={roster}
+        teamName={teamName}
+        opponent={opponentLabel}
+        onRemoved={(result) => {
+          setMatchState((current) => ({
+            ...current,
+            home_score: result.homeScore,
+            away_score: result.awayScore,
+          }))
+          setModifyGoalsSide(null)
+          void reloadAfterGoalChange()
+        }}
+        onUpdated={() => {
+          setModifyGoalsSide(null)
+          void reloadAfterGoalChange()
+        }}
+        onToast={toast}
+        onClose={() => setModifyGoalsSide(null)}
+      />
+    ) : null}
     </>
   )
 }

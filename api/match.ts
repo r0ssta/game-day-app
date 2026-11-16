@@ -15,7 +15,9 @@ import updatePkAttempt from './_lib/match-handlers/update-pk-attempt.js'
 import logAvailability from './_lib/match-handlers/log-availability.js'
 import logSubstitution from './_lib/match-handlers/log-substitution.js'
 import logTeamEvent from './_lib/match-handlers/log-team-event.js'
+import removeGoal from './_lib/match-handlers/remove-goal.js'
 import removeLastGoal from './_lib/match-handlers/remove-last-goal.js'
+import updateGoal from './_lib/match-handlers/update-goal.js'
 
 type MatchHandler = (req: VercelRequest, res: VercelResponse) => Promise<unknown>
 
@@ -32,7 +34,9 @@ const MATCH_HANDLERS: Record<string, MatchHandler> = {
   'log-availability': logAvailability,
   'log-substitution': logSubstitution,
   'log-team-event': logTeamEvent,
+  'remove-goal': removeGoal,
   'remove-last-goal': removeLastGoal,
+  'update-goal': updateGoal,
 }
 
 function firstQueryValue(value: string | string[] | undefined): string | null {

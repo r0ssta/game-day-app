@@ -126,7 +126,7 @@ export function GoalWizardModal({
             </h2>
             <p className="mt-1 text-sm font-bold text-muted-foreground">
               {step === 'corner'
-                ? 'Close still logs the goal. Undo if it was a mistake.'
+                ? 'Close still logs the goal. Edit goals under the score if it was a mistake.'
                 : step === 'type'
                   ? 'Close still logs it. Don’t tag also counts it.'
                   : step === 'scorer'
