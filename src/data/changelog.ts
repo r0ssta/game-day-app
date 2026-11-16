@@ -11,6 +11,46 @@ export type ChangelogRelease = {
 /** Newest release first. `version` is compared to `last_seen_version`. */
 export const CHANGELOG: ChangelogRelease[] = [
   {
+    version: '2026.11.16',
+    date: 'November 16, 2026',
+    title: 'Edit goals and share the pitch',
+    features: [
+      'Edit goals under the score — change the scorer, assist, or minute, or remove one logged by accident or called back',
+      'A second coach on the same match keeps the lineup and minutes already played, including the halftime pitch',
+      'Changing formation keeps each player near the spot they just played',
+      'Ending a half records the whistle without an extra prompt to end the game',
+    ],
+  },
+  {
+    version: '2026.11.15',
+    date: 'November 15, 2026',
+    title: 'Recaps and the club hub',
+    features: [
+      'Match recaps lead with the final score and who scored, and when',
+      'Changing the half length mid-period no longer moves minutes already played',
+      'Virginia Velocity families get one club hub: a weekend scoreboard and a page for each team',
+      'Turn on alerts for several teams, or for a single game',
+    ],
+  },
+  {
+    version: '2026.11.14',
+    date: 'November 14, 2026',
+    title: 'Parent Hub that keeps up',
+    features: [
+      'Parent Hub keeps updating when the live connection goes quiet',
+      'Kickoff, goals, halves, and full time still notify families when the send is slow',
+    ],
+  },
+  {
+    version: '2026.10.14',
+    date: 'October 14, 2026',
+    title: 'Named formations and fair minutes',
+    features: [
+      'Save a named formation for the team, and rename a position — a code like CDM or a name like Winger',
+      'Playing time reports use the games a player was actually in, so missed games no longer pull down half starts or the field versus goalkeeper split',
+    ],
+  },
+  {
     version: '2026.10.05',
     date: 'October 5, 2026',
     title: 'Confirm an early whistle',
