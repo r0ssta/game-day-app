@@ -212,6 +212,19 @@ export function buildParentMatchPlayerStats(
     (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
   )
   const fallbackHalfSeconds = Math.max(1, halfLengthMinutes) * 60
+  /** When the club scoreboard opens a recap without a roster, use names from live events. */
+  const eventIdentityByPlayerId = new Map<string, { name: string | null; jersey: number | null }>()
+  for (const event of chrono) {
+    if (!event.playerId) continue
+    const existing = eventIdentityByPlayerId.get(event.playerId) ?? {
+      name: null,
+      jersey: null,
+    }
+    const name = event.playerName?.trim() || null
+    if (name) existing.name = name
+    if (event.jersey != null) existing.jersey = event.jersey
+    eventIdentityByPlayerId.set(event.playerId, existing)
+  }
 
   const byPlayer = new Map<
     string,
@@ -368,10 +381,13 @@ export function buildParentMatchPlayerStats(
     if (!hasActivity) continue
 
     const player = playersById.get(playerId)
+    const fromEvents = eventIdentityByPlayerId.get(playerId)
     lines.push({
       playerId,
-      name: player ? formatPlayerFullName(player.firstName, player.lastName) : 'Player',
-      jersey: player?.number ?? null,
+      name: player
+        ? formatPlayerFullName(player.firstName, player.lastName)
+        : fromEvents?.name?.trim() || 'Player',
+      jersey: player?.number ?? fromEvents?.jersey ?? null,
       halves: [first, second],
       extraHalves,
       total,

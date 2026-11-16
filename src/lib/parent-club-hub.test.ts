@@ -5,6 +5,7 @@ import {
   coachRoleLabel,
   normalizeParentClubHub,
   recordLabel,
+  scoreboardMatchToParentHubMatch,
 } from './parent-club-hub'
 
 describe('parent club hub', () => {
@@ -64,5 +65,37 @@ describe('parent club hub', () => {
   it('labels coach roles', () => {
     expect(coachRoleLabel('head_coach')).toBe('Head coach')
     expect(coachRoleLabel('assistant_coach')).toBe('Assistant coach')
+  })
+
+  it('keeps half length when opening a scoreboard match recap', () => {
+    const match = scoreboardMatchToParentHubMatch({
+      id: 'm1',
+      teamId: 't1',
+      teamSlug: 'blitz',
+      teamName: 'Blitz',
+      ageGroup: 'U11',
+      opponent: 'Legacy',
+      status: 'pending_review',
+      matchDate: '2026-11-15',
+      matchTime: '13:00:00',
+      date: null,
+      locationType: 'away',
+      homeScore: 0,
+      awayScore: 0,
+      homePkScore: 0,
+      awayPkScore: 0,
+      pkWinnerIsUs: null,
+      period: 'second_half',
+      currentPeriod: 2,
+      totalPeriods: 2,
+      periodLength: 35,
+      halfLength: 35,
+      periodClockStarted: false,
+      clockSeconds: 0,
+      parentFacingRecap: null,
+    })
+    expect(match.half_length).toBe(35)
+    expect(match.period_length).toBe(35)
+    expect(match.total_periods).toBe(2)
   })
 })
