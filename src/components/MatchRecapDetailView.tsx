@@ -49,6 +49,7 @@ type MatchRecapDetailViewProps = {
   match: DbMatch
   teamName: string
   roster: RosterPlayer[]
+  teamSlug?: string | null
   onBack: () => void
   onHome?: () => void
   onToast?: (message: string) => void
@@ -58,6 +59,7 @@ export function MatchRecapDetailView({
   match,
   teamName,
   roster,
+  teamSlug = null,
   onBack,
   onHome,
   onToast,
@@ -441,6 +443,7 @@ export function MatchRecapDetailView({
         players={roster}
         teamName={teamName}
         opponent={opponentLabel}
+        teamSlug={teamSlug}
         onRemoved={(result) => {
           setMatchState((current) => ({
             ...current,

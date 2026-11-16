@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { formatGoalMinuteMark, goalEventsForSide } from './modify-goals'
+import {
+  formatGoalMinuteMark,
+  goalEventsForSide,
+  goalMinuteFromTimestamp,
+  timestampFromGoalMinute,
+} from './modify-goals'
 import type { DbMatchEvent } from '@/types/database'
 
 function event(partial: Partial<DbMatchEvent> & Pick<DbMatchEvent, 'id' | 'event_type'>): DbMatchEvent {
@@ -53,5 +58,13 @@ describe('formatGoalMinuteMark', () => {
     expect(formatGoalMinuteMark(59)).toBe("0'")
     expect(formatGoalMinuteMark(60)).toBe("1'")
     expect(formatGoalMinuteMark(125)).toBe("2'")
+  })
+})
+
+describe('goal minute round-trip', () => {
+  it('converts minutes to stored timestamps', () => {
+    expect(goalMinuteFromTimestamp(125)).toBe(2)
+    expect(timestampFromGoalMinute(2)).toBe(120)
+    expect(timestampFromGoalMinute(-1)).toBe(0)
   })
 })

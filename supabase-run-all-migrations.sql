@@ -1232,6 +1232,11 @@ create policy "match_events_insert_staff"
   on public.match_events for insert to authenticated
   with check ((select private.is_staff()) and (select private.has_match_access(match_id)));
 
+create policy "match_events_update_staff"
+  on public.match_events for update to authenticated
+  using ((select private.is_staff()) and (select private.has_match_access(match_id)))
+  with check ((select private.is_staff()) and (select private.has_match_access(match_id)));
+
 create policy "match_events_delete_staff"
   on public.match_events for delete to authenticated
   using (

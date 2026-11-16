@@ -3,7 +3,7 @@ import { corsPreflight, parseJsonBody, requireStaffSession } from '../auth.js'
 import { requireMatchAccess } from '../match-access.js'
 import { isOwnGoalType, UpdateGoalInputSchema } from '../match-action-schemas.js'
 import { reportApiError } from '../sentry.js'
-import { runMatchWrites } from '../match-writes.js'
+import { findPairedGoalShotEvent, runMatchWrites } from '../match-writes.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -37,15 +37,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(access.status).json({ ok: false, error: access.error })
     }
 
-    const { data: goalEvent, error: lookupError } = await auth.supabase
+    const { data: events, error: lookupError } = await auth.supabase
       .from('match_events')
-      .select('id, event_type, event_notes, player_id, assist_player_id')
+      .select('id, event_type, event_notes, player_id, assist_player_id, timestamp')
       .eq('match_id', input.matchId)
-      .eq('id', input.eventId)
-      .maybeSingle()
+      .order('created_at', { ascending: true })
     if (lookupError) throw lookupError
 
-    if (!goalEvent) {
+    const goalEvent = (events ?? []).find((event) => event.id === input.eventId)
+    if (
+      !goalEvent ||
+      (goalEvent.event_type !== 'goal' && goalEvent.event_type !== 'opponent_goal')
+    ) {
       return res.status(404).json({
         ok: false,
         error: 'Goal not found',
@@ -53,38 +56,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    if (goalEvent.event_type !== 'goal') {
-      return res.status(409).json({
-        ok: false,
-        error: 'Only our goals can change scorer or assist',
-        code: 'not_editable',
-      })
+    const wantsCredits =
+      input.scorerId !== undefined || input.assistPlayerId !== undefined
+    const wantsTimestamp = input.timestamp !== undefined
+    const ownGoal = isOwnGoalType(goalEvent.event_notes as string | null)
+
+    if (wantsCredits) {
+      if (goalEvent.event_type !== 'goal' || ownGoal) {
+        return res.status(409).json({
+          ok: false,
+          error: 'Only our goals can change scorer or assist',
+          code: 'not_editable',
+        })
+      }
     }
 
-    if (isOwnGoalType(goalEvent.event_notes as string | null)) {
-      return res.status(409).json({
-        ok: false,
-        error: 'Own goals cannot change scorer or assist',
-        code: 'not_editable',
-      })
-    }
-
-    const nextScorerId = input.scorerId
+    const nextScorerId =
+      input.scorerId !== undefined ? input.scorerId : (goalEvent.player_id as string | null)
+    const requestedAssist =
+      input.assistPlayerId !== undefined
+        ? input.assistPlayerId
+        : (goalEvent.assist_player_id as string | null)
     const nextAssistId =
-      nextScorerId && input.assistPlayerId === nextScorerId ? null : input.assistPlayerId
+      wantsCredits && nextScorerId && requestedAssist === nextScorerId
+        ? null
+        : requestedAssist
+    const nextTimestamp =
+      input.timestamp !== undefined ? input.timestamp : (goalEvent.timestamp as number)
+
+    const pairedShot =
+      wantsTimestamp && nextTimestamp !== goalEvent.timestamp
+        ? findPairedGoalShotEvent(events ?? [], goalEvent)
+        : null
 
     await runMatchWrites(auth.supabase, input.matchId, async (tx) => {
-      await tx.updateEvent(input.eventId, {
-        player_id: nextScorerId,
-        assist_player_id: nextAssistId,
-      })
+      const patch: Record<string, unknown> = {}
+      if (wantsCredits) {
+        patch.player_id = nextScorerId
+        patch.assist_player_id = nextAssistId
+      }
+      if (wantsTimestamp) {
+        patch.timestamp = nextTimestamp
+      }
+      await tx.updateEvent(input.eventId, patch)
+      if (pairedShot?.id) {
+        await tx.updateEvent(pairedShot.id, { timestamp: nextTimestamp })
+      }
     })
 
     return res.status(200).json({
       ok: true,
       eventId: input.eventId,
-      scorerId: nextScorerId,
-      assistPlayerId: nextAssistId,
+      scorerId: wantsCredits ? nextScorerId : (goalEvent.player_id as string | null),
+      assistPlayerId: wantsCredits ? nextAssistId : (goalEvent.assist_player_id as string | null),
+      timestamp: nextTimestamp,
+      updatedPairedShot: Boolean(pairedShot),
     })
   } catch (err) {
     await reportApiError('[api/match/update-goal]', err)

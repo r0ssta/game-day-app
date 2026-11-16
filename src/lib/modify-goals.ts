@@ -53,8 +53,17 @@ export function goalEventsForSide(
 }
 
 export function formatGoalMinuteMark(timestampSeconds: number): string {
-  const minute = Math.max(0, Math.floor(timestampSeconds / 60))
-  return `${minute}'`
+  return `${goalMinuteFromTimestamp(timestampSeconds)}'`
+}
+
+/** Period-clock minute shown on scoreboards / feed (floored). */
+export function goalMinuteFromTimestamp(timestampSeconds: number): number {
+  return Math.max(0, Math.floor(timestampSeconds / 60))
+}
+
+/** Store minute edits as whole minutes (seconds = minute * 60). */
+export function timestampFromGoalMinute(minute: number): number {
+  return Math.max(0, Math.floor(minute)) * 60
 }
 
 export const REMOVE_GOAL_REASON_LABELS = {

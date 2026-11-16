@@ -20,6 +20,7 @@ export async function removeGoalForMatch(
   matchId: string,
   eventId: string,
   reason: RemoveGoalReason,
+  teamSlug?: string | null,
 ): Promise<{
   homeScore: number
   awayScore: number
@@ -27,7 +28,7 @@ export async function removeGoalForMatch(
   side: 'home' | 'away'
   reason: RemoveGoalReason
 }> {
-  const result = await apiRemoveGoal({ matchId, eventId, reason })
+  const result = await apiRemoveGoal({ matchId, eventId, reason, teamSlug })
   if (!result.ok) {
     throw new Error(result.error || 'Failed to remove goal')
   }

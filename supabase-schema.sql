@@ -418,6 +418,7 @@ create policy "matches_select_stat_tracker" on public.matches for select to anon
 -- Match events (sideline writes go through log_stat_tracker_event RPC)
 create policy "match_events_select_staff" on public.match_events for select to authenticated using ((select private.is_staff()));
 create policy "match_events_insert_staff" on public.match_events for insert to authenticated with check ((select private.is_staff()));
+create policy "match_events_update_staff" on public.match_events for update to authenticated using ((select private.is_staff())) with check ((select private.is_staff()));
 create policy "match_events_delete_staff" on public.match_events for delete to authenticated using ((select private.can_manage_destructive()));
 create policy "match_events_select_stat_tracker" on public.match_events for select to anon using (
   exists (
@@ -1227,6 +1228,11 @@ create policy "match_events_select_staff"
 
 create policy "match_events_insert_staff"
   on public.match_events for insert to authenticated
+  with check ((select private.is_staff()) and (select private.has_match_access(match_id)));
+
+create policy "match_events_update_staff"
+  on public.match_events for update to authenticated
+  using ((select private.is_staff()) and (select private.has_match_access(match_id)))
   with check ((select private.is_staff()) and (select private.has_match_access(match_id)));
 
 create policy "match_events_delete_staff"

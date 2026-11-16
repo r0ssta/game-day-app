@@ -451,6 +451,20 @@ describe('match action Zod schemas', () => {
     expect(same.success).toBe(false)
   })
 
+  it('UpdateGoalInputSchema accepts timestamp-only edits', () => {
+    const minuteOnly = UpdateGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      eventId: VALID_UUID,
+      timestamp: 720,
+    })
+    expect(minuteOnly.success).toBe(true)
+    const empty = UpdateGoalInputSchema.safeParse({
+      matchId: VALID_UUID,
+      eventId: VALID_UUID,
+    })
+    expect(empty.success).toBe(false)
+  })
+
   it('LogAvailabilityInputSchema accepts bring-in and rejects a reason when attending', () => {
     const bringIn = LogAvailabilityInputSchema.safeParse({
       matchId: VALID_UUID,

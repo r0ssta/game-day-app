@@ -130,7 +130,21 @@ function sameParentLiveEvents(prev: ParentLiveEvent[], next: ParentLiveEvent[]) 
   for (let index = 0; index < prev.length; index += 1) {
     const left = prev[index]
     const right = next[index]
-    if (!left || !right || left.id !== right.id || left.createdAt !== right.createdAt) return false
+    if (!left || !right) return false
+    if (
+      left.id !== right.id ||
+      left.createdAt !== right.createdAt ||
+      left.timestamp !== right.timestamp ||
+      left.playerId !== right.playerId ||
+      left.assistPlayerId !== right.assistPlayerId ||
+      left.playerName !== right.playerName ||
+      left.assistPlayerName !== right.assistPlayerName ||
+      left.eventNotes !== right.eventNotes ||
+      left.isPk !== right.isPk ||
+      left.eventType !== right.eventType
+    ) {
+      return false
+    }
   }
   return true
 }
