@@ -58,6 +58,9 @@ export type ParentClubScoreboardMatch = {
   pkWinnerIsUs: boolean | null
   period: string | null
   currentPeriod: number | null
+  totalPeriods: number | null
+  periodLength: number | null
+  halfLength: number
   periodClockStarted: boolean
   clockSeconds: number
   parentFacingRecap: string | null
@@ -167,6 +170,9 @@ const ScoreboardMatchSchema = z
     pkWinnerIsUs: z.boolean().nullable().catch(null),
     period: z.string().nullable().catch(null),
     currentPeriod: z.number().nullable().catch(null),
+    totalPeriods: z.number().nullable().catch(null),
+    periodLength: z.number().nullable().catch(null),
+    halfLength: z.number().catch(0),
     periodClockStarted: z.boolean().catch(false),
     clockSeconds: z.number().catch(0),
     parentFacingRecap: z.string().nullable().catch(null),
@@ -261,6 +267,9 @@ function normalizeScoreboardMatch(
     pkWinnerIsUs: row.pkWinnerIsUs,
     period: row.period,
     currentPeriod: row.currentPeriod,
+    totalPeriods: row.totalPeriods,
+    periodLength: row.periodLength,
+    halfLength: row.halfLength,
     periodClockStarted: row.periodClockStarted,
     clockSeconds: row.clockSeconds,
     parentFacingRecap: row.parentFacingRecap,
@@ -416,9 +425,9 @@ export function scoreboardMatchToParentHubMatch(
     pk_winner_is_us: match.pkWinnerIsUs,
     period: match.period ?? '',
     current_period: match.currentPeriod,
-    total_periods: null,
-    period_length: null,
-    half_length: 0,
+    total_periods: match.totalPeriods,
+    period_length: match.periodLength,
+    half_length: match.halfLength,
     period_clock_started: match.periodClockStarted,
     clock_seconds: match.clockSeconds,
     parent_facing_recap: match.parentFacingRecap,
