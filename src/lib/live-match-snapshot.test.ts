@@ -134,6 +134,31 @@ describe('isMatchClockHeartbeatUpdate', () => {
       ),
     ).toBe(false)
   })
+
+  it('does not ignore kickoff or a halftime lineup saved on the match', () => {
+    expect(
+      isMatchClockHeartbeatUpdate(
+        { home_score: 0, away_score: 0, clock_seconds: 1500, period_clock_started: true },
+        { home_score: 0, away_score: 0, clock_seconds: 1505, period_clock_started: false },
+      ),
+    ).toBe(false)
+    expect(
+      isMatchClockHeartbeatUpdate(
+        {
+          home_score: 1,
+          away_score: 0,
+          clock_seconds: 400,
+          qualitative_context: { intermissionLineup: { updatedAt: 2 } },
+        },
+        {
+          home_score: 1,
+          away_score: 0,
+          clock_seconds: 405,
+          qualitative_context: { intermissionLineup: { updatedAt: 1 } },
+        },
+      ),
+    ).toBe(false)
+  })
 })
 
 describe('mergeRemotePlayerOverlays', () => {

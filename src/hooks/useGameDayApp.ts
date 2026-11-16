@@ -77,6 +77,7 @@ import {
   fetchMatchById,
   fetchMatchBundleById,
   promoteScheduledMatchToLive,
+  mergeIntermissionLineup,
   persistPreKickoffLineup,
   saveQualitativeContext,
   fetchActiveSeason,
@@ -176,6 +177,11 @@ import {
 } from '@/lib/live-match-snapshot'
 import { useLiveMatchSync } from '@/hooks/useLiveMatchSync'
 import { apiEndRegulation, apiFinalizePk } from '@/lib/match-api'
+import {
+  intermissionLineupSignature,
+  readIntermissionLineup,
+  type IntermissionLineup,
+} from '@/lib/intermission-lineup'
 import {
   defaultPeriodLengthMinutes,
   periodIndexToCode,
@@ -362,6 +368,9 @@ export function useGameDayApp() {
   const qualitativeContextRef = useRef<Record<string, unknown>>({})
   const localClockOwnedRef = useRef(false)
   const localIntermissionRef = useRef(false)
+  const intermissionRevisionRef = useRef(0)
+  const intermissionSignatureRef = useRef('')
+  const intermissionSaveTimerRef = useRef(0)
   const liveStateRef = useRef({
     appMode,
     players,
@@ -703,6 +712,32 @@ export function useGameDayApp() {
     [],
   )
 
+  const adoptIntermissionLineup = useCallback((match: DbMatch) => {
+    if (match.period_clock_started) return false
+    if (liveStateRef.current.appMode === 'match' && liveStateRef.current.periodClockStarted) {
+      return false
+    }
+    const remote = readIntermissionLineup(match.qualitative_context)
+    if (!remote || remote.endedPeriod !== resolveCurrentPeriod(match)) return false
+    if (remote.updatedAt <= intermissionRevisionRef.current) return false
+    const signature = intermissionLineupSignature(remote)
+    if (signature === intermissionSignatureRef.current) {
+      intermissionRevisionRef.current = remote.updatedAt
+      return false
+    }
+    window.clearTimeout(intermissionSaveTimerRef.current)
+    intermissionRevisionRef.current = remote.updatedAt
+    intermissionSignatureRef.current = signature
+    setHalftimeSecondHalf(remote.starters)
+    setHalftimeSlotAssignments(remote.slotAssignments)
+    setHalftimeSlotLabelOverrides(remote.slotLabelOverrides)
+    setMatchFormations((prev) =>
+      prev.second === remote.formationId ? prev : { ...prev, second: remote.formationId },
+    )
+    setHalftimePitchKey((key) => key + 1)
+    return true
+  }, [])
+
   const hydrateLiveMatch = useCallback(
     async (options?: {
       applyMode?: boolean
@@ -749,6 +784,9 @@ export function useGameDayApp() {
             : mergeRemotePlayerOverlays(latest.players, remotePlayers)
           if (mergedPlayers !== latest.players) {
             setPlayers(mergedPlayers)
+          }
+          if (snapshotHydrateResult(snapshot, latest.seconds).mode === 'halftime') {
+            adoptIntermissionLineup(match)
           }
           const localMode = isActiveStaffMatchScreen(latest.appMode)
             ? latest.appMode
@@ -953,7 +991,9 @@ export function useGameDayApp() {
           }
         }
 
-        if (result.mode === 'halftime' && !localRunning) {
+        const adoptedIntermission =
+          result.mode === 'halftime' && adoptIntermissionLineup(match)
+        if (!adoptedIntermission && result.mode === 'halftime' && !localRunning) {
           setHalftimeSecondHalf((prev) => {
             if (Object.keys(prev).length > 0) return prev
             const seed =
@@ -995,8 +1035,48 @@ export function useGameDayApp() {
         hydrateInFlightRef.current = false
       }
     },
-    [applyClockFromMatch, applyMatchPeriodState, claimLocalClock, shouldSkipLiveHydrate, teams],
+    [applyClockFromMatch, applyMatchPeriodState, adoptIntermissionLineup, claimLocalClock, shouldSkipLiveHydrate, teams],
   )
+
+  useEffect(() => {
+    if (appMode !== 'halftime' || !matchId) {
+      window.clearTimeout(intermissionSaveTimerRef.current)
+      if (appMode !== 'halftime') {
+        intermissionSignatureRef.current = ''
+        intermissionRevisionRef.current = 0
+      }
+      return
+    }
+
+    const lineup: IntermissionLineup = {
+      updatedAt: Date.now(),
+      endedPeriod: currentPeriod,
+      formationId: matchFormations.second,
+      starters: halftimeSecondHalf,
+      slotAssignments: halftimeSlotAssignments,
+      slotLabelOverrides: halftimeSlotLabelOverrides,
+    }
+    if (intermissionLineupSignature(lineup) === intermissionSignatureRef.current) return
+
+    intermissionRevisionRef.current = lineup.updatedAt
+    const targetMatchId = matchId
+    intermissionSaveTimerRef.current = window.setTimeout(() => {
+      intermissionSignatureRef.current = intermissionLineupSignature(lineup)
+      void mergeIntermissionLineup(targetMatchId, lineup).catch((err) => {
+        console.warn('[live-sync] intermission lineup save failed', err)
+      })
+    }, 400)
+
+    return () => window.clearTimeout(intermissionSaveTimerRef.current)
+  }, [
+    appMode,
+    currentPeriod,
+    halftimeSecondHalf,
+    halftimeSlotAssignments,
+    halftimeSlotLabelOverrides,
+    matchFormations.second,
+    matchId,
+  ])
 
   useLiveMatchSync({
     matchId,

@@ -104,6 +104,7 @@ import {
   earlyPeriodStopPrompt,
   formatClock,
   halfDurationSeconds,
+  isInAddedTime,
   needsEarlyPeriodStopConfirmation,
   persistableClockSeconds,
   resolvePeriodKickoffRemaining,
@@ -203,9 +204,6 @@ const CardWizardModal = lazyWithChunkReload(() =>
 )
 const DeleteMatchConfirmModal = lazyWithChunkReload(() =>
   import('@/components/DeleteMatchConfirmModal').then((m) => ({ default: m.DeleteMatchConfirmModal })),
-)
-const EndMatchTimingModal = lazyWithChunkReload(() =>
-  import('@/components/EndMatchTimingModal').then((m) => ({ default: m.EndMatchTimingModal })),
 )
 const EarlyPeriodStopModal = lazyWithChunkReload(() =>
   import('@/components/EarlyPeriodStopModal').then((m) => ({ default: m.EarlyPeriodStopModal })),
@@ -495,7 +493,7 @@ function CoachDashboardScreen({
   const [adjustSettingsOpen, setAdjustSettingsOpen] = useState(false)
   const [modifyGoalsSide, setModifyGoalsSide] = useState<'home' | 'away' | null>(null)
   const [adjustSettingsBusy, setAdjustSettingsBusy] = useState(false)
-  const { syncPending, isPending, run: runSync } = useOptimisticSync()
+  const { syncPending, run: runSync } = useOptimisticSync()
   const runOptimisticSync = useCallback(
     <T,>(
       work: () => Promise<T>,
@@ -573,7 +571,6 @@ function CoachDashboardScreen({
   const [cardWizardOpen, setCardWizardOpen] = useState(false)
   const [liveDeleteConfirmOpen, setLiveDeleteConfirmOpen] = useState(false)
   const [liveDeleting, setLiveDeleting] = useState(false)
-  const [endTimingOpen, setEndTimingOpen] = useState(false)
   const [earlyStopIntent, setEarlyStopIntent] = useState<'period' | 'game' | 'extra_time' | null>(
     null,
   )
@@ -1015,17 +1012,6 @@ function CoachDashboardScreen({
   })
 
   useEffect(() => {
-    if (appMode !== 'match' || !matchId) return
-    if (!running && !periodClockStarted) return
-    const id = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-      if (isPending()) return
-      persistMatchClock(matchId, matchClockRef.current.get())
-    }, 5000)
-    return () => clearInterval(id)
-  }, [appMode, matchId, running, periodClockStarted, persistMatchClock, isPending])
-
-  useEffect(() => {
     if (!toast) return
     const durationMs =
       toast.tone === 'error' ||
@@ -1364,7 +1350,16 @@ function CoachDashboardScreen({
       setTiedGameOpen(true)
       return
     }
-    setEndTimingOpen(true)
+    const clockSeconds = endWhistleSecondsRef.current ?? matchClockRef.current.get()
+    setEndingMatch(true)
+    void finishGame(clockSeconds, { endedOnTime: !isInAddedTime(clockSeconds) })
+      .then(() => {
+        setToast('Match complete')
+      })
+      .catch((err) => {
+        setToast(err instanceof Error ? err.message : 'Failed to end match')
+      })
+      .finally(() => setEndingMatch(false))
   }, [
     releaseLocalClock,
     homeScore,
@@ -1374,28 +1369,6 @@ function CoachDashboardScreen({
     matchGoesToPks,
     finishGame,
   ])
-
-  const handleConfirmEndGameTiming = useCallback(
-    async (endedOnTime: boolean) => {
-      setEndingMatch(true)
-      try {
-        const enterPks = false
-        const clockSeconds = endWhistleSecondsRef.current ?? matchClockRef.current.get()
-        await finishGame(clockSeconds, { endedOnTime }, { enterPenaltyShootout: enterPks })
-        setEndTimingOpen(false)
-        setToast(
-          endedOnTime
-            ? 'Match complete — ended on time'
-            : 'Match complete — added time recorded',
-        )
-      } catch (err) {
-        setToast(err instanceof Error ? err.message : 'Failed to end match')
-      } finally {
-        setEndingMatch(false)
-      }
-    },
-    [finishGame],
-  )
 
   const handleTiedGamePenaltyShootout = useCallback(async () => {
     setEndingMatch(true)
@@ -3690,6 +3663,8 @@ function CoachDashboardScreen({
           assignmentsResetKey={`halftime-${matchId ?? 'local'}-${halftimePitchKey}`}
           halftimeAssignmentsRef={halftimeAssignmentsRef}
           halftimeLabelOverridesRef={halftimeLabelOverridesRef}
+          onSlotAssignmentsChange={setHalftimeSlotAssignments}
+          onSlotLabelOverridesChange={setHalftimeSlotLabelOverrides}
           lineupPresets={lineupPresets}
           onLoadLineupPreset={handleLoadHalftimePreset}
           onAssignSecondHalfStarter={(playerId, _role, tacticalPosition) => {
@@ -4047,25 +4022,6 @@ function CoachDashboardScreen({
             onToast={setToast}
             onClose={() => setModifyGoalsSide(null)}
           />
-        </ModalSuspense>
-      ) : null}
-
-      {endTimingOpen ? (
-        <ModalSuspense>
-          <LiveClockValue>
-            {(remainingSeconds) => (
-              <EndMatchTimingModal
-                open={endTimingOpen}
-                remainingSeconds={remainingSeconds}
-                busy={endingMatch}
-                onCancel={() => {
-                  if (!endingMatch) setEndTimingOpen(false)
-                }}
-                onEndedOnTime={() => void handleConfirmEndGameTiming(true)}
-                onWentToAddedTime={() => void handleConfirmEndGameTiming(false)}
-              />
-            )}
-          </LiveClockValue>
         </ModalSuspense>
       ) : null}
 

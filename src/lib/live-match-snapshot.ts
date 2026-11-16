@@ -20,7 +20,7 @@ import type { AppMode, MatchPlayer, MatchPeriod, RosterPlayer, TotalPeriods } fr
 
 const PERIOD_END_NOTE = 'period_end'
 
-/** Ignore Realtime echoes of our own clock heartbeat. Must exceed the 5s persist interval. */
+/** Ignore Realtime echoes of our own clock write. Must exceed a half-length save. */
 export const CLOCK_ECHO_MS = 8000
 /** Snap to the remote countdown when devices have drifted this far. */
 export const CLOCK_ADOPT_DRIFT_SECONDS = 3
@@ -36,9 +36,42 @@ const MATCH_SCORE_COMPARE_KEYS = [
 ] as const
 
 /**
+ * Match fields a second coach has to see immediately. A clock-only write
+ * leaves all of these alone.
+ */
+const LIVE_STATE_KEYS = [
+  ...MATCH_SCORE_COMPARE_KEYS,
+  'period_clock_started',
+  'period_start_time',
+  'current_period',
+  'period',
+  'half_length',
+  'period_length',
+  'total_periods',
+  'sub_interval_seconds',
+  'gk_plays_full_half',
+  'goes_to_pks',
+  'pk_gk_player_id',
+  'qualitative_context',
+] as const
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (left == null || right == null) return false
+  if (typeof left !== 'object' || typeof right !== 'object') return false
+  try {
+    return JSON.stringify(left) === JSON.stringify(right)
+  } catch {
+    return false
+  }
+}
+
+/**
  * True when a `matches` UPDATE only moved the live clock. Requires
  * REPLICA IDENTITY FULL so `payload.old` includes score columns.
  * PK-only old rows cannot be classified and must not be ignored.
+ * Kickoff, period end, and the halftime lineup live on this same row, so a
+ * change to any of those still counts.
  */
 export function isMatchClockHeartbeatUpdate(
   newRow: Record<string, unknown> | null | undefined,
@@ -46,7 +79,18 @@ export function isMatchClockHeartbeatUpdate(
 ): boolean {
   if (!newRow || !oldRow) return false
   if (!MATCH_SCORE_COMPARE_KEYS.some((key) => key in oldRow)) return false
-  return MATCH_SCORE_COMPARE_KEYS.every((key) => Object.is(oldRow[key], newRow[key]))
+  if (!('clock_seconds' in oldRow) || !('clock_seconds' in newRow)) return false
+  if (Object.is(oldRow.clock_seconds, newRow.clock_seconds)) return false
+
+  for (const key of LIVE_STATE_KEYS) {
+    if (!(key in oldRow) || !(key in newRow)) continue
+    const same =
+      key === 'qualitative_context'
+        ? sameJsonValue(oldRow[key], newRow[key])
+        : Object.is(oldRow[key], newRow[key])
+    if (!same) return false
+  }
+  return true
 }
 
 /**

@@ -28,6 +28,11 @@ import {
   serializeQualitativeContext,
   type QualitativeContext,
 } from '@/lib/qualitative-context'
+import {
+  readIntermissionLineup,
+  withIntermissionLineup,
+  type IntermissionLineup,
+} from '@/lib/intermission-lineup'
 import { generateStatTrackerToken, normalizeStatTrackerToken, type StatTrackerEventType, type StatTrackerRosterPlayer, rosterPlayerFromDb } from '@/lib/stat-tracker'
 import {
   assertJerseyNumber,
@@ -1803,6 +1808,26 @@ export async function mergeMatchTimingContext(
     ...raw,
     ...(serializeQualitativeContext(next) ?? {}),
   })
+}
+
+/**
+ * Save the next-period pitch without wiping the rest of qualitative_context.
+ * A newer write already stored on the match is left alone.
+ */
+export async function mergeIntermissionLineup(
+  matchId: string,
+  lineup: IntermissionLineup,
+): Promise<void> {
+  const existing = await fetchMatchById(matchId)
+  const raw =
+    existing?.qualitative_context &&
+    typeof existing.qualitative_context === 'object' &&
+    !Array.isArray(existing.qualitative_context)
+      ? { ...(existing.qualitative_context as Record<string, unknown>) }
+      : {}
+  const current = readIntermissionLineup(raw)
+  if (current && current.updatedAt > lineup.updatedAt) return
+  await saveQualitativeContext(matchId, withIntermissionLineup(raw, lineup))
 }
 
 export async function markMatchPendingReview(matchId: string) {

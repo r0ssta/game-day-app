@@ -42,6 +42,8 @@ export type HalftimePageProps = {
   secondHalfStarters: Record<string, boolean>
   initialSlotAssignments?: Record<string, string | null>
   initialSlotLabelOverrides?: Record<string, string>
+  onSlotAssignmentsChange?: (assignments: Record<string, string | null>) => void
+  onSlotLabelOverridesChange?: (overrides: Record<string, string>) => void
   assignmentsResetKey: string | number
   halftimeAssignmentsRef: MutableRefObject<Record<string, string | null> | null>
   halftimeLabelOverridesRef?: MutableRefObject<Record<string, string> | null>
@@ -76,6 +78,8 @@ export function HalftimePage({
   secondHalfStarters,
   initialSlotAssignments,
   initialSlotLabelOverrides,
+  onSlotAssignmentsChange,
+  onSlotLabelOverridesChange,
   assignmentsResetKey,
   halftimeAssignmentsRef,
   halftimeLabelOverridesRef,
@@ -180,6 +184,8 @@ export function HalftimePage({
           hydrateFromStarters
           assignmentsRef={halftimeAssignmentsRef}
           slotLabelOverridesRef={halftimeLabelOverridesRef}
+          onSlotAssignmentsChange={onSlotAssignmentsChange}
+          onSlotLabelOverridesChange={onSlotLabelOverridesChange}
           constrainLists={false}
           players={roleSeconds.map(({ player, fieldSeconds, gkSeconds }) => ({
             id: player.id,
