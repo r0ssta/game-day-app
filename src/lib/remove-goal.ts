@@ -1,4 +1,5 @@
-import { apiRemoveLastGoal } from '@/lib/match-api'
+import { apiRemoveGoal, apiRemoveLastGoal } from '@/lib/match-api'
+import type { RemoveGoalReason } from '@/schemas/match-actions'
 
 export async function removeLastGoalForMatch(
   matchId: string,
@@ -12,5 +13,29 @@ export async function removeLastGoalForMatch(
     homeScore: result.homeScore,
     awayScore: result.awayScore,
     removedPairedShot: result.removedPairedShot,
+  }
+}
+
+export async function removeGoalForMatch(
+  matchId: string,
+  eventId: string,
+  reason: RemoveGoalReason,
+): Promise<{
+  homeScore: number
+  awayScore: number
+  removedPairedShot: boolean
+  side: 'home' | 'away'
+  reason: RemoveGoalReason
+}> {
+  const result = await apiRemoveGoal({ matchId, eventId, reason })
+  if (!result.ok) {
+    throw new Error(result.error || 'Failed to remove goal')
+  }
+  return {
+    homeScore: result.homeScore,
+    awayScore: result.awayScore,
+    removedPairedShot: result.removedPairedShot,
+    side: result.side,
+    reason: result.reason as RemoveGoalReason,
   }
 }

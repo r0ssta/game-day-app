@@ -202,7 +202,8 @@ export type MatchHeaderProps = {
   onHome: () => void
   onLogGoal?: () => void
   onOpponentGoal?: () => void
-  onRemoveGoal?: (side: 'home' | 'away') => void
+  /** Open the modify-goals sheet for a side (list / remove / edit credits). */
+  onModifyGoals?: (side: 'home' | 'away') => void
   onLogShot?: (side: 'home' | 'away') => void
   onLogSave?: (side: 'home' | 'away') => void
   onLogCorner?: (side: 'home' | 'away') => void
@@ -242,7 +243,7 @@ export function MatchHeader({
   onHome,
   onLogGoal,
   onOpponentGoal,
-  onRemoveGoal,
+  onModifyGoals,
   onLogShot,
   onLogSave,
   onLogCorner,
@@ -305,13 +306,13 @@ export function MatchHeader({
             <p className="font-display text-3xl font-black tabular-nums leading-none text-neon">
               {homeScore}
             </p>
-            {showGoalActions && onRemoveGoal && homeScore > 0 ? (
+            {showGoalActions && onModifyGoals && homeScore > 0 ? (
               <button
                 type="button"
-                onClick={() => onRemoveGoal('home')}
+                onClick={() => onModifyGoals('home')}
                 className="mt-1 min-h-8 touch-manipulation rounded-lg border border-neon/30 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98]"
               >
-                Undo goal
+                Edit goals
               </button>
             ) : null}
           </div>
@@ -336,13 +337,13 @@ export function MatchHeader({
             <p className="font-display text-3xl font-black tabular-nums leading-none text-foreground">
               {awayScore}
             </p>
-            {showGoalActions && onRemoveGoal && awayScore > 0 ? (
+            {showGoalActions && onModifyGoals && awayScore > 0 ? (
               <button
                 type="button"
-                onClick={() => onRemoveGoal('away')}
+                onClick={() => onModifyGoals('away')}
                 className="mt-1 min-h-8 touch-manipulation rounded-lg border border-border px-2 py-1 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
               >
-                Undo goal
+                Edit goals
               </button>
             ) : null}
           </div>

@@ -129,7 +129,13 @@ import {
   type AvailabilityChange,
 } from '@/lib/match-availability'
 import { AUTH_RECONNECT_TOAST } from '@/lib/auth-session'
-import { assertMatchActionOk, type GoalType, type OpponentGoalCategory, type ShotType } from '@/schemas/match-actions'
+import {
+  assertMatchActionOk,
+  type GoalType,
+  type OpponentGoalCategory,
+  type RemoveGoalReason,
+  type ShotType,
+} from '@/schemas/match-actions'
 import { useOptimisticSync } from '@/hooks/useOptimisticSync'
 import { liveEventDedupeKey, SERVER_LIVE_EVENT_DEDUPE_MS, shouldAcceptLiveEvent } from '@/lib/live-event-dedupe'
 import { goalWizardCloseCommit } from '@/lib/goal-wizard-close'
@@ -141,7 +147,6 @@ import {
 } from '@/lib/penalty-kicks'
 import { extraTimeHalfFromStatus, MATCH_STATUS } from '@/lib/match-status'
 import { findActiveOnFieldGoalkeeper } from '@/lib/match-shot-save'
-import { removeLastGoalForMatch } from '@/lib/remove-goal'
 import type { DbMatch } from '@/types/database'
 import {
   buildSidelineNameMap,
@@ -211,6 +216,11 @@ const TiedGameModal = lazyWithChunkReload(() =>
 const AdjustMatchSettingsSheet = lazyWithChunkReload(() =>
   import('@/components/AdjustMatchSettingsSheet').then((m) => ({
     default: m.AdjustMatchSettingsSheet,
+  })),
+)
+const ModifyGoalsSheet = lazyWithChunkReload(() =>
+  import('@/components/ModifyGoalsSheet').then((m) => ({
+    default: m.ModifyGoalsSheet,
   })),
 )
 
@@ -483,6 +493,7 @@ function CoachDashboardScreen({
   }, [])
   onAuthFailedRef.current = setToast
   const [adjustSettingsOpen, setAdjustSettingsOpen] = useState(false)
+  const [modifyGoalsSide, setModifyGoalsSide] = useState<'home' | 'away' | null>(null)
   const [adjustSettingsBusy, setAdjustSettingsBusy] = useState(false)
   const { syncPending, isPending, run: runSync } = useOptimisticSync()
   const runOptimisticSync = useCallback(
@@ -2533,38 +2544,27 @@ function CoachDashboardScreen({
     ],
   )
 
-  const removeLastGoal = useCallback(
-    async (side: 'home' | 'away') => {
-      if (!matchId) return
+  const applyRemovedGoal = useCallback(
+    (result: {
+      homeScore: number
+      awayScore: number
+      removedPairedShot: boolean
+      side: 'home' | 'away'
+      reason?: RemoveGoalReason
+    }) => {
+      setHomeScore(result.homeScore)
+      setAwayScore(result.awayScore)
 
-      try {
-        const result = await removeLastGoalForMatch(matchId, side)
-        setHomeScore(result.homeScore)
-        setAwayScore(result.awayScore)
+      if (result.removedPairedShot) {
+        if (result.side === 'home') setHomeShots((n) => Math.max(0, n - 1))
+        else setAwayShots((n) => Math.max(0, n - 1))
+      }
 
-        if (result.removedPairedShot) {
-          if (side === 'home') setHomeShots((n) => Math.max(0, n - 1))
-          else setAwayShots((n) => Math.max(0, n - 1))
-        }
-
-        if (appMode === 'match') {
-          setPlayers((prev) => applyPlusMinusDelta(prev, side === 'home' ? -1 : 1))
-        }
-
-        setToast(side === 'home' ? 'Removed our goal' : 'Removed opponent goal')
-      } catch (err) {
-        console.error('[removeLastGoal]', err)
-        setToast(
-          formatMatchWriteError(
-            err,
-            err instanceof Error && err.message === 'No goal to remove'
-              ? 'No goal to remove'
-              : 'Could not remove goal — try again',
-          ),
-        )
+      if (appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout') {
+        setPlayers((prev) => applyPlusMinusDelta(prev, result.side === 'home' ? -1 : 1))
       }
     },
-    [matchId, appMode, setHomeScore, setAwayScore, setHomeShots, setAwayShots, setPlayers, setToast],
+    [appMode, setHomeScore, setAwayScore, setHomeShots, setAwayShots, setPlayers],
   )
 
   const commitOpponentGoal = useCallback(
@@ -3776,7 +3776,7 @@ function CoachDashboardScreen({
           onFinalize={() => void handleFinalizeRecap()}
           onDeleteMatch={handleDeleteMatch}
           canDeleteMatches={canDeleteMatches}
-          onRemoveGoal={removeLastGoal}
+          onGoalRemoved={applyRemovedGoal}
           onHome={handleExitRecap}
           onToast={setToast}
         />
@@ -3815,7 +3815,7 @@ function CoachDashboardScreen({
         onHome={() => setAppMode('home')}
         onLogGoal={() => openGoalWizard('us')}
         onOpponentGoal={openOpponentGoal}
-        onRemoveGoal={(side) => void removeLastGoal(side)}
+        onModifyGoals={(side) => setModifyGoalsSide(side)}
         onLogShot={(side) => openShotSaveTag('shot', side)}
         onLogSave={(side) => openShotSaveTag('save', side)}
         onLogCorner={commitTeamCorner}
@@ -4025,6 +4025,26 @@ function CoachDashboardScreen({
               />
             )}
           </LiveClockValue>
+        </ModalSuspense>
+      ) : null}
+
+      {modifyGoalsSide && matchId ? (
+        <ModalSuspense>
+          <ModifyGoalsSheet
+            open
+            side={modifyGoalsSide}
+            matchId={matchId}
+            players={players}
+            teamName={matchTeamName}
+            opponent={matchOpponent}
+            onRemoved={(result) => {
+              applyRemovedGoal(result)
+              setModifyGoalsSide(null)
+            }}
+            onUpdated={() => setModifyGoalsSide(null)}
+            onToast={setToast}
+            onClose={() => setModifyGoalsSide(null)}
+          />
         </ModalSuspense>
       ) : null}
 

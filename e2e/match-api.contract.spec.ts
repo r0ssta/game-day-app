@@ -14,6 +14,8 @@ const MATCH_ROUTES = [
   '/api/match/finalize-pk',
   '/api/match/finalize-review',
   '/api/match/remove-last-goal',
+  '/api/match/remove-goal',
+  '/api/match/update-goal',
 ] as const
 
 const VALID_UUID = '00000000-0000-4000-8000-000000000001'

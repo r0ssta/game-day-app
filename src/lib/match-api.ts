@@ -13,7 +13,9 @@ import type {
   LogAvailabilityInput,
   LogSubstitutionInput,
   LogTeamEventInput,
+  RemoveGoalInput,
   RemoveLastGoalInput,
+  UpdateGoalInput,
   MatchActionResult,
 } from '@/schemas/match-actions'
 
@@ -245,4 +247,31 @@ export async function apiRemoveLastGoal(
   }>
 > {
   return postMatchAction('/api/match/remove-last-goal', input)
+}
+
+export async function apiRemoveGoal(
+  input: RemoveGoalInput,
+): Promise<
+  MatchActionResult<{
+    homeScore: number
+    awayScore: number
+    removedPairedShot: boolean
+    eventType: string
+    side: 'home' | 'away'
+    reason: string
+  }>
+> {
+  return postMatchAction('/api/match/remove-goal', input)
+}
+
+export async function apiUpdateGoal(
+  input: UpdateGoalInput,
+): Promise<
+  MatchActionResult<{
+    eventId: string
+    scorerId: string | null
+    assistPlayerId: string | null
+  }>
+> {
+  return postMatchAction('/api/match/update-goal', input)
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardCopy, Mail, Trash2 } from 'lucide-react'
 import { BackToHomeButton } from '@/components/AppNavigation'
 import { DeleteMatchConfirmModal } from '@/components/DeleteMatchConfirmModal'
+import { ModifyGoalsSheet } from '@/components/ModifyGoalsSheet'
 import { PlayingTimeBar, PlayingTimeLegend } from '@/components/PlayingTimeBar'
 import { ParentRecapEmailModal } from '@/components/ParentRecapEmailModal'
 import { QualitativeContextFields } from '@/components/QualitativeContextFields'
@@ -152,7 +153,12 @@ type PostGameRecapProps = {
   onFinalize: () => void
   onDeleteMatch?: (matchId: string) => Promise<void>
   canDeleteMatches?: boolean
-  onRemoveGoal?: (side: 'home' | 'away') => Promise<void>
+  onGoalRemoved?: (result: {
+    homeScore: number
+    awayScore: number
+    removedPairedShot: boolean
+    side: 'home' | 'away'
+  }) => void
   onMatchDetailsSaved?: (next: MatchDetailsSaved) => void
   onToast: (message: string) => void
   onHome?: () => void
@@ -176,7 +182,7 @@ export function PostGameRecap({
   onFinalize,
   onDeleteMatch,
   canDeleteMatches = false,
-  onRemoveGoal,
+  onGoalRemoved,
   onMatchDetailsSaved,
   onToast,
   onHome,
@@ -198,6 +204,7 @@ export function PostGameRecap({
   const [matchRecord, setMatchRecord] = useState<DbMatch | null>(null)
   const [matchEvents, setMatchEvents] = useState<DbMatchEvent[]>([])
   const [parentRecapOpen, setParentRecapOpen] = useState(false)
+  const [modifyGoalsSide, setModifyGoalsSide] = useState<'home' | 'away' | null>(null)
   const [recapView, setRecapView] = useState<'coach' | 'hub'>('coach')
   const [qualitativeContext, setQualitativeContext] = useState<QualitativeContext>(
     EMPTY_QUALITATIVE_CONTEXT,
@@ -305,13 +312,18 @@ export function PostGameRecap({
     setMicroStats(aggregateMicroStats(events))
   }, [matchId, halfLengthMinutes, players])
 
-  const handleRemoveGoal = useCallback(
-    async (side: 'home' | 'away') => {
-      if (!onRemoveGoal) return
-      await onRemoveGoal(side)
-      await reloadRecapEvents()
+  const handleGoalRemoved = useCallback(
+    (result: {
+      homeScore: number
+      awayScore: number
+      removedPairedShot: boolean
+      side: 'home' | 'away'
+    }) => {
+      onGoalRemoved?.(result)
+      setModifyGoalsSide(null)
+      void reloadRecapEvents()
     },
-    [onRemoveGoal, reloadRecapEvents],
+    [onGoalRemoved, reloadRecapEvents],
   )
 
   const recapRows = useMemo(
@@ -778,24 +790,24 @@ export function PostGameRecap({
                 Head Coach: {coachName.trim()}
               </p>
             ) : null}
-            {onRemoveGoal ? (
+            {!readOnly && onGoalRemoved ? (
               <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                 {homeScore > 0 ? (
                   <button
                     type="button"
-                    onClick={() => void handleRemoveGoal('home')}
+                    onClick={() => setModifyGoalsSide('home')}
                     className="min-h-9 touch-manipulation rounded-lg border border-neon/30 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-neon active:scale-[0.98]"
                   >
-                    Undo our goal
+                    Edit our goals
                   </button>
                 ) : null}
                 {awayScore > 0 ? (
                   <button
                     type="button"
-                    onClick={() => void handleRemoveGoal('away')}
+                    onClick={() => setModifyGoalsSide('away')}
                     className="min-h-9 touch-manipulation rounded-lg border border-border px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground active:scale-[0.98]"
                   >
-                    Undo opponent goal
+                    Edit opponent goals
                   </button>
                 ) : null}
               </div>
@@ -1257,6 +1269,24 @@ export function PostGameRecap({
               prev ? { ...prev, parent_facing_recap: value || null } : prev,
             )
           }}
+        />
+      ) : null}
+
+      {modifyGoalsSide && onGoalRemoved ? (
+        <ModifyGoalsSheet
+          open
+          side={modifyGoalsSide}
+          matchId={matchId}
+          players={players}
+          teamName={teamName}
+          opponent={opponent}
+          onRemoved={handleGoalRemoved}
+          onUpdated={() => {
+            setModifyGoalsSide(null)
+            void reloadRecapEvents()
+          }}
+          onToast={onToast}
+          onClose={() => setModifyGoalsSide(null)}
         />
       ) : null}
     </main>
