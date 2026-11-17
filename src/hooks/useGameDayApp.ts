@@ -2659,9 +2659,6 @@ export function useGameDayApp() {
     [releaseLocalClock, halfLengthMinutes, clearPeriodClock],
   )
 
-  /** @deprecated Prefer enterIntermission — kept for call sites still using the old name. */
-  const enterHalftime = enterIntermission
-
   const setHalftimeStarter = useCallback((id: string, starts: boolean) => {
     setHalftimeSecondHalf((prev) => ({ ...prev, [id]: starts }))
   }, [])
@@ -2754,9 +2751,6 @@ export function useGameDayApp() {
       beginPeriodClock,
     ],
   )
-
-  /** @deprecated Prefer beginNextPeriod */
-  const beginSecondHalf = beginNextPeriod
 
   const finishGame = useCallback(
     async (
@@ -3063,9 +3057,6 @@ export function useGameDayApp() {
     setAppMode('recap')
   }, [applyMatchPeriodState])
 
-  /** @deprecated Use openMatchRecap */
-  const openPendingReviewRecap = openMatchRecap
-
   useEffect(() => {
     if (loading) return
     if (!routeTeamId) {
@@ -3352,15 +3343,12 @@ export function useGameDayApp() {
     setSetupSlotLabelOverrides,
     setupPitchKey,
     halftimePitchKey,
-    enterHalftime,
     enterIntermission,
-    beginSecondHalf,
     beginNextPeriod,
     finishGame,
     finalizePenaltyShootout,
     returnToHome,
     openMatchRecap,
-    openPendingReviewRecap,
     matchStatus,
     hasLiveMatch:
       isSessionInProgressMatchForSelectedTeam(
@@ -3486,7 +3474,3 @@ export function useGameDayApp() {
     deleteMatch,
   }
 }
-
-export { useMatchState } from '@/hooks/useMatchState'
-export { useRoster } from '@/hooks/useRoster'
-export { useStaffAuth } from '@/hooks/useStaffAuth'

@@ -12,7 +12,7 @@ import {
 import { GlobalTeamSelector } from '@/components/GlobalTeamSelector'
 import { ModalSuspense } from '@/components/Spinner'
 import { MatchHeader } from '@/components/MatchHeader'
-import { TacticBoardEntry, TacticBoardSheet } from '@/components/TacticBoard'
+import { TacticBoardEntry } from '@/components/TacticBoardEntry'
 import type { TacticBoardPhase } from '@/lib/tactic-board'
 import { QaSpeedControls } from '@/components/QaSpeedControls'
 import { PlayerEditModal, type PlayerEditDraft } from '@/components/PlayerEditModal'
@@ -220,6 +220,9 @@ const ModifyGoalsSheet = lazyWithChunkReload(() =>
   import('@/components/ModifyGoalsSheet').then((m) => ({
     default: m.ModifyGoalsSheet,
   })),
+)
+const TacticBoardSheet = lazyWithChunkReload(() =>
+  import('@/components/TacticBoard').then((m) => ({ default: m.TacticBoardSheet })),
 )
 
 function menuTacticPhase(appMode: string): TacticBoardPhase {
@@ -4087,17 +4090,19 @@ function CoachDashboardScreen({
     >
       {renderScreen()}
       {menuTacticOpen ? (
-        <TacticBoardSheet
-          teamId={activeTeamId}
-          matchId={
-            appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout'
-              ? matchId
-              : null
-          }
-          phase={menuTacticPhase(appMode)}
-          format={activeTeamFormat}
-          onClose={() => setMenuTacticOpen(false)}
-        />
+        <ModalSuspense>
+          <TacticBoardSheet
+            teamId={activeTeamId}
+            matchId={
+              appMode === 'match' || appMode === 'halftime' || appMode === 'penalty_shootout'
+                ? matchId
+                : null
+            }
+            phase={menuTacticPhase(appMode)}
+            format={activeTeamFormat}
+            onClose={() => setMenuTacticOpen(false)}
+          />
+        </ModalSuspense>
       ) : null}
     </CoachAppLayout>
     </MatchClockProvider>
