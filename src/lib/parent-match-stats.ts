@@ -402,6 +402,11 @@ export function buildParentMatchPlayerStats(
   })
 }
 
+export type ParentSeasonPosition = {
+  position: string
+  seconds: number
+}
+
 export type ParentSeasonPlayerLine = {
   playerId: string
   name: string
@@ -409,6 +414,43 @@ export type ParentSeasonPlayerLine = {
   goals: number
   assists: number
   saves: number
+  /** All positions played, most minutes first. */
+  positions: ParentSeasonPosition[]
+}
+
+function emptySeasonLine(
+  playerId: string,
+  name: string,
+  jersey: number | null,
+): ParentSeasonPlayerLine {
+  return {
+    playerId,
+    name,
+    jersey,
+    goals: 0,
+    assists: 0,
+    saves: 0,
+    positions: [],
+  }
+}
+
+function addSeasonPosition(row: ParentSeasonPlayerLine, position: string, seconds: number) {
+  const slot = position.trim()
+  const add = Math.max(0, seconds)
+  if (!slot || slot === '—' || add <= 0) return
+  const existing = row.positions.find((item) => item.position === slot)
+  if (existing) existing.seconds += add
+  else row.positions.push({ position: slot, seconds: add })
+}
+
+/** The positions with the most minutes, for the roster. */
+export function formatParentTopPositions(
+  positions: ParentSeasonPosition[],
+  limit = 2,
+): string {
+  const top = positions.filter((row) => row.seconds > 0).slice(0, limit)
+  if (top.length === 0) return '—'
+  return top.map((row) => row.position).join(' · ')
 }
 
 /** Season goals, assists, and saves from the same public events as a match recap. */
@@ -430,28 +472,33 @@ export function buildParentSeasonPlayerLines(
       players,
     )
     for (const line of lines) {
-      const existing = totals.get(line.playerId)
-      if (existing) {
-        existing.goals += line.total.goals
-        existing.assists += line.total.assists
-        existing.saves += line.total.saves
-        if (existing.jersey == null && line.jersey != null) existing.jersey = line.jersey
-        if (existing.name === 'Player' && line.name !== 'Player') existing.name = line.name
-        continue
+      const existing = totals.get(line.playerId) ?? emptySeasonLine(line.playerId, line.name, line.jersey)
+      existing.goals += line.total.goals
+      existing.assists += line.total.assists
+      existing.saves += line.total.saves
+      if (existing.jersey == null && line.jersey != null) existing.jersey = line.jersey
+      if (existing.name === 'Player' && line.name !== 'Player') existing.name = line.name
+      for (const position of line.total.positions) {
+        addSeasonPosition(existing, position.position, position.seconds)
       }
-      totals.set(line.playerId, {
-        playerId: line.playerId,
-        name: line.name,
-        jersey: line.jersey,
-        goals: line.total.goals,
-        assists: line.total.assists,
-        saves: line.total.saves,
-      })
+      totals.set(line.playerId, existing)
     }
   }
 
+  for (const row of totals.values()) {
+    row.positions.sort(
+      (a, b) => b.seconds - a.seconds || a.position.localeCompare(b.position),
+    )
+  }
+
   return [...totals.values()]
-    .filter((row) => row.goals > 0 || row.assists > 0 || row.saves > 0)
+    .filter(
+      (row) =>
+        row.goals > 0 ||
+        row.assists > 0 ||
+        row.saves > 0 ||
+        row.positions.some((position) => position.seconds > 0),
+    )
     .sort(
       (a, b) =>
         b.goals - a.goals ||

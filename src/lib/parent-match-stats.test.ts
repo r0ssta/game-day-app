@@ -4,6 +4,7 @@ import {
   buildParentMatchPlayerStats,
   buildParentSeasonPlayerLines,
   formatParentCountingStats,
+  formatParentTopPositions,
   formatParentHalfRole,
   formatParentPositionsLine,
   formatParentTotalRole,
@@ -508,6 +509,7 @@ describe('buildParentSeasonPlayerLines', () => {
         goals: 2,
         assists: 0,
         saves: 0,
+        positions: [],
       },
       {
         playerId: BESS,
@@ -516,7 +518,68 @@ describe('buildParentSeasonPlayerLines', () => {
         goals: 0,
         assists: 1,
         saves: 1,
+        positions: [],
       },
     ])
+  })
+
+  it('ranks the top positions by minutes across matches', () => {
+    const lines = buildParentSeasonPlayerLines(
+      [
+        {
+          id: 'm1',
+          halfLengthMinutes: 30,
+          events: [
+            event({
+              id: 'lu-st',
+              eventType: 'sub_in',
+              eventNotes: startingLineupNote('ST'),
+              createdAt: '2026-09-02T18:00:00.000Z',
+            }),
+            event({
+              id: 'end-st',
+              eventType: 'sub_out',
+              timestamp: 1200,
+              eventNotes: 'period_end',
+              createdAt: '2026-09-02T18:20:00.000Z',
+            }),
+          ],
+        },
+        {
+          id: 'm2',
+          halfLengthMinutes: 30,
+          events: [
+            event({
+              id: 'lu-cm',
+              matchId: 'm2',
+              eventType: 'sub_in',
+              eventNotes: startingLineupNote('CM'),
+              createdAt: '2026-09-09T18:00:00.000Z',
+            }),
+            event({
+              id: 'move-lw',
+              matchId: 'm2',
+              eventType: 'position_change',
+              eventNotes: 'CM→LW',
+              timestamp: 600,
+              createdAt: '2026-09-09T18:10:01.000Z',
+            }),
+            event({
+              id: 'end-lw',
+              matchId: 'm2',
+              eventType: 'sub_out',
+              timestamp: 900,
+              eventNotes: 'period_end',
+              createdAt: '2026-09-09T18:15:00.000Z',
+            }),
+          ],
+        },
+      ],
+      players,
+    )
+
+    const ada = lines.find((row) => row.playerId === ADA)
+    expect(ada?.positions.map((row) => row.position)).toEqual(['ST', 'CM', 'LW'])
+    expect(formatParentTopPositions(ada?.positions ?? [])).toBe('ST · CM')
   })
 })

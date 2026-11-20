@@ -14,6 +14,7 @@ import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
   buildParentSeasonPlayerLines,
+  formatParentTopPositions,
   type ParentSeasonPlayerLine,
 } from '@/lib/parent-match-stats'
 import {
@@ -438,7 +439,8 @@ function TeamDetailView({
   const finished = detail.matches.filter((match) => isParentHubFinishedMatch(match.status))
 
   useEffect(() => {
-    if (section !== 'season') return
+    if (section !== 'season' && section !== 'roster') return
+    if (seasonLines) return
     let cancelled = false
     setSeasonStatus('loading')
     const finishedMatches = detail.matches.filter((match) => isParentHubFinishedMatch(match.status))
@@ -472,7 +474,7 @@ function TeamDetailView({
     return () => {
       cancelled = true
     }
-  }, [section, detail.matches, detail.players])
+  }, [section, detail.matches, detail.players, seasonLines])
 
   return (
     <div className="space-y-5">
@@ -553,22 +555,41 @@ function TeamDetailView({
         {detail.players.length === 0 ? (
           <p className="text-sm text-muted-foreground">No roster for this season yet.</p>
         ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border bg-card">
-            {detail.players.map((player) => {
-              const name = formatPlayerFullName(player.firstName, player.lastName)
-              return (
-                <li
-                  key={player.id}
-                  className="flex items-center gap-3 px-3 py-2.5 text-sm text-foreground"
-                >
-                  <span className="w-8 shrink-0 font-mono text-xs font-bold tabular-nums text-muted-foreground">
-                    {player.number != null ? `#${player.number}` : '—'}
-                  </span>
-                  <span className="font-semibold">{name}</span>
-                </li>
-              )
-            })}
-          </ul>
+          <>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Top two positions
+            </h3>
+            {seasonStatus === 'error' ? (
+              <p className="text-sm text-muted-foreground">Could not load positions.</p>
+            ) : seasonStatus === 'loading' || !seasonLines ? (
+              <p className="text-sm font-semibold text-muted-foreground">Loading positions…</p>
+            ) : null}
+            <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+              {detail.players.map((player) => {
+                const name = formatPlayerFullName(player.firstName, player.lastName)
+                const line = seasonLines?.find((row) => row.playerId === player.id)
+                const positions = seasonLines ? formatParentTopPositions(line?.positions ?? []) : null
+                return (
+                  <li
+                    key={player.id}
+                    className="flex items-center gap-3 px-3 py-2.5 text-sm text-foreground"
+                  >
+                    <span className="w-8 shrink-0 font-mono text-xs font-bold tabular-nums text-muted-foreground">
+                      {player.number != null ? `#${player.number}` : '—'}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold">{name}</span>
+                      {positions ? (
+                        <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">
+                          {positions}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </>
         )}
       </section>
       ) : (
