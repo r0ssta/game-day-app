@@ -212,37 +212,53 @@ export function ParentMatchRecapView({
       : null
   const scoreboardMeta = [heading, when].filter(Boolean).join(' · ')
   const showBoxScore = teamBoxScore.hasStats || Boolean(teamBoxScore.playedLengthLabel)
+  const recapText = recap.trim()
+  const showRecap = showScoreboard || showBoxScore || Boolean(recapText)
 
   return (
-    <div className="space-y-4">
-      {showScoreboard || showBoxScore ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-          {showScoreboard ? (
-            <MatchScoreboard
-              framed={false}
-              teamName={teamName}
-              opponent={opponent}
-              homeScore={homeScore}
-              awayScore={awayScore}
-              homePkScore={homePkScore}
-              awayPkScore={awayPkScore}
-              pkWinnerIsUs={pkWinnerIsUs}
-              events={events}
-              totalPeriods={totalPeriods}
-              meta={scoreboardMeta}
-            />
-          ) : null}
-          {showBoxScore ? (
-            <div className={cn('px-4 pb-4', showScoreboard ? null : 'pt-4')}>
-              <ParentTeamBoxScore
-                model={teamBoxScore}
-                teamName={teamName}
-                opponent={opponent}
-                leadingDivider={showScoreboard}
-              />
+    <div className="space-y-8">
+      {showRecap ? (
+        <section className="space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Recap
+          </h2>
+          {showScoreboard || showBoxScore ? (
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
+              {showScoreboard ? (
+                <MatchScoreboard
+                  framed={false}
+                  teamName={teamName}
+                  opponent={opponent}
+                  homeScore={homeScore}
+                  awayScore={awayScore}
+                  homePkScore={homePkScore}
+                  awayPkScore={awayPkScore}
+                  pkWinnerIsUs={pkWinnerIsUs}
+                  events={events}
+                  totalPeriods={totalPeriods}
+                  meta={scoreboardMeta}
+                />
+              ) : null}
+              {showBoxScore ? (
+                <div className={cn('px-4 pb-4', showScoreboard ? null : 'pt-4')}>
+                  <ParentTeamBoxScore
+                    model={teamBoxScore}
+                    teamName={teamName}
+                    opponent={opponent}
+                    leadingDivider={showScoreboard}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
-        </div>
+          {recapText ? (
+            <div className="rounded-xl border border-border bg-card px-4 py-4">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                {recapText}
+              </p>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       <section>
@@ -269,24 +285,12 @@ export function ParentMatchRecapView({
         )}
       </section>
 
-      {recap.trim() ? (
-        <section>
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Coach recap
-          </h2>
-          <div className="rounded-xl border border-border bg-card px-4 py-4">
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-              {recap.trim()}
-            </p>
-          </div>
-        </section>
-      ) : null}
-
       <LiveGameFeed
         rows={timeline}
         opponent={opponent}
         teamName={teamName}
         totalPeriods={totalPeriods}
+        title="Game feed"
       />
     </div>
   )

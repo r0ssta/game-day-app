@@ -16,6 +16,7 @@ import {
   buildParentTimelineRows,
   fetchParentLiveEvents,
   isParentHubFinishedMatch,
+  isParentHubFixtureStatus,
   listParentWebPushFollows,
   subscribeParentMatchAlerts,
   subscribeParentTeamAlerts,
@@ -78,7 +79,10 @@ function statusBadge(status: string): { label: string; className: string } {
   if (status === 'postponed') {
     return { label: 'Postponed', className: 'bg-amber-500/20 text-amber-100' }
   }
-  return { label: 'Sched', className: 'bg-secondary text-muted-foreground' }
+  if (status === 'cancelled') {
+    return { label: 'Cancelled', className: 'bg-secondary text-muted-foreground' }
+  }
+  return { label: 'Scheduled', className: 'bg-secondary text-muted-foreground' }
 }
 
 function scheduleFields(match: {
@@ -166,6 +170,51 @@ function ScoreboardRow({
   )
 }
 
+function ScheduledFixtureView({
+  match,
+  teamLabel,
+  onBack,
+}: {
+  match: ParentHubMatch
+  teamLabel: string
+  onBack: () => void
+}) {
+  const when = formatMatchDisplayDateTime(match)
+  const badge = statusBadge(match.status)
+  const venue =
+    match.location_type === 'away' ? 'Away' : match.location_type === 'home' ? 'Home' : null
+
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex min-h-10 items-center gap-2 rounded-xl px-1 text-sm font-bold uppercase tracking-wide text-muted-foreground active:scale-95"
+      >
+        <ArrowLeft className="size-4" />
+        Back
+      </button>
+      <div className="rounded-xl border border-border bg-card px-4 py-4">
+        <p
+          className={cn(
+            'inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+            badge.className,
+          )}
+        >
+          {badge.label}
+        </p>
+        <p className="mt-2 font-display text-2xl font-bold uppercase text-foreground">
+          {teamLabel} vs {match.opponent || 'Opponent'}
+        </p>
+        <p className="mt-2 text-sm font-semibold text-muted-foreground">
+          {when.dateLabel} · {when.timeLabel}
+          {venue ? ` · ${venue}` : ''}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function ClubLiveMatchView({
   match,
   teamLabel,
@@ -237,6 +286,16 @@ function TeamDetailView({
   onNeedsInstall: () => void
 }) {
   const teamLabel = clubTeamDisplayName({ name: detail.teamName, ageGroup: detail.ageGroup })
+  const upcoming = detail.matches
+    .filter(
+      (match) => isLiveMatchStatus(match.status) || isParentHubFixtureStatus(match.status),
+    )
+    .sort((a, b) => {
+      const aLive = isLiveMatchStatus(a.status) ? 0 : 1
+      const bLive = isLiveMatchStatus(b.status) ? 0 : 1
+      if (aLive !== bLive) return aLive - bLive
+      return getMatchSortTimestamp(a) - getMatchSortTimestamp(b)
+    })
   const finished = detail.matches.filter((match) => isParentHubFinishedMatch(match.status))
 
   return (
@@ -312,6 +371,60 @@ function TeamDetailView({
         )}
       </section>
 
+      {upcoming.length > 0 ? (
+        <section className="space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Upcoming
+          </h3>
+          <ul className="space-y-2">
+            {upcoming.map((match) => {
+              const when = formatMatchDisplayDateTime(match)
+              const badge = statusBadge(match.status)
+              const venue =
+                match.location_type === 'away'
+                  ? 'Away'
+                  : match.location_type === 'home'
+                    ? 'Home'
+                    : null
+              const score = formatMatchResultScore(match)
+              return (
+                <button
+                  key={match.id}
+                  type="button"
+                  onClick={() => onOpenMatch(match)}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3 text-left active:scale-[0.99]"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                          badge.className,
+                        )}
+                      >
+                        {badge.label}
+                      </span>
+                      <span className="truncate text-[11px] font-semibold text-muted-foreground">
+                        {when.dateLabel} · {when.timeLabel}
+                        {venue ? ` · ${venue}` : ''}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate font-semibold text-foreground">
+                      vs {match.opponent || 'Opponent'}
+                    </p>
+                  </div>
+                  {isLiveMatchStatus(match.status) ? (
+                    <span className="shrink-0 font-mono text-base font-black tabular-nums">
+                      {score}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="space-y-2">
         <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
           Recaps
@@ -372,6 +485,7 @@ export function ClubParentHubScreen({
     match: ParentHubMatch
     teamLabel: string
     players: ParentClubTeamPayload['players']
+    seasonMatches?: ParentHubMatch[]
   } | null>(null)
   const [followedTeamIds, setFollowedTeamIds] = useState<Set<string>>(() => new Set())
   const [followedMatchIds, setFollowedMatchIds] = useState<Set<string>>(() => new Set())
@@ -587,15 +701,14 @@ export function ClubParentHubScreen({
                 ageGroup: detail.ageGroup,
               }),
               players: detail.players,
+              seasonMatches: detail.matches,
             }
           })
         })
         .catch(() => undefined)
       return
     }
-    // Scheduled: jump to team page for context
-    setTab('teams')
-    setSelectedTeamSlug(row.teamSlug)
+    setSelectedMatch({ match, teamLabel, players: [] })
   }
 
   const seasons = hub?.seasons ?? []
@@ -672,11 +785,18 @@ export function ClubParentHubScreen({
                 players={selectedMatch.players}
                 opponent={selectedMatch.match.opponent}
                 teamName={selectedMatch.teamLabel}
+                seasonMatches={selectedMatch.seasonMatches}
                 onBack={() => setSelectedMatch(null)}
               />
             </Suspense>
           ) : selectedMatch && isLiveMatchStatus(selectedMatch.match.status) ? (
             <ClubLiveMatchView
+              match={selectedMatch.match}
+              teamLabel={selectedMatch.teamLabel}
+              onBack={() => setSelectedMatch(null)}
+            />
+          ) : selectedMatch && isParentHubFixtureStatus(selectedMatch.match.status) ? (
+            <ScheduledFixtureView
               match={selectedMatch.match}
               teamLabel={selectedMatch.teamLabel}
               onBack={() => setSelectedMatch(null)}
@@ -703,6 +823,7 @@ export function ClubParentHubScreen({
                       ageGroup: teamDetail.ageGroup,
                     }),
                     players: teamDetail.players,
+                    seasonMatches: teamDetail.matches,
                   })
                 }}
               />
@@ -844,12 +965,7 @@ export function ClubParentHubScreen({
         </div>
       </main>
 
-      <nav
-        className={cn(
-          'fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur',
-          selectedMatch || selectedTeamSlug ? 'hidden' : undefined,
-        )}
-      >
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
         <div className={`${APP_CONTAINER} grid grid-cols-2 gap-1`}>
           {(
             [
@@ -857,12 +973,18 @@ export function ClubParentHubScreen({
               { id: 'teams' as const, label: 'Teams', icon: Users },
             ] as const
           ).map(({ id, label, icon: Icon }) => {
-            const active = tab === id
+            const teamsActive = Boolean(selectedTeamSlug) || tab === 'teams'
+            const active = id === 'teams' ? teamsActive : !teamsActive
             return (
               <button
                 key={id}
                 type="button"
-                onClick={() => setTab(id)}
+                onClick={() => {
+                  setSelectedMatch(null)
+                  setSelectedTeamSlug(null)
+                  setTeamDetail(null)
+                  setTab(id)
+                }}
                 className={cn(
                   'flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-bold uppercase tracking-wide active:scale-95',
                   active ? 'bg-neon/15 text-neon' : 'text-muted-foreground',

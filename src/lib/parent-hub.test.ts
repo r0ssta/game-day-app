@@ -8,6 +8,7 @@ import {
   formatParentPeriodEndedLabel,
   formatParentTimelineRowCopy,
   hidePairedParentShots,
+  isParentHubFixtureStatus,
   isParentHubStaffPreviewRequest,
   isParentTimelineHighlight,
   mergeParentHubLiveMatch,
@@ -31,6 +32,16 @@ function event(partial: Partial<ParentLiveEvent> & Pick<ParentLiveEvent, 'id' | 
     ...partial,
   }
 }
+
+describe('isParentHubFixtureStatus', () => {
+  it('keeps scheduled, postponed, and cancelled fixtures', () => {
+    expect(isParentHubFixtureStatus('scheduled')).toBe(true)
+    expect(isParentHubFixtureStatus('postponed')).toBe(true)
+    expect(isParentHubFixtureStatus('cancelled')).toBe(true)
+    expect(isParentHubFixtureStatus('final')).toBe(false)
+    expect(isParentHubFixtureStatus('live')).toBe(false)
+  })
+})
 
 describe('isParentHubStaffPreviewRequest', () => {
   it('is true only for preview=1', () => {

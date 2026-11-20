@@ -882,7 +882,7 @@ export function PostGameRecap({
               dateLabel={hubWhen?.dateLabel}
               timeLabel={hubWhen?.timeLabel}
               recap={parentFacingRecap}
-              heading="Live game feed"
+              heading="Final"
               hidePlayingTime
               showScoreboard={false}
             />

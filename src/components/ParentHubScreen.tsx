@@ -16,6 +16,7 @@ import {
   fetchParentRecaps,
   fetchParentLiveEvents,
   isParentHubFinishedMatch,
+  isParentHubFixtureStatus,
   isParentHubStaffPreviewRequest,
   isParentHubTrackedLiveEvent,
   mergeParentHubLiveMatch,
@@ -125,6 +126,59 @@ function ScheduledKickoffCard({ match }: { match: ParentHubMatch }) {
   )
 }
 
+function fixtureVenue(match: ParentHubMatch): string | null {
+  if (match.location_type === 'away') return 'Away'
+  if (match.location_type === 'home') return 'Home'
+  return null
+}
+
+function UpcomingFixtures({ matches }: { matches: ParentHubMatch[] }) {
+  const featured = matches.find((match) => match.status === 'scheduled') ?? matches[0]
+  const rest = featured ? matches.filter((match) => match.id !== featured.id) : matches
+
+  return (
+    <div className="space-y-4">
+      {featured ? <ScheduledKickoffCard match={featured} /> : null}
+      {rest.length > 0 ? (
+        <section className="space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Also scheduled
+          </h3>
+          <ul className="space-y-2">
+            {rest.map((match) => {
+              const when = formatMatchDisplayDateTime(match)
+              const venue = fixtureVenue(match)
+              const label =
+                match.status === 'postponed'
+                  ? 'Postponed'
+                  : match.status === 'cancelled'
+                    ? 'Cancelled'
+                    : 'Scheduled'
+              return (
+                <li
+                  key={match.id}
+                  className="rounded-xl border border-border bg-card px-3 py-3"
+                >
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                    {label}
+                  </p>
+                  <p className="mt-1 font-semibold text-foreground">
+                    vs {match.opponent || 'Opponent'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {when.dateLabel} · {when.timeLabel}
+                    {venue ? ` · ${venue}` : ''}
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  )
+}
+
 function sameParentLiveEvents(prev: ParentLiveEvent[], next: ParentLiveEvent[]) {
   if (prev.length !== next.length) return false
   for (let index = 0; index < prev.length; index += 1) {
@@ -160,11 +214,10 @@ function LiveTab({
     const live = matches.filter((m) => isLiveMatchStatus(m.status))
     return live.find((m) => m.isTest) ?? live[0] ?? null
   }, [matches])
-  const nextScheduled = useMemo(() => {
-    const upcoming = matches
-      .filter((m) => m.status === 'scheduled')
+  const upcoming = useMemo(() => {
+    return matches
+      .filter((match) => isParentHubFixtureStatus(match.status))
       .sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b))
-    return upcoming[0] ?? null
   }, [matches])
   const [events, setEvents] = useState<ParentLiveEvent[]>([])
   const [liveMatchState, setLiveMatchState] = useState<ParentHubMatch | null>(liveMatch)
@@ -388,7 +441,7 @@ function LiveTab({
   )
 
   if (!streamMatch || !liveMatchState || !isLiveMatchStatus(liveMatchState.status)) {
-    if (nextScheduled) return <ScheduledKickoffCard match={nextScheduled} />
+    if (upcoming.length > 0) return <UpcomingFixtures matches={upcoming} />
     return (
       <p className="rounded-xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
         No live match right now. Check Recaps for finished games.
@@ -696,6 +749,7 @@ export function ParentHubScreen({ route }: ParentHubScreenProps) {
                 players={hub.players}
                 opponent={selectedMatch.opponent}
                 teamName={teamLabel}
+                seasonMatches={hub.matches}
                 onBack={() => setSelectedMatchId(null)}
               />
             </Suspense>

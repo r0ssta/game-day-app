@@ -10,18 +10,20 @@ export function LiveGameFeed({
   opponent,
   teamName,
   totalPeriods,
+  title = 'Live game feed',
   emptyLabel = 'No live events recorded for this match.',
 }: {
   rows: ParentTimelineRow[]
   opponent: string
   teamName: string
   totalPeriods?: number | null
+  title?: string
   emptyLabel?: string
 }) {
   return (
     <section>
       <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-        Live game feed
+        {title}
       </h2>
       {rows.length === 0 ? (
         <p className="rounded-xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">

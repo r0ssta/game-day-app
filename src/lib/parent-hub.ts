@@ -426,6 +426,11 @@ export function isParentHubFinishedMatch(status: ParentHubMatch['status']): bool
   return status === 'final' || status === 'pending_review'
 }
 
+/** A fixture families should see before it is live or finished. */
+export function isParentHubFixtureStatus(status: string): boolean {
+  return status === 'scheduled' || status === 'postponed' || status === 'cancelled'
+}
+
 /**
  * Keep the Parent Hub live card subscribed through extra time / PKs when a hub
  * poll is stale (still `live`) or briefly omits the in-progress match.

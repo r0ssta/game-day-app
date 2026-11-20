@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { formatMatchDisplayDateTime } from '@/lib/match-schedule'
 import { resolvePeriodLengthMinutes } from '@/lib/match-periods'
-import { fetchParentLiveEvents, type ParentHubMatch, type ParentHubPlayer } from '@/lib/parent-hub'
+import {
+  fetchParentLiveEvents,
+  type ParentHubMatch,
+  type ParentHubPlayer,
+} from '@/lib/parent-hub'
 import { ParentMatchRecapView } from '@/components/ParentMatchRecapView'
 
 type ParentFinishedMatchDetailProps = {
@@ -10,6 +14,8 @@ type ParentFinishedMatchDetailProps = {
   players: ParentHubPlayer[]
   opponent: string
   teamName: string
+  /** Kept so callers can pass the season list without this view using it. */
+  seasonMatches?: ParentHubMatch[]
   onBack: () => void
 }
 
@@ -50,7 +56,7 @@ export function ParentFinishedMatchDetail({
     return () => {
       cancelled = true
     }
-  }, [match.id])
+  }, [match.id, match.isTest])
 
   return (
     <div className="space-y-4">
