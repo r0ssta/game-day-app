@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { buildParentTeamBoxScore } from '@/lib/parent-box-score'
 import { formatRecapMinutes } from '@/lib/match-recap'
 import {
@@ -213,15 +213,42 @@ export function ParentMatchRecapView({
   const scoreboardMeta = [heading, when].filter(Boolean).join(' · ')
   const showBoxScore = teamBoxScore.hasStats || Boolean(teamBoxScore.playedLengthLabel)
   const recapText = recap.trim()
-  const showRecap = showScoreboard || showBoxScore || Boolean(recapText)
+  const [section, setSection] = useState<'recap' | 'players' | 'feed'>('recap')
+  const sections = [
+    { id: 'recap', label: 'Recap' },
+    { id: 'players', label: 'Player stats' },
+    { id: 'feed', label: 'Game feed' },
+  ] as const
 
   return (
-    <div className="space-y-8">
-      {showRecap ? (
-        <section className="space-y-3">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Recap
-          </h2>
+    <div className="space-y-4">
+      <div
+        role="tablist"
+        aria-label="Match sections"
+        className="grid grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1"
+      >
+        {sections.map((item) => {
+          const active = section === item.id
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSection(item.id)}
+              className={cn(
+                'flex min-h-11 items-center justify-center rounded-lg px-2 py-2 text-center text-[11px] font-bold uppercase leading-tight tracking-wide active:scale-[0.98]',
+                active ? 'bg-neon text-neon-foreground' : 'bg-secondary text-muted-foreground',
+              )}
+            >
+              {item.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {section === 'recap' ? (
+        <section className="space-y-3" role="tabpanel" aria-label="Recap">
           {showScoreboard || showBoxScore ? (
             <div className="overflow-hidden rounded-xl border border-border bg-card">
               {showScoreboard ? (
@@ -261,10 +288,8 @@ export function ParentMatchRecapView({
         </section>
       ) : null}
 
-      <section>
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-          Player stats
-        </h2>
+      {section === 'players' ? (
+      <section role="tabpanel" aria-label="Player stats">
         {playerStats.length === 0 ? (
           <p className="rounded-xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
             {hidePlayingTime
@@ -284,14 +309,20 @@ export function ParentMatchRecapView({
           </ul>
         )}
       </section>
+      ) : null}
 
-      <LiveGameFeed
-        rows={timeline}
-        opponent={opponent}
-        teamName={teamName}
-        totalPeriods={totalPeriods}
-        title="Game feed"
-      />
+      {section === 'feed' ? (
+        <div role="tabpanel" aria-label="Game feed">
+          <LiveGameFeed
+            rows={timeline}
+            opponent={opponent}
+            teamName={teamName}
+            totalPeriods={totalPeriods}
+            title="Game feed"
+            showTitle={false}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }
