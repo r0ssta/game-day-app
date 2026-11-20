@@ -13,8 +13,13 @@ import { isCompletedResultStatus, isLiveMatchStatus } from '@/lib/match-status'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
+  buildParentSeasonPlayerLines,
+  type ParentSeasonPlayerLine,
+} from '@/lib/parent-match-stats'
+import {
   buildParentTimelineRows,
   fetchParentLiveEvents,
+  fetchParentLiveEventsForMatches,
   isParentHubFinishedMatch,
   isParentHubFixtureStatus,
   listParentWebPushFollows,
@@ -270,6 +275,132 @@ function ClubLiveMatchView({
   )
 }
 
+function goalDiffLabel(goalsFor: number, goalsAgainst: number): string {
+  const diff = goalsFor - goalsAgainst
+  return diff > 0 ? `+${diff}` : String(diff)
+}
+
+function SeasonStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string
+  value: string
+  hint?: string
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="mt-1 font-display text-2xl font-black tabular-nums text-foreground">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  )
+}
+
+function SeasonPlayerList({
+  label,
+  rows,
+  empty,
+  stat,
+}: {
+  label: string
+  rows: ParentSeasonPlayerLine[]
+  empty: string
+  stat: (row: ParentSeasonPlayerLine) => string
+}) {
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{label}</h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+          {rows.map((row) => (
+            <li key={row.playerId} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+              <span className="w-8 shrink-0 font-mono text-xs font-bold tabular-nums text-muted-foreground">
+                {row.jersey != null ? `#${row.jersey}` : '—'}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{row.name}</span>
+              <span className="shrink-0 font-mono text-xs font-bold tabular-nums text-muted-foreground">
+                {stat(row)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function SeasonRecapPanel({
+  detail,
+  lines,
+  status,
+}: {
+  detail: ParentClubTeamPayload
+  lines: ParentSeasonPlayerLine[] | null
+  status: 'loading' | 'ready' | 'error'
+}) {
+  const scorers = (lines ?? [])
+    .filter((row) => row.goals > 0 || row.assists > 0)
+    .sort(
+      (a, b) =>
+        b.goals - a.goals ||
+        b.assists - a.assists ||
+        (a.jersey ?? 999) - (b.jersey ?? 999),
+    )
+  const keepers = (lines ?? [])
+    .filter((row) => row.saves > 0)
+    .sort(
+      (a, b) => b.saves - a.saves || (a.jersey ?? 999) - (b.jersey ?? 999),
+    )
+
+  return (
+    <div className="space-y-4" role="tabpanel" aria-label="Season recap">
+      <div className="grid grid-cols-2 gap-3">
+        <SeasonStat
+          label="Overall record"
+          value={recordLabel(detail)}
+          hint={
+            detail.matchesPlayed === 1
+              ? '1 match'
+              : `${detail.matchesPlayed} matches`
+          }
+        />
+        <SeasonStat
+          label="Goals for – against"
+          value={`${detail.goalsFor}–${detail.goalsAgainst}`}
+          hint={detail.matchesPlayed > 0 ? `${goalDiffLabel(detail.goalsFor, detail.goalsAgainst)} difference` : undefined}
+        />
+      </div>
+
+      {detail.matchesPlayed === 0 ? (
+        <p className="text-sm text-muted-foreground">No finished matches yet this season.</p>
+      ) : status === 'error' ? (
+        <p className="text-sm text-muted-foreground">Could not load player season stats.</p>
+      ) : status === 'loading' || !lines ? (
+        <p className="text-sm font-semibold text-muted-foreground">Loading player stats…</p>
+      ) : (
+        <>
+          <SeasonPlayerList
+            label="Player goals / assists"
+            rows={scorers}
+            empty="No goals or assists logged yet."
+            stat={(row) => `${row.goals} G · ${row.assists} A`}
+          />
+          <SeasonPlayerList
+            label="Saves"
+            rows={keepers}
+            empty="No saves logged yet."
+            stat={(row) => `${row.saves} SV`}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
 function TeamDetailView({
   detail,
   onBack,
@@ -286,6 +417,14 @@ function TeamDetailView({
   onNeedsInstall: () => void
 }) {
   const teamLabel = clubTeamDisplayName({ name: detail.teamName, ageGroup: detail.ageGroup })
+  const [section, setSection] = useState<'games' | 'roster' | 'season'>('games')
+  const [seasonLines, setSeasonLines] = useState<ParentSeasonPlayerLine[] | null>(null)
+  const [seasonStatus, setSeasonStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const sections = [
+    { id: 'games', label: 'Games' },
+    { id: 'roster', label: 'Roster' },
+    { id: 'season', label: 'Season recap' },
+  ] as const
   const upcoming = detail.matches
     .filter(
       (match) => isLiveMatchStatus(match.status) || isParentHubFixtureStatus(match.status),
@@ -297,6 +436,43 @@ function TeamDetailView({
       return getMatchSortTimestamp(a) - getMatchSortTimestamp(b)
     })
   const finished = detail.matches.filter((match) => isParentHubFinishedMatch(match.status))
+
+  useEffect(() => {
+    if (section !== 'season') return
+    let cancelled = false
+    setSeasonStatus('loading')
+    const finishedMatches = detail.matches.filter((match) => isParentHubFinishedMatch(match.status))
+    const publicIds = finishedMatches.filter((match) => !match.isTest).map((match) => match.id)
+    const testIds = finishedMatches.filter((match) => match.isTest).map((match) => match.id)
+
+    void (async () => {
+      try {
+        const [publicEvents, testEvents] = await Promise.all([
+          fetchParentLiveEventsForMatches(publicIds),
+          fetchParentLiveEventsForMatches(testIds, { includeTest: true }),
+        ])
+        if (cancelled) return
+        const eventsByMatch = new Map([...publicEvents, ...testEvents])
+        setSeasonLines(
+          buildParentSeasonPlayerLines(
+            finishedMatches.map((match) => ({
+              id: match.id,
+              halfLengthMinutes: match.half_length,
+              events: eventsByMatch.get(match.id) ?? [],
+            })),
+            detail.players,
+          ),
+        )
+        setSeasonStatus('ready')
+      } catch {
+        if (!cancelled) setSeasonStatus('error')
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [section, detail.matches, detail.players])
 
   return (
     <div className="space-y-5">
@@ -345,10 +521,35 @@ function TeamDetailView({
         </section>
       ) : null}
 
-      <section className="space-y-2">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-          Roster
-        </h3>
+      <div
+        role="tablist"
+        aria-label="Team sections"
+        className="grid grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1"
+      >
+        {sections.map((item) => {
+          const active = section === item.id
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSection(item.id)}
+              className={cn(
+                'flex min-h-11 items-center justify-center rounded-lg px-2 py-2 text-center text-[11px] font-bold uppercase leading-tight tracking-wide active:scale-[0.98]',
+                active ? 'bg-neon text-neon-foreground' : 'bg-secondary text-muted-foreground',
+              )}
+            >
+              {item.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {section === 'season' ? (
+        <SeasonRecapPanel detail={detail} lines={seasonLines} status={seasonStatus} />
+      ) : section === 'roster' ? (
+      <section className="space-y-2" role="tabpanel" aria-label="Roster">
         {detail.players.length === 0 ? (
           <p className="text-sm text-muted-foreground">No roster for this season yet.</p>
         ) : (
@@ -370,7 +571,8 @@ function TeamDetailView({
           </ul>
         )}
       </section>
-
+      ) : (
+      <div className="space-y-5" role="tabpanel" aria-label="Games">
       {upcoming.length > 0 ? (
         <section className="space-y-2">
           <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -460,6 +662,8 @@ function TeamDetailView({
           </ul>
         )}
       </section>
+      </div>
+      )}
     </div>
   )
 }
@@ -806,6 +1010,7 @@ export function ClubParentHubScreen({
               <p className="text-sm font-semibold text-muted-foreground">Loading team…</p>
             ) : (
               <TeamDetailView
+                key={teamDetail.teamId}
                 detail={teamDetail}
                 teamAlertActive={followedTeamIds.has(teamDetail.teamId)}
                 onToggleTeamAlert={() => toggleTeamAlert(teamDetail.teamId)}

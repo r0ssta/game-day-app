@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { startingLineupNote } from './match-event-notes'
 import {
   buildParentMatchPlayerStats,
+  buildParentSeasonPlayerLines,
   formatParentCountingStats,
   formatParentHalfRole,
   formatParentPositionsLine,
@@ -453,5 +454,69 @@ describe('buildParentMatchPlayerStats', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]?.name).toBe('Ada')
     expect(rows[0]?.jersey).toBe(7)
+  })
+})
+
+describe('buildParentSeasonPlayerLines', () => {
+  it('sums goals, assists, and saves across finished matches', () => {
+    const lines = buildParentSeasonPlayerLines(
+      [
+        {
+          id: 'm1',
+          halfLengthMinutes: 30,
+          events: [
+            event({
+              id: 'g1',
+              eventType: 'goal',
+              timestamp: 100,
+              assistPlayerId: BESS,
+              createdAt: '2026-09-02T18:10:00.000Z',
+            }),
+            event({
+              id: 's1',
+              eventType: 'save_home',
+              playerId: BESS,
+              playerName: 'Bess',
+              jersey: 1,
+              timestamp: 200,
+              createdAt: '2026-09-02T18:12:00.000Z',
+            }),
+          ],
+        },
+        {
+          id: 'm2',
+          halfLengthMinutes: 30,
+          events: [
+            event({
+              id: 'g2',
+              matchId: 'm2',
+              eventType: 'goal',
+              timestamp: 80,
+              createdAt: '2026-09-09T18:10:00.000Z',
+            }),
+          ],
+        },
+      ],
+      players,
+    )
+
+    expect(lines).toEqual([
+      {
+        playerId: ADA,
+        name: 'Ada Lovelace',
+        jersey: 7,
+        goals: 2,
+        assists: 0,
+        saves: 0,
+      },
+      {
+        playerId: BESS,
+        name: 'Bess Coleman',
+        jersey: 1,
+        goals: 0,
+        assists: 1,
+        saves: 1,
+      },
+    ])
   })
 })

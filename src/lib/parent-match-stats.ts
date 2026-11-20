@@ -401,3 +401,63 @@ export function buildParentMatchPlayerStats(
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
   })
 }
+
+export type ParentSeasonPlayerLine = {
+  playerId: string
+  name: string
+  jersey: number | null
+  goals: number
+  assists: number
+  saves: number
+}
+
+/** Season goals, assists, and saves from the same public events as a match recap. */
+export function buildParentSeasonPlayerLines(
+  matches: Array<{
+    id: string
+    halfLengthMinutes: number
+    events: ParentLiveEvent[]
+  }>,
+  players: ParentHubPlayer[],
+): ParentSeasonPlayerLine[] {
+  const totals = new Map<string, ParentSeasonPlayerLine>()
+
+  for (const match of matches) {
+    const lines = buildParentMatchPlayerStats(
+      match.events,
+      match.id,
+      match.halfLengthMinutes,
+      players,
+    )
+    for (const line of lines) {
+      const existing = totals.get(line.playerId)
+      if (existing) {
+        existing.goals += line.total.goals
+        existing.assists += line.total.assists
+        existing.saves += line.total.saves
+        if (existing.jersey == null && line.jersey != null) existing.jersey = line.jersey
+        if (existing.name === 'Player' && line.name !== 'Player') existing.name = line.name
+        continue
+      }
+      totals.set(line.playerId, {
+        playerId: line.playerId,
+        name: line.name,
+        jersey: line.jersey,
+        goals: line.total.goals,
+        assists: line.total.assists,
+        saves: line.total.saves,
+      })
+    }
+  }
+
+  return [...totals.values()]
+    .filter((row) => row.goals > 0 || row.assists > 0 || row.saves > 0)
+    .sort(
+      (a, b) =>
+        b.goals - a.goals ||
+        b.assists - a.assists ||
+        b.saves - a.saves ||
+        (a.jersey ?? 999) - (b.jersey ?? 999) ||
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+    )
+}

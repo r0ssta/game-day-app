@@ -3,25 +3,6 @@ import { buildMatchScoreboardGoals, type ScoreboardScorer } from '@/lib/match-sc
 import type { ParentLiveEvent } from '@/lib/parent-hub'
 import { cn } from '@/lib/utils'
 
-function SoccerBallIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden>
-      <circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" strokeWidth="1.75" />
-      <path
-        d="M12 8.2 14.2 9.7l-.8 2.5h-2.8l-.8-2.5L12 8.2Z"
-        fill="currentColor"
-      />
-      <path
-        d="M12 8.2 9.4 7.2M12 8.2 14.6 7.2M10.6 12.2 8.4 13.6M13.4 12.2 15.6 13.6M11.2 14.6 12 16.8 12.8 14.6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
 function scoreClass(score: number, other: number, tone: 'us' | 'them'): string {
   const behind = score < other
   return cn(
@@ -31,26 +12,46 @@ function scoreClass(score: number, other: number, tone: 'us' | 'them'): string {
   )
 }
 
-function ScorerList({
+function sameTeamLabel(name: string, teamName: string): boolean {
+  return name.trim().toLowerCase() === teamName.trim().toLowerCase()
+}
+
+function ScorerColumn({
   scorers,
+  teamName,
+  align,
   label,
 }: {
   scorers: ScoreboardScorer[]
+  teamName: string
+  align: 'start' | 'end'
   label: string
 }) {
   if (scorers.length === 0) return null
   return (
-    <div className="flex gap-2">
-      <SoccerBallIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-      <ul className="flex min-w-0 flex-wrap gap-x-3 gap-y-1" aria-label={label}>
-        {scorers.map((scorer) => (
-          <li key={scorer.key} className="text-sm leading-snug text-foreground">
-            <span className="font-semibold">{scorer.name}</span>
-            <span className="text-muted-foreground"> - {scorer.marks.join(', ')}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul
+      className={cn('w-full space-y-1', align === 'end' ? 'text-right' : 'text-left')}
+      aria-label={label}
+    >
+      {scorers.flatMap((scorer) => {
+        if (sameTeamLabel(scorer.name, teamName)) {
+          return scorer.marks.map((mark, index) => (
+            <li
+              key={`${scorer.key}:${index}`}
+              className="text-xs leading-snug text-muted-foreground"
+            >
+              {mark}
+            </li>
+          ))
+        }
+        return [
+          <li key={scorer.key} className="text-xs leading-snug text-foreground">
+            <span className="block font-semibold">{scorer.name}</span>
+            <span className="text-muted-foreground">{scorer.marks.join(', ')}</span>
+          </li>,
+        ]
+      })}
+    </ul>
   )
 }
 
@@ -106,34 +107,60 @@ export function MatchScoreboard({
       {meta ? (
         <p className="px-3 pt-3 text-center text-xs font-semibold text-muted-foreground">{meta}</p>
       ) : null}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-2 px-3 py-4">
-        <p className="truncate text-right text-sm font-bold uppercase tracking-wide text-foreground">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-3 py-4">
+        <p
+          className="line-clamp-3 text-right text-sm font-bold uppercase leading-tight tracking-wide text-foreground"
+          title={usName}
+        >
           {usName}
         </p>
-        <div className="flex items-center gap-2.5">
-          <span className={scoreClass(homeScore, awayScore, 'us')}>{homeScore}</span>
-          <span className="flex min-w-8 flex-col items-center">
-            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-              FT
-            </span>
-            {pkLabel ? (
-              <span className="mt-0.5 text-[10px] font-bold tabular-nums text-muted-foreground">
-                {pkLabel}
-              </span>
-            ) : null}
-          </span>
-          <span className={scoreClass(awayScore, homeScore, 'them')}>{awayScore}</span>
-        </div>
-        <p className="truncate text-left text-sm font-bold uppercase tracking-wide text-foreground">
+        <span />
+        <p
+          className="line-clamp-3 text-left text-sm font-bold uppercase leading-tight tracking-wide text-foreground"
+          title={themName}
+        >
           {themName}
         </p>
+
+        <p className={cn(scoreClass(homeScore, awayScore, 'us'), 'justify-self-end self-center')}>
+          {homeScore}
+        </p>
+        <span className="flex min-w-8 flex-col items-center self-center">
+          <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+            FT
+          </span>
+          {pkLabel ? (
+            <span className="mt-0.5 text-center text-[10px] font-bold tabular-nums text-muted-foreground">
+              {pkLabel}
+            </span>
+          ) : null}
+        </span>
+        <p className={cn(scoreClass(awayScore, homeScore, 'them'), 'justify-self-start self-center')}>
+          {awayScore}
+        </p>
+
+        {hasScorers ? (
+          <>
+            <div className="min-w-0">
+              <ScorerColumn
+                scorers={goals.us}
+                teamName={usName}
+                align="end"
+                label={`${usName} goals`}
+              />
+            </div>
+            <span />
+            <div className="min-w-0">
+              <ScorerColumn
+                scorers={goals.them}
+                teamName={themName}
+                align="start"
+                label={`${themName} goals`}
+              />
+            </div>
+          </>
+        ) : null}
       </div>
-      {hasScorers ? (
-        <div className="space-y-2 border-t border-border px-3 py-3">
-          <ScorerList scorers={goals.us} label={`${usName} goals`} />
-          <ScorerList scorers={goals.them} label={`${themName} goals`} />
-        </div>
-      ) : null}
     </section>
   )
 }

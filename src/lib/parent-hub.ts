@@ -422,6 +422,29 @@ export async function fetchParentLiveEvents(
   return Array.isArray(data) ? (data as ParentLiveEvent[]) : []
 }
 
+const parentLiveEventCache = new Map<string, ParentLiveEvent[]>()
+
+/** Finished-game events for the recap squad table. Historical matches stay cached for the session. */
+export async function fetchParentLiveEventsForMatches(
+  matchIds: string[],
+  options?: { includeTest?: boolean },
+): Promise<Map<string, ParentLiveEvent[]>> {
+  const unique = [...new Set(matchIds.map((id) => id.trim()).filter(Boolean))]
+  const prefix = options?.includeTest ? 'test:' : 'public:'
+  const missing = unique.filter((id) => !parentLiveEventCache.has(`${prefix}${id}`))
+  await Promise.all(
+    missing.map(async (id) => {
+      const events = await fetchParentLiveEvents(id, options)
+      parentLiveEventCache.set(`${prefix}${id}`, events)
+    }),
+  )
+  const grouped = new Map<string, ParentLiveEvent[]>()
+  for (const id of unique) {
+    grouped.set(id, parentLiveEventCache.get(`${prefix}${id}`) ?? [])
+  }
+  return grouped
+}
+
 export function isParentHubFinishedMatch(status: ParentHubMatch['status']): boolean {
   return status === 'final' || status === 'pending_review'
 }
