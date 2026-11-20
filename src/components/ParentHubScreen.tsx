@@ -132,6 +132,12 @@ function fixtureVenue(match: ParentHubMatch): string | null {
   return null
 }
 
+function fixtureLabel(status: string): string {
+  if (status === 'postponed') return 'Postponed'
+  if (status === 'cancelled') return 'Cancelled'
+  return 'Scheduled'
+}
+
 function UpcomingFixtures({ matches }: { matches: ParentHubMatch[] }) {
   const featured = matches.find((match) => match.status === 'scheduled') ?? matches[0]
   const rest = featured ? matches.filter((match) => match.id !== featured.id) : matches
@@ -148,12 +154,7 @@ function UpcomingFixtures({ matches }: { matches: ParentHubMatch[] }) {
             {rest.map((match) => {
               const when = formatMatchDisplayDateTime(match)
               const venue = fixtureVenue(match)
-              const label =
-                match.status === 'postponed'
-                  ? 'Postponed'
-                  : match.status === 'cancelled'
-                    ? 'Cancelled'
-                    : 'Scheduled'
+              const label = fixtureLabel(match.status)
               return (
                 <li
                   key={match.id}
