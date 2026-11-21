@@ -85,6 +85,7 @@
     "supabase-parent-multi-push-migration.sql",
     "supabase-match-events-update-staff-migration.sql",
     "supabase-parent-club-hub-half-length-migration.sql",
-    "supabase-fix-2026-11-21-playing-minutes-migration.sql"
+    "supabase-fix-2026-11-21-playing-minutes-migration.sql",
+    "supabase-fix-2026-11-21-maroon-playing-minutes-migration.sql"
   ]
 }
