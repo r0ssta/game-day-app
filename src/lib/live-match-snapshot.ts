@@ -217,6 +217,16 @@ function bankedSecondsFromRemote(
     }
   }
 
+  // A stale snapshot can still say 0 after this device already banked a period.
+  // Never let remote rewind banked minutes — only adopt when it is ahead.
+  if (local.totalSecondsPlayed > remote.totalSecondsPlayed) {
+    return {
+      totalSecondsPlayed: local.totalSecondsPlayed,
+      fieldSecondsPlayed: local.fieldSecondsPlayed,
+      gkSecondsPlayed: local.gkSecondsPlayed,
+    }
+  }
+
   const localField = Math.max(0, local.fieldSecondsPlayed ?? 0)
   const localGk = Math.max(0, local.gkSecondsPlayed ?? 0)
   const delta = remote.totalSecondsPlayed - local.totalSecondsPlayed
