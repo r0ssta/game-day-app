@@ -67,7 +67,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       input.matchId,
       async (tx): Promise<EndRegulationResult> => {
         if (!keepLineupOnField) {
-          for (const playerId of input.onFieldPlayerIds) {
+          const totalsById = new Map(
+            input.onFieldPlayers.map((player) => [player.playerId, player.totalSecondsPlayed]),
+          )
+          const onFieldIds =
+            input.onFieldPlayers.length > 0
+              ? input.onFieldPlayers.map((player) => player.playerId)
+              : input.onFieldPlayerIds
+
+          for (const playerId of onFieldIds) {
             await tx.insertEvent({
               match_id: input.matchId,
               player_id: playerId,
@@ -79,11 +87,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             })
           }
 
-          for (const playerId of input.onFieldPlayerIds) {
-            await tx.updatePlayerStats(playerId, {
+          for (const playerId of onFieldIds) {
+            const totalSecondsPlayed = totalsById.get(playerId)
+            const patch: Record<string, unknown> = {
               match_status: 'bench',
               subbed_in_at: null,
-            })
+            }
+            if (typeof totalSecondsPlayed === 'number') {
+              patch.total_seconds_played = totalSecondsPlayed
+              patch.total_minutes = totalSecondsPlayed / 60
+            }
+            await tx.updatePlayerStats(playerId, patch)
           }
         }
 

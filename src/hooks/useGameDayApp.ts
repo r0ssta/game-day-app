@@ -32,6 +32,7 @@ import {
   parsePeriodStartTimeMs,
   pausePeriodClock,
   planHalfLengthOverride,
+  remainingFromElapsed,
   resolveLiveMatchClock,
 } from '@/lib/match-clock'
 import { createMatchClockStore } from '@/lib/match-clock-store'
@@ -687,6 +688,11 @@ export function useGameDayApp() {
       }).accumulatedSecondsBeforePause
       accumulatedSecondsRef.current = elapsed
       setAccumulatedSecondsBeforePause(elapsed)
+      // Keep the whistle face on the store immediately. Otherwise useMatchClock
+      // can snap with a stale accumulated=0 and rewrite remaining to a full half,
+      // which zeros every open stint when halftime finalizes.
+      const whistleRemaining = remainingFromElapsed(elapsed, halfLengthMinutes)
+      setSeconds(whistleRemaining)
     }
     localClockOwnedRef.current = false
     runningRef.current = false
@@ -695,7 +701,7 @@ export function useGameDayApp() {
       running: false,
     }
     setRunning(false)
-  }, [setRunning])
+  }, [halfLengthMinutes, setRunning, setSeconds])
 
   const isLocalClockOwned = useCallback(() => localClockOwnedRef.current, [])
 
@@ -2730,6 +2736,7 @@ export function useGameDayApp() {
       setAppMode('match')
 
       return {
+        players: stamped,
         starters: stamped.filter((p) => starterIds.has(p.id)),
         period: nextPeriodIndex,
         periodCode: nextPeriodCode,
@@ -2766,13 +2773,35 @@ export function useGameDayApp() {
       localIntermissionRef.current = false
       releaseLocalClock()
 
-      const onFieldPlayerIds = players
-        .filter((p) => p.attending && p.isOnField)
-        .map((p) => p.id)
       const formation = getActiveFormation()
       const teamSlug =
         teams.find((entry) => entry.id === selectedTeamId)?.slug?.trim() || null
       const keepLineupOnField = Boolean(options?.enterExtraTime || options?.advanceExtraTime)
+
+      // Bank open stints before the end-regulation write. That API clears
+      // subbed_in_at; a hydrate in between used to drop the final period's minutes.
+      const sourcePlayers = liveStateRef.current.players
+      const finalizedPlayers = keepLineupOnField
+        ? sourcePlayers
+        : finalizeAllOnField(sourcePlayers, clockSeconds, {
+            periodStartRemaining: initialHalfClock(halfLengthMinutes),
+          }).map((p) =>
+            p.attending && p.isOnField ? { ...p, isOnField: false, subbedInAt: null } : p,
+          )
+      const onFieldPlayers = sourcePlayers
+        .filter((p) => p.attending && p.isOnField)
+        .map((p) => {
+          const banked = finalizedPlayers.find((row) => row.id === p.id)
+          return {
+            playerId: p.id,
+            totalSecondsPlayed: banked?.totalSecondsPlayed ?? p.totalSecondsPlayed,
+          }
+        })
+
+      if (!keepLineupOnField) {
+        liveStateRef.current = { ...liveStateRef.current, players: finalizedPlayers }
+        setPlayers(finalizedPlayers)
+      }
 
       if (matchId) {
         const result = await apiEndRegulation({
@@ -2785,7 +2814,8 @@ export function useGameDayApp() {
           enterExtraTime: options?.enterExtraTime ?? false,
           advanceExtraTime: options?.advanceExtraTime ?? false,
           extraTimeHalfMinutes: options?.extraTimeHalfMinutes,
-          onFieldPlayerIds,
+          onFieldPlayerIds: onFieldPlayers.map((p) => p.playerId),
+          onFieldPlayers,
           homeScore,
           awayScore,
           teamName: matchTeamName.trim() || 'Home',
@@ -2800,22 +2830,9 @@ export function useGameDayApp() {
         if (!result.ok) {
           throw new Error(result.error)
         }
-      }
-
-      if (!keepLineupOnField) {
-        setPlayers((prev) => {
-          const finalized = finalizeAllOnField(prev, clockSeconds, {
-            periodStartRemaining: initialHalfClock(halfLengthMinutes),
-          }).map((p) =>
-            p.attending && p.isOnField ? { ...p, isOnField: false, subbedInAt: null } : p,
-          )
-
-          if (matchId) {
-            void syncMatchStats(matchId, finalized)
-          }
-
-          return finalized
-        })
+        if (!keepLineupOnField) {
+          void syncMatchStats(matchId, finalizedPlayers)
+        }
       }
 
       if (options?.enterExtraTime) {
@@ -2861,7 +2878,6 @@ export function useGameDayApp() {
       halfLengthMinutes,
       releaseLocalClock,
       getActiveFormation,
-      players,
       teams,
       selectedTeamId,
       homeScore,

@@ -281,6 +281,35 @@ describe('mergeRemoteLivePlayers', () => {
     expect(getLiveSecondsPlayed(merged[1]!, half - 700)).toBe(100)
   })
 
+  it('keeps local banked minutes when a stale remote snapshot has zeros', () => {
+    const local = [
+      player({
+        id: 'p1',
+        isOnField: false,
+        subbedInAt: null,
+        totalSecondsPlayed: 1800,
+        fieldSecondsPlayed: 1800,
+        gkSecondsPlayed: 0,
+      }),
+    ]
+    const remote = [
+      player({
+        id: 'p1',
+        isOnField: true,
+        subbedInAt: half - 120,
+        totalSecondsPlayed: 0,
+      }),
+    ]
+
+    const merged = mergeRemoteLivePlayers(local, remote, { periodStartRemaining: half })
+    expect(merged[0]).toMatchObject({
+      isOnField: true,
+      subbedInAt: half - 120,
+      totalSecondsPlayed: 1800,
+    })
+    expect(getLiveSecondsPlayed(merged[0]!, half - 300)).toBe(1800 + 180)
+  })
+
   it('counts an unstamped on-field player from the period start instead of 0:00', () => {
     const local = [
       player({ id: 'p1', isOnField: true, subbedInAt: null, totalSecondsPlayed: 0 }),

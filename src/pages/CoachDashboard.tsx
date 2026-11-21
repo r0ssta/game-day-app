@@ -122,6 +122,7 @@ import {
   formatPlayerWriteError,
   fetchPendingReviewMatchesByTeamId,
   fetchMatchEvents,
+  upsertMatchStats,
 } from '@/lib/supabase-api'
 import { apiLogAvailability, apiLogCard, apiLogFormation, apiLogGoal, apiLogPeriod, apiLogPkAttempt, apiLogSubstitution, apiLogTeamEvent, apiUpdatePkAttempt, formatMatchWriteError } from '@/lib/match-api'
 import {
@@ -1333,7 +1334,9 @@ function CoachDashboardScreen({
       })
     ) {
       setEndingMatch(true)
-      void finishGame(matchClockRef.current.get(), undefined, { enterPenaltyShootout: true })
+      void finishGame(endWhistleSecondsRef.current ?? matchClockRef.current.get(), undefined, {
+        enterPenaltyShootout: true,
+      })
         .then(() => {
           setToast('Still tied after extra time — starting penalty shootout')
         })
@@ -1584,6 +1587,10 @@ function CoachDashboardScreen({
   ])
 
   const handleEnterHalftime = useCallback(async () => {
+    // Capture the whistle before releasing the clock. releaseLocalClock banks
+    // elapsed time, but a follow-up snap used to rewrite remaining to a full
+    // half and zero every open stint for players who did not start the next period.
+    const whistleSeconds = matchClockRef.current.get()
     releaseLocalClock()
     const slotAssignments = livePitchRef.current?.getSlotAssignments()
     const slotLabelOverrides = livePitchRef.current?.getSlotLabelOverrides()
@@ -1593,7 +1600,7 @@ function CoachDashboardScreen({
     const endedPeriod = currentPeriod
     const endedFormation = activeFormation
 
-    const nextPlayers = await enterIntermission(matchClockRef.current.get(), slotAssignments, slotLabelOverrides)
+    const nextPlayers = await enterIntermission(whistleSeconds, slotAssignments, slotLabelOverrides)
     const onFieldPlayers = onFieldBefore.map((playerId) => {
       const player = nextPlayers.find((p) => p.id === playerId)
       return {
@@ -1611,7 +1618,7 @@ function CoachDashboardScreen({
               kind: 'end',
               period: endedPeriod,
               totalPeriods,
-              clockSeconds: matchClockRef.current.get(),
+              clockSeconds: whistleSeconds,
               halfLengthMinutes,
               formation: endedFormation,
               teamName: matchTeamName.trim() || 'Home',
@@ -1624,6 +1631,9 @@ function CoachDashboardScreen({
               onFieldPlayers,
             }),
           )
+          // Period-end events only cover the pitch. Persist every player's banked
+          // minutes so second-half subs keep their first-half totals in match_stats.
+          await upsertMatchStats(matchId, nextPlayers)
         },
         {
           onRevert: () => {},
@@ -1737,6 +1747,8 @@ function CoachDashboardScreen({
               onFieldPlayers: [],
             }),
           )
+          // Starters are patched above; persist banked minutes + 2nd-half flags for the bench too.
+          await upsertMatchStats(matchId, next.players)
         }
         return next
       },
