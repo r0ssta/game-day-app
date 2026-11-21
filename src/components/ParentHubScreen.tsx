@@ -8,7 +8,7 @@ import { formatTeamDisplayName } from '@/lib/age-groups'
 import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-schedule'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { isMatchClockHeartbeatUpdate } from '@/lib/live-match-snapshot'
-import { isLiveMatchStatus, MATCH_STATUS } from '@/lib/match-status'
+import { isAwaitingKickoff, isLiveMatchStatus, isParentVisibleLive, MATCH_STATUS } from '@/lib/match-status'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
   buildParentTimelineRows,
@@ -212,12 +212,12 @@ function LiveTab({
   matches: ParentHubMatch[]
 }) {
   const liveMatch = useMemo(() => {
-    const live = matches.filter((m) => isLiveMatchStatus(m.status))
+    const live = matches.filter((m) => isParentVisibleLive(m))
     return live.find((m) => m.isTest) ?? live[0] ?? null
   }, [matches])
   const upcoming = useMemo(() => {
     return matches
-      .filter((match) => isParentHubFixtureStatus(match.status))
+      .filter((match) => isParentHubFixtureStatus(match.status) || isAwaitingKickoff(match))
       .sort((a, b) => getMatchSortTimestamp(a) - getMatchSortTimestamp(b))
   }, [matches])
   const [events, setEvents] = useState<ParentLiveEvent[]>([])

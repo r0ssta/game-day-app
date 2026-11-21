@@ -9,7 +9,13 @@ import { LiveGameFeed } from '@/components/ParentTimelineList'
 import { lazyWithChunkReload } from '@/lib/lazy-import'
 import { APP_CONTAINER } from '@/lib/layout'
 import { formatMatchDisplayDateTime, getMatchSortTimestamp } from '@/lib/match-schedule'
-import { isCompletedResultStatus, isLiveMatchStatus } from '@/lib/match-status'
+import {
+  isAwaitingKickoff,
+  isCompletedResultStatus,
+  isLiveMatchStatus,
+  isParentVisibleLive,
+  parentFacingMatchStatus,
+} from '@/lib/match-status'
 import { formatMatchResultScore } from '@/lib/penalty-kicks'
 import { formatPlayerFullName } from '@/lib/player-names'
 import {
@@ -119,7 +125,7 @@ function ScoreboardRow({
   onNeedsInstall: () => void
 }) {
   const when = formatMatchDisplayDateTime(scheduleFields(match))
-  const badge = statusBadge(match.status)
+  const badge = statusBadge(parentFacingMatchStatus(match))
   const score = formatMatchResultScore({
     home_score: match.homeScore,
     away_score: match.awayScore,
@@ -160,7 +166,7 @@ function ScoreboardRow({
           <p className="truncate text-sm text-muted-foreground">vs {match.opponent || 'Opponent'}</p>
         </div>
         <span className="shrink-0 font-mono text-lg font-black tabular-nums text-foreground">
-          {isLiveMatchStatus(match.status) || isFinishedStatus(match.status) ? score : '—'}
+          {isParentVisibleLive(match) || isFinishedStatus(match.status) ? score : '—'}
         </span>
       </button>
       {showBell ? (
@@ -186,7 +192,7 @@ function ScheduledFixtureView({
   onBack: () => void
 }) {
   const when = formatMatchDisplayDateTime(match)
-  const badge = statusBadge(match.status)
+  const badge = statusBadge(parentFacingMatchStatus(match))
   const venue =
     match.location_type === 'away' ? 'Away' : match.location_type === 'home' ? 'Home' : null
 
@@ -428,11 +434,14 @@ function TeamDetailView({
   ] as const
   const upcoming = detail.matches
     .filter(
-      (match) => isLiveMatchStatus(match.status) || isParentHubFixtureStatus(match.status),
+      (match) =>
+        isParentVisibleLive(match) ||
+        isParentHubFixtureStatus(match.status) ||
+        isAwaitingKickoff(match),
     )
     .sort((a, b) => {
-      const aLive = isLiveMatchStatus(a.status) ? 0 : 1
-      const bLive = isLiveMatchStatus(b.status) ? 0 : 1
+      const aLive = isParentVisibleLive(a) ? 0 : 1
+      const bLive = isParentVisibleLive(b) ? 0 : 1
       if (aLive !== bLive) return aLive - bLive
       return getMatchSortTimestamp(a) - getMatchSortTimestamp(b)
     })
@@ -602,7 +611,7 @@ function TeamDetailView({
           <ul className="space-y-2">
             {upcoming.map((match) => {
               const when = formatMatchDisplayDateTime(match)
-              const badge = statusBadge(match.status)
+              const badge = statusBadge(parentFacingMatchStatus(match))
               const venue =
                 match.location_type === 'away'
                   ? 'Away'
@@ -636,7 +645,7 @@ function TeamDetailView({
                       vs {match.opponent || 'Opponent'}
                     </p>
                   </div>
-                  {isLiveMatchStatus(match.status) ? (
+                  {isParentVisibleLive(match) ? (
                     <span className="shrink-0 font-mono text-base font-black tabular-nums">
                       {score}
                     </span>
@@ -907,7 +916,7 @@ export function ClubParentHubScreen({
   const openScoreboardMatch = (row: ParentClubScoreboardMatch) => {
     const match = scoreboardMatchToParentHubMatch(row)
     const teamLabel = clubTeamDisplayName({ name: row.teamName, ageGroup: row.ageGroup })
-    if (isLiveMatchStatus(row.status) || isFinishedStatus(row.status)) {
+    if (isParentVisibleLive(row) || isFinishedStatus(row.status)) {
       // Show the match immediately; hydrate roster so player stats aren't labeled "Player".
       setSelectedMatch({ match, teamLabel, players: [] })
       void fetchParentClubTeam({
@@ -1014,13 +1023,15 @@ export function ClubParentHubScreen({
                 onBack={() => setSelectedMatch(null)}
               />
             </Suspense>
-          ) : selectedMatch && isLiveMatchStatus(selectedMatch.match.status) ? (
+          ) : selectedMatch && isParentVisibleLive(selectedMatch.match) ? (
             <ClubLiveMatchView
               match={selectedMatch.match}
               teamLabel={selectedMatch.teamLabel}
               onBack={() => setSelectedMatch(null)}
             />
-          ) : selectedMatch && isParentHubFixtureStatus(selectedMatch.match.status) ? (
+          ) : selectedMatch &&
+            (isParentHubFixtureStatus(selectedMatch.match.status) ||
+              isAwaitingKickoff(selectedMatch.match)) ? (
             <ScheduledFixtureView
               match={selectedMatch.match}
               teamLabel={selectedMatch.teamLabel}
@@ -1095,10 +1106,10 @@ export function ClubParentHubScreen({
                 </button>
               </div>
 
-              {hub.liveNowMatches.length > 0 ? (
+              {hub.liveNowMatches.some((match) => isParentVisibleLive(match)) ? (
                 <section className="space-y-2">
                   <h2 className="text-xs font-bold uppercase tracking-widest text-neon">Live now</h2>
-                  {hub.liveNowMatches.map((match) => (
+                  {hub.liveNowMatches.filter((match) => isParentVisibleLive(match)).map((match) => (
                     <ScoreboardRow
                       key={`live-${match.id}`}
                       match={match}
@@ -1123,8 +1134,8 @@ export function ClubParentHubScreen({
                 ) : (
                   [...hub.weekendMatches]
                     .sort((a, b) => {
-                      const aLive = isLiveMatchStatus(a.status) ? 0 : 1
-                      const bLive = isLiveMatchStatus(b.status) ? 0 : 1
+                      const aLive = isParentVisibleLive(a) ? 0 : 1
+                      const bLive = isParentVisibleLive(b) ? 0 : 1
                       if (aLive !== bLive) return aLive - bLive
                       return (
                         getMatchSortTimestamp(scheduleFields(a)) -
