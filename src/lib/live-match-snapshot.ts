@@ -217,6 +217,16 @@ function bankedSecondsFromRemote(
     }
   }
 
+  // A stale snapshot must not erase minutes this device already banked (e.g. after
+  // halftime finalize, or when period-end stats for bench players lag).
+  if (local.totalSecondsPlayed > remote.totalSecondsPlayed) {
+    return {
+      totalSecondsPlayed: local.totalSecondsPlayed,
+      fieldSecondsPlayed: local.fieldSecondsPlayed,
+      gkSecondsPlayed: local.gkSecondsPlayed,
+    }
+  }
+
   const localField = Math.max(0, local.fieldSecondsPlayed ?? 0)
   const localGk = Math.max(0, local.gkSecondsPlayed ?? 0)
   const delta = remote.totalSecondsPlayed - local.totalSecondsPlayed

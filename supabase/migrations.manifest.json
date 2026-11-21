@@ -84,6 +84,7 @@
     "supabase-parent-club-hub-migration.sql",
     "supabase-parent-multi-push-migration.sql",
     "supabase-match-events-update-staff-migration.sql",
-    "supabase-parent-club-hub-half-length-migration.sql"
+    "supabase-parent-club-hub-half-length-migration.sql",
+    "supabase-fix-u13-maroon-beach-second-half-minutes-migration.sql"
   ]
 }
