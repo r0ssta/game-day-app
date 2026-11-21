@@ -198,6 +198,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (input.starters.length > 0) {
         const freezeFirstHalfKickoff = input.period <= 1
+        const freezeSecondHalfKickoff = input.period === 2
         const starterIds = new Set(input.starters.map((starter) => starter.playerId))
         await Promise.all(
           input.starters.map((starter) => {
@@ -215,10 +216,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (freezeFirstHalfKickoff) {
               patch.is_first_half_starter = true
             }
+            if (freezeSecondHalfKickoff) {
+              patch.is_second_half_starter = true
+            }
             return tx.updatePlayerStats(starter.playerId, patch)
           }),
         )
-        if (freezeFirstHalfKickoff) {
+        if (freezeFirstHalfKickoff || freezeSecondHalfKickoff) {
           const { data: statRows, error: statsError } = await auth.supabase
             .from('match_stats')
             .select('player_id')
@@ -228,13 +232,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             (statRows ?? [])
               .map((row) => row.player_id as string)
               .filter((playerId) => playerId && !starterIds.has(playerId))
-              .map((playerId) =>
-                tx.updatePlayerStats(playerId, {
-                  is_first_half_starter: false,
+              .map((playerId) => {
+                const patch: Record<string, unknown> = {
                   match_status: 'bench',
                   subbed_in_at: null,
-                }),
-              ),
+                }
+                if (freezeFirstHalfKickoff) patch.is_first_half_starter = false
+                if (freezeSecondHalfKickoff) patch.is_second_half_starter = false
+                return tx.updatePlayerStats(playerId, patch)
+              }),
           )
         }
       }

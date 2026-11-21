@@ -54,10 +54,10 @@ function resolveOpenStintStart(
   periodStartRemaining?: number,
 ): number | null {
   if (player.subbedInAt !== null) return player.subbedInAt
-  // Never-stamped starter who has not been subbed: assume they played from kickoff.
-  // Only when nothing is banked — later periods already have P1+ totals, and
-  // finalizing from kickoff again would double-count (React Strict Mode, intermission).
-  if (player.isOnField && player.totalSecondsPlayed === 0 && periodStartRemaining != null) {
+  // On-field with no stamp: same as live display — on since period kickoff.
+  // Callers must clear isOnField (or stamp a new stint) after banking so a
+  // second finalize cannot double-count prior-period totals.
+  if (player.isOnField && periodStartRemaining != null) {
     return periodStartRemaining
   }
   return null

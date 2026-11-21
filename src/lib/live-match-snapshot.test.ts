@@ -306,6 +306,32 @@ describe('mergeRemoteLivePlayers', () => {
     expect(getLiveSecondsPlayed(merged[0]!, 800)).toBe(500)
   })
 
+  it('does not let a stale remote snapshot rewind banked first-half minutes', () => {
+    const local = [
+      player({
+        id: 'p1',
+        isOnField: false,
+        subbedInAt: null,
+        totalSecondsPlayed: 1200,
+        fieldSecondsPlayed: 1200,
+        gkSecondsPlayed: 0,
+      }),
+    ]
+    const remote = [
+      player({
+        id: 'p1',
+        isOnField: false,
+        subbedInAt: null,
+        totalSecondsPlayed: 0,
+        fieldSecondsPlayed: 0,
+        gkSecondsPlayed: 0,
+      }),
+    ]
+    const merged = mergeRemoteLivePlayers(local, remote, { periodStartRemaining: half })
+    expect(merged[0]?.totalSecondsPlayed).toBe(1200)
+    expect(getLiveSecondsPlayed(merged[0]!, half)).toBe(1200)
+  })
+
   it('adds a player who only exists on the other coach’s snapshot', () => {
     const local = [player({ id: 'p1', isOnField: true, subbedInAt: half })]
     const remote = [

@@ -151,7 +151,7 @@ describe('play-time', () => {
     expect(banked.subbedInAt).toBeNull()
   })
 
-  it('shows later-period minutes for an unstamped on-field player who already has banked time', () => {
+  it('banks later-period minutes for an unstamped on-field player who already has banked time', () => {
     const periodLength = 18 * 60
     const playedFirstPeriod = player({
       id: FIELD,
@@ -170,18 +170,37 @@ describe('play-time', () => {
     const [banked] = finalizeAllOnField([playedFirstPeriod], 540, {
       periodStartRemaining: periodLength,
     })
-    expect(banked.totalSecondsPlayed).toBe(periodLength)
+    // Live display and the whistle must agree — dropping the open stint left
+    // second-half starters stuck on their first-half total (or 0) after sync.
+    expect(banked.totalSecondsPlayed).toBe(periodLength + 540)
+    expect(banked.subbedInAt).toBeNull()
   })
 
-  it('does not double-count after a stint is already banked', () => {
+  it('does not invent time for a benched player after their stint was banked', () => {
     const alreadyBanked = player({
       id: FIELD,
-      isOnField: true,
+      isOnField: false,
       subbedInAt: null,
       totalSecondsPlayed: 1800,
     })
     const [again] = finalizeAllOnField([alreadyBanked], 0, { periodStartRemaining: 1800 })
     expect(again.totalSecondsPlayed).toBe(1800)
+  })
+
+  it('keeps first-half totals for players who sit the next period', () => {
+    const satOut = player({
+      id: BENCH,
+      attending: true,
+      isOnField: false,
+      subbedInAt: null,
+      totalSecondsPlayed: 1200,
+      fieldSecondsPlayed: 1200,
+      gkSecondsPlayed: 0,
+    })
+    const linedUp = applySecondHalfLineup([satOut], new Set([FIELD]), 0, 1800)
+    const [finished] = finalizeAllOnField(linedUp, 0, { periodStartRemaining: 1800 })
+    expect(finished.totalSecondsPlayed).toBe(1200)
+    expect(finished.isOnField).toBe(false)
   })
 
   it('preserves first-half totals when applying the next-period lineup', () => {
