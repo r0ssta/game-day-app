@@ -1334,7 +1334,9 @@ function CoachDashboardScreen({
       })
     ) {
       setEndingMatch(true)
-      void finishGame(matchClockRef.current.get(), undefined, { enterPenaltyShootout: true })
+      void finishGame(endWhistleSecondsRef.current ?? matchClockRef.current.get(), undefined, {
+        enterPenaltyShootout: true,
+      })
         .then(() => {
           setToast('Still tied after extra time — starting penalty shootout')
         })

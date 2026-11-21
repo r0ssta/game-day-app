@@ -153,7 +153,18 @@ export const EndRegulationInputSchema = z
     extraTimeHalfMinutes: z.number().int().min(1).max(30).optional(),
     /** Players still on the field at whistle — each gets a period_end sub_out. */
     onFieldPlayerIds: z.array(z.string().uuid()).default([]),
-    /** Full finalized match_stats-shaped rows optional; server can update status alone if empty. */
+    /**
+     * Banked totals after closing open stints at the whistle. Required for accurate
+     * full-time minutes — clearing subbed_in_at without these wiped the final stint.
+     */
+    onFieldPlayers: z
+      .array(
+        z.object({
+          playerId: z.string().uuid(),
+          totalSecondsPlayed: z.number().nonnegative(),
+        }),
+      )
+      .default([]),
     homeScore: z.number().int().nonnegative().optional(),
     awayScore: z.number().int().nonnegative().optional(),
     teamName: z.string().optional(),
