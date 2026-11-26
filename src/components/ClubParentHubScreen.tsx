@@ -874,7 +874,9 @@ export function ClubParentHubScreen({
       void reloadHub()
         .then((payload) => {
           if (!matchId) return
-          const row = payload.scoreboard.find((candidate) => candidate.id === matchId)
+          const row =
+            payload.liveNowMatches.find((candidate) => candidate.id === matchId) ??
+            payload.weekendMatches.find((candidate) => candidate.id === matchId)
           if (!row) return
           const next = scoreboardMatchToParentHubMatch(row)
           setSelectedMatch((prev) => {

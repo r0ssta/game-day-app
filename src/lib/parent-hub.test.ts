@@ -617,7 +617,7 @@ describe('regulationScoreFromParentLiveEvents', () => {
 
 describe('withParentLiveEventScores', () => {
   it('advances a lagging match-row score when the goal feed is ahead', () => {
-    const match = hubMatch({ home_score: 1, away_score: 0 })
+    const match = hubMatch({ id: 'm1', status: 'live', home_score: 1, away_score: 0 })
     expect(
       withParentLiveEventScores(match, [
         event({ id: 'g1', eventType: 'goal' }),
@@ -628,7 +628,7 @@ describe('withParentLiveEventScores', () => {
   })
 
   it('keeps the match-row score when events are still empty', () => {
-    const match = hubMatch({ home_score: 2, away_score: 1 })
+    const match = hubMatch({ id: 'm1', status: 'live', home_score: 2, away_score: 1 })
     expect(withParentLiveEventScores(match, [])).toBe(match)
   })
 })
