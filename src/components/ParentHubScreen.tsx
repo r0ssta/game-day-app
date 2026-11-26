@@ -20,6 +20,7 @@ import {
   isParentHubStaffPreviewRequest,
   isParentHubTrackedLiveEvent,
   mergeParentHubLiveMatch,
+  withParentLiveEventScores,
   type ParentHubMatch,
   type ParentHubPayload,
   type ParentHubRoute,
@@ -451,6 +452,9 @@ function LiveTab({
   }
 
   const teamLabel = formatTeamDisplayName(hub.teamName, hub.ageGroup)
+  // Goal feed can arrive before the match-row score (or a soft refresh can lag).
+  // Keep the header tied to the same events the timeline already shows.
+  const scoreboardMatch = withParentLiveEventScores(liveMatchState, events)
   const timeline = buildParentTimelineRows(events, {
     totalPeriods: liveMatchState.total_periods,
   })
@@ -460,9 +464,9 @@ function LiveTab({
     liveMatchState.status === MATCH_STATUS.extraTimeSecondHalf
   const showPkScore =
     inShootout ||
-    liveMatchState.home_pk_score > 0 ||
-    liveMatchState.away_pk_score > 0 ||
-    liveMatchState.pk_winner_is_us != null
+    scoreboardMatch.home_pk_score > 0 ||
+    scoreboardMatch.away_pk_score > 0 ||
+    scoreboardMatch.pk_winner_is_us != null
   const livePhaseLabel = inShootout
     ? 'Penalty shootout'
     : liveMatchState.status === MATCH_STATUS.extraTimeFirstHalf
@@ -493,15 +497,15 @@ function LiveTab({
               Shootout
             </p>
             <p className="mt-1 font-display text-4xl font-black tabular-nums text-foreground">
-              {liveMatchState.home_pk_score} – {liveMatchState.away_pk_score}
+              {scoreboardMatch.home_pk_score} – {scoreboardMatch.away_pk_score}
             </p>
             <p className="mt-1 text-xs font-semibold text-muted-foreground">
-              Regulation {liveMatchState.home_score}–{liveMatchState.away_score}
+              Regulation {scoreboardMatch.home_score}–{scoreboardMatch.away_score}
             </p>
           </div>
         ) : (
           <div className="mt-2 flex items-baseline gap-3">
-            <Scoreline match={liveMatchState} />
+            <Scoreline match={scoreboardMatch} />
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {livePhaseLabel}
             </span>

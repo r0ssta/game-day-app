@@ -454,6 +454,37 @@ export function isParentHubFixtureStatus(status: string): boolean {
   return status === 'scheduled' || status === 'postponed' || status === 'cancelled'
 }
 
+/** Regulation score from Parent Hub live goal events (ignores PK attempts). */
+export function regulationScoreFromParentLiveEvents(events: ParentLiveEvent[]): {
+  home: number
+  away: number
+} {
+  let home = 0
+  let away = 0
+  for (const event of events) {
+    if (event.eventType === 'goal') home += 1
+    else if (event.eventType === 'opponent_goal') away += 1
+  }
+  return { home, away }
+}
+
+/**
+ * Keep the live scoreboard at least as current as the goal feed.
+ * Event Realtime / the security-definer poll can land before the match-row
+ * score update (or a hub soft-refresh), so families briefly saw a goal in the
+ * timeline while the header still showed the previous score.
+ */
+export function withParentLiveEventScores<T extends { home_score: number; away_score: number }>(
+  match: T,
+  events: ParentLiveEvent[],
+): T {
+  const { home, away } = regulationScoreFromParentLiveEvents(events)
+  const home_score = Math.max(match.home_score, home)
+  const away_score = Math.max(match.away_score, away)
+  if (home_score === match.home_score && away_score === match.away_score) return match
+  return { ...match, home_score, away_score }
+}
+
 /**
  * Keep the Parent Hub live card subscribed through extra time / PKs when a hub
  * poll is stale (still `live`) or briefly omits the in-progress match.
@@ -474,9 +505,34 @@ export function mergeParentHubLiveMatch(
       return {
         ...nextFromHub,
         status: prev.status,
+        home_score: Math.max(prev.home_score, nextFromHub.home_score),
+        away_score: Math.max(prev.away_score, nextFromHub.away_score),
         home_pk_score: prev.home_pk_score,
         away_pk_score: prev.away_pk_score,
         pk_winner_is_us: prev.pk_winner_is_us,
+      }
+    }
+    if (prev && prev.id === nextFromHub.id && isLiveMatchStatus(prev.status)) {
+      // A CDN / hub soft-refresh must not rewind scores that Realtime or the
+      // event feed already advanced on the live card.
+      const home_score = Math.max(prev.home_score, nextFromHub.home_score)
+      const away_score = Math.max(prev.away_score, nextFromHub.away_score)
+      const home_pk_score = Math.max(prev.home_pk_score, nextFromHub.home_pk_score)
+      const away_pk_score = Math.max(prev.away_pk_score, nextFromHub.away_pk_score)
+      if (
+        home_score === nextFromHub.home_score &&
+        away_score === nextFromHub.away_score &&
+        home_pk_score === nextFromHub.home_pk_score &&
+        away_pk_score === nextFromHub.away_pk_score
+      ) {
+        return nextFromHub
+      }
+      return {
+        ...nextFromHub,
+        home_score,
+        away_score,
+        home_pk_score,
+        away_pk_score,
       }
     }
     return nextFromHub

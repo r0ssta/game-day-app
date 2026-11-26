@@ -13,6 +13,8 @@ import {
   isParentTimelineHighlight,
   mergeParentHubLiveMatch,
   parentLiveEventsFromMatchEvents,
+  regulationScoreFromParentLiveEvents,
+  withParentLiveEventScores,
   type ParentHubMatch,
   type ParentLiveEvent,
 } from './parent-hub'
@@ -599,6 +601,38 @@ function hubMatch(partial: Partial<ParentHubMatch> & Pick<ParentHubMatch, 'id' |
   }
 }
 
+describe('regulationScoreFromParentLiveEvents', () => {
+  it('counts regulation goals from the live feed', () => {
+    expect(
+      regulationScoreFromParentLiveEvents([
+        event({ id: 'g1', eventType: 'goal' }),
+        event({ id: 'g2', eventType: 'opponent_goal' }),
+        event({ id: 'g3', eventType: 'goal' }),
+        event({ id: 's1', eventType: 'shot_home' }),
+        event({ id: 'pk1', eventType: 'pk_attempt' }),
+      ]),
+    ).toEqual({ home: 2, away: 1 })
+  })
+})
+
+describe('withParentLiveEventScores', () => {
+  it('advances a lagging match-row score when the goal feed is ahead', () => {
+    const match = hubMatch({ id: 'm1', status: 'live', home_score: 1, away_score: 0 })
+    expect(
+      withParentLiveEventScores(match, [
+        event({ id: 'g1', eventType: 'goal' }),
+        event({ id: 'g2', eventType: 'goal' }),
+        event({ id: 'g3', eventType: 'opponent_goal' }),
+      ]),
+    ).toMatchObject({ home_score: 2, away_score: 1 })
+  })
+
+  it('keeps the match-row score when events are still empty', () => {
+    const match = hubMatch({ id: 'm1', status: 'live', home_score: 2, away_score: 1 })
+    expect(withParentLiveEventScores(match, [])).toBe(match)
+  })
+})
+
 describe('mergeParentHubLiveMatch', () => {
   it('keeps extra time / shootout when the hub poll still says live', () => {
     const prev = hubMatch({ id: 'm1', status: 'penalty_shootout', home_pk_score: 2, away_pk_score: 1 })
@@ -607,6 +641,15 @@ describe('mergeParentHubLiveMatch', () => {
       status: 'penalty_shootout',
       home_pk_score: 2,
       away_pk_score: 1,
+    })
+  })
+
+  it('does not rewind live scores when a soft refresh is behind Realtime', () => {
+    const prev = hubMatch({ id: 'm1', status: 'live', home_score: 2, away_score: 1 })
+    const next = hubMatch({ id: 'm1', status: 'live', home_score: 1, away_score: 1 })
+    expect(mergeParentHubLiveMatch(prev, next, [next])).toMatchObject({
+      home_score: 2,
+      away_score: 1,
     })
   })
 
