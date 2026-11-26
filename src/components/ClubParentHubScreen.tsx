@@ -34,6 +34,7 @@ import {
   subscribeParentTeamAlerts,
   unsubscribeParentMatchAlerts,
   unsubscribeParentTeamAlerts,
+  withParentLiveEventScores,
   type ParentHubMatch,
   type ParentLiveEvent,
 } from '@/lib/parent-hub'
@@ -258,7 +259,10 @@ function ClubLiveMatchView({
   const timeline = buildParentTimelineRows(events, {
     totalPeriods: match.total_periods,
   })
-  const score = formatMatchResultScore(match)
+  // Match prop is snapshotted when the scoreboard row is opened; soft refresh
+  // of the club hub pauses while this detail is open. Derive the header from
+  // the same polled events the live feed already shows so goals are not late.
+  const score = formatMatchResultScore(withParentLiveEventScores(match, events))
 
   return (
     <div className="space-y-4">
@@ -859,11 +863,26 @@ export function ClubParentHubScreen({
     }
   }, [reloadHub])
 
-  // Soft refresh scoreboard while on that tab
+  // Soft refresh scoreboard while on that tab, including an open live match so
+  // status / PK scores catch up (regulation goals also track the event poll).
   useEffect(() => {
-    if (tab !== 'scoreboard' || selectedMatch || selectedTeamSlug) return
+    if (tab !== 'scoreboard' || selectedTeamSlug) return
+    const matchId = selectedMatch?.match.id ?? null
+    const liveOpen = Boolean(selectedMatch && isParentVisibleLive(selectedMatch.match))
+    if (selectedMatch && !liveOpen) return
     const id = window.setInterval(() => {
-      void reloadHub().catch(() => undefined)
+      void reloadHub()
+        .then((payload) => {
+          if (!matchId) return
+          const row = payload.scoreboard.find((candidate) => candidate.id === matchId)
+          if (!row) return
+          const next = scoreboardMatchToParentHubMatch(row)
+          setSelectedMatch((prev) => {
+            if (!prev || prev.match.id !== next.id) return prev
+            return { ...prev, match: next }
+          })
+        })
+        .catch(() => undefined)
     }, 15_000)
     return () => window.clearInterval(id)
   }, [tab, selectedMatch, selectedTeamSlug, reloadHub])
